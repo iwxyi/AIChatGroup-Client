@@ -279,6 +279,12 @@ export function resolveStorySidebarTab(rightPanelTab: string): StorySidebarTab {
   return 'session';
 }
 
+export function shouldShowSessionSidebarTab(chat: GroupChat | undefined, hasSessionSpecificActions: boolean) {
+  if (!chat || chat.sessionKind?.scenarioId === 'story-reader') return false;
+  if (chat.sessionKind?.family === 'analysis') return true;
+  return Boolean(chat.sessionKind?.family !== 'conversation' && hasSessionSpecificActions);
+}
+
 export function useChatSidebarProjection(params: {
   chat: GroupChat | undefined;
   members: AICharacter[];
@@ -395,19 +401,20 @@ export function useChatSidebarProjection(params: {
     : projectedDetailState?.showActionTab ?? (chat?.type === 'group');
   const isStoryRoom = chat?.sessionKind?.scenarioId === 'story-reader';
   const hasSessionSpecificActions = Boolean(chat && !isStoryRoom && chat.sessionKind?.family !== 'conversation' && sidebarActionGroups.sessionActions.length);
+  const showSessionTab = shouldShowSessionSidebarTab(chat, hasSessionSpecificActions);
   const sessionTabTitle = deriveSessionTabTitle(chat, actionSchema?.title || projectedDetailState?.actionPanel.title, isZh);
   const projectedActiveTab = projectedDetailState?.activeSidebarTab === 'actions'
     ? (hasSessionSpecificActions ? 'session' : 'activities')
     : projectedDetailState?.activeSidebarTab;
   const storySidebarTab = isStoryRoom ? resolveStorySidebarTab(rightPanelTab) : null;
   const activeSidebarTab = storySidebarTab || projectedActiveTab
-    || (hasSessionSpecificActions && rightPanelTab === 'session' ? 'session'
+    || (showSessionTab && rightPanelTab === 'session' ? 'session'
       : showMemberTab && rightPanelTab === 'members' ? 'members'
       : showRuntimeTab && rightPanelTab === 'narrative' ? 'narrative'
       : showRuntimeTab && rightPanelTab === 'chapters' ? 'chapters'
       : showRuntimeTab && rightPanelTab === 'world' ? 'world'
       : showActionTab && rightPanelTab === 'activities' ? 'activities'
-        : hasSessionSpecificActions ? 'session' : showMemberTab ? 'members' : 'world');
+        : showSessionTab ? 'session' : showMemberTab ? 'members' : 'world');
   const localizePanelTitle = (title: string | undefined, fallback: string) => {
     if (!title) return fallback;
     const zhTitles: Record<string, string> = { Members: '成员', Story: '故事', Branches: '分支', Actions: '动作', Tasks: '任务', Workflow: '工作流', Players: '玩家', Board: '棋盘', Moves: '行动', Mystery: '谜题', Clues: '线索', Study: '学习', Discussion: '讨论', Deliberation: '运行态' };
@@ -470,7 +477,7 @@ export function useChatSidebarProjection(params: {
     runtimeTabTitle,
     sessionActions,
     sessionTabTitle,
-    showSessionTab: hasSessionSpecificActions,
+    showSessionTab,
     showActionTab,
     showMemberTab,
     showRuntimeTab,

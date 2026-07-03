@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { resolveStorySidebarTab, splitSidebarActions } from './useChatSidebarProjection';
+import { resolveStorySidebarTab, shouldShowSessionSidebarTab, splitSidebarActions } from './useChatSidebarProjection';
+import type { GroupChat } from '../types/chat';
 
 describe('resolveStorySidebarTab', () => {
   it('keeps explicit story asset tabs', () => {
@@ -29,5 +30,19 @@ describe('splitSidebarActions', () => {
 
     expect(groups.sessionActions.map((action) => action.type)).toEqual(['question_member', 'summarize_discussion']);
     expect(groups.activityActions.map((action) => action.type)).toEqual(['start_private_thread', 'attention_followup_user']);
+  });
+});
+
+describe('shouldShowSessionSidebarTab', () => {
+  it('keeps the deliberation tab visible even when an analysis room has no session actions', () => {
+    expect(shouldShowSessionSidebarTab({
+      sessionKind: { topology: 'group', family: 'analysis', scenarioId: 'opinion-review', surfaceProfile: 'text' },
+    } as GroupChat, false)).toBe(true);
+  });
+
+  it('does not add an empty session tab to ordinary conversation rooms', () => {
+    expect(shouldShowSessionSidebarTab({
+      sessionKind: { topology: 'group', family: 'conversation', scenarioId: 'open-chat', surfaceProfile: 'text' },
+    } as GroupChat, false)).toBe(false);
   });
 });
