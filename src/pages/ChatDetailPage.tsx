@@ -569,6 +569,7 @@ function localizeLocalInterceptionReason(reason: string) {
 function localizeLocalInterceptionKind(kind: LocalInterceptionEvent['kind']) {
   const labels: Record<LocalInterceptionEvent['kind'], string> = {
     guidance_retry: '指令重试',
+    analysis_artifacts_present: '审议产物已返回',
     analysis_artifacts_missing: '审议产物缺失',
     presence_metadata_missing: '状态标记缺失',
     surface_echo_warning: '重复内容提示',
@@ -589,7 +590,8 @@ function isRetryInterception(kind: LocalInterceptionEvent['kind']) {
 }
 
 function isDiagnosticHint(kind: LocalInterceptionEvent['kind']) {
-  return kind === 'analysis_artifacts_missing'
+  return kind === 'analysis_artifacts_present'
+    || kind === 'analysis_artifacts_missing'
     || kind === 'presence_metadata_missing'
     || kind === 'surface_echo_warning'
     || kind === 'surface_contract_warning'
@@ -606,7 +608,7 @@ function buildLocalInterceptionSummary(event: LocalInterceptionEvent) {
   const actor = event.speakerName || '角色';
   const reason = localizeLocalInterceptionReason(event.reason);
   const kind = localizeLocalInterceptionKind(event.kind);
-  const attempt = event.attempt ? `第 ${event.attempt} 次` : '';
+  const attempt = isRetryInterception(event.kind) && event.attempt ? `第 ${event.attempt} 次` : '';
   const draft = compactInterceptedDraft(event.draft);
   if (isDiagnosticHint(event.kind)) {
     return `${kind}${attempt ? `（${attempt}）` : ''}：${actor} 的消息已保留。草稿：${draft}（说明：${reason}）`;

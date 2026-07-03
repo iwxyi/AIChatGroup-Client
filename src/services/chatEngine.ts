@@ -62,6 +62,7 @@ export interface GeneratedRoundMessage extends Omit<Message, 'id' | 'timestamp' 
 
 export type LocalInterceptionKind =
   | 'guidance_retry'
+  | 'analysis_artifacts_present'
   | 'analysis_artifacts_missing'
   | 'presence_metadata_missing'
   | 'surface_contract_warning'
@@ -2396,6 +2397,16 @@ function hasDeliberationArtifactContent(artifacts: MessageMetadata['deliberation
   );
 }
 
+function countDeliberationArtifacts(artifacts: MessageMetadata['deliberationArtifacts'] | null | undefined) {
+  return {
+    claims: artifacts?.claims?.length || 0,
+    evidence: artifacts?.evidence?.length || 0,
+    issues: artifacts?.issues?.length || 0,
+    verdicts: artifacts?.verdicts?.length || 0,
+    summaries: artifacts?.summary?.text?.trim() ? 1 : 0,
+  };
+}
+
 function isMoveExpectedToProduceDeliberationArtifacts(moveType: string | undefined) {
   return Boolean(moveType && [
     'add_boundary_condition',
@@ -2861,7 +2872,6 @@ async function generateNonDuplicateResponse(params: {
           kind: 'analysis_artifacts_missing',
           draft: evaluationResponse,
           reason,
-          attempt: attempt + 1,
           moveType: conversationMovePlan.moveType,
           moveReason: conversationMovePlan.reason,
         }, 'warn', 'chat-run');
@@ -2871,7 +2881,27 @@ async function generateNonDuplicateResponse(params: {
           speakerName: params.speaker.name,
           draft: evaluationResponse,
           reason,
-          attempt: attempt + 1,
+        });
+      } else if (conversationMovePlan && analysisProtocolTrace?.present) {
+        const counts = countDeliberationArtifacts(generated.parsedEnvelope?.deliberationArtifacts);
+        const reason = `本轮回复返回了结构化审议产物：主张 ${counts.claims}、证据 ${counts.evidence}、质询 ${counts.issues}、裁决 ${counts.verdicts}、总结 ${counts.summaries}；消息提交后会写入审议面板。`;
+        logDeveloperDiagnostic('chat-run:analysis-artifacts-present', {
+          chatId: params.chat.id,
+          speakerId: params.speaker.id,
+          speakerName: params.speaker.name,
+          kind: 'analysis_artifacts_present',
+          draft: evaluationResponse,
+          reason,
+          moveType: conversationMovePlan.moveType,
+          moveReason: conversationMovePlan.reason,
+          counts,
+        }, 'info', 'chat-run');
+        await params.onLocalInterception?.({
+          kind: 'analysis_artifacts_present',
+          speakerId: params.speaker.id,
+          speakerName: params.speaker.name,
+          draft: evaluationResponse,
+          reason,
         });
       }
       if (contentExplicitlySignalsAway(evaluationResponse) && !generated.parsedEnvelope?.presenceUpdate) {
@@ -2883,7 +2913,6 @@ async function generateNonDuplicateResponse(params: {
           kind: 'presence_metadata_missing',
           draft: evaluationResponse,
           reason,
-          attempt: attempt + 1,
         }, 'warn', 'chat-run');
         await params.onLocalInterception?.({
           kind: 'presence_metadata_missing',
@@ -2891,7 +2920,6 @@ async function generateNonDuplicateResponse(params: {
           speakerName: params.speaker.name,
           draft: evaluationResponse,
           reason,
-          attempt: attempt + 1,
         });
       }
       if (params.guidance || attempt > 0) params.onChunk?.(generated.narrativeText || generated.finalResponse);

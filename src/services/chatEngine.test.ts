@@ -2045,7 +2045,6 @@ describe('chatEngine streaming preview', () => {
     expect(onLocalInterception).toHaveBeenCalledWith(expect.objectContaining({
       kind: 'analysis_artifacts_missing',
       reason: '本轮回复做了审议动作，但模型没有返回结构化审议产物；消息已保留，面板不会新增审议产物。',
-      attempt: 1,
     }));
     expect(message.content).toContain('半公共空间');
     expect(message.metadata?.deliberationArtifacts).toBeFalsy();
@@ -2109,6 +2108,7 @@ describe('chatEngine streaming preview', () => {
     });
     const analyst = buildCharacter('analyst', '资深北漂程序员');
     const designer = buildCharacter('designer', '刚毕业的设计师');
+    const onLocalInterception = vi.fn();
     const deepseekProfiles: AIModelProfile[] = [{
       id: 'deepseek-text',
       name: 'DeepSeek',
@@ -2133,6 +2133,7 @@ describe('chatEngine streaming preview', () => {
       ],
       apiConfig: deepseekProfiles,
       onChunk,
+      onLocalInterception,
     });
 
     expect(generateResponseMock).toHaveBeenCalledTimes(1);
@@ -2144,6 +2145,10 @@ describe('chatEngine streaming preview', () => {
     });
     expect(onChunk).toHaveBeenCalled();
     expect(message.metadata?.deliberationArtifacts?.claims?.[0]?.text).toBe('资源压力会削弱合租中的主动照顾');
+    expect(onLocalInterception).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'analysis_artifacts_present',
+      reason: expect.stringContaining('本轮回复返回了结构化审议产物：主张 1、证据 0、质询 0、裁决 0、总结 0'),
+    }));
   });
 
   it('commits streamed visible draft when final provider response is blank', async () => {
@@ -2229,7 +2234,6 @@ describe('chatEngine streaming preview', () => {
     expect(onLocalInterception).toHaveBeenCalledWith(expect.objectContaining({
       kind: 'presence_metadata_missing',
       reason: '可见回复表示离开、睡觉或忙碌，但模型没有返回下线状态标记；消息已保留，角色在线状态不变。',
-      attempt: 1,
     }));
     expect(message.content).toContain('我真走了');
     expect(message.metadata?.presenceUpdate).toBeFalsy();

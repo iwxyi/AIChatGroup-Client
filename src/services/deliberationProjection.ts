@@ -1,5 +1,6 @@
 import type { AICharacter } from '../types/character';
 import type { GroupChat } from '../types/chat';
+import type { Message } from '../types/message';
 import { sanitizeUserFacingText, type DisplayTextMember } from './displayTextSanitizer';
 import { formatScenarioRoleLabel } from './scenarioPresentation';
 import { resolveSessionFamilyKey } from './sessionEngineKeys';
@@ -51,10 +52,106 @@ function formatReason(reason: string | null | undefined, clean: (text: string) =
   return reason ? `（因：${clean(reason)}）` : '';
 }
 
-export function projectDeliberationSidebarRows(chat: GroupChat, members: AICharacter[]) {
+function normalizeArtifactText(value: string | null | undefined, max: number) {
+  const normalized = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!normalized) return '';
+  return normalized.length > max ? `${normalized.slice(0, max - 1)}…` : normalized;
+}
+
+function mergeByIdOrSignature<T extends { id: string; text: string; sourceMessageId?: string }>(base: T[] = [], additions: T[] = []) {
+  const seen = new Set(base.map((item) => item.id));
+  const signatureSeen = new Set(base.map((item) => `${item.sourceMessageId || ''}:${item.text}`));
+  const merged = [...base];
+  additions.forEach((item) => {
+    const signature = `${item.sourceMessageId || ''}:${item.text}`;
+    if (seen.has(item.id) || signatureSeen.has(signature)) return;
+    seen.add(item.id);
+    signatureSeen.add(signature);
+    merged.push(item);
+  });
+  return merged;
+}
+
+function projectMessageArtifacts(chat: GroupChat, messages: Message[] = []) {
+  const validMemberIds = new Set(chat.memberIds);
+  const visible = messages.filter((message) => !message.isDeleted && message.type !== 'system' && message.type !== 'event');
+  const claims: NonNullable<NonNullable<GroupChat['scenarioState']>['deliberationClaims']> = [];
+  const evidence: NonNullable<NonNullable<GroupChat['scenarioState']>['deliberationEvidence']> = [];
+  const issues: NonNullable<NonNullable<GroupChat['scenarioState']>['deliberationIssues']> = [];
+  const verdicts: NonNullable<NonNullable<GroupChat['scenarioState']>['deliberationVerdicts']> = [];
+  let summaryText = '';
+
+  visible.forEach((message) => {
+    const artifacts = message.metadata?.deliberationArtifacts;
+    if (!artifacts) return;
+    const sourceMessageId = message.id;
+    const createdAt = message.timestamp;
+    artifacts.claims?.forEach((item, index) => {
+      const text = normalizeArtifactText(item.text, 96);
+      if (!text) return;
+      claims.push({
+        id: `claim-${sourceMessageId}-${index}`,
+        actorId: message.senderId,
+        stance: item.stance || 'neutral',
+        text,
+        reason: normalizeArtifactText(item.reason, 100) || undefined,
+        confidence: item.confidence,
+        sourceMessageId,
+        createdAt,
+      });
+    });
+    artifacts.evidence?.forEach((item, index) => {
+      const text = normalizeArtifactText(item.text, 96);
+      if (!text) return;
+      evidence.push({
+        id: `evidence-${sourceMessageId}-${index}`,
+        actorId: message.senderId,
+        text,
+        reason: normalizeArtifactText(item.reason, 100) || undefined,
+        confidence: item.confidence,
+        sourceMessageId,
+        createdAt,
+      });
+    });
+    artifacts.issues?.forEach((item, index) => {
+      const text = normalizeArtifactText(item.text, 96);
+      if (!text) return;
+      issues.push({
+        id: `issue-${sourceMessageId}-${index}`,
+        targetActorId: item.targetActorId && validMemberIds.has(item.targetActorId) ? item.targetActorId : null,
+        text,
+        status: 'open',
+        reason: normalizeArtifactText(item.reason, 100) || undefined,
+        confidence: item.confidence,
+        sourceMessageId,
+        createdAt,
+      });
+    });
+    artifacts.verdicts?.forEach((item, index) => {
+      const text = normalizeArtifactText(item.text, 110);
+      if (!text) return;
+      verdicts.push({
+        id: `verdict-${sourceMessageId}-${index}`,
+        actorId: message.senderId,
+        text,
+        tendency: item.tendency || 'mixed',
+        reason: normalizeArtifactText(item.reason, 100) || undefined,
+        confidence: item.confidence,
+        sourceMessageId,
+        createdAt,
+      });
+    });
+    if (artifacts.summary?.text) summaryText = normalizeArtifactText(artifacts.summary.text, 220);
+  });
+
+  return { claims, evidence, issues, verdicts, summaryText };
+}
+
+export function projectDeliberationSidebarRows(chat: GroupChat, members: AICharacter[], messages: Message[] = []) {
   if (resolveSessionFamilyKey(chat) !== 'analysis') return [];
   const displayMembers: DisplayTextMember[] = [{ id: 'user', name: '我' }, ...members.map((member) => ({ id: member.id, name: member.name }))];
   const clean = (text: string) => sanitizeUserFacingText(text, displayMembers);
+  const messageArtifacts = projectMessageArtifacts(chat, messages);
   const progress = chat.scenarioState?.progress?.find((item) => item.key === 'speeches' || item.key === 'analysis-progress');
   const roleAssignments = chat.scenarioState?.roleAssignments || [];
   const rows = [
@@ -76,19 +173,19 @@ export function projectDeliberationSidebarRows(chat: GroupChat, members: AIChara
   }
   const inquiry = latestInquiryLine(chat, members, clean);
   if (inquiry) rows.push(inquiry);
-  const claims = chat.scenarioState?.deliberationClaims || [];
+  const claims = mergeByIdOrSignature(chat.scenarioState?.deliberationClaims || [], messageArtifacts.claims);
   if (claims.length) {
     rows.push(`论点树 ${claims.slice(-3).map((item) => `${formatClaimStance(item.stance)}·${formatActorPrefix(item.actorId, members)}${clean(item.text)}${formatReason(item.reason, clean)}`).join(' / ')}`);
   }
-  const evidence = chat.scenarioState?.deliberationEvidence || [];
+  const evidence = mergeByIdOrSignature(chat.scenarioState?.deliberationEvidence || [], messageArtifacts.evidence);
   if (evidence.length) {
     rows.push(`证据 ${evidence.slice(-2).map((item) => `${formatActorPrefix(item.actorId, members)}${clean(item.text)}${formatReason(item.reason, clean)}`).join(' / ')}`);
   }
-  const issues = (chat.scenarioState?.deliberationIssues || []).filter((item) => item.status !== 'answered');
+  const issues = mergeByIdOrSignature(chat.scenarioState?.deliberationIssues || [], messageArtifacts.issues).filter((item) => item.status !== 'answered');
   if (issues.length) {
     rows.push(`待回应漏洞 ${issues.slice(-2).map((item) => `${item.targetActorId ? `${memberName(item.targetActorId, members)} · ` : ''}${clean(item.text)}${formatReason(item.reason, clean)}`).join(' / ')}`);
   }
-  const verdicts = chat.scenarioState?.deliberationVerdicts || [];
+  const verdicts = mergeByIdOrSignature(chat.scenarioState?.deliberationVerdicts || [], messageArtifacts.verdicts);
   if (verdicts.length) {
     rows.push(`裁决记录 ${verdicts.slice(-2).map((item) => `${formatActorPrefix(item.actorId, members)}${clean(item.text)}${formatReason(item.reason, clean)}`).join(' / ')}`);
   }
@@ -96,6 +193,7 @@ export function projectDeliberationSidebarRows(chat: GroupChat, members: AIChara
   if (momentum && (momentum.support || momentum.oppose || momentum.inquiry || momentum.review)) {
     rows.push(`审议势头 ${momentum.label || '持续推进'} · 支持${momentum.support} / 反对${momentum.oppose} / 质询${momentum.inquiry} / 评审${momentum.review}`);
   }
-  if (chat.scenarioState?.summaryText) rows.push(`审议总结 ${clean(chat.scenarioState.summaryText)}`);
+  const summaryText = chat.scenarioState?.summaryText || messageArtifacts.summaryText;
+  if (summaryText) rows.push(`审议总结 ${clean(summaryText)}`);
   return rows;
 }

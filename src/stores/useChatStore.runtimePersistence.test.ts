@@ -346,6 +346,55 @@ describe('chat runtime persistence', () => {
     expect(operation?.patch.messageBranchState).toBeTruthy();
   });
 
+  it('queues non-runtime chat patch fields when applying runtime delta', async () => {
+    const { useChatStore } = await import('./useChatStore');
+    const base = chat({ scenarioState: { deliberationClaims: [] } as GroupChat['scenarioState'] });
+    useChatStore.setState({
+      chats: [base],
+      currentChatId: base.id,
+      lastSyncedAt: 0,
+      pendingOperations: [],
+      pendingEditSyncCount: 0,
+      pendingEditSyncError: null,
+      remoteDeletedChatIds: [],
+      remoteDeletedChats: [],
+      fieldConflicts: [],
+      chatSummaryLoadedAt: 0,
+      isLoading: false,
+    });
+
+    await useChatStore.getState().applyChatRuntimeDelta(
+      base.id,
+      {
+        runtimeEventsV2: {
+          upserts: [runtimeEvent(2)],
+          orderedIds: ['event-2'],
+        },
+      },
+      {
+        scenarioState: {
+          deliberationClaims: [{
+            id: 'claim-1',
+            text: '公共区域需要可仲裁规则',
+            actorId: 'analyst',
+            sourceMessageId: 'message-1',
+            createdAt: 2,
+            confidence: 0.8,
+          }],
+        } as GroupChat['scenarioState'],
+      },
+    );
+
+    const state = useChatStore.getState();
+    expect(state.chats[0]?.runtimeEventsV2).toHaveLength(1);
+    expect(state.chats[0]?.scenarioState?.deliberationClaims).toHaveLength(1);
+    expect(state.pendingOperations).toHaveLength(1);
+    expect(state.pendingOperations[0]?.patch.scenarioState).toMatchObject({
+      deliberationClaims: [expect.objectContaining({ id: 'claim-1' })],
+    });
+    expect(state.pendingOperations[0]?.patch.runtimeEventsV2).toBeUndefined();
+  });
+
   it('merges a stale remote chat when only message branch state has a newer field version', async () => {
     const { __chatRuntimePersistenceForTests } = await import('./useChatStore');
     const { mergeChats } = __chatRuntimePersistenceForTests;

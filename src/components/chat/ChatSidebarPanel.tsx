@@ -67,13 +67,13 @@ function memberName(id: string | null | undefined, members: AICharacter[]) {
   return members.find((member) => member.id === id)?.name || '成员';
 }
 
-function ChatScenarioCard({ chat, members }: { chat: GroupChat; members: AICharacter[] }) {
+function ChatScenarioCard({ chat, members, messages = [] }: { chat: GroupChat; members: AICharacter[]; messages?: Message[] }) {
   const rows = [] as string[];
   const topology = projectSessionParticipantTopology(chat, members, true);
   const nonMemberOperators = (chat.operatorIds || []).filter((id) => !chat.memberIds.includes(id));
   const isDiscussionRoom = resolveSessionFamilyKey(chat) === 'analysis';
   if (isDiscussionRoom) {
-    rows.push(...projectDeliberationSidebarRows(chat, members));
+    rows.push(...projectDeliberationSidebarRows(chat, members, messages));
   }
   if (chat.scenarioState?.roleAssignments?.length) {
     if (!isDiscussionRoom) rows.push(`角色位 ${chat.scenarioState.roleAssignments.slice(0, 4).map((item) => `${memberName(item.actorId, members)}${item.roleId ? `：${formatScenarioRoleLabel(item.roleId)}` : ''}`).join(' / ')}`);
@@ -566,7 +566,7 @@ export default function ChatSidebarPanel({
             </Suspense>
           ) : (
             <Stack spacing={2}>
-              {isAnalysisRoom(chat) ? <ChatScenarioCard chat={chat} members={members} /> : null}
+              {isAnalysisRoom(chat) ? <ChatScenarioCard chat={chat} members={members} messages={messages} /> : null}
               {sessionPanel || null}
             </Stack>
           )
@@ -614,7 +614,7 @@ export default function ChatSidebarPanel({
         {(activePanelTab === 'world' || activePanelTab === 'developer') && showRuntimeTab ? (
           <Stack spacing={2}>
             {isStoryRoom && activePanelTab === 'developer' ? <StoryProtocolDiagnosticPanel chat={chat} /> : null}
-            {isAnalysisRoom(chat) ? null : <ChatScenarioCard chat={chat} members={members} />}
+            {isAnalysisRoom(chat) ? null : <ChatScenarioCard chat={chat} members={members} messages={messages} />}
             <ChatPrivateInfoCard chat={chat} members={members} directMemoryContext={directMemoryContext || null} />
             <Suspense fallback={<PanelFallback />}>
               <ChatRuntimePanel chat={chat} members={members} messages={messages} privatePayloads={privatePayloads} privatePayloadTitle={privatePayloadTitle} />

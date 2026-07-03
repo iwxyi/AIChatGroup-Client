@@ -1611,9 +1611,24 @@ export const useChatStore = create<ChatStore>()(
         },
 
         applyChatRuntimeDelta: async (id, delta, patch = {}) => {
-          set((state) => ({
-            chats: state.chats.map((chat) => chat.id === id ? applyLocalChatRuntimeDelta(chat, delta, patch) : chat),
-          }));
+          const cloudPatch = compactChatPatchForCloud(patch as Record<string, unknown>);
+          const operation = !shouldSkipCloudSync() && Object.keys(cloudPatch).length > 0
+            ? createPendingChatOperation({ kind: 'patch', targetIds: id ? [id] : [], patch: cloudPatch })
+            : null;
+          set((state) => {
+            const pendingOperations = operation
+              ? mergeChatPatchOperations([...state.pendingOperations, operation])
+              : state.pendingOperations;
+            return {
+              chats: state.chats.map((chat) => chat.id === id ? applyLocalChatRuntimeDelta(chat, delta, patch) : chat),
+              ...(operation ? {
+                pendingOperations,
+                pendingEditSyncCount: pendingOperations.length,
+                pendingEditSyncError: latestChatError(pendingOperations),
+              } : {}),
+            };
+          });
+          if (operation) scheduleChatFlush(flushPendingOperations, 120);
         },
 
         deleteChat: async (id) => {
