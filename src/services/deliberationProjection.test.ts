@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { normalizeConversation } from '../types/chat';
 import type { AICharacter } from '../types/character';
 import type { Message } from '../types/message';
-import { projectDeliberationSidebarRows } from './deliberationProjection';
+import { projectDeliberationSidebarModel, projectDeliberationSidebarRows } from './deliberationProjection';
 
 function member(id: string, name: string): AICharacter {
   return { id, name } as AICharacter;
@@ -227,6 +227,73 @@ describe('deliberationProjection', () => {
     expect(text).toContain('裁决记录 甲');
     expect(text).toContain('只靠人情维系不稳定');
     expect(text).toContain('审议总结 审议转向公共空间仲裁机制');
+  });
+
+  it('groups deliberation artifacts for the sidebar model', () => {
+    const chat = normalizeConversation({
+      id: 'deliberation-sidebar-model',
+      type: 'group',
+      mode: 'group_discussion',
+      sessionKind: { topology: 'group', family: 'analysis', scenarioId: 'opinion-review', surfaceProfile: 'text' },
+      modeConfig: { freeSpeaking: true, allowInterruptions: true, allowPrivateThreads: false, allowDirectorInterventions: true, showRoleActions: true },
+      modeState: { phase: 'free', currentSpeakerId: null, currentTopicFocus: '', lastRelationshipEventAt: null },
+      name: '观点审议',
+      topic: '合租是否可行',
+      style: 'free',
+      runtimeEvolutionIntensity: 'balanced',
+      memberIds: ['a', 'b'],
+      speed: 1,
+      isActive: true,
+      allowIntervention: true,
+      topicSeed: '',
+      governance: { ownerCharacterId: null, adminCharacterIds: [], autoModeration: false, allowMute: true, allowPrivateThreads: false },
+      dramaRules: { allowCliques: false, allowMockery: false, allowAlliances: false, allowContempt: false },
+      scenarioState: {
+        phase: 'deliberation',
+        discussionMode: 'open',
+        progress: [{ key: 'speeches', label: '审议进展', value: 4, target: 0 }],
+        currentTurnActorId: 'b',
+        deliberationEvidence: [{ id: 'evidence-saved', actorId: 'b', text: '三个合租案例中，公共区域冲突都来自临时占用。' }],
+        deliberationMomentum: { support: 1, oppose: 0, inquiry: 1, review: 1, label: '追问边界' },
+      },
+      worldState: { phase: 'debating', mood: '', focus: '', recentEvent: '', conflictAxes: [] },
+      directorControls: { allowSpeakAs: true, allowDirectorMode: true, allowEventInjection: true, allowForcedReply: true },
+      createdAt: 1,
+      updatedAt: 1,
+      lastMessageAt: 1,
+    });
+    const messages: Message[] = [{
+      id: 'message-1',
+      chatId: chat.id,
+      type: 'ai',
+      senderId: 'a',
+      senderName: '甲',
+      content: '公共区域要预留仲裁路径。',
+      emotion: 0,
+      timestamp: 2,
+      isDeleted: false,
+      metadata: {
+        deliberationArtifacts: {
+          claims: [{ text: '公共区域需要可仲裁规则', stance: 'review', reason: '提出可执行边界', confidence: 0.82 }],
+          issues: [{ text: '临时占用客厅时谁来仲裁？', targetActorId: 'b', reason: '仍缺少裁决路径', confidence: 0.8 }],
+          verdicts: [{ text: '只靠人情维系不稳定', tendency: 'mixed', reason: '规则和善意需要分层', confidence: 0.78 }],
+          summary: { text: '审议转向公共空间仲裁机制。' },
+        },
+      },
+    }];
+
+    const model = projectDeliberationSidebarModel(chat, [member('a', '甲'), member('b', '乙')], messages);
+
+    expect(model?.phaseLabel).toBe('观点审议');
+    expect(model?.currentSpeaker).toBe('乙');
+    expect(model?.counts).toMatchObject({ claims: 1, evidence: 1, issues: 1, verdicts: 1 });
+    expect(model?.sections.map((section) => section.title)).toEqual(['核心论点', '待质询', '证据', '阶段判断']);
+    expect(model?.sections.find((section) => section.key === 'claims')?.items[0]?.text).toContain('公共区域需要可仲裁规则');
+    expect(model?.sections.find((section) => section.key === 'issues')?.items[0]?.label).toContain('乙');
+    expect(model?.sections.find((section) => section.key === 'evidence')?.items[0]?.text).toContain('公共区域冲突');
+    expect(model?.sections.find((section) => section.key === 'verdicts')?.items[0]?.text).toContain('只靠人情维系不稳定');
+    expect(model?.summaryText).toContain('审议转向公共空间仲裁机制');
+    expect(model?.momentum).toContain('追问边界');
   });
 
   it('returns no rows for non-analysis rooms', () => {

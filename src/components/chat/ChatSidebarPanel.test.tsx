@@ -286,9 +286,12 @@ describe('ChatSidebarPanel story room panels', () => {
 
     expect(html.indexOf('审议')).toBeGreaterThanOrEqual(0);
     expect(html.indexOf('审议')).toBeLessThan(html.indexOf('成员 2'));
-    expect(html).toContain('阶段 结论整理');
-    expect(html).toContain('审议总结');
+    expect(html).toContain('审议概览');
+    expect(html).toContain('审议产物');
+    expect(html).toContain('结论整理');
+    expect(html).toContain('总结：林医生 建议先拆召回层，护士 担心排序链路风险。');
     expect(html).toContain('审议动作表单');
+    expect(html).not.toContain('场景规则');
   });
 
   it('uses story-specific tabs instead of ordinary group chat tabs', async () => {

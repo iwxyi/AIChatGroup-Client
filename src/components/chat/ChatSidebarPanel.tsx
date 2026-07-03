@@ -12,7 +12,7 @@ import { formatNarrativeLineText } from '../../services/narrativeLinePresentatio
 import { useSettingsStore } from '../../stores/useSettingsStore';
 import { buildScrollableRegionSx, compactPillChipSx } from '../../styles/interaction';
 import { sanitizeUserFacingText } from '../../services/displayTextSanitizer';
-import { projectDeliberationSidebarRows } from '../../services/deliberationProjection';
+import { projectDeliberationSidebarModel, type DeliberationSidebarSection } from '../../services/deliberationProjection';
 import { resolveSessionFamilyKey } from '../../services/sessionEngineKeys';
 
 const RelationshipPanel = lazy(() => import('../controls/RelationshipPanel'));
@@ -67,20 +67,7 @@ function memberName(id: string | null | undefined, members: AICharacter[]) {
   return members.find((member) => member.id === id)?.name || '成员';
 }
 
-function ChatScenarioCard({ chat, members, messages = [] }: { chat: GroupChat; members: AICharacter[]; messages?: Message[] }) {
-  const rows = [] as string[];
-  const topology = projectSessionParticipantTopology(chat, members, true);
-  const nonMemberOperators = (chat.operatorIds || []).filter((id) => !chat.memberIds.includes(id));
-  const isDiscussionRoom = resolveSessionFamilyKey(chat) === 'analysis';
-  if (isDiscussionRoom) {
-    rows.push(...projectDeliberationSidebarRows(chat, members, messages));
-  }
-  if (chat.scenarioState?.roleAssignments?.length) {
-    if (!isDiscussionRoom) rows.push(`角色位 ${chat.scenarioState.roleAssignments.slice(0, 4).map((item) => `${memberName(item.actorId, members)}${item.roleId ? `：${formatScenarioRoleLabel(item.roleId)}` : ''}`).join(' / ')}`);
-  }
-  if (chat.scenarioState?.factions?.length) rows.push(`阵营 ${chat.scenarioState.factions.slice(0, 4).map((item) => item.label).join(' / ')}`);
-  if (chat.scenarioState?.currentTurnActorId && !isDiscussionRoom) rows.push(`当前轮次 ${memberName(chat.scenarioState.currentTurnActorId, members)}`);
-  if (!rows.length) return null;
+function SidebarSurface({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <Box sx={{
       p: 1.25,
@@ -94,7 +81,83 @@ function ChatScenarioCard({ chat, members, messages = [] }: { chat: GroupChat; m
       backdropFilter: 'blur(18px) saturate(1.18)',
       WebkitBackdropFilter: 'blur(18px) saturate(1.18)',
     }}>
-      <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 0.75 }}>场景规则</Typography>
+      <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.75 }}>{title}</Typography>
+      {children}
+    </Box>
+  );
+}
+
+function DeliberationSectionCard({ section }: { section: DeliberationSidebarSection }) {
+  return (
+    <Box sx={{ p: 1, borderRadius: 1, bgcolor: 'action.hover' }}>
+      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 700, mb: 0.5 }}>{section.title}</Typography>
+      {section.items.length ? (
+        <Stack spacing={0.7}>
+          {section.items.map((item) => (
+            <Box key={item.key}>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>{item.label}</Typography>
+              <Typography variant="body2" sx={{ lineHeight: 1.55 }}>{item.text}</Typography>
+              {item.reason ? <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.45 }}>因：{item.reason}</Typography> : null}
+            </Box>
+          ))}
+        </Stack>
+      ) : (
+        <Typography variant="caption" color="text.secondary">{section.emptyText}</Typography>
+      )}
+    </Box>
+  );
+}
+
+function ChatDeliberationCard({ chat, members, messages = [] }: { chat: GroupChat; members: AICharacter[]; messages?: Message[] }) {
+  const model = projectDeliberationSidebarModel(chat, members, messages);
+  if (!model) return null;
+  const overviewRows = [
+    model.topic ? `议题：${model.topic}` : '',
+    model.seats.length ? `席位：${model.seats.join(' / ')}` : '',
+    model.currentSpeaker ? `当前发言：${model.currentSpeaker}` : '',
+    model.progress,
+    model.latestInquiry,
+  ].filter(Boolean);
+  return (
+    <Stack spacing={1.1}>
+      <SidebarSurface title="审议概览">
+        <Stack spacing={0.7}>
+          <Box sx={{ display: 'flex', gap: 0.6, flexWrap: 'wrap' }}>
+            <Chip size="small" label={model.phaseLabel} variant="outlined" sx={compactPillChipSx} />
+            <Chip size="small" label={`论点 ${model.counts.claims}`} variant="outlined" sx={compactPillChipSx} />
+            <Chip size="small" label={`质询 ${model.counts.issues}`} variant="outlined" sx={compactPillChipSx} />
+            <Chip size="small" label={`证据 ${model.counts.evidence}`} variant="outlined" sx={compactPillChipSx} />
+            <Chip size="small" label={`裁决 ${model.counts.verdicts}`} variant="outlined" sx={compactPillChipSx} />
+          </Box>
+          {overviewRows.map((row) => <Typography key={row} variant="body2" color="text.secondary" sx={{ lineHeight: 1.55 }}>{row}</Typography>)}
+          {model.momentum ? <Typography variant="body2" color="text.secondary">{`势头：${model.momentum}`}</Typography> : null}
+          {model.summaryText ? <Typography variant="body2">{`总结：${model.summaryText}`}</Typography> : null}
+        </Stack>
+      </SidebarSurface>
+
+      <SidebarSurface title="审议产物">
+        <Stack spacing={0.8}>
+          {model.sections.map((section) => <DeliberationSectionCard key={section.key} section={section} />)}
+        </Stack>
+      </SidebarSurface>
+    </Stack>
+  );
+}
+
+function ChatScenarioCard({ chat, members, messages = [] }: { chat: GroupChat; members: AICharacter[]; messages?: Message[] }) {
+  const rows = [] as string[];
+  const topology = projectSessionParticipantTopology(chat, members, true);
+  const nonMemberOperators = (chat.operatorIds || []).filter((id) => !chat.memberIds.includes(id));
+  const isDiscussionRoom = resolveSessionFamilyKey(chat) === 'analysis';
+  if (isDiscussionRoom) return <ChatDeliberationCard chat={chat} members={members} messages={messages} />;
+  if (chat.scenarioState?.roleAssignments?.length) {
+    if (!isDiscussionRoom) rows.push(`角色位 ${chat.scenarioState.roleAssignments.slice(0, 4).map((item) => `${memberName(item.actorId, members)}${item.roleId ? `：${formatScenarioRoleLabel(item.roleId)}` : ''}`).join(' / ')}`);
+  }
+  if (chat.scenarioState?.factions?.length) rows.push(`阵营 ${chat.scenarioState.factions.slice(0, 4).map((item) => item.label).join(' / ')}`);
+  if (chat.scenarioState?.currentTurnActorId && !isDiscussionRoom) rows.push(`当前轮次 ${memberName(chat.scenarioState.currentTurnActorId, members)}`);
+  if (!rows.length) return null;
+  return (
+    <SidebarSurface title="场景规则">
       <Stack spacing={0.5}>
         {rows.map((row) => <Typography key={row} variant="body2">{row}</Typography>)}
         {topology.memberBadges.length ? (
@@ -113,7 +176,7 @@ function ChatScenarioCard({ chat, members, messages = [] }: { chat: GroupChat; m
           </Typography>
         ) : null}
       </Stack>
-    </Box>
+    </SidebarSurface>
   );
 }
 

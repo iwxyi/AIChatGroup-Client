@@ -60,6 +60,7 @@ import { prefersReducedMotion } from '../styles/motion';
 import type { StoryReaderRole } from '../types/chat';
 import { attachMessageToActiveBranch, buildMessageBranchVersionInfoByMessageId, createMessageRevisionDraft, getBranchRevisionGroup, getMessageBranchVersionInfo, isMessageBranchingEnabled, projectActiveBranchMessages, resolveMessageBranchNodes } from '../services/messageBranching';
 import { projectMergedChatMessages } from '../services/currentChatMessages';
+import { resolveSessionFamilyKey } from '../services/sessionEngineKeys';
 
 const ChatSidebarPanel = lazy(() => import('../components/chat/ChatSidebarPanel'));
 const SessionActionPanel = lazy(() => import('../components/session/SessionActionPanel'));
@@ -1760,6 +1761,9 @@ export default function ChatDetailPage() {
     () => sessionActions.filter((action) => action.type !== 'choose_story_branch'),
     [sessionActions],
   );
+  const sessionActionPanelTitle = chat && resolveSessionFamilyKey(chat) === 'analysis'
+    ? '审议操作'
+    : (projectedDetailState?.actionPanel.title || actionPanelTitle || `${sessionTabTitle}操作`);
   const visibleActivityPanelActions = useMemo(
     () => projectedActionPanelActions.filter((action) => action.type !== 'choose_story_branch'),
     [projectedActionPanelActions],
@@ -2636,9 +2640,9 @@ export default function ChatDetailPage() {
                 memberPanelTitle={memberTabTitle}
                 runtimePanelTitle={runtimeTabTitle}
                 showSessionTab={showSessionTab}
-                sessionPanel={showSessionTab ? (
+                sessionPanel={showSessionTab && visibleSessionPanelActions.length ? (
                   <LazyPanel>
-                    <SessionActionPanel title={projectedDetailState?.actionPanel.title || actionPanelTitle || sessionTabTitle} actions={visibleSessionPanelActions} onRunAction={runSessionAction} hideHeader frameless />
+                    <SessionActionPanel title={sessionActionPanelTitle} actions={visibleSessionPanelActions} onRunAction={runSessionAction} frameless />
                   </LazyPanel>
                 ) : null}
                 sessionPanelTitle={sessionTabTitle}

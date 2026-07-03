@@ -52,6 +52,12 @@ function formatReason(reason: string | null | undefined, clean: (text: string) =
   return reason ? `（因：${clean(reason)}）` : '';
 }
 
+function compactDisplayText(value: string, clean: (text: string) => string, max = 92) {
+  const normalized = clean(value).replace(/\s+/g, ' ').trim();
+  if (!normalized) return '';
+  return normalized.length > max ? `${normalized.slice(0, max - 1)}…` : normalized;
+}
+
 function normalizeArtifactText(value: string | null | undefined, max: number) {
   const normalized = String(value || '').replace(/\s+/g, ' ').trim();
   if (!normalized) return '';
@@ -145,6 +151,123 @@ function projectMessageArtifacts(chat: GroupChat, messages: Message[] = []) {
   });
 
   return { claims, evidence, issues, verdicts, summaryText };
+}
+
+export interface DeliberationSidebarArtifactItem {
+  key: string;
+  label: string;
+  text: string;
+  reason?: string;
+}
+
+export interface DeliberationSidebarSection {
+  key: 'claims' | 'evidence' | 'issues' | 'verdicts';
+  title: string;
+  emptyText: string;
+  items: DeliberationSidebarArtifactItem[];
+}
+
+export interface DeliberationSidebarModel {
+  phaseLabel: string;
+  topic: string;
+  seats: string[];
+  currentSpeaker: string;
+  progress: string;
+  latestInquiry: string;
+  counts: {
+    claims: number;
+    evidence: number;
+    issues: number;
+    verdicts: number;
+  };
+  sections: DeliberationSidebarSection[];
+  momentum: string;
+  summaryText: string;
+}
+
+export function projectDeliberationSidebarModel(chat: GroupChat, members: AICharacter[], messages: Message[] = []): DeliberationSidebarModel | null {
+  if (resolveSessionFamilyKey(chat) !== 'analysis') return null;
+  const displayMembers: DisplayTextMember[] = [{ id: 'user', name: '我' }, ...members.map((member) => ({ id: member.id, name: member.name }))];
+  const clean = (text: string) => sanitizeUserFacingText(text, displayMembers);
+  const messageArtifacts = projectMessageArtifacts(chat, messages);
+  const progress = chat.scenarioState?.progress?.find((item) => item.key === 'speeches' || item.key === 'analysis-progress');
+  const roleAssignments = chat.scenarioState?.roleAssignments || [];
+  const claims = mergeByIdOrSignature(chat.scenarioState?.deliberationClaims || [], messageArtifacts.claims);
+  const evidence = mergeByIdOrSignature(chat.scenarioState?.deliberationEvidence || [], messageArtifacts.evidence);
+  const issues = mergeByIdOrSignature(chat.scenarioState?.deliberationIssues || [], messageArtifacts.issues).filter((item) => item.status !== 'answered');
+  const verdicts = mergeByIdOrSignature(chat.scenarioState?.deliberationVerdicts || [], messageArtifacts.verdicts);
+  const momentum = chat.scenarioState?.deliberationMomentum;
+  const progressLabel = progress
+    ? (typeof progress.target === 'number' && progress.target > 0
+      ? `${progress.label || '审议进展'} ${progress.value || 0}/${progress.target}`
+      : `${progress.label || '审议进展'} ${progress.value || 0}`)
+    : '';
+
+  const mapReason = (reason: string | null | undefined) => reason ? compactDisplayText(reason, clean, 82) : undefined;
+  return {
+    phaseLabel: formatDeliberationPhaseLabel(chat.scenarioState?.phase, chat.scenarioState?.discussionMode || chat.mode),
+    topic: compactDisplayText(String(chat.scenarioState?.goals?.[0]?.label || chat.topic || ''), clean, 120),
+    seats: roleAssignments.slice(0, 4).map((item) => `${memberName(item.actorId, members)}${item.roleId ? `：${formatDeliberationRoleLabel(chat, item.roleId)}` : ''}`),
+    currentSpeaker: chat.scenarioState?.currentTurnActorId ? memberName(chat.scenarioState.currentTurnActorId, members) : '',
+    progress: progressLabel,
+    latestInquiry: latestInquiryLine(chat, members, clean),
+    counts: {
+      claims: claims.length,
+      evidence: evidence.length,
+      issues: issues.length,
+      verdicts: verdicts.length,
+    },
+    sections: [
+      {
+        key: 'claims',
+        title: '核心论点',
+        emptyText: '暂无结构化论点',
+        items: claims.slice(-3).reverse().map((item) => ({
+          key: item.id,
+          label: `${formatClaimStance(item.stance)}${item.actorId ? ` · ${memberName(item.actorId, members)}` : ''}`,
+          text: compactDisplayText(item.text, clean),
+          reason: mapReason(item.reason),
+        })),
+      },
+      {
+        key: 'issues',
+        title: '待质询',
+        emptyText: '暂无待回应漏洞',
+        items: issues.slice(-2).reverse().map((item) => ({
+          key: item.id,
+          label: item.targetActorId ? `对象 · ${memberName(item.targetActorId, members)}` : '未指定对象',
+          text: compactDisplayText(item.text, clean),
+          reason: mapReason(item.reason),
+        })),
+      },
+      {
+        key: 'evidence',
+        title: '证据',
+        emptyText: '暂无证据',
+        items: evidence.slice(-2).reverse().map((item) => ({
+          key: item.id,
+          label: item.actorId ? memberName(item.actorId, members) : '来源未指定',
+          text: compactDisplayText(item.text, clean),
+          reason: mapReason(item.reason),
+        })),
+      },
+      {
+        key: 'verdicts',
+        title: '阶段判断',
+        emptyText: '暂无裁决记录',
+        items: verdicts.slice(-2).reverse().map((item) => ({
+          key: item.id,
+          label: item.actorId ? memberName(item.actorId, members) : '裁决',
+          text: compactDisplayText(item.text, clean),
+          reason: mapReason(item.reason),
+        })),
+      },
+    ],
+    momentum: momentum && (momentum.support || momentum.oppose || momentum.inquiry || momentum.review)
+      ? `${momentum.label || '持续推进'} · 支持${momentum.support} / 反对${momentum.oppose} / 质询${momentum.inquiry} / 评审${momentum.review}`
+      : '',
+    summaryText: compactDisplayText(chat.scenarioState?.summaryText || messageArtifacts.summaryText || '', clean, 120),
+  };
 }
 
 export function projectDeliberationSidebarRows(chat: GroupChat, members: AICharacter[], messages: Message[] = []) {
