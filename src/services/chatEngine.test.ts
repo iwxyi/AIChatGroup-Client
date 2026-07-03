@@ -383,19 +383,18 @@ describe('chatEngine streaming preview', () => {
         buildAiMessage('char-1', '美羊羊', '来啦，我先构思一下。', 2),
       ],
       mediaCapabilities: { image: true, audio: false },
+      mediaRequested: true,
     });
 
-    expect(contract).toContain('mediaDecision is required when a media capability is available');
-    expect(contract).toContain('Do not pretend the user can see a picture');
-    expect(contract).toContain('image.prompt must be a complete image-generation prompt');
-    expect(contract).toContain('Treat the requested image type as the center of the prompt');
-    expect(contract).toContain('milk tea or food image should detail');
-    expect(contract).toContain('while keeping them temporary and context-dependent');
-    expect(contract).toContain('natural phone camera perspective');
-    expect(contract).toContain('keep stable identity anchors across images');
-    expect(contract).toContain('按当前请求自然作答；可短可长');
+    expect(contract).toContain('"mediaDecision"');
+    expect(contract).toContain('this turn has an explicit media request');
+    expect(contract).toContain('image.shouldGenerate=true only when the visible reply is sending/showing/generating an image');
+    expect(contract).toContain('Write a concrete prompt centered on the requested subject');
+    expect(contract).toContain('Do not pretend an image exists unless image.shouldGenerate=true');
+    expect(contract).toContain('visible first bubble');
     expect(contract).toContain('deliberate repeated tone, keyword, rhythm, format');
     expect(contract).toContain('accidental template drift');
+    expect(contract).toContain('socialEventHints: this is the only per-turn semantic source');
     expect(contract).toContain('Recent transcript scope');
     expect(contract).toContain('does not repeat raw dialogue');
     expect(contract).not.toContain('美羊羊发个灰太狼证件照的图片');
@@ -423,6 +422,8 @@ describe('chatEngine streaming preview', () => {
     expect(contract).toContain('Story-reader turns must use storyEvents as the authoritative visible story body');
     expect(contract).toContain('"type":"choice_point"');
     expect(contract).toContain('Speech text must be chat-like');
+    expect(contract).toContain('A common speech event is 1-3 sentences');
+    expect(contract).toContain('suggested event counts are guidance, not enforcement');
     expect(contract).toContain("Do not let one character inherit another character's private object");
     expect(contract).toContain('Do not output alternate rewrites of the same moment');
     expect(contract).toContain('keep only the final version; do not include both drafts in storyEvents');
@@ -550,6 +551,9 @@ describe('chatEngine streaming preview', () => {
 
     const prompt = String(generateResponseMock.mock.calls[0]?.[1] || '');
     expect(prompt).toContain('You are the story-reader narrative engine');
+    expect(prompt).toContain('## Prompt Play Mode');
+    expect(prompt).toContain('Mode: story_reader');
+    expect(prompt).toContain('Story reader prioritizes committed scene continuation');
     expect(prompt).toContain('Return exactly one valid JSON object');
     expect(prompt).toContain('"storyEvents": [');
     expect(prompt).not.toContain('Reply as a chat message');
@@ -669,8 +673,11 @@ describe('chatEngine streaming preview', () => {
 
     expect(generateResponseMock).toHaveBeenCalledTimes(2);
     const firstPrompt = String(generateResponseMock.mock.calls[0]?.[1] || '');
+    expect(firstPrompt).toContain('Scene needs override these ranges');
+    expect(firstPrompt).toContain('Use as many narration and speech events as the current story beat needs');
     expect(firstPrompt).toContain('900-1600 Chinese characters');
     expect(firstPrompt).toContain('1200-2200 Chinese characters');
+    expect(firstPrompt).toContain('Suggested ranges are guidance, not enforcement');
     const retryPrompt = String(generateResponseMock.mock.calls[1]?.[1] || '');
     expect(retryPrompt).toContain('故事房下一节没有按小说连续阅读接续');
     expect(retryPrompt).toContain('Story continuity retry');
@@ -730,7 +737,7 @@ describe('chatEngine streaming preview', () => {
     expect(prompt).toContain('Keep this turn compact');
   });
 
-  it('treats collective essay requests as deliverable tasks instead of ordinary banter', async () => {
+  it('preserves deliverable-like generated text without requiring local surface classification', async () => {
     generateResponseMock.mockReset();
     generateResponseMock.mockResolvedValue(JSON.stringify({
       content: '如果让我认真写，我会先说：AI不会简单地替代人类。\n\n它更像一面放大镜，把人的能力差异、制度漏洞和创造力一起放大。\n\n所以我不想只问它会不会抢走工作，而要问人类准备怎样重新安排自己的价值。',
@@ -762,15 +769,15 @@ describe('chatEngine streaming preview', () => {
     expect(prompt).toContain('produce that deliverable');
     expect(prompt).toContain('escaped newline sequences');
     expect(prompt).toContain('Do not put a heading marker, separator, and the whole article on one line');
-    expect(prompt).toContain('Longform');
+    expect(prompt).toContain('Do not put a heading marker, separator, and the whole article on one line');
     expect(message.content).toContain('\n\n它更像一面放大镜');
     expect(message.metadata?.runtimeDecision?.directorIntent?.targetActorIds).toEqual(['susu', 'luxun']);
     expect(message.metadata?.runtimeDecision?.speakerSelection).toMatchObject({
       speakerId: 'susu',
       policy: { source: 'user_guidance_lock', lockedActorIds: ['susu', 'luxun'] },
     });
-    expect(message.metadata?.runtimeDecision?.responseSurface?.kind).toBe('longform');
-    expect(message.metadata?.runtimeDecision?.responseSurface?.basis || []).toContain('topic:longform-writing-task');
+    expect(message.metadata?.runtimeDecision?.responseSurface?.kind).toBe('chat');
+    expect(message.metadata?.runtimeDecision?.responseSurface?.basis || []).not.toContain('topic:longform-writing-task');
   });
 
   it('honors disabled role actions from mode config and strips visible action asides', async () => {
@@ -802,9 +809,80 @@ describe('chatEngine streaming preview', () => {
     });
     const prompt = String(generateResponseMock.mock.calls[0]?.[1] || '');
 
-    expect(prompt).toContain('Visible role action policy');
-    expect(prompt).toContain('Do not include standalone action narration');
+    expect(prompt).toContain('Role actions:');
+    expect(prompt).toContain('No standalone stage directions, gesture beats, or parenthesized action asides');
     expect(message.content).toBe('这个我先记下来，等会儿接着说。');
+  });
+
+  it('retries long stage-direction narration in analysis rooms instead of committing it as chat', async () => {
+    generateResponseMock.mockReset();
+    generateResponseMock
+      .mockResolvedValueOnce(JSON.stringify({
+        content: '（听完房东大姐那句“门不锁”，我把手边那张画到一半的草稿翻过来，沉默了几秒才抬头。）我觉得今晚这里像一盏灯。',
+        interactionHints: null,
+        socialEventHints: null,
+        conflictFocus: null,
+      }));
+    const illustrator = buildCharacter('illustrator', '自由职业插画师');
+    const landlord = buildCharacter('landlord', '房东大姐');
+    const onLocalInterception = vi.fn();
+
+    const message = await generateSpeakerMessage({
+      chat: buildChat({
+        mode: 'group_discussion',
+        sessionKind: { topology: 'group', family: 'analysis', scenarioId: 'opinion-review', surfaceProfile: 'text' },
+        memberIds: ['illustrator', 'landlord'],
+      }),
+      speaker: illustrator,
+      characters: [illustrator, landlord],
+      messages: [
+        buildAiMessage('landlord', '房东大姐', '我这儿门不锁，最后走的那个帮我带一下。', 1),
+      ],
+      apiConfig: buildProfiles(),
+      onLocalInterception,
+    });
+
+    expect(generateResponseMock).toHaveBeenCalledTimes(1);
+    expect(onLocalInterception).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'surface_contract_warning',
+      reason: expect.stringContaining('stage directions'),
+      attempt: 1,
+    }));
+    expect(message.content).toContain('（听完房东大姐');
+    expect(message.metadata?.deliberationArtifacts).toBeFalsy();
+  });
+
+  it('keeps and reports non-story drafts that include another character speaking inside one content field', async () => {
+    generateResponseMock.mockReset();
+    generateResponseMock.mockResolvedValueOnce(JSON.stringify({
+      content: '这个结论我先放这儿：弱连接比合租更可行。资深北漂程序员: 我补一句，这个版本能跑就行。',
+      interactionHints: null,
+      socialEventHints: null,
+      conflictFocus: null,
+    }));
+    const illustrator = buildCharacter('illustrator', '自由职业插画师');
+    const programmer = buildCharacter('programmer', '资深北漂程序员');
+    const onLocalInterception = vi.fn();
+
+    const message = await generateSpeakerMessage({
+      chat: buildChat({
+        mode: 'group_discussion',
+        sessionKind: { topology: 'group', family: 'analysis', scenarioId: 'opinion-review', surfaceProfile: 'text' },
+        memberIds: ['illustrator', 'programmer'],
+      }),
+      speaker: illustrator,
+      characters: [illustrator, programmer],
+      messages: [buildAiMessage('programmer', '资深北漂程序员', '这一版能跑通就行。', 1)],
+      apiConfig: buildProfiles(),
+      onLocalInterception,
+    });
+
+    expect(onLocalInterception).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'surface_contract_warning',
+      reason: expect.stringContaining('资深北漂程序员'),
+      attempt: 1,
+    }));
+    expect(message.content).toContain('资深北漂程序员:');
   });
 
   it('preserves parsed image decisions and converts them into queued attachments', () => {
@@ -1735,21 +1813,14 @@ describe('chatEngine streaming preview', () => {
     expect(message.extraMessages).toEqual(['二', '三']);
   });
 
-  it('retries when a draft exactly repeats a recent room line', async () => {
+  it('keeps and reports a draft that exactly repeats a recent room line', async () => {
     generateResponseMock.mockReset();
-    generateResponseMock
-      .mockResolvedValueOnce(JSON.stringify({
-        content: '行行行，你俩一唱一和的，我投降。那件夹克改好了记得喊我去捡漏，二手还能省一笔呢～',
-        interactionHints: null,
-        socialEventHints: null,
-        conflictFocus: null,
-      }))
-      .mockResolvedValueOnce(JSON.stringify({
-        content: '捡漏这事你们先别抢，我得先看那件夹克还能不能救。',
-        interactionHints: null,
-        socialEventHints: null,
-        conflictFocus: null,
-      }));
+    generateResponseMock.mockResolvedValueOnce(JSON.stringify({
+      content: '行行行，你俩一唱一和的，我投降。那件夹克改好了记得喊我去捡漏，二手还能省一笔呢～',
+      interactionHints: null,
+      socialEventHints: null,
+      conflictFocus: null,
+    }));
     const mei = buildCharacter('mei', '美羊羊');
     const hui = buildCharacter('hui', '灰太狼');
     const onLocalInterception = vi.fn();
@@ -1765,33 +1836,26 @@ describe('chatEngine streaming preview', () => {
       onLocalInterception,
     });
 
-    expect(generateResponseMock).toHaveBeenCalledTimes(2);
+    expect(generateResponseMock).toHaveBeenCalledTimes(1);
     expect(onLocalInterception).toHaveBeenCalledWith(expect.objectContaining({
-      kind: 'surface_echo_retry',
+      kind: 'surface_echo_warning',
       speakerId: 'mei',
       speakerName: '美羊羊',
       draft: expect.stringContaining('捡漏'),
       reason: expect.stringContaining('exactly repeats'),
       attempt: 1,
     }));
-    expect(message.content).toBe('捡漏这事你们先别抢，我得先看那件夹克还能不能救。');
+    expect(message.content).toContain('夹克改好了');
   });
 
-  it('retries exact room-line repeats on professional discussion surfaces too', async () => {
+  it('keeps and reports exact room-line repeats on professional discussion surfaces too', async () => {
     generateResponseMock.mockReset();
-    generateResponseMock
-      .mockResolvedValueOnce(JSON.stringify({
-        content: '财富伦理师，你这句话其实比我之前那个功能模块的拆解更狠。',
-        interactionHints: null,
-        socialEventHints: null,
-        conflictFocus: null,
-      }))
-      .mockResolvedValueOnce(JSON.stringify({
-        content: '我换个角度说：这里真正危险的是把人的处境误读成可交易指标。',
-        interactionHints: null,
-        socialEventHints: null,
-        conflictFocus: null,
-      }));
+    generateResponseMock.mockResolvedValueOnce(JSON.stringify({
+      content: '财富伦理师，你这句话其实比我之前那个功能模块的拆解更狠。',
+      interactionHints: null,
+      socialEventHints: null,
+      conflictFocus: null,
+    }));
     const analyst = buildCharacter('analyst', '心理学家', { expertise: ['心理学'] });
     const ethicist = buildCharacter('ethicist', '财富伦理师', { expertise: ['伦理'] });
     const onLocalInterception = vi.fn();
@@ -1807,13 +1871,567 @@ describe('chatEngine streaming preview', () => {
       onLocalInterception,
     });
 
-    expect(generateResponseMock).toHaveBeenCalledTimes(2);
+    expect(generateResponseMock).toHaveBeenCalledTimes(1);
     expect(onLocalInterception).toHaveBeenCalledWith(expect.objectContaining({
-      kind: 'surface_echo_retry',
+      kind: 'surface_echo_warning',
       reason: expect.stringContaining('exactly repeats'),
       attempt: 1,
     }));
-    expect(message.content).toBe('我换个角度说：这里真正危险的是把人的处境误读成可交易指标。');
+    expect(message.content).toBe('财富伦理师，你这句话其实比我之前那个功能模块的拆解更狠。');
+  });
+
+  it('requests strict JSON for analysis rooms so deliberation artifacts are stable', async () => {
+    generateResponseMock.mockReset();
+    generateResponseMock.mockResolvedValue(JSON.stringify({
+      content: '我先把边界说清楚：低成本合租只在公共资源冲突可预期时成立，反例是作息完全相反的人共用厨房。',
+      deliberationArtifacts: {
+        claims: [{ text: '低成本合租需要公共资源冲突可预期', stance: 'review', reason: '直接提出成立条件', confidence: 0.86 }],
+        issues: [{ text: '作息相反且共用厨房会破坏低成本边界', targetActorId: null, reason: '给出需要回应的边界反例', confidence: 0.8 }],
+      },
+      interactionHints: null,
+      socialEventHints: null,
+      conflictFocus: null,
+    }));
+    const analyst = buildCharacter('analyst', '心理学家', { expertise: ['心理学'] });
+    const ethicist = buildCharacter('ethicist', '财富伦理师', { expertise: ['伦理'] });
+
+    const message = await generateSpeakerMessage({
+      chat: buildChat({
+        mode: 'group_discussion',
+        sessionKind: { topology: 'group', family: 'analysis', scenarioId: 'opinion-review', surfaceProfile: 'text' },
+        memberIds: ['analyst', 'ethicist'],
+      }),
+      speaker: analyst,
+      characters: [analyst, ethicist],
+      messages: [
+        buildAiMessage('ethicist', '财富伦理师', '按需热闹听起来不错，但边界怎么保证？', 1),
+      ],
+      apiConfig: buildProfiles(),
+    });
+
+    const prompt = String(generateResponseMock.mock.calls[0]?.[1] || '');
+    expect(generateResponseMock.mock.calls[0]?.[4]).toEqual(expect.objectContaining({ responseFormat: 'json' }));
+    expect(prompt).toContain('## Prompt Play Mode');
+    expect(prompt).toContain('Mode: analysis_room');
+    expect(prompt).toContain('Analysis rooms are not ordinary group chat');
+    expect(prompt).toContain('## Analysis Room Contract');
+    expect(prompt).toContain('Visible content must do exactly one deliberative job');
+    expect(message.metadata?.deliberationArtifacts?.claims?.[0]?.text).toContain('低成本合租');
+    expect(message.metadata?.deliberationArtifacts?.issues?.[0]?.text).toContain('作息');
+  });
+
+  it('uses compact analysis prompt instead of companionship-heavy group chat prompt', async () => {
+    generateResponseMock.mockReset();
+    generateResponseMock.mockResolvedValue(JSON.stringify({
+      content: '我先拆一个前提：愿意费心不是常量，工作负荷会直接改变它能不能被执行。',
+      deliberationArtifacts: {
+        claims: [{ text: '工作负荷会改变愿意费心能否执行', stance: 'review', reason: '可见回复提出变量关系', confidence: 0.84 }],
+      },
+      interactionHints: null,
+      socialEventHints: null,
+      conflictFocus: null,
+    }));
+    const analyst = buildCharacter('analyst', '宠物猫舍主理人', {
+      background: '在家养了五只猫的猫舍老板，擅长处理宠物与合租的矛盾。',
+      speakingStyle: '温柔又带点行业老手的爽利。',
+      expertise: ['猫行为学'],
+      coreProfile: {
+        coreDesire: '希望自己的身份和经历能在互动中被理解和承认。',
+        socialMask: '习惯用玩笑和轻松语气遮住真实在意。',
+      },
+      memory: {
+        shortTermSummary: '用户最近在调试审议房间。',
+        longTerm: ['曾经和用户讨论过陪伴感。'],
+        secrets: [],
+        obsessions: [],
+        tabooTopics: [],
+        userMemories: ['用户希望被持续关心。'],
+      },
+      layeredMemories: [{
+        id: 'm1',
+        scope: 'character_self',
+        kind: 'bias',
+        layer: 'long_term',
+        ownerId: 'analyst',
+        text: '倾向用轻松感维持关系张力',
+        salience: 0.7,
+        confidence: 0.8,
+        recency: 0.5,
+        reinforcementCount: 1,
+        sourceEventIds: [],
+        createdAt: 1,
+        updatedAt: 1,
+      }],
+    });
+    const designer = buildCharacter('designer', '刚毕业的设计师');
+
+    await generateSpeakerMessage({
+      chat: buildChat({
+        mode: 'group_discussion',
+        sessionKind: { topology: 'group', family: 'analysis', scenarioId: 'opinion-review', surfaceProfile: 'text' },
+        memberIds: ['analyst', 'designer'],
+        runtimeEventsV2: [{
+          id: 'event-1',
+          conversationId: 'chat-1',
+          kind: 'decision_trace',
+          summary: 'companionship trace should not enter analysis prompt',
+          actorIds: ['analyst'],
+          payload: { eventType: 'companionship_check_in', characterId: 'analyst' },
+          createdAt: 1,
+        }],
+      }),
+      speaker: analyst,
+      characters: [analyst, designer],
+      messages: [
+        buildAiMessage('designer', '刚毕业的设计师', '社会还生产多少愿意费心的人？', 1),
+      ],
+      apiConfig: buildProfiles(),
+    });
+
+    const prompt = String(generateResponseMock.mock.calls[0]?.[1] || '');
+    expect(prompt).toContain('This is a structured analysis room');
+    expect(prompt).toContain('## Analysis Speaker Rules');
+    expect(prompt).toContain('Use the character only as an angle');
+    expect(prompt).toContain('Room topic:');
+    expect(prompt).toContain('宠物与合租');
+    expect(prompt).toContain('Character memory: 倾向用轻松感维持关系张力');
+    expect(prompt).not.toContain('This is a public multi-party room');
+    expect(prompt).not.toContain('## Deeper Motivation');
+    expect(prompt).not.toContain('## Channel Bias');
+    expect(prompt).not.toContain('## Reasoning Bias');
+    expect(prompt).not.toContain('## Companionship Context');
+    expect(prompt).not.toContain('## Inner Life');
+  });
+
+  it('keeps deliberative analysis replies that omit deliberation artifacts and reports the missing panel data once', async () => {
+    generateResponseMock.mockReset();
+    generateResponseMock
+      .mockResolvedValueOnce(JSON.stringify({
+        content: '我先给一个阶段判断：半公共空间比传统合租更现实，但它成立的关键不是装修，而是谁持续承担运营成本。',
+        interactionHints: null,
+        socialEventHints: null,
+        conflictFocus: null,
+      }))
+      .mockResolvedValueOnce(JSON.stringify({
+        content: '我先给一个阶段判断：半公共空间比传统合租更现实，但它成立的关键不是装修，而是谁持续承担运营成本。',
+        deliberationArtifacts: {
+          verdicts: [{ text: '半公共空间比传统合租更现实', tendency: 'mixed', reason: '可见回复给出阶段判断', confidence: 0.82 }],
+          issues: [{ text: '谁持续承担运营成本', targetActorId: null, reason: '可见回复指出成立条件仍待回答', confidence: 0.8 }],
+        },
+        interactionHints: null,
+        socialEventHints: null,
+        conflictFocus: null,
+      }));
+    const analyst = buildCharacter('analyst', '资深北漂程序员');
+    const landlord = buildCharacter('landlord', '房东大姐');
+    const onLocalInterception = vi.fn();
+
+    const message = await generateSpeakerMessage({
+      chat: buildChat({
+        mode: 'group_discussion',
+        sessionKind: { topology: 'group', family: 'analysis', scenarioId: 'opinion-review', surfaceProfile: 'text' },
+        memberIds: ['analyst', 'landlord'],
+      }),
+      speaker: analyst,
+      characters: [analyst, landlord],
+      messages: [
+        buildAiMessage('landlord', '房东大姐', '这种半耦合热闹真有人愿意多掏钱吗？', 1),
+      ],
+      apiConfig: buildProfiles(),
+      onLocalInterception,
+    });
+
+    expect(generateResponseMock).toHaveBeenCalledTimes(1);
+    expect(onLocalInterception).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'analysis_artifacts_missing',
+      reason: '本轮回复做了审议动作，但模型没有返回结构化审议产物；消息已保留，面板不会新增审议产物。',
+      attempt: 1,
+    }));
+    expect(message.content).toContain('半公共空间');
+    expect(message.metadata?.deliberationArtifacts).toBeFalsy();
+  });
+
+  it('keeps analysis replies even when deliberation artifacts are absent', async () => {
+    generateResponseMock.mockReset();
+    const onChunk = vi.fn();
+    generateResponseMock.mockImplementationOnce(async (_api, _prompt, _messages, onRawChunk?: (chunk: string) => void) => {
+      onRawChunk?.('{"content":"第一稿缺少结构化产物，但现在应该保留。"');
+      return JSON.stringify({
+        content: '第一稿缺少结构化产物，但现在应该保留。',
+        interactionHints: null,
+        socialEventHints: null,
+        conflictFocus: null,
+      });
+    });
+    const analyst = buildCharacter('analyst', '资深北漂程序员');
+    const designer = buildCharacter('designer', '刚毕业的设计师');
+    const onLocalInterception = vi.fn();
+
+    const message = await generateSpeakerMessage({
+      chat: buildChat({
+        mode: 'group_discussion',
+        sessionKind: { topology: 'group', family: 'analysis', scenarioId: 'opinion-review', surfaceProfile: 'text' },
+        memberIds: ['analyst', 'designer'],
+      }),
+      speaker: analyst,
+      characters: [analyst, designer],
+      messages: [
+        buildAiMessage('designer', '刚毕业的设计师', '社会还生产多少愿意费心的人？', 1),
+      ],
+      apiConfig: buildProfiles(),
+      onChunk,
+      onLocalInterception,
+    });
+
+    expect(generateResponseMock).toHaveBeenCalledTimes(1);
+    expect(generateResponseMock.mock.calls[0]?.[3]).toBeUndefined();
+    expect(onChunk).not.toHaveBeenCalled();
+    expect(message.content).toContain('第一稿缺少结构化产物');
+    expect(onLocalInterception).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'analysis_artifacts_missing',
+    }));
+  });
+
+  it('does not force json_object response format for DeepSeek analysis rooms', async () => {
+    generateResponseMock.mockReset();
+    const onChunk = vi.fn();
+    generateResponseMock.mockImplementationOnce(async (_api, _prompt, _messages, onRawChunk?: (chunk: string) => void) => {
+      onRawChunk?.('{"content":"这个反例要拆成资源压力和意愿压力两层。","deliberationArtifacts":{"claims":[{"text":"资源压力会削弱合租中的主动照顾","reason":"可见回复提出可审议判断","confidence":0.82}]}}');
+      return JSON.stringify({
+        content: '这个反例要拆成资源压力和意愿压力两层。',
+        deliberationArtifacts: {
+          claims: [{ text: '资源压力会削弱合租中的主动照顾', reason: '可见回复提出可审议判断', confidence: 0.82 }],
+        },
+        interactionHints: null,
+        socialEventHints: null,
+        conflictFocus: null,
+      });
+    });
+    const analyst = buildCharacter('analyst', '资深北漂程序员');
+    const designer = buildCharacter('designer', '刚毕业的设计师');
+    const deepseekProfiles: AIModelProfile[] = [{
+      id: 'deepseek-text',
+      name: 'DeepSeek',
+      type: 'text',
+      provider: 'deepseek',
+      apiKey: 'deepseek-key',
+      baseUrl: 'https://api.deepseek.test',
+      model: 'deepseek-chat',
+      isDefault: true,
+    }];
+
+    const message = await generateSpeakerMessage({
+      chat: buildChat({
+        mode: 'group_discussion',
+        sessionKind: { topology: 'group', family: 'analysis', scenarioId: 'opinion-review', surfaceProfile: 'text' },
+        memberIds: ['analyst', 'designer'],
+      }),
+      speaker: analyst,
+      characters: [analyst, designer],
+      messages: [
+        buildAiMessage('designer', '刚毕业的设计师', '经济压力会不会让愿意费心的人也没电？', 1),
+      ],
+      apiConfig: deepseekProfiles,
+      onChunk,
+    });
+
+    expect(generateResponseMock).toHaveBeenCalledTimes(1);
+    expect(generateResponseMock.mock.calls[0]?.[3]).toEqual(expect.any(Function));
+    expect(generateResponseMock.mock.calls[0]?.[4]).toMatchObject({ responseFormat: 'text' });
+    expect(generateResponseMock.mock.calls[0]?.[2]?.at(-1)).toMatchObject({
+      role: 'user',
+      content: expect.stringContaining('格式校验'),
+    });
+    expect(onChunk).toHaveBeenCalled();
+    expect(message.metadata?.deliberationArtifacts?.claims?.[0]?.text).toBe('资源压力会削弱合租中的主动照顾');
+  });
+
+  it('commits streamed visible draft when final provider response is blank', async () => {
+    generateResponseMock.mockReset();
+    const onChunk = vi.fn();
+    const onLocalInterception = vi.fn();
+    generateResponseMock.mockImplementationOnce(async (_api, _prompt, _messages, onRawChunk?: (chunk: string) => void) => {
+      onRawChunk?.('{"content":"设计师这个区分可以继续拆：被动热闹依赖低警惕边界，主动连接依赖明确邀请。"');
+      return '          ';
+    });
+    const analyst = buildCharacter('analyst', '资深北漂程序员');
+    const designer = buildCharacter('designer', '刚毕业的设计师');
+    const deepseekFlashProfiles: AIModelProfile[] = [{
+      id: 'deepseek-flash',
+      name: 'DeepSeek Flash',
+      type: 'text',
+      provider: 'deepseek',
+      apiKey: 'deepseek-key',
+      baseUrl: 'https://api.deepseek.test',
+      model: 'deepseek-v4-flash',
+      isDefault: true,
+    }];
+
+    const message = await generateSpeakerMessage({
+      chat: buildChat({
+        mode: 'group_discussion',
+        sessionKind: { topology: 'group', family: 'analysis', scenarioId: 'opinion-review', surfaceProfile: 'text' },
+        memberIds: ['analyst', 'designer'],
+      }),
+      speaker: analyst,
+      characters: [analyst, designer],
+      messages: [
+        buildAiMessage('designer', '刚毕业的设计师', '这两种热闹的价值不一样，我们是不是先把它们分开谈？', 1),
+      ],
+      apiConfig: deepseekFlashProfiles,
+      onChunk,
+      onLocalInterception,
+    });
+
+    expect(generateResponseMock).toHaveBeenCalledTimes(1);
+    expect(onChunk).toHaveBeenCalledWith(expect.stringContaining('被动热闹依赖低警惕边界'));
+    expect(message.content).toContain('被动热闹依赖低警惕边界');
+    expect(onLocalInterception).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'streamed_draft_committed',
+      reason: '最终结构化正文为空，但流式阶段已经产生可见内容；已保留并提交这段流式草稿。',
+    }));
+    expect(onLocalInterception).not.toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'empty_generation_skip',
+    }));
+  });
+
+  it('keeps explicit leaving replies that omit presence metadata and reports the missing state marker', async () => {
+    generateResponseMock.mockReset();
+    generateResponseMock.mockResolvedValueOnce(JSON.stringify({
+      content: '这个点我先放这儿：样本偏差需要单独看租客视角。我真走了，再不走赶不上二路汽车。',
+      deliberationArtifacts: {
+        issues: [{ text: '样本偏差需要单独看租客视角', reason: '可见回复提出待检验视角', confidence: 0.8 }],
+      },
+      interactionHints: null,
+      socialEventHints: null,
+      conflictFocus: null,
+    }));
+    const landlord = buildCharacter('landlord', '房东大姐');
+    const analyst = buildCharacter('analyst', '资深北漂程序员');
+    const onLocalInterception = vi.fn();
+
+    const message = await generateSpeakerMessage({
+      chat: buildChat({
+        mode: 'group_discussion',
+        sessionKind: { topology: 'group', family: 'analysis', scenarioId: 'opinion-review', surfaceProfile: 'text' },
+        memberIds: ['landlord', 'analyst'],
+      }),
+      speaker: landlord,
+      characters: [landlord, analyst],
+      messages: [
+        buildAiMessage('analyst', '资深北漂程序员', '房东样本里可能有幸存者偏差。', 1),
+      ],
+      apiConfig: buildProfiles(),
+      onLocalInterception,
+    });
+
+    expect(generateResponseMock).toHaveBeenCalledTimes(1);
+    expect(onLocalInterception).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'presence_metadata_missing',
+      reason: '可见回复表示离开、睡觉或忙碌，但模型没有返回下线状态标记；消息已保留，角色在线状态不变。',
+      attempt: 1,
+    }));
+    expect(message.content).toContain('我真走了');
+    expect(message.metadata?.presenceUpdate).toBeFalsy();
+  });
+
+  it('does not treat ordinary topic words like shower schedule as leaving intent', async () => {
+    generateResponseMock.mockReset();
+    generateResponseMock.mockResolvedValueOnce(JSON.stringify({
+      content: '长期住得舒服的合租，常常只是互相知道对方几点洗澡、冰箱哪一层归谁，这不是离开房间，而是边界默契。',
+      deliberationArtifacts: {
+        claims: [{ text: '长期合租依赖边界默契', reason: '可见回复提出稳定条件', confidence: 0.8 }],
+      },
+      interactionHints: null,
+      socialEventHints: null,
+      conflictFocus: null,
+    }));
+    const analyst = buildCharacter('analyst', '宠物猫舍主理人');
+    const designer = buildCharacter('designer', '刚毕业的设计师');
+    const onLocalInterception = vi.fn();
+
+    await generateSpeakerMessage({
+      chat: buildChat({
+        mode: 'group_discussion',
+        sessionKind: { topology: 'group', family: 'analysis', scenarioId: 'opinion-review', surfaceProfile: 'text' },
+        memberIds: ['analyst', 'designer'],
+      }),
+      speaker: analyst,
+      characters: [analyst, designer],
+      messages: [
+        buildAiMessage('designer', '刚毕业的设计师', '热闹和边界是不是冲突？', 1),
+      ],
+      apiConfig: buildProfiles(),
+      onLocalInterception,
+    });
+
+    expect(onLocalInterception).not.toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'presence_metadata_missing',
+    }));
+  });
+
+  it('keeps JSON prompt protocol but avoids native json_object mode for DeepSeek chat analysis rooms', async () => {
+    generateResponseMock.mockReset();
+    generateResponseMock.mockResolvedValue(JSON.stringify({
+      content: '我补一个边界：如果私人工作区只能靠把东西塞回卧室维持，那这种热闹其实已经在消耗独处空间了。',
+      deliberationArtifacts: {
+        claims: [{ text: '需要靠卧室兜底的合租热闹会消耗独处空间', stance: 'review', reason: '提出合租边界判断', confidence: 0.84 }],
+      },
+      interactionHints: null,
+      socialEventHints: null,
+      conflictFocus: null,
+    }));
+    const analyst = buildCharacter('analyst', '宠物猫舍主理人', { expertise: ['猫行为学'] });
+    const illustrator = buildCharacter('illustrator', '自由职业插画师');
+    const deepseekProfiles: AIModelProfile[] = [{
+      id: 'deepseek-text',
+      name: 'DeepSeek',
+      type: 'text',
+      provider: 'deepseek',
+      apiKey: 'deepseek-key',
+      baseUrl: 'https://api.deepseek.test',
+      model: 'deepseek-chat',
+      isDefault: true,
+    }];
+
+    const message = await generateSpeakerMessage({
+      chat: buildChat({
+        mode: 'group_discussion',
+        sessionKind: { topology: 'group', family: 'analysis', scenarioId: 'opinion-review', surfaceProfile: 'text' },
+        memberIds: ['analyst', 'illustrator'],
+      }),
+      speaker: analyst,
+      characters: [analyst, illustrator],
+      messages: [
+        buildAiMessage('illustrator', '自由职业插画师', '工作区全搬回房间以后，热闹和边界才算勉强平衡。', 1),
+      ],
+      apiConfig: deepseekProfiles,
+    });
+
+    const prompt = String(generateResponseMock.mock.calls[0]?.[1] || '');
+    expect(generateResponseMock.mock.calls[0]?.[4]).toEqual(expect.objectContaining({ responseFormat: 'text' }));
+    expect(prompt).toContain('Return exactly one JSON object');
+    expect(prompt).toContain('deliberationArtifacts');
+    expect(message.metadata?.deliberationArtifacts?.claims?.[0]?.text).toContain('独处空间');
+  });
+
+  it('does not request native JSON mode for DeepSeek flash models in analysis rooms', async () => {
+    generateResponseMock.mockReset();
+    generateResponseMock.mockResolvedValue(JSON.stringify({
+      content: '我先拆开两层：可控在场解决陪伴感，持续运营成本决定它能不能活过三个月。',
+      deliberationArtifacts: {
+        claims: [{ text: '可控在场解决陪伴感，运营成本决定持续性', stance: 'review', reason: '拆分两个判断条件', confidence: 0.86 }],
+      },
+      interactionHints: null,
+      socialEventHints: null,
+      conflictFocus: null,
+    }));
+    const analyst = buildCharacter('analyst', '资深北漂程序员');
+    const landlord = buildCharacter('landlord', '房东大姐');
+    const deepseekProfiles: AIModelProfile[] = [{
+      id: 'deepseek-flash',
+      name: 'DeepSeek Flash',
+      type: 'text',
+      provider: 'deepseek',
+      apiKey: 'deepseek-key',
+      baseUrl: 'https://api.deepseek.test',
+      model: 'deepseek-v4-flash',
+      isDefault: true,
+    }];
+
+    await generateSpeakerMessage({
+      chat: buildChat({
+        mode: 'group_discussion',
+        sessionKind: { topology: 'group', family: 'analysis', scenarioId: 'opinion-review', surfaceProfile: 'text' },
+        memberIds: ['analyst', 'landlord'],
+      }),
+      speaker: analyst,
+      characters: [analyst, landlord],
+      messages: [
+        buildAiMessage('landlord', '房东大姐', '这种半耦合热闹到底谁付钱？', 1),
+      ],
+      apiConfig: deepseekProfiles,
+    });
+
+    expect(generateResponseMock.mock.calls[0]?.[4]).toEqual(expect.objectContaining({ responseFormat: 'text' }));
+    expect(String(generateResponseMock.mock.calls[0]?.[1] || '')).toContain('Return exactly one JSON object');
+  });
+
+  it('lets short task-like questions use natural depth instead of one-sentence bias', async () => {
+    generateResponseMock.mockReset();
+    generateResponseMock.mockResolvedValue(JSON.stringify({
+      content: '合同违约责任不能只看有没有违约，还要看合同约定、损失证明、因果关系和可预见性；如果是格式条款，还要额外看提示说明义务是否履行。',
+      interactionHints: null,
+      socialEventHints: null,
+      conflictFocus: null,
+    }));
+    const lawyer = buildCharacter('lawyer', '冷淡律师', {
+      expertise: ['合同法', '民事诉讼'],
+      speakingStyle: '平时话少，但专业问题会把边界讲清楚。',
+      speechProfile: { catchphrases: [], fillers: [], tabooPhrases: [], preferredOpeners: [], preferredClosers: [], sentenceLengthBias: 'short', questionBias: 30, sarcasmBias: 10 },
+    });
+
+    const message = await generateSpeakerMessage({
+      chat: buildChat({ type: 'direct', memberIds: ['lawyer'] }),
+      speaker: lawyer,
+      characters: [lawyer],
+      messages: [
+        buildUserMessage('合同违约责任？', 1),
+      ],
+      apiConfig: buildProfiles(),
+    });
+
+    const prompt = String(generateResponseMock.mock.calls[0]?.[1] || '');
+    expect(prompt).toContain('Mode: direct_private');
+    expect(prompt).toContain('## Private Turn Priority');
+    expect(prompt).toContain('This is a user direct chat');
+    expect(prompt).toContain('Response surface: live chat');
+    expect(prompt).toContain('Let the situation decide length');
+    expect(prompt).toContain('must not override a user request');
+    expect(prompt).toContain('Use the depth the moment needs');
+    expect(prompt).toContain('The length tendency is not a cap');
+    expect(prompt).toContain('user tasks and scene obligations still need complete answers');
+    expect(prompt).not.toContain('Usually write one sentence');
+    expect(prompt).not.toContain('prefer concise, non-intrusive wording');
+    expect(message.content).toContain('合同违约责任');
+  });
+
+  it('retries whitespace-only JSON output without feeding the blank draft back as repetitive content', async () => {
+    generateResponseMock.mockReset();
+    generateResponseMock
+      .mockResolvedValueOnce('                                                                                                             ')
+      .mockResolvedValueOnce(JSON.stringify({
+        content: '我先把这个边界压实一点：合租能不能成立，可能不是看大家多想热闹，而是看公共资源冲突能不能被提前设计出来。',
+        deliberationArtifacts: {
+          claims: [{ text: '合租成立取决于公共资源冲突能否被提前设计', stance: 'review', reason: '直接提出判断标准', confidence: 0.84 }],
+        },
+        interactionHints: null,
+        socialEventHints: null,
+        conflictFocus: null,
+      }));
+    const analyst = buildCharacter('analyst', '刚毕业的设计师', { expertise: ['UI/UX'] });
+    const landlord = buildCharacter('landlord', '房东大姐');
+
+    const message = await generateSpeakerMessage({
+      chat: buildChat({
+        mode: 'group_discussion',
+        sessionKind: { topology: 'group', family: 'analysis', scenarioId: 'opinion-review', surfaceProfile: 'text' },
+        memberIds: ['analyst', 'landlord'],
+      }),
+      speaker: analyst,
+      characters: [analyst, landlord],
+      messages: [
+        buildAiMessage('landlord', '房东大姐', '合租能实现，但不能照着电视剧那么来，得照着生活来。', 1),
+      ],
+      apiConfig: buildProfiles(),
+    });
+
+    const retryPrompt = String(generateResponseMock.mock.calls[1]?.[1] || '');
+    expect(generateResponseMock).toHaveBeenCalledTimes(2);
+    expect(retryPrompt).toContain('Empty-output retry');
+    expect(retryPrompt).toContain('non-empty content string');
+    expect(retryPrompt).not.toContain('Your previous draft was too close');
+    expect(message.content).toContain('公共资源冲突');
   });
 
   it('prevents syntax contagion through prompt structure instead of local punctuation blacklists', async () => {
@@ -1849,7 +2467,7 @@ describe('chatEngine streaming preview', () => {
     expect(generateResponseMock).toHaveBeenCalledTimes(1);
     expect(onLocalInterception).not.toHaveBeenCalled();
     expect(prompt).toContain('## Style Quarantine');
-    expect(prompt).toContain('choose your own sentence architecture');
+    expect(prompt).toContain('use your own opening, rhythm, sentence architecture, and ending');
     expect(prompt).toContain('The complete recent transcript is provided separately as chat messages');
     expect(prompt).not.toContain('这话扎心');
     expect(prompt).not.toContain('镜头到底对着谁');
@@ -1962,7 +2580,7 @@ describe('chatEngine streaming preview', () => {
     expect(onLocalInterception).not.toHaveBeenCalled();
     expect(prompt).toContain('## Expression Surface Choice');
     expect(prompt).toContain('decorative-marker turns');
-    expect(prompt).toContain('generation prior, not output filtering');
+    expect(prompt).toContain('This is not output filtering');
     expect(message.content).toBe('我也有点想排队了😂');
   });
 
@@ -2175,7 +2793,37 @@ describe('chatEngine streaming preview', () => {
     });
     expect(message.metadata?.runtimeDecision?.companionshipContext?.pendingCareTopics.join(' / ')).toContain('明天面试');
     expect(String(generateResponseMock.mock.calls[0]?.[1] || '')).toContain('## Companionship Context');
+    expect(String(generateResponseMock.mock.calls[0]?.[1] || '')).toContain('Mode: direct_private');
+    expect(String(generateResponseMock.mock.calls[0]?.[1] || '')).toContain('## Private Turn Priority');
     expect(String(generateResponseMock.mock.calls[0]?.[1] || '')).toContain('明天面试');
+  });
+
+  it('uses private prompt arbitration for AI private threads', async () => {
+    generateResponseMock.mockReset();
+    generateResponseMock.mockResolvedValue(JSON.stringify({
+      content: '这事我不想在群里说。你刚才那句其实把我架住了，我需要先确认你是不是也这么看。',
+      interactionHints: null,
+      socialEventHints: null,
+      conflictFocus: null,
+    }));
+    const a = buildCharacter('a', '甲');
+    const b = buildCharacter('b', '乙');
+
+    await generateSpeakerMessage({
+      chat: buildChat({ type: 'ai_direct', memberIds: ['a', 'b'] }),
+      speaker: a,
+      characters: [a, b],
+      messages: [
+        buildAiMessage('b', '乙', '刚才群里那句话，你是不是故意没接？', 1),
+      ],
+      apiConfig: buildProfiles(),
+    });
+
+    const prompt = String(generateResponseMock.mock.calls[0]?.[1] || '');
+    expect(prompt).toContain('Mode: direct_private');
+    expect(prompt).toContain('## Private Turn Priority');
+    expect(prompt).toContain('This is an AI private thread');
+    expect(prompt).not.toContain('Mode: general_group');
   });
 
   it('does not retry plain topic shifts as persistent guidance tasks', async () => {
@@ -2540,6 +3188,101 @@ describe('chatEngine streaming preview', () => {
     expect(errors).toHaveLength(0);
     expect(completed).toHaveLength(1);
     expect((completed[0] as { content: string }).content).toBe('我先接一句。');
+  });
+
+  it('idles group auto scheduling when fewer than two participants can speak', async () => {
+    generateResponseMock.mockReset();
+    const mei = buildCharacter('mei', '美羊羊');
+    const completed: unknown[] = [];
+    const idleReasons: string[] = [];
+
+    await runOneRound(
+      buildChat({ memberIds: ['mei'] }),
+      [mei],
+      [buildUserMessage('你们继续聊。', 1)],
+      buildProfiles(),
+      {
+        onSpeakerSelected: () => undefined,
+        onMessageChunk: () => undefined,
+        onMessageComplete: (message) => { completed.push(message); },
+        onIdle: (reason) => idleReasons.push(reason),
+        onError: (error) => { throw error; },
+      },
+      undefined,
+      undefined,
+      {},
+    );
+
+    expect(generateResponseMock).not.toHaveBeenCalled();
+    expect(completed).toHaveLength(0);
+    expect(idleReasons[0]).toContain('群里已无多人在线');
+  });
+
+  it('allows one AI member to reply when the user is also a group participant', async () => {
+    generateResponseMock.mockReset();
+    generateResponseMock.mockResolvedValue(JSON.stringify({
+      content: '我还在，先接你的问题。',
+      interactionHints: null,
+      socialEventHints: null,
+      conflictFocus: null,
+    }));
+    const mei = buildCharacter('mei', '美羊羊');
+    const completed: unknown[] = [];
+    const selected: string[] = [];
+
+    await runOneRound(
+      buildChat({ memberIds: ['user', 'mei'] }),
+      [mei],
+      [buildUserMessage('你还在吗？', 1)],
+      buildProfiles(),
+      {
+        onSpeakerSelected: (characterId) => selected.push(characterId),
+        onMessageChunk: () => undefined,
+        onMessageComplete: (message) => { completed.push(message); },
+        onError: (error) => { throw error; },
+      },
+      undefined,
+      undefined,
+      {},
+    );
+
+    expect(selected).toEqual(['mei']);
+    expect(completed[0]).toMatchObject({ senderId: 'mei', content: '我还在，先接你的问题。' });
+  });
+
+  it('does not select away or deleted members for group scheduling', async () => {
+    generateResponseMock.mockReset();
+    generateResponseMock.mockResolvedValue(JSON.stringify({
+      content: '我来继续。',
+      interactionHints: null,
+      socialEventHints: null,
+      conflictFocus: null,
+    }));
+    const now = Date.now();
+    const mei = buildCharacter('mei', '美羊羊', {
+      presence: { status: 'away', activity: '睡觉', updatedAt: now, unavailableUntil: now + 60_000 },
+    });
+    const hui = buildCharacter('hui', '灰太狼', { deletedAt: now });
+    const lan = buildCharacter('lan', '懒羊羊');
+    const selected: string[] = [];
+
+    await runOneRound(
+      buildChat({ memberIds: ['user', 'mei', 'hui', 'lan'] }),
+      [mei, hui, lan],
+      [buildUserMessage('谁还在？', 1)],
+      buildProfiles(),
+      {
+        onSpeakerSelected: (characterId) => selected.push(characterId),
+        onMessageChunk: () => undefined,
+        onMessageComplete: () => undefined,
+        onError: (error) => { throw error; },
+      },
+      undefined,
+      undefined,
+      {},
+    );
+
+    expect(selected).toEqual(['lan']);
   });
 
   it('maps hybrid surface sessions without recursive surface resolution', async () => {

@@ -8,6 +8,7 @@ import type { LocalInterceptionEvent } from '../services/chatEngine';
 import { projectCurrentChatMessages } from '../services/currentChatMessages';
 import { logDeveloperDiagnostic } from '../services/developerDiagnostics';
 import { attachMessageToActiveBranch } from '../services/messageBranching';
+import { hasRenderableStreamingContent } from '../services/streamingContentGuard';
 import { getStoryChoiceGateState } from '../services/storyChoices';
 import type { UserDraftActivity } from '../services/userInputBuffer';
 import { useChatStore } from '../stores/useChatStore';
@@ -245,6 +246,7 @@ export function useChatRunLoop(params: {
             }, 'info');
             return;
           }
+          current.discardStreamingMessage();
           const activeSpeaker = speaker || current.activeMembers.find((member) => member.id === charId);
           const latestChat = useChatStore.getState().chats.find((item) => item.id === current.chatId) || loopChat;
           const latestMessages = projectCurrentChatMessages({
@@ -268,6 +270,7 @@ export function useChatRunLoop(params: {
           current.setCurrentSpeaker(charId);
         },
         onMessageChunk: (content) => {
+          if (!hasRenderableStreamingContent(content)) return;
           current.updateStreamingMessage((message) => message ? { ...message, content, isStreaming: true } : message);
           setChatError(null);
         },

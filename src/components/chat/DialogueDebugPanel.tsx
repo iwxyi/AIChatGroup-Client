@@ -5,6 +5,7 @@ import type { AICharacter } from '../../types/character';
 import type { Message } from '../../types/message';
 import { useSettingsStore } from '../../stores/useSettingsStore';
 import { sanitizeUserFacingText } from '../../services/displayTextSanitizer';
+import { buildMemberAvailabilityChips } from '../../services/memberAvailabilityPresentation';
 import DebugChip from '../common/DebugChip';
 import { buildCalendarPatchDebugChips, buildCalendarPatchSummary, buildCalendarPatchTimelineTitle } from '../../services/worldCalendarPatchPresentation';
 import { projectActiveUserGuidance } from '../../services/activeUserGuidancePresentation';
@@ -15,6 +16,7 @@ import {
 } from '../../services/sessionProjection';
 import {
   projectConflictDebugState,
+  projectDeliberationDebugProjection,
   projectDialogueStructuredEventCard,
   projectDialogueRecentSignal,
   projectProjectionDescription,
@@ -106,12 +108,104 @@ function renderGuidanceDebugBlock(guidance: ReturnType<typeof projectActiveUserG
   );
 }
 
+function renderDeliberationDebugBlock(projection: ReturnType<typeof projectDeliberationDebugProjection>, isZh: boolean, members: AICharacter[] = []) {
+  const hasArtifacts = projection.artifacts.length > 0;
+  const hasMoves = projection.moves.length > 0;
+  if (!hasArtifacts && !hasMoves) return null;
+  const countChips = [
+    `${isZh ? '主张' : 'Claims'} ${projection.counts.claims}`,
+    `${isZh ? '证据' : 'Evidence'} ${projection.counts.evidence}`,
+    `${isZh ? '质询' : 'Issues'} ${projection.counts.issues}`,
+    `${isZh ? '裁决' : 'Verdicts'} ${projection.counts.verdicts}`,
+    `${isZh ? '总结' : 'Summaries'} ${projection.counts.summaries}`,
+  ];
+  return (
+    <Box>
+      <Typography variant="caption" color="text.secondary">{isZh ? '审议信号' : 'Deliberation signals'}</Typography>
+      <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap', mt: 0.6 }}>
+        {countChips.map((item) => <Chip key={item} size="small" label={item} variant="outlined" />)}
+      </Box>
+      {hasMoves ? (
+        <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap', mt: 0.75 }}>
+          {projection.moves.slice(0, 5).map((item) => (
+            <Chip
+              key={item.key}
+              size="small"
+              label={sanitizeUserFacingText(`${item.speakerName} · ${item.moveType}${item.reason ? ` · ${item.reason}` : ''}${item.artifactStatus ? ` · 审议结构 ${item.artifactStatus}` : ''}`, members)}
+              color="info"
+              variant="outlined"
+            />
+          ))}
+        </Box>
+      ) : null}
+      {hasArtifacts ? (
+        <Stack spacing={0.75} sx={{ mt: 0.75 }}>
+          {projection.artifacts.slice(0, 6).map((item) => (
+            <Box key={item.key} sx={{ p: 1, borderRadius: 2, bgcolor: 'action.hover' }}>
+              <Typography variant="caption" color="text.secondary">
+                {sanitizeUserFacingText(`${item.label} · ${item.speakerName}${typeof item.confidence === 'number' ? ` · ${(item.confidence * 100).toFixed(0)}%` : ''}`, members)}
+              </Typography>
+              <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>{sanitizeUserFacingText(item.text, members)}</Typography>
+              {item.reason ? <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>{sanitizeUserFacingText(item.reason, members)}</Typography> : null}
+            </Box>
+          ))}
+        </Stack>
+      ) : null}
+    </Box>
+  );
+}
+
+function renderPresenceDebugBlock(projection: ReturnType<typeof projectDeliberationDebugProjection>, chat: GroupChat, isZh: boolean, members: AICharacter[] = []) {
+  const memberStateItems = members.flatMap((member) => buildMemberAvailabilityChips({ member, chat, language: isZh ? 'zh' : 'en' }).map((chip) => ({
+    key: `${member.id}-${chip.key}`,
+    memberName: member.name,
+    label: chip.label,
+    hint: chip.hint,
+  })));
+  if (!projection.presence.length && !memberStateItems.length) return null;
+  return (
+    <Box>
+      <Typography variant="caption" color="text.secondary">{isZh ? '成员状态信号' : 'Presence signals'}</Typography>
+      {memberStateItems.length ? (
+        <Stack spacing={0.75} sx={{ mt: 0.75 }}>
+          {memberStateItems.map((item) => (
+            <Box key={item.key} sx={{ p: 1, borderRadius: 2, bgcolor: 'action.hover' }}>
+              <Typography variant="body2">{sanitizeUserFacingText(`${item.memberName} · ${item.label}`, members)}</Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>{sanitizeUserFacingText(item.hint, members)}</Typography>
+            </Box>
+          ))}
+        </Stack>
+      ) : null}
+      <Stack spacing={0.75} sx={{ mt: 0.75 }}>
+        {projection.presence.map((item) => (
+          <Box key={item.key} sx={{ p: 1, borderRadius: 2, bgcolor: 'action.hover' }}>
+            <Typography variant="body2">
+              {sanitizeUserFacingText(`${item.speakerName} · ${item.status === 'away' ? (isZh ? '暂离' : 'Away') : (isZh ? '在线' : 'Online')}`, members)}
+            </Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+              {[
+                item.activity ? `${isZh ? '活动' : 'Activity'}：${item.activity}` : '',
+                item.reason ? `${isZh ? '原因' : 'Reason'}：${item.reason}` : '',
+                item.durationMinutes ? `${isZh ? '时长' : 'Duration'}：${item.durationMinutes}${isZh ? '分钟' : 'm'}` : '',
+              ].filter(Boolean).map((text) => sanitizeUserFacingText(text, members)).join(' / ')}
+            </Typography>
+          </Box>
+        ))}
+      </Stack>
+    </Box>
+  );
+}
+
 export default function DialogueDebugPanel({ chat, members = [], messages = [] }: DialogueDebugPanelProps) {
   const { i18n } = useTranslation();
   const isZh = i18n.language.startsWith('zh');
   const dramaBoost = useSettingsStore((state) => state.developerUI.dramaBoost);
+  const showDeliberationDebug = useSettingsStore((state) => state.developerUI.showDeliberationDebug);
+  const showPresenceDebug = useSettingsStore((state) => state.developerUI.showPresenceDebug);
+  const showAdvancedRuntimePanels = useSettingsStore((state) => state.developerUI.showAdvancedRuntimePanels);
   const aiProfiles = useSettingsStore((state) => state.aiProfiles);
   const signal = projectDialogueRecentSignal(chat, members);
+  const deliberationDebug = projectDeliberationDebugProjection({ messages, members, language: i18n.language });
   const runtimeTimeline = projectRuntimeTimeline(chat, members);
   const latestItems = runtimeTimeline.filter((item) => item.event).slice(-5).reverse();
   const projectionItems = latestItems.filter((item) => {
@@ -123,7 +217,12 @@ export default function DialogueDebugPanel({ chat, members = [], messages = [] }
     messages,
     aiProfiles,
   });
-  const hasDebugContent = Boolean(signal.recentEvent && signal.recentEvent !== '暂无') || latestItems.length > 0 || projectionItems.length > 0 || Boolean(chat.worldState.conflictState?.primaryConflict) || Boolean(activeGuidance);
+  const showDeliberationBlock = showAdvancedRuntimePanels || showDeliberationDebug;
+  const showPresenceBlock = showAdvancedRuntimePanels || showPresenceDebug;
+  const memberPresenceDebugItems = members.flatMap((member) => buildMemberAvailabilityChips({ member, chat, language: i18n.language }));
+  const hasDeliberationDebug = showDeliberationBlock && (deliberationDebug.artifacts.length > 0 || deliberationDebug.moves.length > 0);
+  const hasPresenceDebug = showPresenceBlock && (deliberationDebug.presence.length > 0 || memberPresenceDebugItems.length > 0);
+  const hasDebugContent = Boolean(signal.recentEvent && signal.recentEvent !== '暂无') || latestItems.length > 0 || projectionItems.length > 0 || Boolean(chat.worldState.conflictState?.primaryConflict) || Boolean(activeGuidance) || hasDeliberationDebug || hasPresenceDebug;
   if (!hasDebugContent) return null;
 
   return (
@@ -151,6 +250,8 @@ export default function DialogueDebugPanel({ chat, members = [], messages = [] }
 
           {renderConflictDebugBlock(chat, members)}
           {renderGuidanceDebugBlock(activeGuidance, members)}
+          {showDeliberationBlock ? renderDeliberationDebugBlock(deliberationDebug, isZh, members) : null}
+          {showPresenceBlock ? renderPresenceDebugBlock(deliberationDebug, chat, isZh, members) : null}
 
           {projectionItems.length ? (
             <Box>

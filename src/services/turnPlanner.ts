@@ -2,6 +2,7 @@ import type { AICharacter } from '../types/character';
 import type { GroupChat } from '../types/chat';
 import type { Message } from '../types/message';
 import type { SpeakIntent } from './intentEngine';
+import { resolveSessionFamilyKey } from './sessionEngineKeys';
 
 export type TurnRhythm = 'micro_ack' | 'short_reply' | 'full_reply' | 'multi_bubble' | 'defer_or_wait';
 export type TurnLengthBand = 'micro' | 'short' | 'medium' | 'long' | 'extended';
@@ -107,6 +108,34 @@ function chooseLongFormPlan(input: TurnPlanInput, latestLength: number): TurnPla
   };
 }
 
+function isAnalysisRoom(chat: GroupChat) {
+  return resolveSessionFamilyKey(chat) === 'analysis';
+}
+
+function chooseAnalysisContinuationPlan(input: TurnPlanInput, latestLength: number, latestIsHuman: boolean): TurnPlan {
+  if (latestIsHuman || input.intent.stance === 'summarize') {
+    const allowExtraMessages = latestIsHuman && latestLength >= 90;
+    return {
+      rhythm: allowExtraMessages ? 'multi_bubble' : 'full_reply',
+      targetBubbleCount: allowExtraMessages ? 2 : 1,
+      lengthBand: latestLength >= 160 ? 'long' : 'medium',
+      allowExtraMessages,
+      waitSensitive: false,
+      reasons: [`surface:${input.surface.kind}`, 'analysis_room', latestIsHuman ? 'human_turn' : 'summarize_intent', `latest_length:${latestLength}`, ...(allowExtraMessages ? ['analysis_structured_multi_bubble'] : [])],
+    };
+  }
+
+  const allowExtraMessages = latestLength >= 120 && (input.intent.delivery === 'group_redirect' || input.intent.messageShape === 'two_sentences');
+  return {
+    rhythm: input.intent.delivery === 'quick_question' || input.intent.messageShape === 'question_only' ? 'short_reply' : allowExtraMessages ? 'multi_bubble' : 'full_reply',
+    targetBubbleCount: allowExtraMessages ? 2 : 1,
+    lengthBand: latestLength >= 180 ? 'medium' : 'short',
+    allowExtraMessages,
+    waitSensitive: false,
+    reasons: [`surface:${input.surface.kind}`, 'analysis_room', 'ai_continuation', `latest_length:${latestLength}`, ...(allowExtraMessages ? ['analysis_structured_multi_bubble'] : [])],
+  };
+}
+
 export function deriveTurnPlan(input: TurnPlanInput): TurnPlan {
   const visibleLatest = latestVisible(input.messages);
   const latestLength = charLength(visibleLatest?.content);
@@ -117,7 +146,10 @@ export function deriveTurnPlan(input: TurnPlanInput): TurnPlan {
     && latestLength <= 14
     && !hasTerminalPunctuation(visibleLatest?.content || ''),
   );
-  if (input.surface.kind !== 'chat') return chooseLongFormPlan(input, latestLength);
+  if (input.surface.kind !== 'chat') {
+    if (isAnalysisRoom(input.chat)) return chooseAnalysisContinuationPlan(input, latestLength, latestIsHuman);
+    return chooseLongFormPlan(input, latestLength);
+  }
 
   const ownStats = recentOwnStats(input.messages, input.speaker.id);
   const talkativeness = resolveTalkativeness(input.speaker);
@@ -176,7 +208,7 @@ export function deriveTurnPlan(input: TurnPlanInput): TurnPlan {
     };
   }
 
-  if (input.intent.messageShape === 'fragment' || input.intent.messageShape === 'question_only' || latestLength <= 12) {
+  if (!latestIsHuman && (input.intent.messageShape === 'fragment' || input.intent.messageShape === 'question_only' || latestLength <= 12)) {
     return {
       rhythm: 'micro_ack',
       targetBubbleCount: 1,
@@ -199,13 +231,13 @@ export function deriveTurnPlan(input: TurnPlanInput): TurnPlan {
 
 export function buildTurnPlanPrompt(plan: TurnPlan) {
   const bubbleLine = plan.allowExtraMessages
-    ? '- Consecutive bubbles are allowed if this reply would naturally arrive as separate chat messages.'
+    ? '- Consecutive bubbles are allowed if this reply would naturally arrive as separate chat messages. In analysis rooms, use them for one speaker splitting a structured point, not for more social aftertalk.'
     : '- Prefer one visible bubble unless the current moment clearly wants a natural follow-up message.';
   return `\n## Turn Plan
 - Rhythm tendency: ${plan.rhythm}
 ${bubbleLine}
 - Do not target a fixed length band. Choose length from the live situation, the user's request, the character's comfort, and the amount of actual substance available.
 - Very short reactions, ordinary one-sentence replies, rambling multi-sentence thoughts, and fuller explanations are all valid when the moment calls for them.
-- This is a planning prior, not a keyword rule. Follow the current request if it genuinely needs a different shape.
+- This is a weak planning prior, not a keyword rule, output template, or length cap. Follow the current request, scene, and play mode if they need a different shape.
 - Plan reasons: ${plan.reasons.join(', ')}`;
 }

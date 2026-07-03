@@ -412,7 +412,7 @@ function ritualEventFromSharedPhraseEvent(params: {
     inside_joke: `“${text}”可以作为共同梗或暗号，在合适场景轻轻带过，不公开泄露私密含义。`,
     pet_name: `在私下或合适场景中使用“${text}”这个称呼，但尊重用户边界和当前关系气氛。`,
     reconciliation: `把“${text}”作为修复关系时的低压表达，优先递台阶而不是翻旧账。`,
-    milestone: `把“${text}”沉淀为关系里程碑，只在自然回望时轻轻提起。`,
+    milestone: `把“${text}”沉淀为关系里程碑，只在自然回望时低压力地提起。`,
   };
   return createRuntimeRitualEvolutionEvent({
     chat: params.chat,

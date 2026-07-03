@@ -2,6 +2,7 @@ import type { AICharacter } from '../types/character';
 import type { GroupChat } from '../types/chat';
 import { formatScenarioBoardKind, formatScenarioRoleLabel } from './scenarioPresentation';
 import { sanitizeUserFacingText } from './displayTextSanitizer';
+import { resolveSessionFamilyKey } from './sessionEngineKeys';
 
 export interface RuntimeStructureRow {
   key: string;
@@ -26,7 +27,7 @@ function projectScenarioRows(chat: GroupChat, members: AICharacter[], language: 
   if (factionSummary) rows.push({ key: 'factions', label: '阵营', value: factionSummary });
   if (scenario.currentTurnActorId) rows.push({
     key: 'currentTurn',
-    label: chat.sessionKind?.family === 'analysis' ? '当前发言' : '当前轮次',
+    label: resolveSessionFamilyKey(chat) === 'analysis' ? '当前发言' : '当前轮次',
     value: members.find((item) => item.id === scenario.currentTurnActorId)?.name || '成员',
   });
   return rows;

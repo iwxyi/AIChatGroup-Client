@@ -12,6 +12,23 @@ export interface SpeakIntent {
   messageShape: 'fragment' | 'single_sentence' | 'two_sentences' | 'question_only';
 }
 
+interface SpeakIntentContextOptions {
+  conversationFamily?: string | null;
+  scenarioId?: string | null;
+}
+
+function isAnalysisIntentContext(options?: SpeakIntentContextOptions | null) {
+  return options?.conversationFamily === 'analysis'
+    || options?.scenarioId === 'opinion-review'
+    || options?.scenarioId === 'roundtable-review'
+    || options?.scenarioId === 'role-debate'
+    || options?.scenarioId === 'courtroom-deliberation'
+    || options?.scenarioId === 'expert-review'
+    || options?.scenarioId === 'public-inquiry'
+    || options?.scenarioId === 'brainstorm-workshop'
+    || options?.scenarioId === 'task-retrospective';
+}
+
 function getDefaultMessageShape(intent: Pick<SpeakIntent, 'delivery' | 'stance'>): SpeakIntent['messageShape'] {
   if (intent.delivery === 'quick_question') return 'question_only';
   if (intent.delivery === 'side_remark') return 'fragment';
@@ -269,8 +286,9 @@ export function describeIntentForPrompt(intent: SpeakIntent) {
   return `reason=${intent.reason}; target=${intent.target}; stance=${intent.stance}; tone=${intent.emotionalTone}; delivery=${intent.delivery}; shape=${intent.messageShape}`;
 }
 
-function deriveSpeakIntentFromDirectorIntent(character: AICharacter, directorIntent?: DirectorIntent | null): SpeakIntent | null {
+function deriveSpeakIntentFromDirectorIntent(character: AICharacter, directorIntent?: DirectorIntent | null, options?: SpeakIntentContextOptions | null): SpeakIntent | null {
   if (!directorIntent) return null;
+  const analysisContext = isAnalysisIntentContext(options);
   const isTargeted = directorIntent.targetActorIds.includes(character.id);
   if (!isTargeted && directorIntent.beatType !== 'summarize' && directorIntent.beatType !== 'invite') return null;
   const target = directorIntent.targetActorIds.find((actorId) => actorId !== character.id) || 'group';
@@ -295,6 +313,16 @@ function deriveSpeakIntentFromDirectorIntent(character: AICharacter, directorInt
     });
   }
   if (directorIntent.beatType === 'defend') {
+    if (analysisContext) {
+      return withMessageShape({
+        shouldSpeak: true,
+        reason: 'keeps analysis focused on claims rather than protecting a side',
+        target: 'group',
+        stance: character.behavior.summarizing >= 62 ? 'summarize' : 'probe',
+        emotionalTone: 'warm',
+        delivery: character.behavior.summarizing >= 62 ? 'group_redirect' : 'quick_question',
+      });
+    }
     return withMessageShape({
       shouldSpeak: true,
       reason: 'wants to protect the current target',
@@ -357,15 +385,24 @@ function deriveSpeakIntentFromDirectorIntent(character: AICharacter, directorInt
   return null;
 }
 
-export function deriveSpeakIntentFromContext(character: AICharacter, recentTargetId?: string, recentText: string = '', directorIntent?: DirectorIntent | null): SpeakIntent {
-  const directedIntent = deriveSpeakIntentFromDirectorIntent(character, directorIntent);
+export function deriveSpeakIntentFromContext(character: AICharacter, recentTargetId?: string, recentText: string = '', directorIntent?: DirectorIntent | null, options?: SpeakIntentContextOptions | null): SpeakIntent {
+  const analysisContext = isAnalysisIntentContext(options);
+  const directedIntent = deriveSpeakIntentFromDirectorIntent(character, directorIntent, options);
   if (directedIntent) return adaptBaseIntent(character, directedIntent);
-  const base = deriveSpeakIntent(character, recentTargetId);
+  const base = deriveSpeakIntent(character, recentTargetId, options);
   const pressure = getRecentConversationPressure(recentText);
   if (recentTargetId && mentionsTarget(recentText) && base.stance === 'challenge') {
     return adaptQuestionIntent(character, withMessageShape({ ...base, stance: isQuestionLike(recentText) ? 'challenge' : 'probe', delivery: 'quick_question' }));
   }
   if (recentTargetId && mentionsTarget(recentText) && base.stance === 'support') {
+    if (analysisContext) {
+      return adaptBaseIntent(character, withMessageShape({
+        ...base,
+        stance: character.behavior.summarizing >= 62 ? 'summarize' : 'probe',
+        delivery: character.behavior.summarizing >= 62 ? 'group_redirect' : 'quick_question',
+        reason: 'has warmth toward the speaker but keeps the claim open for review',
+      }));
+    }
     return adaptBaseIntent(character, withMessageShape({ ...base, stance: 'back_up', delivery: pressure > 0 ? 'side_remark' : 'short_reply' }));
   }
   if (pressure > 0.1) {
@@ -377,9 +414,10 @@ export function deriveSpeakIntentFromContext(character: AICharacter, recentTarge
   return maybePromoteToQuestionIntent(character, withMessageShape(base), recentTargetId, recentText);
 }
 
-export function deriveSpeakIntent(character: AICharacter, recentTargetId?: string): SpeakIntent {
+export function deriveSpeakIntent(character: AICharacter, recentTargetId?: string, options?: SpeakIntentContextOptions | null): SpeakIntent {
   const emotional = character.emotionalState || { irritation: 0, affection: 0, insecurity: 0, excitement: 0, embarrassment: 0 };
   const relationWeight = recentTargetId ? getRelationshipWeight(character, recentTargetId) : 0;
+  const analysisContext = isAnalysisIntentContext(options);
 
   const dramaBoost = Boolean((globalThis as { __PNEUMATA_DRAMA_BOOST__?: boolean }).__PNEUMATA_DRAMA_BOOST__);
 
@@ -395,6 +433,16 @@ export function deriveSpeakIntent(character: AICharacter, recentTargetId?: strin
   }
 
   if (emotional.affection > 40 || relationWeight > 0.35) {
+    if (analysisContext) {
+      return adaptBaseIntent(character, withMessageShape({
+        shouldSpeak: true,
+        reason: 'has relational warmth but keeps independent judgment',
+        target: recentTargetId || 'group',
+        stance: character.behavior.summarizing >= 70 ? 'summarize' : 'probe',
+        emotionalTone: 'warm',
+        delivery: character.behavior.summarizing >= 70 ? 'group_redirect' : 'quick_question',
+      }));
+    }
     return adaptBaseIntent(character, withMessageShape({
       shouldSpeak: true,
       reason: 'wants to support',

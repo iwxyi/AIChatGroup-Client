@@ -59,6 +59,25 @@ describe('normalizeConversation role action visibility', () => {
     expect(chat.modeConfig.showRoleActions).toBe(false);
     expect(resolveShowRoleActions(chat)).toBe(false);
   });
+
+  it('repairs empty legacy sessionKind objects for discussion rooms', () => {
+    const chat = normalizeConversation({
+      ...baseChat(),
+      mode: 'group_discussion',
+      sessionKind: {} as never,
+    });
+
+    expect(chat.sessionKind).toMatchObject({
+      family: 'analysis',
+      scenarioId: 'opinion-review',
+      surfaceProfile: 'text',
+    });
+    expect(chat.scenarioState?.phase).toBe('discussion');
+    expect(chat.modeStateSummary).toMatchObject({
+      family: 'analysis',
+      scenarioId: 'opinion-review',
+    });
+  });
 });
 
 describe('defaultInputSurfacesForConversation', () => {

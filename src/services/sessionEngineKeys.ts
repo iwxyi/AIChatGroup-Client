@@ -60,6 +60,8 @@ export function resolveSessionFamilyKey(chat: Pick<GroupChat, 'mode' | 'sessionK
   return scenarioFamily
     || chat.sessionKind?.family
     || (chat.mode === 'interview' ? 'interview'
+      : chat.mode === 'group_discussion' || chat.mode === 'roundtable' ? 'analysis'
+      : chat.mode === 'classroom' ? 'study'
       : chat.mode === 'werewolf' ? 'deduction'
       : chat.mode === 'murder_mystery' ? 'mystery'
       : chat.mode === 'board_game' ? 'board_game'

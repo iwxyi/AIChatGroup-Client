@@ -31,8 +31,15 @@ function getTranscriptSpeakerName(message: Message, characters: Map<string, AICh
   return message.senderName || characters.get(message.senderId)?.name || 'Unknown';
 }
 
+function stripEmbeddedTranscriptJson(content: string) {
+  const normalized = content || '';
+  const roleMarker = normalized.search(/["“]?role["”]?\s*:\s*["“](assistant|user|system)["”]/i);
+  if (roleMarker >= 0) return normalized.slice(0, roleMarker).trim();
+  return normalized;
+}
+
 function compactTranscriptContent(content: string, max = 1400) {
-  const trimmed = (content || '').trim();
+  const trimmed = stripEmbeddedTranscriptJson(content).trim();
   if (Array.from(trimmed).length <= max) return trimmed;
   return `${Array.from(trimmed).slice(0, max).join('')}...`;
 }

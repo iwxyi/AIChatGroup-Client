@@ -43,6 +43,13 @@ export interface MediaGenerationDecision {
   } | null;
 }
 
+export interface MessagePresenceUpdate {
+  status: 'online' | 'away';
+  activity?: string;
+  reason?: string;
+  durationMinutes?: number;
+}
+
 export type NarrativeActorKind = 'narrator' | 'character' | 'director' | 'system';
 export type NarrativeBlockKind = 'prose' | 'dialogue' | 'action' | 'inner_thought' | 'choice' | 'system_note';
 export type NarrativeDisplayMode = 'paragraph' | 'bubble' | 'choice_card' | 'system_panel' | 'hidden';
@@ -155,6 +162,7 @@ export interface MessageMetadata {
     visiblePending?: boolean;
   };
   attachments?: MessageAttachment[];
+  presenceUpdate?: MessagePresenceUpdate;
   generationDecision?: MediaGenerationDecision;
   generation?: {
     status?: 'queued' | 'generating' | 'ready' | 'failed';
@@ -299,6 +307,37 @@ export interface MessageMetadata {
       applied?: boolean;
       effects?: string[];
     }>;
+  };
+  deliberationArtifacts?: {
+    claims?: Array<{
+      text: string;
+      stance?: 'support' | 'oppose' | 'neutral' | 'review' | 'inquiry';
+      reason?: string;
+      confidence?: number;
+    }>;
+    evidence?: Array<{
+      text: string;
+      reason?: string;
+      confidence?: number;
+    }>;
+    issues?: Array<{
+      text: string;
+      targetActorId?: string | null;
+      reason?: string;
+      confidence?: number;
+    }>;
+    verdicts?: Array<{
+      text: string;
+      tendency?: 'support' | 'oppose' | 'mixed' | 'undecided';
+      reason?: string;
+      confidence?: number;
+    }>;
+    summary?: {
+      text: string;
+      reason?: string;
+      confidence?: number;
+    } | null;
+    overallReason?: string | null;
   };
   turnSegment?: {
     index: number;

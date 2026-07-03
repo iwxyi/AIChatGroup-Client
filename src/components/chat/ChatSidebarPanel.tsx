@@ -13,6 +13,7 @@ import { useSettingsStore } from '../../stores/useSettingsStore';
 import { buildScrollableRegionSx, compactPillChipSx } from '../../styles/interaction';
 import { sanitizeUserFacingText } from '../../services/displayTextSanitizer';
 import { projectDeliberationSidebarRows } from '../../services/deliberationProjection';
+import { resolveSessionFamilyKey } from '../../services/sessionEngineKeys';
 
 const RelationshipPanel = lazy(() => import('../controls/RelationshipPanel'));
 const ChatRuntimePanel = lazy(() => import('./ChatRuntimePanel'));
@@ -70,7 +71,7 @@ function ChatScenarioCard({ chat, members }: { chat: GroupChat; members: AIChara
   const rows = [] as string[];
   const topology = projectSessionParticipantTopology(chat, members, true);
   const nonMemberOperators = (chat.operatorIds || []).filter((id) => !chat.memberIds.includes(id));
-  const isDiscussionRoom = chat.sessionKind?.family === 'analysis';
+  const isDiscussionRoom = resolveSessionFamilyKey(chat) === 'analysis';
   if (isDiscussionRoom) {
     rows.push(...projectDeliberationSidebarRows(chat, members));
   }
@@ -118,6 +119,10 @@ function ChatScenarioCard({ chat, members }: { chat: GroupChat; members: AIChara
 
 function PanelFallback() {
   return null;
+}
+
+function isAnalysisRoom(chat: GroupChat) {
+  return resolveSessionFamilyKey(chat) === 'analysis';
 }
 
 function formatStoryProtocolDiagnosticCode(code: string) {
@@ -559,7 +564,12 @@ export default function ChatSidebarPanel({
             <Suspense fallback={<PanelFallback />}>
               <ChatNarrativePanel chat={chat} members={members} messages={messages} hideTitle />
             </Suspense>
-          ) : sessionPanel || null
+          ) : (
+            <Stack spacing={2}>
+              {isAnalysisRoom(chat) ? <ChatScenarioCard chat={chat} members={members} /> : null}
+              {sessionPanel || null}
+            </Stack>
+          )
         ) : null}
 
         {activePanelTab === 'members' && showMemberTab ? (
@@ -604,7 +614,7 @@ export default function ChatSidebarPanel({
         {(activePanelTab === 'world' || activePanelTab === 'developer') && showRuntimeTab ? (
           <Stack spacing={2}>
             {isStoryRoom && activePanelTab === 'developer' ? <StoryProtocolDiagnosticPanel chat={chat} /> : null}
-            <ChatScenarioCard chat={chat} members={members} />
+            {isAnalysisRoom(chat) ? null : <ChatScenarioCard chat={chat} members={members} />}
             <ChatPrivateInfoCard chat={chat} members={members} directMemoryContext={directMemoryContext || null} />
             <Suspense fallback={<PanelFallback />}>
               <ChatRuntimePanel chat={chat} members={members} messages={messages} privatePayloads={privatePayloads} privatePayloadTitle={privatePayloadTitle} />

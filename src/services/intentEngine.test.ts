@@ -58,6 +58,46 @@ describe('intentEngine soul state adaptation', () => {
     expect(intent.emotionalTone).toBe('warm');
   });
 
+  it('keeps positive relationship warmth from becoming viewpoint agreement in analysis rooms', () => {
+    const intent = deriveSpeakIntent(character({
+      relationships: [{ characterId: 'b', warmth: 70, trust: 60, competence: 40, threat: 0, note: '', updatedAt: 1 }],
+    }), 'b', { conversationFamily: 'analysis', scenarioId: 'opinion-review' });
+
+    expect(intent.reason).toContain('independent judgment');
+    expect(intent.target).toBe('b');
+    expect(intent.emotionalTone).toBe('warm');
+    expect(intent.stance).not.toBe('support');
+    expect(intent.stance).not.toBe('back_up');
+  });
+
+  it('does not translate director defend beats into backing in analysis rooms', () => {
+    const intent = deriveSpeakIntentFromContext(character({
+      behavior: { proactivity: 50, aggressiveness: 20, humorIntensity: 20, empathyLevel: 50, summarizing: 70, offTopic: 20 },
+    }), 'b', '这点我同意。', {
+      source: 'faction',
+      beatType: 'defend',
+      targetActorIds: ['a', 'b'],
+      pressure: 0.62,
+      reason: '阵营压力',
+    }, { conversationFamily: 'analysis', scenarioId: 'opinion-review' });
+
+    expect(intent.reason).toContain('claims');
+    expect(intent.stance).toBe('summarize');
+    expect(intent.stance).not.toBe('back_up');
+  });
+
+  it('keeps ordinary director defend beats as backing outside analysis rooms', () => {
+    const intent = deriveSpeakIntentFromContext(character(), 'b', '这点我同意。', {
+      source: 'faction',
+      beatType: 'defend',
+      targetActorIds: ['a', 'b'],
+      pressure: 0.62,
+      reason: '阵营压力',
+    }, { conversationFamily: 'conversation', scenarioId: 'open-chat' });
+
+    expect(intent.stance).toBe('back_up');
+  });
+
   it('lets moderate irritation carry into a challenged reply intent', () => {
     const intent = deriveSpeakIntent(character({
       emotionalState: { irritation: 34, affection: 0, insecurity: 0, excitement: 0, embarrassment: 0 },

@@ -254,16 +254,12 @@ async function renderPanel(rightPanelTab: string, chat: GroupChat = buildStoryCh
 }
 
 describe('ChatSidebarPanel story room panels', () => {
-  it('renders deliberation phase and summary in the runtime sidebar without raw ids', async () => {
+  it('does not duplicate deliberation scenario rules in the runtime sidebar', async () => {
     const html = await renderPanel('world', buildDiscussionChat());
 
-    expect(html).toContain('阶段 结论整理');
-    expect(html).toContain('议题 林医生 是否要重构推荐系统');
-    expect(html).toContain('审议席位 林医生：正方 / 护士：反方');
-    expect(html).toContain('当前发言 护士');
-    expect(html).toContain('最新质询 护士');
-    expect(html).toContain('审议发言 3/4');
-    expect(html).toContain('审议总结 林医生 建议先拆召回层，护士 担心排序链路风险。');
+    expect(html).not.toContain('阶段 结论整理');
+    expect(html).not.toContain('审议席位 林医生：正方 / 护士：反方');
+    expect(html).not.toContain('审议总结 林医生 建议先拆召回层，护士 担心排序链路风险。');
     expect(html).not.toContain(uuidA);
     expect(html).not.toContain(uuidB);
   });
@@ -290,6 +286,8 @@ describe('ChatSidebarPanel story room panels', () => {
 
     expect(html.indexOf('审议')).toBeGreaterThanOrEqual(0);
     expect(html.indexOf('审议')).toBeLessThan(html.indexOf('成员 2'));
+    expect(html).toContain('阶段 结论整理');
+    expect(html).toContain('审议总结');
     expect(html).toContain('审议动作表单');
   });
 

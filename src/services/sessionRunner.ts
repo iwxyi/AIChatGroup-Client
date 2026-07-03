@@ -14,6 +14,7 @@ import { resolveUserInputHold, type UserDraftActivity } from './userInputBuffer'
 import { isGenerationCancelledError } from './generationCancellation';
 import { logDeveloperDiagnostic } from './developerDiagnostics';
 import { isAutoRunnableSessionAction } from './conversationCapabilities';
+import { applyAnalysisRunPolicy, buildAnalysisRunPolicyEvent, type SessionLoopDecision } from './analysisRunPolicy';
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -93,7 +94,7 @@ function createFallbackTurnPolicy(engine: SessionEngineDefinition, chat: GroupCh
   return { runChat: canSpeak, runAction: canAct, interleaveAction: canSpeak && canAct };
 }
 
-function deriveLoopDecision(policy: SessionTurnPolicy) {
+function deriveLoopDecision(policy: SessionTurnPolicy): SessionLoopDecision {
   return {
     canRun: Boolean(policy.runChat || policy.runAction),
     runAction: Boolean(policy.runAction),
@@ -295,9 +296,10 @@ export async function runSessionLoop(params: {
       let turnWorkActive = true;
       params.onTurnWorkStarted?.();
       try {
+        const nextIterationCount = (activeSessionLoops.get(params.loopId)?.iterationCount || 0) + 1;
         markSessionLoop(params.loopId, {
           phase: 'selecting',
-          iterationCount: (activeSessionLoops.get(params.loopId)?.iterationCount || 0) + 1,
+          iterationCount: nextIterationCount,
         });
       const currentMessages = getSessionMessages(params.getCurrentMessages);
       const currentChat = params.getCurrentChat?.() || params.chat;
@@ -340,7 +342,14 @@ export async function runSessionLoop(params: {
       const effectiveCharacters = loopCharacters.length ? loopCharacters : currentCharacters;
       const engine = await getSessionEngine(currentChat, params.resolveSessionEngine);
       const generationContext = buildEngineGenerationContext(currentChat, effectiveCharacters, currentMessages);
-      const loopDecision = resolveEngineLoopDecision(engine, currentChat, effectiveCharacters, currentMessages);
+      const rawLoopDecision = resolveEngineLoopDecision(engine, currentChat, effectiveCharacters, currentMessages);
+      const analysisRunPolicy = applyAnalysisRunPolicy({
+        chat: currentChat,
+        messages: currentMessages,
+        iterationCount: nextIterationCount,
+        rawDecision: rawLoopDecision,
+      });
+      const loopDecision = analysisRunPolicy.decision;
       logDeveloperDiagnostic('chat-run:turn-selected', {
         chatId: params.chatId,
         loopId: params.loopId,
@@ -348,6 +357,8 @@ export async function runSessionLoop(params: {
         characterCount: effectiveCharacters.length,
         phase: currentChat.scenarioState?.phase || null,
         loopDecision,
+        rawLoopDecision,
+        analysisRunPolicy: analysisRunPolicy.trace,
         elapsedMs: Number((nowMs() - turnStartedAt).toFixed(2)),
       }, 'debug', 'chat-run');
 
@@ -363,10 +374,24 @@ export async function runSessionLoop(params: {
         }
       }
 
+      if (!loopDecision.canRun) {
+        turnWorkActive = false;
+        params.onTurnWorkFinished?.();
+        const analysisStopEvent = buildAnalysisRunPolicyEvent(analysisRunPolicy.trace);
+        if (analysisStopEvent) await params.appendEventMessage(params.chatId, analysisStopEvent);
+        if (resolveSessionFamilyKey(currentChat) !== 'analysis') params.onIdle?.('当前阶段没有需要自动执行的回合');
+        params.pauseLoop?.();
+        await new Promise((resolve) => setTimeout(resolve, getLoopWaitTime(currentChat, random)));
+        continue;
+      }
+
       if (!loopDecision.runChat) {
         turnWorkActive = false;
         params.onTurnWorkFinished?.();
-        params.onLoopError(new Error('Current session phase does not allow speaking'));
+        const analysisStopEvent = buildAnalysisRunPolicyEvent(analysisRunPolicy.trace);
+        if (analysisStopEvent) await params.appendEventMessage(params.chatId, analysisStopEvent);
+        if (resolveSessionFamilyKey(currentChat) !== 'analysis') params.onIdle?.('当前阶段没有需要自动发言的角色');
+        params.pauseLoop?.();
         await new Promise((resolve) => setTimeout(resolve, getLoopWaitTime(currentChat, random)));
         continue;
       }

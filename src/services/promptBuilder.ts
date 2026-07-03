@@ -90,6 +90,19 @@ function cleanPromptText(text: string | undefined | null, members: DisplayTextMe
   return compactPromptText(sanitizeUserFacingText(text, members), max);
 }
 
+function stripLongStageAsidesForPrompt(text: string) {
+  return text
+    .replace(/[（(][^）)\n]{12,260}[）)]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function cleanRecentEventPromptText(chat: GroupChat, text: string) {
+  const compact = compactPromptText(text, 180);
+  if (chat.sessionKind?.scenarioId === 'story-reader') return compact;
+  return stripLongStageAsidesForPrompt(compact) || compactPromptText(text.replace(/[（(]/g, '').replace(/[）)]/g, ''), 180);
+}
+
 function getPromptMemoryKindLabel(kind: MemoryItem['kind']) {
   const labels: Record<MemoryItem['kind'], string> = {
     trait_evidence: 'trait evidence',
@@ -733,7 +746,7 @@ function buildTopicSection(chat: GroupChat) {
   if (chat.worldState.mood) lines.push(`- Room mood: ${chat.worldState.mood}`);
   if (chat.worldState.focus) lines.push(`- Current focus: ${chat.worldState.focus}`);
   if (chat.worldState.phase) lines.push(`- Current phase: ${chat.worldState.phase}`);
-  if (chat.worldState.recentEvent) lines.push(`- Recent event: ${chat.worldState.recentEvent}`);
+  if (chat.worldState.recentEvent) lines.push(`- Recent event: ${cleanRecentEventPromptText(chat, chat.worldState.recentEvent)}`);
   return `## Conversation Context\n${lines.join('\n')}`;
 }
 

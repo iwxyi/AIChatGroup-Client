@@ -5,9 +5,10 @@ import type { APIConfig, AIModelProfile } from '../types/settings';
 import type { SessionGenerationPromptContext } from '../types/sessionEngine';
 import { createStreamingLocalMessage } from './chatCommitMessage';
 import { commitGeneratedMessageTurn } from './generatedMessageTurnCommit';
-import { generateSpeakerMessage, type LocalInterceptionEvent } from './chatEngine';
+import { EmptyGeneratedResponseError, generateSpeakerMessage, type LocalInterceptionEvent } from './chatEngine';
 import { attachMessageToActiveBranch } from './messageBranching';
 import { GenerationCancelledError, isGenerationCancelledError } from './generationCancellation';
+import { hasRenderableStreamingContent } from './streamingContentGuard';
 
 function ensureGenerationStillCurrent(params: { signal?: AbortSignal; shouldContinue?: () => boolean }) {
   if (params.signal?.aborted) throw new GenerationCancelledError();
@@ -76,6 +77,7 @@ export async function generateAndCommitAiMessage(params: {
       signal: params.signal,
       onChunk: (content) => {
         ensureGenerationStillCurrent(params);
+        if (!hasRenderableStreamingContent(content)) return;
         streamingMessage = { ...streamingMessage, content, isStreaming: true };
         params.upsertMessage(streamingMessage);
         params.onChunk?.(content);
@@ -105,7 +107,7 @@ export async function generateAndCommitAiMessage(params: {
       getCurrentCharacters: params.getCurrentCharacters,
     });
   } catch (error) {
-    if (isGenerationCancelledError(error)) {
+    if (isGenerationCancelledError(error) || error instanceof EmptyGeneratedResponseError) {
       params.upsertMessage({ ...streamingMessage, content: '', isDeleted: true, isStreaming: false });
     }
     throw error;

@@ -67,7 +67,6 @@ export async function reorderPlanQueueWithModel(
     while (remaining.length > 0) {
       const decision = await orchestrateWorldDecision({
         domain: 'calendar_patch_queue',
-        textApiConfig,
         candidates: remaining.map(({ item, idx }) => ({
           id: String(idx),
           kind: 'calendar_item_patch',

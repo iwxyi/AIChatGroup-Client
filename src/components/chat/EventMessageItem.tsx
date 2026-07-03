@@ -5,9 +5,25 @@ import type { DisplayTextMember } from '../../services/displayTextSanitizer';
 import { buildConflictEventMeta, buildEventDisplayText, buildMemoryDistillationMeta, buildMemoryReactivationMeta } from './messageBubbleEventHelpers';
 import { getRuntimeEventPayload, isConflictDeveloperEvent, shouldRenderEventMessage } from './eventMessagePresentation';
 
-function buildEventTypeChip(payload: { eventType?: string }) {
+function getMetricsKind(metrics: unknown) {
+  return metrics && typeof metrics === 'object' && 'kind' in metrics && typeof (metrics as { kind?: unknown }).kind === 'string'
+    ? (metrics as { kind: string }).kind
+    : '';
+}
+
+function buildEventTypeChip(payload: { eventType?: string; metrics?: unknown }) {
   if (payload.eventType === 'memory_distillation') return null;
   const eventType = payload.eventType || 'event';
+  const metricsKind = getMetricsKind(payload.metrics);
+  if (eventType === 'local_interception' && (
+    metricsKind === 'analysis_artifacts_missing'
+    || metricsKind === 'presence_metadata_missing'
+    || metricsKind === 'surface_echo_warning'
+    || metricsKind === 'surface_contract_warning'
+    || metricsKind === 'streamed_draft_committed'
+  )) {
+    return <Chip size="small" label="提示" color="info" variant="outlined" />;
+  }
   const config: Record<string, { label: string; color: 'primary' | 'secondary' | 'warning' | 'success' | 'info' | 'error' | 'default' }> = {
     group_relationship_shift: { label: '关系', color: 'secondary' },
     relationship_shift: { label: '关系', color: 'secondary' },
@@ -18,6 +34,7 @@ function buildEventTypeChip(payload: { eventType?: string }) {
     conflict_axis_shift: { label: '矛盾', color: 'error' },
     world_state_shift: { label: '态势', color: 'primary' },
     room_state_snapshot_v2: { label: '态势', color: 'primary' },
+    analysis_run_policy: { label: '审议', color: 'info' },
     memory_distillation: { label: '蒸馏', color: 'info' },
     memory_reactivation: { label: '回温', color: 'warning' },
     calendar_item_patch: { label: '日历', color: 'info' },

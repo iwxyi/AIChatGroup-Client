@@ -188,6 +188,15 @@ export interface CharacterSoulState {
   updatedAt?: number;
 }
 
+export interface CharacterPresenceState {
+  status: 'online' | 'away';
+  activity?: string;
+  reason?: string;
+  unavailableUntil?: number;
+  updatedAt: number;
+  sourceMessageId?: string;
+}
+
 import type { MemoryItem } from '../services/memoryTypes';
 
 export interface AICharacter {
@@ -198,6 +207,7 @@ export interface AICharacter {
   personalityDrift?: Partial<PersonalityParams>;
   emotionalState?: EmotionalState;
   soulState?: CharacterSoulState;
+  presence?: CharacterPresenceState;
   coreProfile?: CharacterCoreProfile;
   visualIdentity?: CharacterVisualIdentity | null;
   speechProfile?: CharacterSpeechProfile;

@@ -1,6 +1,7 @@
 import type { GroupChat } from '../types/chat';
 import type { AICharacter } from '../types/character';
 import { sanitizeUserFacingText, type DisplayTextMember } from './displayTextSanitizer';
+import { resolveSessionFamilyKey } from './sessionEngineKeys';
 
 export interface SessionInfoCard {
   key: string;
@@ -19,6 +20,7 @@ interface ProjectSessionInfoCardsParams {
 
 export function projectSessionInfoCards(params: ProjectSessionInfoCardsParams): SessionInfoCard[] {
   const isZh = Boolean(params.isZh);
+  const family = resolveSessionFamilyKey(params.chat);
   const displayMembers: DisplayTextMember[] = [
     { id: 'user', name: '我' },
     ...((params.members || []).map((member) => ({ id: member.id, name: member.name }))),
@@ -54,14 +56,14 @@ export function projectSessionInfoCards(params: ProjectSessionInfoCardsParams): 
       description: clean(String(params.chat.scenarioState.mysteryScript)),
     });
   }
-  if ((params.chat.sessionKind?.family === 'study' || params.chat.sessionKind?.family === 'agent') && params.chat.scenarioState?.goals?.[0]?.label) {
+  if ((family === 'study' || family === 'agent') && params.chat.scenarioState?.goals?.[0]?.label) {
     cards.push({
       key: 'room-goal',
       title: isZh ? '当前目标' : 'Current goal',
       description: clean(String(params.chat.scenarioState.goals[0].label)),
     });
   }
-  const discussionTarget = params.chat.sessionKind?.family === 'analysis' ? params.chat.scenarioState?.progress?.[0]?.target : undefined;
+  const discussionTarget = family === 'analysis' ? params.chat.scenarioState?.progress?.[0]?.target : undefined;
   if (typeof discussionTarget === 'number' && discussionTarget > 0) {
     cards.push({
       key: 'discussion-progress',
@@ -69,7 +71,7 @@ export function projectSessionInfoCards(params: ProjectSessionInfoCardsParams): 
       description: clean(`${params.chat.scenarioState?.progress?.[0]?.value || 0}/${discussionTarget}`),
     });
   }
-  if (params.chat.sessionKind?.family === 'board_game' && params.chat.scenarioState?.board?.schema) {
+  if (family === 'board_game' && params.chat.scenarioState?.board?.schema) {
     cards.push({
       key: 'board-size',
       title: isZh ? '棋盘尺寸' : 'Board size',

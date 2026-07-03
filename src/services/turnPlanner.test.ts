@@ -78,6 +78,14 @@ const intent: SpeakIntent = {
   messageShape: 'single_sentence',
 };
 
+function fragmentIntent(): SpeakIntent {
+  return {
+    ...intent,
+    delivery: 'side_remark',
+    messageShape: 'fragment',
+  };
+}
+
 describe('deriveTurnPlan', () => {
   it('marks short open user turns as wait-sensitive without keyword checks', () => {
     const plan = deriveTurnPlan({
@@ -127,6 +135,68 @@ describe('deriveTurnPlan', () => {
     expect(plan.targetBubbleCount).toBe(1);
   });
 
+  it('does not make analysis-room AI continuations long just because the surface is professional', () => {
+    const plan = deriveTurnPlan({
+      chat: chat({
+        type: 'group',
+        sessionKind: { topology: 'group', family: 'analysis', scenarioId: 'opinion-review', surfaceProfile: 'text' },
+      }),
+      speaker: character(),
+      messages: [
+        message({
+          type: 'ai',
+          senderId: 'other',
+          senderName: '甲',
+          content: '我觉得这个结论已经差不多了，大家其实都在说同一个意思，只是换了几个比喻。',
+          timestamp: 10,
+        }),
+      ],
+      intent: {
+        ...intent,
+        stance: 'probe',
+        delivery: 'quick_question',
+        messageShape: 'question_only',
+      },
+      surface: { kind: 'professional' },
+    });
+
+    expect(plan.rhythm).toBe('short_reply');
+    expect(plan.lengthBand).toBe('short');
+    expect(plan.reasons).toContain('analysis_room');
+    expect(plan.reasons).toContain('ai_continuation');
+  });
+
+  it('still allows full analysis replies when a human turn asks for substance', () => {
+    const plan = deriveTurnPlan({
+      chat: chat({
+        type: 'group',
+        sessionKind: { topology: 'group', family: 'analysis', scenarioId: 'opinion-review', surfaceProfile: 'text' },
+      }),
+      speaker: character(),
+      messages: [message({ content: '请你把刚才几个观点裁决一下，给出证据和反例。', timestamp: 10 })],
+      intent: { ...intent, stance: 'summarize', delivery: 'group_redirect', messageShape: 'two_sentences' },
+      surface: { kind: 'professional' },
+    });
+
+    expect(plan.rhythm).toBe('full_reply');
+    expect(plan.lengthBand).toBe('medium');
+    expect(plan.reasons).toContain('human_turn');
+  });
+
+  it('does not force short human inputs into micro_ack solely from local intent shape', () => {
+    const plan = deriveTurnPlan({
+      chat: chat(),
+      speaker: character({ speechProfile: { catchphrases: [], fillers: [], tabooPhrases: [], preferredOpeners: [], preferredClosers: [], sentenceLengthBias: 'short', questionBias: 30, sarcasmBias: 10 } }),
+      messages: [message({ content: '合同责任？', timestamp: 10 })],
+      intent: fragmentIntent(),
+      surface: { kind: 'chat' },
+      now: 10,
+    });
+
+    expect(plan.rhythm).not.toBe('micro_ack');
+    expect(plan.reasons).not.toContain('fragment_or_tiny_context');
+  });
+
   it('does not turn the internal length band into a fixed prompt target', () => {
     const prompt = buildTurnPlanPrompt({
       rhythm: 'short_reply',
@@ -138,6 +208,7 @@ describe('deriveTurnPlan', () => {
     });
 
     expect(prompt).toContain('Do not target a fixed length band');
+    expect(prompt).toContain('not a keyword rule, output template, or length cap');
     expect(prompt).not.toContain('Target length band');
   });
 });

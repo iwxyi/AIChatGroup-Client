@@ -10,9 +10,6 @@ import type {
   RuntimeEventV2,
   SocialEventCandidatePayload,
   SocialEventHintEnvelope,
-  SocialOutingAnalysisResult,
-  PostMomentAnalysisResult,
-  PairPrivateThreadAnalysisResult,
 } from '../../types/runtimeEvent';
 import { normalizeSocialEventHints } from '../../types/runtimeEvent';
 import { DEFAULT_OPEN_CHAT_MODE_CONFIG, DEFAULT_OPEN_CHAT_MODE_STATE } from '../../types/chat';
@@ -22,7 +19,6 @@ import { getRelationshipLedgerEntry, inferRelationshipDelta, reduceRelationshipL
 import { calculateRoomShift } from '../roomStateSynthesizer';
 import { resolveRuntimeEvolutionConfig } from '../runtimeEvolutionConfig';
 import type { APIConfig } from '../../types/settings';
-import { generateResponse } from '../aiClient';
 import { getGuidanceTargetActorIds, parseUserGuidanceIntent } from '../userGuidanceIntent';
 import { projectWorldAttentionStates, projectWorldCalendar } from '../worldRuntimeProjection';
 import { isCharacterFeatureEnabled } from '../characterGenerationPolicy';
@@ -1739,170 +1735,6 @@ function buildCharacterReference(characters: AICharacter[]) {
   return characters.map((character) => `- id=${character.id}; name=${character.name}`).join('\n');
 }
 
-function cleanJson(raw: string) {
-  const match = raw.match(/\{[\s\S]*\}/);
-  return match ? match[0] : raw.trim();
-}
-
-function normalizeOutingParticipantIds(ids: unknown, conversation: GroupChat, fallbackId: string) {
-  if (!Array.isArray(ids)) return [fallbackId];
-  const filtered = ids.filter((id): id is string => typeof id === 'string' && conversation.memberIds.includes(id));
-  return filtered.length ? Array.from(new Set(filtered)) : [fallbackId];
-}
-
-function toSocialOutingHint(result: SocialOutingAnalysisResult | null, conversation: GroupChat, senderId: string): SocialEventHintEnvelope | null {
-  if (!result?.shouldCreate || (result.confidence || 0) < 0.8) return null;
-  return {
-    eventKind: 'social_outing',
-    participantIds: normalizeOutingParticipantIds(result.participantIds, conversation, senderId),
-    reasonType: result.reasonType || 'celebration',
-    confidence: Math.max(0.8, result.confidence || 0),
-    urgency: 'soon',
-    seedIntent: result.seedIntent || '想把刚才群里的热络气氛延续成一次线下活动。',
-    visibilityPlan: 'public',
-    expectedArtifacts: ['outing_summary', 'group_photo', 'food_photo'],
-    title: result.title || '线下活动',
-    activityType: result.activityType || undefined,
-    timeHint: result.timeHint ?? null,
-    locationHint: result.locationHint ?? null,
-    dedupeKey: result.dedupeKey ?? null,
-  };
-}
-
-async function analyzeSocialOuting(params: {
-  conversation: GroupChat;
-  message: Pick<Message, 'content' | 'senderId'>;
-  characters: AICharacter[];
-  recentMessages?: Message[];
-  apiConfig?: APIConfig;
-}): Promise<SocialOutingAnalysisResult | null> {
-  if (!params.apiConfig) return null;
-  const recentTranscript = (params.recentMessages || [])
-    .filter((message) => !message.isDeleted && message.type !== 'system' && message.type !== 'event')
-    .slice(-8)
-    .map((message) => `${message.senderName}: ${message.content}`)
-    .join('\n');
-  const recentOutings = buildRecentSocialEventContext(params.conversation, 'social_outing')
-    .map((outing) => `- ${outing.title}${outing.activityType ? ` / ${outing.activityType}` : ''}${outing.timeHint ? ` / ${outing.timeHint}` : ''}${outing.locationHint ? ` / ${outing.locationHint}` : ''}: ${outing.summary}`)
-    .join('\n');
-  const prompt = `你是群聊社交事件分析器。判断这条新消息是否真的在提议一次线下活动。\n\n只输出 JSON：\n{\n  "shouldCreate": boolean,\n  "title": string | null,\n  "activityType": string | null,\n  "timeHint": string | null,\n  "locationHint": string | null,\n  "participantIds": string[] | null,\n  "confidence": number,\n  "reasonType": string | null,\n  "dedupeKey": string | null,\n  "seedIntent": string | null\n}\n\n要求：\n1. 不要靠关键词机械判断，只有明确在推动“线下活动真的可能发生”时才 shouldCreate=true。\n2. 标题用泛化层级，例如“线下活动”。具体内容放 activityType。\n3. 如果这条消息和最近已有活动是同一件事，返回相同 dedupeKey。\n4. participantIds 必须来自以下成员 id。\n5. 拿不准就 shouldCreate=false 或降低 confidence。\n\n成员：\n${buildCharacterReference(params.characters.filter((character) => params.conversation.memberIds.includes(character.id)))}\n\n最近对话：\n${recentTranscript}\n\n最近线下活动：\n${recentOutings || '无'}\n\n当前消息（speakerId=${params.message.senderId}）：\n${params.message.content}`;
-  try {
-    const raw = await generateResponse(params.apiConfig, prompt, [{ role: 'user', content: '只输出 JSON。' }], undefined, {
-      aiUsage: { type: 'social_event_analysis', label: '分析线下活动', scope: 'chat' },
-    });
-    return JSON.parse(cleanJson(raw)) as SocialOutingAnalysisResult;
-  } catch {
-    return null;
-  }
-}
-
-function toPostMomentHint(result: PostMomentAnalysisResult | null, conversation: GroupChat, senderId: string): SocialEventHintEnvelope | null {
-  if (!result?.shouldCreate || (result.confidence || 0) < 0.8) return null;
-  return {
-    eventKind: 'post_moment',
-    participantIds: [senderId],
-    targetIds: result.targetIds?.filter((id) => conversation.memberIds.includes(id)),
-    reasonType: result.reasonType || 'emotion_release',
-    confidence: Math.max(0.8, result.confidence || 0),
-    urgency: 'soon',
-    seedIntent: result.seedIntent || '想发一条和刚才气氛有关的朋友圈或动态。',
-    visibilityPlan: 'public',
-    expectedArtifacts: ['moment_text'],
-    title: result.title,
-    activityType: result.activityType,
-    dedupeKey: result.dedupeKey ?? null,
-  };
-}
-
-async function analyzePostMoment(params: {
-  conversation: GroupChat;
-  message: Pick<Message, 'content' | 'senderId'>;
-  characters: AICharacter[];
-  recentMessages?: Message[];
-  apiConfig?: APIConfig;
-}): Promise<PostMomentAnalysisResult | null> {
-  if (!params.apiConfig) return null;
-  const recentTranscript = (params.recentMessages || [])
-    .filter((message) => !message.isDeleted && message.type !== 'system' && message.type !== 'event')
-    .slice(-8)
-    .map((message) => `${message.senderName}: ${message.content}`)
-    .join('\n');
-  const recentMoments = buildRecentSocialEventContext(params.conversation, 'post_moment')
-    .map((event) => `- ${event.title || '动态'}${event.activityType ? ` / ${event.activityType}` : ''}: ${event.summary}`)
-    .join('\n');
-  const prompt = `你是群聊社交事件分析器。判断这条新消息之后，角色是否很可能会发一条朋友圈/动态。\n\n只输出 JSON：\n{\n  "shouldCreate": boolean,\n  "title": string | null,\n  "activityType": string | null,\n  "targetIds": string[] | null,\n  "confidence": number,\n  "reasonType": string | null,\n  "dedupeKey": string | null,\n  "seedIntent": string | null\n}\n\n要求：\n1. 不要靠关键词机械判断，只有在角色真的有“分享/吐槽/记录/阴阳外显”冲动时才 shouldCreate=true。\n2. 如果只是普通聊天，不要创建动态。\n3. 如果和最近已有动态是同一条语义，返回相同 dedupeKey。\n4. targetIds 如有，必须来自成员 id。\n5. 拿不准就 shouldCreate=false 或降低 confidence。\n\n成员：\n${buildCharacterReference(params.characters.filter((character) => params.conversation.memberIds.includes(character.id)))}\n\n最近对话：\n${recentTranscript}\n\n最近动态：\n${recentMoments || '无'}\n\n当前消息（speakerId=${params.message.senderId}）：\n${params.message.content}`;
-  try {
-    const raw = await generateResponse(params.apiConfig, prompt, [{ role: 'user', content: '只输出 JSON。' }], undefined, {
-      aiUsage: { type: 'social_event_analysis', label: '分析朋友圈动态', scope: 'chat' },
-    });
-    return JSON.parse(cleanJson(raw)) as PostMomentAnalysisResult;
-  } catch {
-    return null;
-  }
-}
-
-function toPairPrivateThreadHint(result: PairPrivateThreadAnalysisResult | null, conversation: GroupChat, senderId: string): SocialEventHintEnvelope | null {
-  if (!result?.shouldCreate || (result.confidence || 0) < 0.8) return null;
-  const participantIds = Array.isArray(result.participantIds)
-    ? result.participantIds.filter((id) => id !== 'user' && conversation.memberIds.includes(id))
-    : [];
-  if (participantIds.length !== 2 || !participantIds.includes(senderId)) return null;
-  return {
-    eventKind: 'pair_private_thread',
-    participantIds,
-    targetIds: result.targetIds?.filter((id) => id !== 'user' && conversation.memberIds.includes(id)),
-    reasonType: result.reasonType || 'unresolved_question',
-    confidence: Math.max(0.8, result.confidence || 0),
-    urgency: 'soon',
-    seedIntent: result.seedIntent || '想私下继续聊刚才的话题。',
-    triggerReason: result.triggerReason || result.seedIntent || '当前群聊出现了适合双人延续的未尽话题。',
-    openingMessage: result.openingMessage || result.seedIntent || '刚才那个点我还是想和你单独接着聊一下。',
-    visibilityPlan: 'conversation_private',
-    expectedArtifacts: ['private_thread_summary'],
-    dedupeKey: result.dedupeKey ?? `${senderId}::${participantIds.find((id) => id !== senderId) || participantIds[1]}`,
-  };
-}
-
-async function analyzePairPrivateThread(params: {
-  conversation: GroupChat;
-  message: Pick<Message, 'content' | 'senderId'>;
-  characters: AICharacter[];
-  recentMessages?: Message[];
-  apiConfig?: APIConfig;
-}): Promise<PairPrivateThreadAnalysisResult | null> {
-  if (!params.apiConfig || params.message.senderId === 'user') return null;
-  const memberCharacters = params.characters.filter((character) => params.conversation.memberIds.includes(character.id));
-  const recentTranscript = (params.recentMessages || [])
-    .filter((message) => !message.isDeleted && message.type !== 'system' && message.type !== 'event')
-    .slice(-10)
-    .map((message) => `${message.senderName}: ${message.content}`)
-    .join('\n');
-  const recentPrivateThreads = buildRecentSocialEventContext(params.conversation, 'pair_private_thread')
-    .map((event) => `- ${event.summary}`)
-    .join('\n');
-  const prompt = `你是群聊社交事件分析器。判断这条新消息之后，发言角色是否真的需要和某个AI角色派生一个双人私聊，并写出私聊第一句。\n\n只输出 JSON：\n{\n  "shouldCreate": boolean,\n  "participantIds": string[] | null,\n  "targetIds": string[] | null,\n  "confidence": number,\n  "reasonType": string | null,\n  "dedupeKey": string | null,\n  "seedIntent": string | null,\n  "triggerReason": string | null,\n  "openingMessage": string | null\n}\n\n要求：\n1. participantIds 必须恰好 2 个AI角色 id，且必须包含 speakerId=${params.message.senderId}；不要包含 user。\n2. openingMessage 是 speakerId 角色发给另一个角色的第一句私聊消息，要契合当前群聊上下文和角色人设；可以短招呼、追问、解释、安抚，也可以较长，但不能像系统说明。\n3. triggerReason 用一句话说明为什么当前场景会触发这段私聊，必须基于最近对话，不要泛泛而谈。\n4. 只有确实存在“公开群聊不适合继续讲、两人关系需要转入私下、某个问题需要避开他人追问、或者关系余波需要双人处理”时才 shouldCreate=true。\n5. 如果只是普通回复、玩笑、寒暄、或可以继续在群里聊，返回 shouldCreate=false。\n6. 如果和最近已有私聊是同一对同一语义，返回相同 dedupeKey。\n\n成员：\n${buildCharacterReference(memberCharacters)}\n\n最近对话：\n${recentTranscript}\n\n最近双人私聊事件：\n${recentPrivateThreads || '无'}\n\n当前消息（speakerId=${params.message.senderId}）：\n${params.message.content}`;
-  try {
-    const raw = await generateResponse(params.apiConfig, prompt, [{ role: 'user', content: '只输出 JSON。' }], undefined, {
-      aiUsage: { type: 'social_event_analysis', label: '分析双人私聊', scope: 'chat' },
-    });
-    return JSON.parse(cleanJson(raw)) as PairPrivateThreadAnalysisResult;
-  } catch {
-    return null;
-  }
-}
-
-function shouldAnalyzeSocialOuting(content: string) {
-  return /(今晚|明天|周末|改天|一起去|约饭|吃火锅|聚餐|看展|唱歌|散步|庆祝|线下|见面|出去玩|喝一杯|喝奶茶|吃饭)/i.test(content);
-}
-
-function shouldAnalyzePostMoment(content: string) {
-  return /(发个朋友圈|发条动态|想发|晒|记录一下|发出来|po一下|纪念一下|发成动态|发一条|朋友圈|动态)/i.test(content);
-}
-
-function shouldAnalyzePairPrivateThread(content: string) {
-  return /(私下|单独|悄悄|别在群里|回头聊|另聊|私聊|只跟你|避开|别让|继续聊|我想问你|你刚才说的|刚才那个问题)/i.test(content);
-}
-
 async function resolveSocialEventHints(params: {
   conversation: GroupChat;
   message: Pick<Message, 'content' | 'type' | 'senderId'> & { socialEventHints?: SocialEventHintEnvelope[] | null };
@@ -1910,44 +1742,12 @@ async function resolveSocialEventHints(params: {
   recentMessages?: Message[];
   apiConfig?: APIConfig;
 }) {
-  const baseHints = normalizeSocialEventHints(params.message.socialEventHints);
-  const hasOutingHint = baseHints.some((hint) => hint.eventKind === 'social_outing');
-  const hasMomentHint = baseHints.some((hint) => hint.eventKind === 'post_moment');
-  const hasPairPrivateThreadHint = baseHints.some((hint) => hint.eventKind === 'pair_private_thread');
-  if (!hasOutingHint && shouldAnalyzeSocialOuting(params.message.content)) {
-    const analyzed = await analyzeSocialOuting({
-      conversation: params.conversation,
-      message: params.message,
-      characters: params.characters,
-      recentMessages: params.recentMessages,
-      apiConfig: params.apiConfig,
-    });
-    const mapped = toSocialOutingHint(analyzed, params.conversation, params.message.senderId);
-    if (mapped) baseHints.push(mapped);
-  }
-  if (!hasMomentHint && shouldAnalyzePostMoment(params.message.content)) {
-    const analyzed = await analyzePostMoment({
-      conversation: params.conversation,
-      message: params.message,
-      characters: params.characters,
-      recentMessages: params.recentMessages,
-      apiConfig: params.apiConfig,
-    });
-    const mapped = toPostMomentHint(analyzed, params.conversation, params.message.senderId);
-    if (mapped) baseHints.push(mapped);
-  }
-  if (!hasPairPrivateThreadHint && shouldAnalyzePairPrivateThread(params.message.content)) {
-    const analyzed = await analyzePairPrivateThread({
-      conversation: params.conversation,
-      message: params.message,
-      characters: params.characters,
-      recentMessages: params.recentMessages,
-      apiConfig: params.apiConfig,
-    });
-    const mapped = toPairPrivateThreadHint(analyzed, params.conversation, params.message.senderId);
-    if (mapped) baseHints.push(mapped);
-  }
-  return baseHints.length ? baseHints : null;
+  void params.conversation;
+  void params.characters;
+  void params.recentMessages;
+  void params.apiConfig;
+  const hints = normalizeSocialEventHints(params.message.socialEventHints);
+  return hints.length ? hints : null;
 }
 
 function buildPostMomentCandidate(params: {
@@ -1964,11 +1764,12 @@ function buildPostMomentCandidate(params: {
   const payload = hinted.payload as SocialEventCandidatePayload;
   const now = Date.now();
   const text = params.message.content.trim();
+  const modelHinted = normalizeSocialEventHints(params.message.socialEventHints).some((hint) => hint.eventKind === 'post_moment' && (hint.confidence || 0) >= 0.8);
   const expressive = /(发个朋友圈|发条动态|想发|晒|记录一下|发出来|po一下)/i.test(text);
   const roomHeat = params.structuredRoomState?.heat || 0;
   const roomCohesion = params.structuredRoomState?.cohesion || 0;
   const emotionalPush = params.interaction && params.interaction.confidence >= 0.85 && (params.interaction.intensity >= 3 || params.interaction.kind === 'side_comment');
-  if (!expressive && !emotionalPush && !(roomHeat >= 18 && roomCohesion >= 2)) return null;
+  if (!modelHinted && !expressive && !emotionalPush && !(roomHeat >= 18 && roomCohesion >= 2)) return null;
   const personaText = `${actor?.speakingStyle || ''} ${actor?.background || ''} ${(actor?.expertise || []).join(' ')}`.toLowerCase();
   const isNightOwl = /(夜猫|熬夜|夜班|主播|直播|vlog|夜生活|night|stream)/i.test(personaText);
   const hour = new Date(now).getHours();
@@ -2756,7 +2557,6 @@ async function buildSocialEventCandidateEvents(params: {
   if (!selection.candidates.length) return selection;
   const decision = await orchestrateWorldDecision({
     domain: 'open_chat',
-    textApiConfig: params.apiConfig || null,
     candidates: selection.candidates.map((event, index) => {
       const payload = event.payload as SocialEventCandidatePayload;
       return {

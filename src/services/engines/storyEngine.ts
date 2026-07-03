@@ -112,17 +112,17 @@ function buildGenerationPromptContext(params: Parameters<NonNullable<SessionEngi
         ? [
         'Use storyEvents. At minimum output one narration event. Add speech events only for spoken lines that change the scene.',
         'Do not output alternate rewrites of the same consequence. If you revise a narration or spoken line, keep only the final version in storyEvents.',
-        'Resolve the chosen storyDirection through 1 short narrator setup block followed by 2-5 character chat bubbles when dialogue is the right visible rhythm.',
+        'Resolve the chosen storyDirection with a natural branch rhythm. A common shape is 1 concise narrator setup followed by 2-5 character chat bubbles when dialogue carries the beat, but scene needs override this suggestion.',
         'Resolve the chosen storyDirection with a concrete consequence: new evidence, danger, location, relationship shift, or goal pressure.',
         'End the beat with at least one trackable hook: a clue, unanswered question, visible cost, relationship pressure, changed location, or imminent threat.',
         'Do not end at a new decision point until the consequence is visible. Any future choices must be specific to the current people, place, clue, threat, or goal.',
         'Avoid abstract option language such as investigate clues, deepen emotion, advance plot, or face the key person without naming what is at stake.',
-        'Each character bubble should be 1-3 sentences. Use narrator prose only for external actions or scene changes that cannot be spoken.',
+        'Character bubbles often work best at 1-3 sentences, but this is a soft rhythm suggestion. Let each bubble be as terse, broken, or developed as that character and pressure point require. Use narrator prose only for external actions or scene changes that cannot be spoken.',
         ]
         : [
         'Use storyEvents. At minimum output one narration event. Add speech events only for spoken lines that change the scene.',
         'Do not output alternate rewrites of the same moment. If you revise a narration or spoken line, keep only the final version in storyEvents.',
-        'Advance the scene through 2-5 short character chat bubbles when dialogue is the right visible rhythm, with at most 1 brief narrator prose block for external action or atmosphere.',
+        'Advance the scene with the narration/speech balance this beat needs. A common visible rhythm is 2-5 character chat bubbles plus at most 1 brief narrator prose block for external action or atmosphere, but do not force that shape when the scene needs more narration, fewer lines, or no speech.',
         'Advance the scene with concrete atmosphere, implication, or character pressure instead of plain exposition.',
         'End the beat with at least one trackable hook: a clue, unanswered question, visible cost, relationship pressure, changed location, or imminent threat.',
         'Make the next pressure point specific enough that choices can name the person, place, clue, threat, or goal involved.',

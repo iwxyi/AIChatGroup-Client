@@ -4,6 +4,7 @@ import type { Message } from '../types/message';
 import type { NarrativeLineProjection } from './narrativeProjection';
 import { selectPrimaryNarrativeLine } from './narrativeProjection';
 import { getGuidanceTargetActorIds, parseUserGuidanceIntent, type UserGuidanceIntent } from './userGuidanceIntent';
+import { resolveSessionFamilyKey } from './sessionEngineKeys';
 
 export type DirectorIntentSource =
   | 'user_message'
@@ -146,6 +147,25 @@ function resolveLineIntent(line: NarrativeLineProjection): DirectorIntent {
   };
 }
 
+function isAnalysisRoom(chat: GroupChat) {
+  return resolveSessionFamilyKey(chat) === 'analysis';
+}
+
+function adaptIntentForAnalysisRoom(intent: DirectorIntent): DirectorIntent {
+  if (intent.source === 'user_message') return intent;
+  if (intent.beatType !== 'defend' && intent.source !== 'faction') return intent;
+  return {
+    ...intent,
+    source: intent.source === 'faction' ? 'topic' : intent.source,
+    beatType: 'summarize',
+    targetActorIds: [],
+    pressure: clampPressure(Math.max(0.42, intent.pressure * 0.82)),
+    reason: intent.source === 'faction'
+      ? '审议房不使用阵营防守压力；转为梳理论点差异和待检验前提。'
+      : '审议房不把稳定压力翻译为保护某个角色；转为梳理争点。',
+  };
+}
+
 export function resolveDirectorIntent(params: {
   chat: GroupChat;
   characters: AICharacter[];
@@ -153,6 +173,8 @@ export function resolveDirectorIntent(params: {
   pendingReplyContext?: PendingReplyLike | null;
   narrativeLines?: NarrativeLineProjection[];
 }): DirectorIntent {
+  const analysisRoom = isAnalysisRoom(params.chat);
+  const finalize = (intent: DirectorIntent) => analysisRoom ? adaptIntentForAnalysisRoom(intent) : intent;
   const latestMessage = getLatestVisibleMessage(params.messages);
   const latestAiMessage = getLatestAiMessage(params.messages);
   const pending = params.pendingReplyContext;
@@ -161,7 +183,7 @@ export function resolveDirectorIntent(params: {
   }
 
   if (pending?.targetIds.length) {
-    return {
+    return finalize({
       source: 'user_message',
       beatType: 'answer',
       targetActorIds: pending.targetIds,
@@ -169,12 +191,12 @@ export function resolveDirectorIntent(params: {
       reason: pending.sourceSpeakerId
         ? '被点名角色还有未回应的期待。'
         : '有角色被点名，需要在房间漂移前接住回应。',
-    };
+    });
   }
 
   const primaryLine = selectPrimaryNarrativeLine(params.narrativeLines || []);
   if (primaryLine) {
-    return resolveLineIntent(primaryLine);
+    return finalize(resolveLineIntent(primaryLine));
   }
 
   const primaryConflict = params.chat.worldState.conflictState?.primaryConflict || null;
@@ -183,46 +205,46 @@ export function resolveDirectorIntent(params: {
       ...(primaryConflict.targetIds || []),
       ...(primaryConflict.participantIds || []),
     ], params.characters);
-    return {
+    return finalize({
       source: 'conflict',
       targetLineId: primaryConflict.id,
       beatType: resolveConflictBeat(primaryConflict.nextPressure),
       targetActorIds,
       pressure: clampPressure(0.46 + primaryConflict.severity * 0.42),
       reason: primaryConflict.summary || '主要矛盾仍在生效。',
-    };
+    });
   }
 
   const room = params.chat.worldState.structuredRoomState;
   if (room?.pileOnTarget) {
     const roomHeat = normalizePercent(room.heat);
-    return {
+    return finalize({
       source: 'room_state',
       beatType: roomHeat > 0.68 ? 'cool_down' : 'defend',
       targetActorIds: uniqueActorIds([room.pileOnTarget], params.characters),
       pressure: clampPressure(0.48 + roomHeat * 0.34),
       reason: '房间里出现了持续指向同一角色的压力，需要回应或降温。',
-    };
+    });
   }
 
   const topicDrift = normalizePercent(room?.topicDrift);
   if (room && topicDrift > 0.62) {
-    return {
+    return finalize({
       source: 'room_state',
       beatType: 'summarize',
       targetActorIds: [],
       pressure: clampPressure(0.44 + topicDrift * 0.28),
       reason: '房间话题已经明显漂移，适合转向或收束。',
-    };
+    });
   }
 
-  return {
+  return finalize({
     source: latestAiMessage ? 'topic' : 'room_state',
     beatType: latestAiMessage ? 'invite' : 'summarize',
     targetActorIds: latestAiMessage ? uniqueActorIds([latestAiMessage.senderId], params.characters) : [],
     pressure: latestAiMessage ? 0.34 : 0.22,
     reason: latestAiMessage ? '延续当前正在进行的话题，不强行推进新剧情。' : '目前还没有明显的叙事压力。',
-  };
+  });
 }
 
 export function describeDirectorIntent(intent: DirectorIntent) {

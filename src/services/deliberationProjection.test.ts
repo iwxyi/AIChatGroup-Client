@@ -128,6 +128,48 @@ describe('deliberationProjection', () => {
     ]));
   });
 
+  it('projects verdicts and summaries when analysis is resolved from scenarioId', () => {
+    const chat = normalizeConversation({
+      id: 'deliberation-scenario-id',
+      type: 'group',
+      mode: 'group_discussion',
+      sessionKind: { topology: 'group', family: 'conversation', scenarioId: 'opinion-review', surfaceProfile: 'text' },
+      modeConfig: { freeSpeaking: true, allowInterruptions: true, allowPrivateThreads: false, allowDirectorInterventions: true, showRoleActions: true },
+      modeState: { phase: 'free', currentSpeakerId: null, currentTopicFocus: '', lastRelationshipEventAt: null },
+      name: '观点审议',
+      topic: '合租是否可行',
+      style: 'free',
+      runtimeEvolutionIntensity: 'balanced',
+      memberIds: ['a'],
+      speed: 1,
+      isActive: true,
+      allowIntervention: true,
+      topicSeed: '',
+      governance: { ownerCharacterId: null, adminCharacterIds: [], autoModeration: false, allowMute: true, allowPrivateThreads: false },
+      dramaRules: { allowCliques: false, allowMockery: false, allowAlliances: false, allowContempt: false },
+      scenarioState: {
+        phase: 'deliberation',
+        discussionMode: 'open',
+        deliberationVerdicts: [
+          { id: 'verdict-1', actorId: 'a', text: '阶段判断：半公共空间比传统合租更现实。', tendency: 'mixed', reason: '已有论点指向低耦合陪伴' },
+        ],
+        summaryText: '审议总结：热闹需要可控在场和持续运营成本。',
+      },
+      worldState: { phase: 'debating', mood: '', focus: '', recentEvent: '', conflictAxes: [] },
+      directorControls: { allowSpeakAs: true, allowDirectorMode: true, allowEventInjection: true, allowForcedReply: true },
+      createdAt: 1,
+      updatedAt: 1,
+      lastMessageAt: 1,
+    });
+
+    const rows = projectDeliberationSidebarRows(chat, [member('a', '甲')]);
+
+    expect(rows.join('\n')).toContain('裁决记录 甲');
+    expect(rows.join('\n')).toContain('半公共空间');
+    expect(rows.join('\n')).toContain('审议总结');
+    expect(rows.join('\n')).toContain('持续运营成本');
+  });
+
   it('returns no rows for non-analysis rooms', () => {
     const chat = normalizeConversation({
       id: 'chat-1',

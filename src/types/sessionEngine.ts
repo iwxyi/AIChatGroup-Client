@@ -329,6 +329,9 @@ export function createDefaultTurnPolicyForFamily(family: SessionFamily, canSpeak
 export function createDefaultSessionKind(type: GroupChat['type'], mode: GroupChat['mode']): SessionKind {
   if (mode === 'board_game') return { topology: type === 'group' ? 'table' : 'direct', family: 'board_game', scenarioId: 'board-game', surfaceProfile: 'board' };
   if (mode === 'interview') return { topology: type === 'group' ? 'group' : 'direct', family: 'interview', scenarioId: 'panel-interview', surfaceProfile: 'form' };
+  if (mode === 'group_discussion' || mode === 'roundtable') return { topology: type === 'group' ? 'group' : 'team', family: 'analysis', scenarioId: mode === 'roundtable' ? 'roundtable-review' : 'opinion-review', surfaceProfile: 'text' };
+  if (mode === 'classroom') return { topology: type === 'group' ? 'group' : 'direct', family: 'study', scenarioId: 'ielts-coach', surfaceProfile: 'form' };
+  if (mode === 'scripted_play') return { topology: type === 'group' ? 'group' : 'direct', family: 'conversation', scenarioId: 'story-reader', surfaceProfile: 'hybrid' };
   if (mode === 'werewolf') return { topology: 'table', family: 'deduction', scenarioId: 'werewolf-classic', surfaceProfile: 'hybrid' };
   if (mode === 'murder_mystery') return { topology: 'table', family: 'mystery', scenarioId: 'murder-mystery', surfaceProfile: 'hybrid' };
   return {

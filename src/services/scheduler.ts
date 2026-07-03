@@ -9,6 +9,7 @@ import { buildSpeakerScoreBreakdown, getDirectorIntentSpeakerBias, type SpeakerS
 import { getInnerLifeSpeakerBias, projectInnerLife } from './innerLifeEngine';
 import { projectWorldAttentionStates } from './worldRuntimeProjection';
 import { canUseMute } from './conversationCapabilities';
+import { getEffectiveCharacterPresence, isCharacterAvailableForScheduling } from './characterPresence';
 
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
@@ -217,9 +218,12 @@ export function calculateWeights(
   chat?: GroupChat | null,
   directorIntent?: DirectorIntent | null
 ): WeightedCandidate[] {
-  const speakableCharacters = chat
-    ? characters.filter((char) => !isChatMemberMuted(chat, char.id))
-    : characters;
+  const now = Date.now();
+  const speakableCharacters = characters.filter((char) => (
+    !char.deletedAt
+    && (!chat || !isChatMemberMuted(chat, char.id))
+    && isCharacterAvailableForScheduling(char, now)
+  ));
   const recentAiMessages = recentMessages.filter((m) => m.type === 'ai' && !m.isDeleted);
   const lastSpeakerId = recentAiMessages.at(-1)?.senderId;
   const conflictContext = resolveConflictSpeakerContext(chat);
@@ -238,7 +242,6 @@ export function calculateWeights(
     return count;
   })();
 
-  const now = Date.now();
   const cooldownDuration = baseCooldownMs / speed;
   const recentText = buildSchedulerTopicText(recentMessages, directorIntent);
   const keywords = extractKeywords(recentText);
@@ -458,6 +461,17 @@ export function getSpeakerSelectionResult(
   if (picked) return { speakerId: picked, reason: null, bypassNotice: null };
 
   const now = Date.now();
+  const unavailable = characters
+    .map((char) => ({ character: char, presence: getEffectiveCharacterPresence(char, now) }))
+    .filter((item) => item.presence.status === 'away');
+  if (unavailable.length === characters.length && unavailable.length > 0) {
+    const detail = unavailable.slice(0, 3).map((item) => {
+      const remainingMs = Math.max(0, (item.presence.unavailableUntil || now) - now);
+      const remainingText = remainingMs > 0 ? `${Math.max(1, Math.ceil(remainingMs / 60000))}分钟` : '暂离';
+      return `${item.character.name}：${item.presence.activity || '暂离'} ${remainingText}`.trim();
+    }).join(' / ');
+    return { speakerId: null, reason: `当前所有角色暂时不在线：${detail}`, bypassNotice: null };
+  }
   const cooldownDuration = baseCooldownMs / speed;
   const blocked = characters
     .map((char) => ({

@@ -416,10 +416,12 @@ export default function ChatRuntimePanel({ chat, members, messages = [], private
   const showDeveloperMemory = useSettingsStore((state) => state.developerUI.showMemoryDebug);
   const showSpeechStyle = useSettingsStore((state) => state.developerUI.showSpeechStyle);
   const showAdvancedRuntimePanels = useSettingsStore((state) => state.developerUI.showAdvancedRuntimePanels);
+  const showDeliberationDebug = useSettingsStore((state) => state.developerUI.showDeliberationDebug);
+  const showPresenceDebug = useSettingsStore((state) => state.developerUI.showPresenceDebug);
   const aiProfiles = useSettingsStore((state) => state.aiProfiles);
   const isDeveloperView = developerMode && showDeveloperMemory;
-  const isSpeechStyleView = developerMode && showSpeechStyle;
   const isAdvancedRuntimeView = developerMode && showAdvancedRuntimePanels;
+  const isDialogueDebugView = developerMode && (showSpeechStyle || showAdvancedRuntimePanels || showDeliberationDebug || showPresenceDebug);
   const isZh = i18n.language.startsWith('zh');
 
   const roomRows = useMemo(() => projectRoomOverviewRows(chat, members), [chat, members]);
@@ -495,7 +497,7 @@ export default function ChatRuntimePanel({ chat, members, messages = [], private
         {isAdvancedRuntimeView ? renderDecisionTracePanel(decisionTrace, isAdvancedRuntimeView, members) : null}
 
         {privatePayloads.length ? <PrivatePayloadPanel payloads={privatePayloads} title={privatePayloadTitle} /> : null}
-        {(isSpeechStyleView || isAdvancedRuntimeView) ? <DialogueDebugPanel chat={chat} members={members} messages={messages} /> : null}
+        {isDialogueDebugView ? <DialogueDebugPanel chat={chat} members={members} messages={messages} /> : null}
       </PageSection>
     </>
   );

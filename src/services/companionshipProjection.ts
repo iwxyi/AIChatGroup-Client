@@ -676,7 +676,7 @@ type ResolvedAttachmentProfileEvent =
 const ATTACHMENT_FALLBACK_ADAPTATIONS: Record<UserAttachmentProfile['inferredStyle'], string[]> = {
   secure: ['keep a steady reciprocal pace'],
   anxious: ['give concrete reassurance without overpromising', 'respond to silence with warmth before intensity'],
-  avoidant: ['respect space and avoid repeated follow-up', 'keep care low-pressure and easy to ignore'],
+  avoidant: ['respect space and avoid repeated follow-up', 'keep care low-pressure and easy to ignore without reducing substantive answers'],
   disorganized: ['stay steady when the user alternates closeness and distance', 'avoid escalating intimacy after mixed signals'],
 };
 
@@ -846,7 +846,7 @@ function buildUserAttachmentProfile(params: {
     adaptations.push('respond to silence with warmth before intensity');
   } else if (inferredStyle === 'avoidant') {
     adaptations.push('respect space and avoid repeated follow-up');
-    adaptations.push('keep care low-pressure and easy to ignore');
+    adaptations.push('keep care low-pressure and easy to ignore without reducing substantive answers');
   } else if (inferredStyle === 'disorganized') {
     adaptations.push('stay steady when the user alternates closeness and distance');
     adaptations.push('avoid escalating intimacy after mixed signals');
@@ -2066,9 +2066,9 @@ function buildPromiseReminderPolicy(text: string, kind: PendingPromise['kind'], 
   const shouldRemind = Boolean(dueAt) && kind !== 'boundary_agreement' && !boundaryReasons.length;
   const seedIntent = shouldRemind
     ? kind === 'user_followup'
-      ? `自然问一句后来怎么样了，重点是关心，不要像任务催办：${text}`
+      ? `低压力地关心后续，重点是关心，不要像任务催办；若用户转向具体任务，仍要完整回答：${text}`
       : kind === 'shared_activity'
-        ? `轻轻提起之前说好的一起做的事，允许用户改期或忘记：${text}`
+        ? `低压力地提起之前说好的一起做的事，允许用户改期或忘记；这不是短回复限制：${text}`
         : kind === 'repair_agreement'
           ? `以负责和放软的语气记得修复约定，不翻旧账：${text}`
           : `自然记起这个约定，不施压：${text}`
@@ -2805,7 +2805,7 @@ function buildOnlineReturnProjection(bond: UserBondState, carePolicy: CarePolicy
   if (silence < 24) return '';
   if (carePolicy.dailyInitiationBudget <= 0) return '';
   if (bond.phase === 'crisis' || bond.phase === 'cooling') return '';
-  if (bond.pendingCareTopics[0]) return `${address}终于来了。还惦记着你提过的事，想自然问一句后来怎么样了。`;
+  if (bond.pendingCareTopics[0]) return `${address}终于来了。还惦记着你提过的事，想低压力地关心后续。`;
   if (bond.phase === 'confirmed' || bond.phase === 'passionate' || bond.phase === 'deep') return `${address}终于来了。不是催你，只是这段空白里确实想过怎么接上话。`;
   if (bond.phase === 'ambiguous' || bond.phase === 'fond') return `${address}回来了。它像是松了一口气，但还在克制地找一个自然开口。`;
   return '';

@@ -1,5 +1,6 @@
 import type { AICharacter } from '../types/character';
 import type { GroupChat } from '../types/chat';
+import type { Message } from '../types/message';
 import { sanitizeUserFacingText } from './displayTextSanitizer';
 import { formatConflictHookLabels, formatConflictPressureLabel, formatConflictStageLabel, formatConflictTypeLabel } from './runtimeEventFactory';
 import type { ProjectedRuntimeTimelineItem } from './sessionProjection';
@@ -34,6 +35,48 @@ export interface DialogueStructuredEventCard {
   projectionMetaLine: string | null;
 }
 
+export interface DeliberationDebugItem {
+  key: string;
+  category: 'claim' | 'evidence' | 'issue' | 'verdict' | 'summary';
+  label: string;
+  speakerName: string;
+  text: string;
+  reason: string | null;
+  confidence: number | null;
+}
+
+export interface PresenceDebugItem {
+  key: string;
+  speakerName: string;
+  status: 'online' | 'away';
+  activity: string | null;
+  reason: string | null;
+  durationMinutes: number | null;
+}
+
+export interface ConversationMoveDebugItem {
+  key: string;
+  speakerName: string;
+  moveType: string;
+  reason: string | null;
+  artifactStatus: string | null;
+}
+
+export interface DeliberationDebugProjection {
+  counts: {
+    claims: number;
+    evidence: number;
+    issues: number;
+    verdicts: number;
+    summaries: number;
+    presenceUpdates: number;
+    moveHints: number;
+  };
+  artifacts: DeliberationDebugItem[];
+  presence: PresenceDebugItem[];
+  moves: ConversationMoveDebugItem[];
+}
+
 function formatEventKind(kind: string, isZh: boolean) {
   return formatRuntimeEventKindLabel(kind, isZh ? 'zh' : 'en');
 }
@@ -58,6 +101,171 @@ function resolveDisplayName(value: string, members: AICharacter[] = []) {
   const matched = members.find((member) => member.id === raw);
   if (matched?.name) return matched.name;
   return raw;
+}
+
+function visibleDebugMessages(messages: Message[]) {
+  return messages.filter((message) => !message.isDeleted && message.type !== 'system' && message.type !== 'event');
+}
+
+function compactDebugText(value: string | null | undefined, members: AICharacter[] = [], max = 120) {
+  const cleaned = sanitizeUserFacingText(String(value || '').replace(/\s+/g, ' ').trim(), members);
+  if (!cleaned) return '';
+  return cleaned.length > max ? `${cleaned.slice(0, max - 1)}…` : cleaned;
+}
+
+function safeConfidence(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : null;
+}
+
+function categoryLabel(category: DeliberationDebugItem['category'], isZh: boolean) {
+  const zh: Record<DeliberationDebugItem['category'], string> = {
+    claim: '主张',
+    evidence: '证据',
+    issue: '质询',
+    verdict: '裁决',
+    summary: '总结',
+  };
+  const en: Record<DeliberationDebugItem['category'], string> = {
+    claim: 'Claim',
+    evidence: 'Evidence',
+    issue: 'Issue',
+    verdict: 'Verdict',
+    summary: 'Summary',
+  };
+  return isZh ? zh[category] : en[category];
+}
+
+function extractMoveHints(message: Message, members: AICharacter[] = []): ConversationMoveDebugItem[] {
+  const trace = message.metadata?.runtimeDecision?.generationRuntime?.trace;
+  const policyHits = Array.isArray((trace as { policyHits?: unknown[] } | null | undefined)?.policyHits)
+    ? ((trace as { policyHits?: unknown[] }).policyHits || [])
+    : [];
+  const move = policyHits.find((item): item is string => typeof item === 'string' && item.startsWith('conversation_move:'))?.replace('conversation_move:', '') || '';
+  if (!move) return [];
+  const reason = policyHits.find((item): item is string => typeof item === 'string' && item.startsWith('conversation_move_reason:'))?.replace('conversation_move_reason:', '') || null;
+  const artifactStatus = policyHits
+    .filter((item): item is string => typeof item === 'string' && item.startsWith('deliberation_artifacts:'))
+    .map((item) => {
+      const value = item.replace('deliberation_artifacts:', '');
+      if (value === 'present') return '已返回';
+      if (value === 'absent') return '缺失';
+      if (value === 'json_envelope_parsed') return 'JSON已解析';
+      if (value === 'no_json_envelope') return '未解析到JSON';
+      if (value.startsWith('expected_by_move:')) return `当前动作要求:${value.replace('expected_by_move:', '')}`;
+      if (value.startsWith('not_expected_by_move:')) return `当前动作不要求:${value.replace('not_expected_by_move:', '')}`;
+      return value;
+    })
+    .join(' / ') || null;
+  return [{
+    key: `${message.id}-move`,
+    speakerName: resolveDisplayName(message.senderId, members) || message.senderName,
+    moveType: move,
+    reason,
+    artifactStatus,
+  }];
+}
+
+export function projectDeliberationDebugProjection(params: {
+  messages: Message[];
+  members?: AICharacter[];
+  language?: string;
+  limit?: number;
+}): DeliberationDebugProjection {
+  const members = params.members || [];
+  const isZh = (params.language || 'zh').startsWith('zh');
+  const recent = visibleDebugMessages(params.messages).slice(-(params.limit || 12));
+  const artifacts: DeliberationDebugItem[] = [];
+  const presence: PresenceDebugItem[] = [];
+  const moves: ConversationMoveDebugItem[] = [];
+
+  recent.forEach((message) => {
+    const speakerName = resolveDisplayName(message.senderId, members) || message.senderName;
+    const source = message.metadata?.deliberationArtifacts;
+    source?.claims?.forEach((item, index) => {
+      artifacts.push({
+        key: `${message.id}-claim-${index}`,
+        category: 'claim',
+        label: categoryLabel('claim', isZh),
+        speakerName,
+        text: compactDebugText(item.text, members),
+        reason: compactDebugText(item.reason, members, 90) || null,
+        confidence: safeConfidence(item.confidence),
+      });
+    });
+    source?.evidence?.forEach((item, index) => {
+      artifacts.push({
+        key: `${message.id}-evidence-${index}`,
+        category: 'evidence',
+        label: categoryLabel('evidence', isZh),
+        speakerName,
+        text: compactDebugText(item.text, members),
+        reason: compactDebugText(item.reason, members, 90) || null,
+        confidence: safeConfidence(item.confidence),
+      });
+    });
+    source?.issues?.forEach((item, index) => {
+      artifacts.push({
+        key: `${message.id}-issue-${index}`,
+        category: 'issue',
+        label: categoryLabel('issue', isZh),
+        speakerName,
+        text: compactDebugText(item.text, members),
+        reason: compactDebugText(item.reason, members, 90) || null,
+        confidence: safeConfidence(item.confidence),
+      });
+    });
+    source?.verdicts?.forEach((item, index) => {
+      artifacts.push({
+        key: `${message.id}-verdict-${index}`,
+        category: 'verdict',
+        label: categoryLabel('verdict', isZh),
+        speakerName,
+        text: compactDebugText(item.text, members),
+        reason: compactDebugText(item.reason, members, 90) || null,
+        confidence: safeConfidence(item.confidence),
+      });
+    });
+    if (source?.summary?.text) {
+      artifacts.push({
+        key: `${message.id}-summary`,
+        category: 'summary',
+        label: categoryLabel('summary', isZh),
+        speakerName,
+        text: compactDebugText(source.summary.text, members),
+        reason: compactDebugText(source.summary.reason, members, 90) || null,
+        confidence: safeConfidence(source.summary.confidence),
+      });
+    }
+
+    const update = message.metadata?.presenceUpdate;
+    if (update) {
+      presence.push({
+        key: `${message.id}-presence`,
+        speakerName,
+        status: update.status,
+        activity: compactDebugText(update.activity, members, 60) || null,
+        reason: compactDebugText(update.reason, members, 90) || null,
+        durationMinutes: typeof update.durationMinutes === 'number' && Number.isFinite(update.durationMinutes) ? Math.round(update.durationMinutes) : null,
+      });
+    }
+
+    moves.push(...extractMoveHints(message, members));
+  });
+
+  return {
+    counts: {
+      claims: artifacts.filter((item) => item.category === 'claim').length,
+      evidence: artifacts.filter((item) => item.category === 'evidence').length,
+      issues: artifacts.filter((item) => item.category === 'issue').length,
+      verdicts: artifacts.filter((item) => item.category === 'verdict').length,
+      summaries: artifacts.filter((item) => item.category === 'summary').length,
+      presenceUpdates: presence.length,
+      moveHints: moves.length,
+    },
+    artifacts: artifacts.filter((item) => item.text).slice(-10).reverse(),
+    presence: presence.slice(-8).reverse(),
+    moves: moves.slice(-8).reverse(),
+  };
 }
 
 export function projectDialogueRecentSignal(chat: GroupChat, members: AICharacter[] = []): DialogueRecentSignal {

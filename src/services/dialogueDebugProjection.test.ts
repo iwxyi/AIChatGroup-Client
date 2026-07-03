@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { normalizeConversation } from '../types/chat';
 import type { AICharacter } from '../types/character';
+import type { Message } from '../types/message';
 import type { ProjectedRuntimeTimelineItem } from './sessionProjection';
 import {
   projectConflictDebugState,
+  projectDeliberationDebugProjection,
   projectDialogueRecentSignal,
   projectDialogueStructuredEventCard,
   projectProjectionMetaLine,
@@ -54,6 +56,21 @@ function buildChat() {
     updatedAt: 1,
     lastMessageAt: 1,
   });
+}
+
+function message(id: string, senderId: string, content: string, metadata: Message['metadata'] = {}): Message {
+  return {
+    id,
+    chatId: 'chat-1',
+    type: 'ai',
+    senderId,
+    senderName: senderId,
+    content,
+    metadata,
+    emotion: 0,
+    timestamp: Number(id.replace(/\D/g, '')) || 1,
+    isDeleted: false,
+  };
 }
 
 describe('dialogueDebugProjection', () => {
@@ -306,5 +323,75 @@ describe('dialogueDebugProjection', () => {
     expect(card.summaryText).toContain('我');
     expect(card.summaryText).toContain('甲');
     expect(card.summaryText).not.toContain('user 邀请 a');
+  });
+
+  it('projects deliberation artifacts, presence updates, and move hints from recent messages', () => {
+    const projection = projectDeliberationDebugProjection({
+      members: [member('a', '甲')],
+      language: 'zh',
+      messages: [
+        message('m1', 'a', '先谈证据。', {
+          deliberationArtifacts: {
+            claims: [{ text: '协议可以降低合租摩擦。', confidence: 0.8, reason: 'visible claim' }],
+            evidence: [{ text: '三条低配协议让合租住满一年。', confidence: 0.72 }],
+            issues: [{ text: '抗拒协议的人是否样本偏差？', confidence: 0.7 }],
+            verdicts: [{ text: '倾向先规矩后默契。', confidence: 0.76 }],
+            summary: { text: '审议进入证据核验。', confidence: 0.74 },
+          },
+          presenceUpdate: { status: 'away', activity: '睡觉', reason: '两点半了', durationMinutes: 45 },
+          runtimeDecision: {
+            generationRuntime: {
+              trace: {
+                policyHits: ['conversation_move:ask_evidence', 'conversation_move_reason:claims_without_evidence'],
+              },
+            },
+          },
+        }),
+      ],
+    });
+
+    expect(projection.counts).toMatchObject({
+      claims: 1,
+      evidence: 1,
+      issues: 1,
+      verdicts: 1,
+      summaries: 1,
+      presenceUpdates: 1,
+      moveHints: 1,
+    });
+    expect(projection.artifacts.map((item) => item.label)).toContain('证据');
+    expect(projection.artifacts.map((item) => item.label)).toContain('质询');
+    expect(projection.presence[0]).toMatchObject({ speakerName: '甲', status: 'away', activity: '睡觉' });
+    expect(projection.moves[0]).toMatchObject({ speakerName: '甲', moveType: 'ask_evidence', reason: 'claims_without_evidence' });
+  });
+
+  it('projects missing deliberation artifact diagnostics from runtime policy hits', () => {
+    const projection = projectDeliberationDebugProjection({
+      members: [member('a', '甲')],
+      language: 'zh',
+      messages: [
+        message('m1', 'a', '这一轮没有结构化审议结果。', {
+          runtimeDecision: {
+            generationRuntime: {
+              trace: {
+                policyHits: [
+                  'conversation_move:add_boundary_condition',
+                  'conversation_move_reason:default_room_move',
+                  'deliberation_artifacts:absent',
+                  'deliberation_artifacts:json_envelope_parsed',
+                  'deliberation_artifacts:expected_by_move:add_boundary_condition',
+                ],
+              },
+            },
+          },
+        }),
+      ],
+    });
+
+    expect(projection.moves[0]).toMatchObject({
+      speakerName: '甲',
+      moveType: 'add_boundary_condition',
+      artifactStatus: '缺失 / JSON已解析 / 当前动作要求:add_boundary_condition',
+    });
   });
 });

@@ -161,6 +161,78 @@ describe('resolveDirectorIntent', () => {
     expect(intent.beatType).toBe('challenge');
   });
 
+  it('keeps faction defense out of analysis rooms', () => {
+    const factionLine = {
+      id: 'faction:shared-side',
+      conversationId: 'chat-1',
+      type: 'faction' as const,
+      title: '阵营压力',
+      summary: '几名成员正在形成同一立场。',
+      participantIds: ['a', 'b'],
+      visibility: 'public' as const,
+      status: 'active' as const,
+      tension: 0.2,
+      momentum: 0.8,
+      salience: 0.82,
+      sourceEventIds: ['event-1'],
+      lastTouchedAt: 1,
+      openQuestions: [],
+      possibleNextBeats: [{
+        beatType: 'defend' as const,
+        targetActorIds: ['a', 'b'],
+        pressure: 0.74,
+        reason: '自动推荐已经形成可感知的阵营压力。',
+      }],
+    };
+    const intent = resolveDirectorIntent({
+      chat: buildChat({
+        sessionKind: { topology: 'group', family: 'analysis', scenarioId: 'opinion-review', surfaceProfile: 'text' },
+      }),
+      characters: [buildCharacter('a', '甲'), buildCharacter('b', '乙')],
+      messages: [buildMessage({ type: 'ai', senderId: 'a', senderName: '甲', content: '这个说法我站。' })],
+      narrativeLines: [factionLine],
+    });
+
+    expect(intent.source).toBe('topic');
+    expect(intent.beatType).toBe('summarize');
+    expect(intent.targetActorIds).toEqual([]);
+    expect(intent.reason).toContain('不使用阵营防守压力');
+  });
+
+  it('preserves faction defense in ordinary conversation rooms', () => {
+    const intent = resolveDirectorIntent({
+      chat: buildChat(),
+      characters: [buildCharacter('a', '甲'), buildCharacter('b', '乙')],
+      messages: [buildMessage({ type: 'ai', senderId: 'a', senderName: '甲', content: '我站乙。' })],
+      narrativeLines: [{
+        id: 'faction:ordinary',
+        conversationId: 'chat-1',
+        type: 'faction',
+        title: '阵营压力',
+        summary: '普通群聊里的关系站边。',
+        participantIds: ['a', 'b'],
+        visibility: 'public',
+        status: 'active',
+        tension: 0.2,
+        momentum: 0.8,
+        salience: 0.82,
+        sourceEventIds: [],
+        lastTouchedAt: 1,
+        openQuestions: [],
+        possibleNextBeats: [{
+          beatType: 'defend',
+          targetActorIds: ['b'],
+          pressure: 0.74,
+          reason: '普通关系线可以有人站边。',
+        }],
+      }],
+    });
+
+    expect(intent.source).toBe('faction');
+    expect(intent.beatType).toBe('defend');
+    expect(intent.targetActorIds).toEqual(['b']);
+  });
+
   it('normalizes room state metrics before converting them into pressure', () => {
     const intent = resolveDirectorIntent({
       chat: buildChat({

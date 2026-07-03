@@ -547,8 +547,16 @@ function localizeLocalInterceptionReason(reason: string) {
     missing_direct_reply_focus: '没有先回应点名要求',
     no_media_capability: '当前模型能力不足',
     message_withdrawn: '角色内在冲动触发撤回',
+    model_omitted_deliberation_artifacts_for_deliberative_move: '模型这次回复做了审议动作，但没有返回结构化审议产物',
+    visible_away_without_presence_update: '可见回复表示离开或忙碌，但没有返回下线状态标记',
+    surface_contract_invalid: '可见消息形态不符合当前房间规则',
+    duplicate_content: '内容与近期发言重复或过近',
   };
   if (exact[normalized]) return exact[normalized];
+  if (/model_omitted_deliberation_artifacts/i.test(normalized)) return '模型这次回复做了审议动作，但没有返回结构化审议产物';
+  if (/visible_away_without_presence_update/i.test(normalized)) return '可见回复表示离开或忙碌，但没有返回下线状态标记';
+  if (/stage directions|parenthesized scene beats/i.test(normalized)) return '包含括号舞台动作或场景旁白，不符合当前房间表面规则';
+  if (/another speaker line/i.test(normalized)) return '同一条回复里写入了其他角色的台词';
   if (/exactly repeats/i.test(normalized)) return '完全复用了近期发言';
   if (/substring/i.test(normalized)) return '截取了近期发言的一部分';
   if (/copies a recent line/i.test(normalized)) return '复制了近期发言';
@@ -558,6 +566,36 @@ function localizeLocalInterceptionReason(reason: string) {
   return normalized || '本地规则判定不应直接发出';
 }
 
+function localizeLocalInterceptionKind(kind: LocalInterceptionEvent['kind']) {
+  const labels: Record<LocalInterceptionEvent['kind'], string> = {
+    guidance_retry: '指令重试',
+    analysis_artifacts_missing: '审议产物缺失',
+    presence_metadata_missing: '状态标记缺失',
+    surface_echo_warning: '重复内容提示',
+    surface_contract_warning: '表面规则提示',
+    surface_echo_retry: '重复内容重试',
+    surface_echo_skip: '重复内容拦截',
+    surface_contract_retry: '表面规则重试',
+    surface_contract_skip: '表面规则拦截',
+    empty_generation_skip: '空回复跳过',
+    streamed_draft_committed: '流式草稿已提交',
+    auto_withdraw: '自动撤回',
+  };
+  return labels[kind] || '本地拦截';
+}
+
+function isRetryInterception(kind: LocalInterceptionEvent['kind']) {
+  return kind.endsWith('_retry');
+}
+
+function isDiagnosticHint(kind: LocalInterceptionEvent['kind']) {
+  return kind === 'analysis_artifacts_missing'
+    || kind === 'presence_metadata_missing'
+    || kind === 'surface_echo_warning'
+    || kind === 'surface_contract_warning'
+    || kind === 'streamed_draft_committed';
+}
+
 function compactInterceptedDraft(draft: string | undefined) {
   const normalized = (draft || '').replace(/\s+/g, ' ').trim();
   if (!normalized) return '（无可展示草稿）';
@@ -565,7 +603,18 @@ function compactInterceptedDraft(draft: string | undefined) {
 }
 
 function buildLocalInterceptionSummary(event: LocalInterceptionEvent) {
-  return `拦截了${event.speakerName || '角色'}的发言：${compactInterceptedDraft(event.draft)}（原因：${localizeLocalInterceptionReason(event.reason)}）`;
+  const actor = event.speakerName || '角色';
+  const reason = localizeLocalInterceptionReason(event.reason);
+  const kind = localizeLocalInterceptionKind(event.kind);
+  const attempt = event.attempt ? `第 ${event.attempt} 次` : '';
+  const draft = compactInterceptedDraft(event.draft);
+  if (isDiagnosticHint(event.kind)) {
+    return `${kind}${attempt ? `（${attempt}）` : ''}：${actor} 的消息已保留。草稿：${draft}（说明：${reason}）`;
+  }
+  if (isRetryInterception(event.kind)) {
+    return `${kind}${attempt ? `（${attempt}）` : ''}：${actor} 的草稿暂不提交，正在要求模型修正。草稿：${draft}（原因：${reason}）`;
+  }
+  return `${kind}：拦截了${actor}的发言：${draft}（原因：${reason}）`;
 }
 
 type SidebarTabValue = 'session' | 'members' | 'narrative' | 'chapters' | 'clues' | 'roles' | 'world' | 'developer' | 'activities';

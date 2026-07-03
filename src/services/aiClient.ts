@@ -348,6 +348,20 @@ async function parseSSEStream(
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
+  const processFrame = (frame: string) => {
+    const lines = frame.split('\n').map((line) => line.trim()).filter(Boolean);
+    const dataLines = lines.filter((line) => line.startsWith('data:'));
+
+    for (const line of dataLines) {
+      const data = line.slice(5).trim();
+      if (!data || data === '[DONE]') continue;
+      try {
+        onData(JSON.parse(data) as Record<string, unknown>);
+      } catch {
+        // Some proxies send keepalive or diagnostic data lines; they are not model deltas.
+      }
+    }
+  };
 
   try {
     while (true) {
@@ -359,16 +373,10 @@ async function parseSSEStream(
       buffer = parts.pop() || '';
 
       for (const part of parts) {
-        const lines = part.split('\n').map((line) => line.trim()).filter(Boolean);
-        const dataLines = lines.filter((line) => line.startsWith('data:'));
-
-        for (const line of dataLines) {
-          const data = line.slice(5).trim();
-          if (!data || data === '[DONE]') continue;
-          onData(JSON.parse(data) as Record<string, unknown>);
-        }
+        processFrame(part);
       }
     }
+    if (buffer.trim()) processFrame(buffer);
   } finally {
     decoder.decode();
     reader.releaseLock();

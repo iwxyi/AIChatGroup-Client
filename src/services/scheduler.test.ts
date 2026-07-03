@@ -192,6 +192,27 @@ describe('scheduler speaker scoring', () => {
     expect(candidates.map((candidate) => candidate.characterId)).toEqual(['a']);
   });
 
+  it('excludes temporarily away and deleted characters from speaker candidates', () => {
+    const now = Date.now();
+    const candidates = calculateWeights(
+      [
+        buildCharacter('a', '甲'),
+        buildCharacter('b', '乙', {
+          presence: { status: 'away', activity: '睡觉', updatedAt: now, unavailableUntil: now + 60_000 },
+        }),
+        buildCharacter('c', '丙', { deletedAt: now }),
+      ],
+      [buildMessage({ senderId: 'a', senderName: '甲', content: '乙和丙，你们说呢？' })],
+      {},
+      1,
+      0,
+      null,
+      buildChat(),
+    );
+
+    expect(candidates.map((candidate) => candidate.characterId)).toEqual(['a']);
+  });
+
   it('lets explicit user media guidance override cooldown and suppress non-target speakers', () => {
     const intent: DirectorIntent = {
       source: 'user_message',

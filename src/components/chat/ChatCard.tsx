@@ -10,6 +10,7 @@ import { formatRelativeTime } from '../../utils/format';
 import { useTranslation } from 'react-i18next';
 import { buildInteractiveSurfaceSx, buildSelectionRailSx } from '../../styles/interaction';
 import { buildChatSubtitle } from './chatCardSubtitle';
+import { getChatGameplayShortLabel } from '../../services/chatGameplayPresentation';
 
 interface ChatCardProps {
   chat: GroupChat;
@@ -41,6 +42,7 @@ function ChatCard({ chat, characters, onClick, onPrefetch, selected = false }: C
   const isDirect = chat.type === 'direct' || chat.type === 'ai_direct';
   const visibleAvatarMembers = isDirect ? members.slice(0, 1) : members.slice(0, 5);
   const subtitle = buildChatSubtitle(chat, members, resolvedLatestMessage);
+  const gameplayLabel = getChatGameplayShortLabel(chat);
 
   return (
     <Card
@@ -65,8 +67,29 @@ function ChatCard({ chat, characters, onClick, onPrefetch, selected = false }: C
         }}
       >
         <CardContent sx={{ p: { xs: 1.75, sm: 2 }, position: 'relative', zIndex: 1, '&:last-child': { pb: { xs: 1.75, sm: 2 } } }}>
+          {gameplayLabel ? (
+            <Chip
+              label={gameplayLabel}
+              size="small"
+              variant="filled"
+              sx={{
+                position: 'absolute',
+                top: 8,
+                right: 8,
+                height: 22,
+                borderRadius: 1,
+                fontSize: '0.72rem',
+                fontWeight: 760,
+                color: 'primary.dark',
+                bgcolor: 'rgba(25, 118, 210, 0.10)',
+                border: '1px solid rgba(25, 118, 210, 0.18)',
+                zIndex: 2,
+                '& .MuiChip-label': { px: 0.8 },
+              }}
+            />
+          ) : null}
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
-            <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Box sx={{ flex: 1, minWidth: 0, pr: gameplayLabel ? 5.5 : 0 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, minWidth: 0 }}>
                 {isDirect ? <DirectIcon sx={{ fontSize: 16, color: 'text.secondary' }} /> : <GroupIcon sx={{ fontSize: 16, color: 'text.secondary' }} />}
                 <Typography variant="subtitle1" noWrap sx={{ fontWeight: 760, letterSpacing: 0 }}>
@@ -85,7 +108,12 @@ function ChatCard({ chat, characters, onClick, onPrefetch, selected = false }: C
                 size="small"
                 color={chat.isActive ? 'success' : 'default'}
                 variant="outlined"
-                sx={{ ml: 1, flexShrink: 0, bgcolor: chat.isActive ? 'rgba(46, 125, 50, 0.08)' : 'transparent' }}
+                sx={{
+                  ml: 1,
+                  mt: gameplayLabel ? 2.6 : 0,
+                  flexShrink: 0,
+                  bgcolor: chat.isActive ? 'rgba(46, 125, 50, 0.08)' : 'transparent',
+                }}
               />
             ) : null}
           </Box>

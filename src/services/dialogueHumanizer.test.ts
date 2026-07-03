@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { postProcessHumanChat } from './dialogueHumanizer';
+import { buildHumanizationPrompt, postProcessHumanChat } from './dialogueHumanizer';
 import type { SpeakIntent } from './intentEngine';
 import type { Message } from '../types/message';
+import type { AICharacter } from '../types/character';
 
 function questionOnlyIntent(): SpeakIntent {
   return {
@@ -41,7 +42,40 @@ function message(content: string): Message {
   };
 }
 
+function character(): AICharacter {
+  return {
+    id: 'char-1',
+    name: '甲',
+    avatar: '',
+    personality: { openness: 50, extroversion: 50, agreeableness: 50, neuroticism: 50, humor: 50, creativity: 50, assertiveness: 50, empathy: 50 },
+    behavior: { proactivity: 50, aggressiveness: 50, humorIntensity: 50, empathyLevel: 50, summarizing: 50, offTopic: 30 },
+    expertise: [],
+    speakingStyle: '',
+    background: '',
+    relationships: [],
+    memory: { longTerm: [], shortTermSummary: '', secrets: [], obsessions: [], tabooTopics: [], userMemories: [] },
+    intervention: { allowSpeakAs: true, allowDirectorPrompt: true, allowPrivateThread: true },
+    isPreset: false,
+    speechProfile: { catchphrases: [], fillers: [], tabooPhrases: [], preferredOpeners: [], preferredClosers: [], sentenceLengthBias: 'short', questionBias: 30, sarcasmBias: 10 },
+    createdAt: 1,
+    updatedAt: 1,
+  };
+}
+
 describe('dialogueHumanizer', () => {
+  it('does not turn selective focus or side-comment style into a length cap', () => {
+    const prompt = buildHumanizationPrompt(
+      character(),
+      fragmentIntent(),
+      [message('你能不能把这个问题完整解释一下？')],
+    );
+
+    expect(prompt).toContain('Selective focus is an attention prior only');
+    expect(prompt).toContain('must not cap answer length');
+    expect(prompt).toContain('任务需要时要继续说完整');
+    expect(prompt).not.toContain('不要自成完整段落');
+  });
+
   it('keeps a long follow-up stance after a question instead of truncating to the first sentence', () => {
     expect(
       postProcessHumanChat(

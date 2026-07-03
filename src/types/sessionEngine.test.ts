@@ -4,6 +4,7 @@ import {
   createDefaultConversationActionSchema,
   createDefaultConversationActions,
   createDefaultConversationParticipants,
+  createDefaultSessionKind,
   createIntentId,
   defaultInputSurfacesForConversation,
   normalizeSurfaceSubmissionWithMetadata,
@@ -33,6 +34,19 @@ function buildChat(patch: Partial<GroupChat> = {}) {
 }
 
 describe('default conversation action schema', () => {
+  it('keeps sessionEngine default session kind aligned with discussion chat defaults', () => {
+    expect(createDefaultSessionKind('group', 'group_discussion')).toMatchObject({
+      family: 'analysis',
+      scenarioId: 'opinion-review',
+      surfaceProfile: 'text',
+    });
+    expect(createDefaultSessionKind('group', 'roundtable')).toMatchObject({
+      family: 'analysis',
+      scenarioId: 'roundtable-review',
+      surfaceProfile: 'text',
+    });
+  });
+
   it('treats user member as user persona participant', () => {
     const conversation = buildChat({ memberIds: ['user', 'a'] });
     const participants = createDefaultConversationParticipants(conversation);

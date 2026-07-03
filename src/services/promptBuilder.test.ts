@@ -202,6 +202,25 @@ describe('buildSystemPromptWithContext', () => {
     ]);
   });
 
+  it('removes long stage asides from non-story recent event prompt context', () => {
+    const character = buildCharacter();
+    const chat = normalizeConversation({
+      ...buildChat(),
+      sessionKind: { topology: 'group', family: 'analysis', scenarioId: 'opinion-review', surfaceProfile: 'text' },
+      worldState: {
+        ...buildChat().worldState,
+        recentEvent: '审议推进：（听到程序员那句“那沓纸在就行”，站在厨房门口，手里擦灶台的抹布还没放下。忽然笑了一声。）你们这一个个的散场太有仪式感。',
+      },
+    });
+
+    const prompt = buildSystemPromptWithContext(character, chat, 0, [], new Map([[character.id, character]]));
+
+    expect(prompt).toContain('Recent event: 审议推进：');
+    expect(prompt).toContain('你们这一个个的散场太有仪式感');
+    expect(prompt).not.toContain('站在厨房门口');
+    expect(prompt).not.toContain('擦灶台');
+  });
+
   it('projects AI private thread counterpart turns as named user-side context', () => {
     const rendered = buildChatMessages([
       buildMessage({

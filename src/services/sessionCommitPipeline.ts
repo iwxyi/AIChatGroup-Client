@@ -12,6 +12,7 @@ import { applyRecalledMemoryActivation } from './memoryRecallActivation';
 import { parseRuntimeEvent } from './runtimeEventFactory';
 import { reportRecoverableError } from './diagnostics';
 import { applyCalendarAutoPatchForChat, buildCalendarAutoPatchRuntimeEventPayloads, shouldRunCalendarAutoPatchForTransition } from './worldCalendarAutoPatchRuntime';
+import { applyPresenceUpdateToTransition } from './characterPresence';
 
 export const __resetDeferredLlmDistillationStateForTests = __resetDeferredMemoryAnalysisStateForTests;
 export const __flushDeferredLlmDistillationForTests = __flushDeferredMemoryAnalysisForTests;
@@ -280,14 +281,17 @@ export async function runPersistedSessionCommitRuntime(params: {
   getCurrentCharacters?: () => AICharacter[];
 }): Promise<SessionCommitPipelineResult> {
   const recentMessages = params.currentMessages.filter((message) => !message.isDeleted && message.id !== params.message.id && !isLocalInterceptionMessage(message));
-  const transition = await finalizeChatCommitRuntime({
-    api: params.api,
-    chat: params.chat,
-    characters: params.characters,
+  const transition = applyPresenceUpdateToTransition({
     message: params.message,
-    previousAiMessage: getPreviousAiMessage(recentMessages),
-    recentMessages,
-    onCommit: withFrameworkChatPatch(params.onCommit),
+    transition: await finalizeChatCommitRuntime({
+      api: params.api,
+      chat: params.chat,
+      characters: params.characters,
+      message: params.message,
+      previousAiMessage: getPreviousAiMessage(recentMessages),
+      recentMessages,
+      onCommit: withFrameworkChatPatch(params.onCommit),
+    }),
   });
   await applyChatCommitRuntime({
     chatId: params.chatId,

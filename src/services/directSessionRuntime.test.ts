@@ -997,7 +997,8 @@ describe('directSessionRuntime pair-thread adjudication helpers', () => {
       && (event.payload as { eventType?: string; reasonType?: string }).eventType === 'world_decision_v2'
       && (event.payload as { reasonType?: string }).reasonType === 'companionship_online_return_greeting');
     expect(candidate).toBeTruthy();
-    expect((candidate?.payload as { seedIntent?: string })?.seedIntent || '').toContain('上线问候');
+    expect((candidate?.payload as { seedIntent?: string })?.seedIntent || '').toContain('低打扰');
+    expect((candidate?.payload as { seedIntent?: string })?.seedIntent || '').toContain('不限制用户若继续提出任务时的回答完整度');
     expect(artifact).toBeTruthy();
     expect(decision).toBeTruthy();
   });
@@ -1433,7 +1434,7 @@ describe('directSessionRuntime pair-thread adjudication helpers', () => {
     expect(influencedConfidence).toBeGreaterThan(baseConfidence);
   });
 
-  it('uses model arbitration to select proactive-care candidate when text model is available', async () => {
+  it('does not call an extra model arbitration request for proactive-care candidates', async () => {
     const now = Date.now();
     const chat = {
       ...buildChatWithEvents([
@@ -1460,12 +1461,7 @@ describe('directSessionRuntime pair-thread adjudication helpers', () => {
       }],
     };
     const updateChat = vi.fn(async () => undefined);
-    const jsonSpy = vi.spyOn(aiClient, 'generateJsonResponse')
-      .mockResolvedValueOnce(JSON.stringify({
-        selectedId: 'a:0:social_outing:world_attention_invite_activity',
-        confidenceOffset: 0.03,
-        reason: '当前更适合低打扰提醒',
-      }));
+    const jsonSpy = vi.spyOn(aiClient, 'generateJsonResponse');
     await runSocialEventAutoFlow(chat, {
       chats: [chat],
       characters: [buildCharacter('a', '甲')],
@@ -1475,16 +1471,20 @@ describe('directSessionRuntime pair-thread adjudication helpers', () => {
       addMessage: vi.fn(async () => ({})),
       appendEventMessage: vi.fn(async () => undefined),
     });
-    expect(jsonSpy).toHaveBeenCalled();
+    expect(jsonSpy).not.toHaveBeenCalled();
     const firstCall = updateChat.mock.calls.at(0) as [string, { runtimeEventsV2?: RuntimeEventV2[] }] | undefined;
     const patch = firstCall?.[1];
     const worldCandidate = (patch?.runtimeEventsV2 || []).find((event) => event.kind === 'event_candidate') as RuntimeEventV2 | undefined;
     expect(worldCandidate).toBeTruthy();
     expect(((worldCandidate?.payload as { seedIntent?: string }).seedIntent || '').length).toBeGreaterThan(0);
-    const decision = (patch?.runtimeEventsV2 || []).find((event) => event.kind === 'artifact'
+    const modelArbitrationDecision = (patch?.runtimeEventsV2 || []).find((event) => event.kind === 'artifact'
       && (event.payload as { eventType?: string; reasonType?: string }).eventType === 'world_decision_v2'
       && (event.payload as { reasonType?: string }).reasonType === 'world_attention_model_arbitration');
-    expect(decision).toBeTruthy();
+    expect(modelArbitrationDecision).toBeFalsy();
+    const triggerDecision = (patch?.runtimeEventsV2 || []).find((event) => event.kind === 'artifact'
+      && (event.payload as { eventType?: string; decisionType?: string }).eventType === 'world_decision_v2'
+      && (event.payload as { decisionType?: string }).decisionType === 'trigger');
+    expect(triggerDecision).toBeTruthy();
     jsonSpy.mockRestore();
   });
 

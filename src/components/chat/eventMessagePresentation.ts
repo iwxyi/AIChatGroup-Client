@@ -27,7 +27,7 @@ export function isConflictDeveloperEvent(eventType: string | undefined) {
 }
 
 export function isStateDeveloperEvent(eventType: string | undefined) {
-  return ['world_state_shift', 'room_state_snapshot_v2'].includes(String(eventType || ''));
+  return ['world_state_shift', 'room_state_snapshot_v2', 'analysis_run_policy'].includes(String(eventType || ''));
 }
 
 export function isCalendarDeveloperEvent(eventType: unknown) {

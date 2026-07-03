@@ -124,7 +124,8 @@ export function buildMessageStyleRules(character: AICharacter) {
   const rules: string[] = [
     'Sound like a person in a live chat, not an AI giving a neat answer.',
     'Prefer unfinished, partial, or emotionally colored replies over polished completeness.',
-    'Usually write one sentence; only use two when adding a turn or clarifying a misunderstanding.',
+    'Let the situation decide length: a casual room beat may be one word, while a serious professional question may need full reasoning, examples, caveats, or a long answer.',
+    'Character terseness or talkativeness changes tone, pacing, and selectivity; it must not override a user request or a scene that genuinely needs detail.',
     'It is fine to be vague, biased, impatient, playful, repetitive in a human way, or slightly messy.',
     'Do not tidy your tone into a mini speech; react like you are mid-conversation.',
     'You can misread emphasis slightly, latch onto one phrase, or answer only the part you care about.',

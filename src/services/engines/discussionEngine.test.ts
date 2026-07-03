@@ -52,10 +52,12 @@ describe('DISCUSSION_ENGINE', () => {
       speaker: buildCharacter('analyst-a', '分析师A'),
     });
 
-    expect(context?.promptPrefix).toContain('open deliberation');
+    expect(context?.promptPrefix).toContain('Deliberation protocol');
+    expect(context?.promptPrefix).toContain('Open deliberation');
     expect(context?.promptPrefix).toContain('是否要重构推荐系统');
     expect(context?.styleProfile).toBe('analytical_room');
-    expect(context?.additionalConstraints?.join('\n')).toContain('materially new stance');
+    expect(context?.promptPrefix).toContain('deliberationArtifacts');
+    expect(context?.additionalConstraints?.join('\n')).toContain('decorative banter');
   });
 
   it('keeps open deliberation active even when legacy progress target is reached', async () => {
@@ -115,6 +117,28 @@ describe('DISCUSSION_ENGINE', () => {
     expect(result.runtimeEvents[0]?.eventType).toBe('discussion_turn');
   });
 
+  it('does not turn open deliberation into a member-seat cycle', () => {
+    const chat = buildChat({
+      memberIds: ['analyst-a', 'analyst-b', 'analyst-c'],
+      scenarioState: {
+        phase: 'deliberation',
+        goals: [{ goalId: 'discussion-goal', label: '合租是否值得', status: 'active', progress: 0 }],
+        progress: [{ key: 'speeches', label: '审议发言', value: 2, target: 0 }],
+      },
+    });
+    const context = DISCUSSION_ENGINE.buildGenerationPromptContext?.({
+      conversation: chat,
+      characters: [buildCharacter('analyst-c', '分析师C')],
+      messages: [],
+      speaker: buildCharacter('analyst-c', '分析师C'),
+    });
+
+    expect(context?.promptPrefix).toContain('Structured materials so far');
+    expect(context?.promptPrefix).not.toContain('Deliberation cycle');
+    expect(context?.promptPrefix).not.toContain('member seats');
+    expect(context?.promptPrefix).not.toContain('adjudicator');
+  });
+
   it('records visible deliberation artifacts from committed messages', async () => {
     const chat = buildChat({
       sessionKind: { topology: 'table', family: 'analysis', scenarioId: 'role-debate', surfaceProfile: 'text' },
@@ -137,7 +161,14 @@ describe('DISCUSSION_ENGINE', () => {
         type: 'ai',
         senderId: 'analyst-a',
         content: '我支持重构。证据是最近日志显示召回层接口延迟，为什么还要把排序风险后置？',
-        metadata: { branching: { nodeId: 'msg-claim-1' } },
+        metadata: {
+          branching: { nodeId: 'msg-claim-1' },
+          deliberationArtifacts: {
+            claims: [{ text: '支持重构推荐系统', stance: 'support', reason: '角色明确表达支持重构', confidence: 0.9 }],
+            evidence: [{ text: '最近日志显示召回层接口延迟', reason: '引用日志作为可验证依据', confidence: 0.86 }],
+            issues: [{ text: '排序风险是否被后置', reason: '提出需要回应的风险排序问题', confidence: 0.82 }],
+          },
+        },
       },
       previousAiMessage: null,
     });
@@ -147,13 +178,90 @@ describe('DISCUSSION_ENGINE', () => {
       stance: 'support',
       sourceMessageId: 'msg-claim-1',
     });
-    expect(result.chatPatch.scenarioState?.deliberationEvidence?.[0]?.text).toContain('证据');
-    expect(result.chatPatch.scenarioState?.deliberationIssues?.[0]?.text).toContain('为什么');
+    expect(result.chatPatch.scenarioState?.deliberationEvidence?.[0]?.text).toContain('日志');
+    expect(result.chatPatch.scenarioState?.deliberationIssues?.[0]?.text).toContain('排序风险');
     expect(result.chatPatch.scenarioState?.deliberationMomentum).toMatchObject({
       support: 1,
       oppose: 0,
       inquiry: 0,
     });
+  });
+
+  it('runs one deliberation response per trigger instead of continuing after an AI turn', () => {
+    const chat = buildChat();
+    const userTriggered = DISCUSSION_ENGINE.resolveTurnPolicy?.({
+      conversation: chat,
+      characters: [buildCharacter('analyst-a', '分析师A')],
+      messages: [
+        { id: 'u1', chatId: chat.id, type: 'user', senderId: 'user', senderName: '用户', content: '请继续审议这个观点', emotion: 0, timestamp: 1, isDeleted: false },
+      ],
+    });
+    const afterAiTurn = DISCUSSION_ENGINE.resolveTurnPolicy?.({
+      conversation: chat,
+      characters: [buildCharacter('analyst-a', '分析师A')],
+      messages: [
+        { id: 'u1', chatId: chat.id, type: 'user', senderId: 'user', senderName: '用户', content: '请继续审议这个观点', emotion: 0, timestamp: 1, isDeleted: false },
+        { id: 'a1', chatId: chat.id, type: 'ai', senderId: 'analyst-a', senderName: '分析师A', content: '我给出一个边界条件。', emotion: 0, timestamp: 2, isDeleted: false },
+      ],
+    });
+
+    expect(userTriggered).toEqual({ runChat: true, runAction: false, interleaveAction: false });
+    expect(afterAiTurn).toEqual({ runChat: false, runAction: false, interleaveAction: false });
+  });
+
+  it('uses model-provided deliberation artifacts with reasons instead of local keyword extraction', async () => {
+    const chat = buildChat({
+      scenarioState: {
+        phase: 'deliberation',
+        discussionMode: 'open',
+        goals: [{ goalId: 'discussion-goal', label: '合租关系是否值得', status: 'active', progress: 0 }],
+        progress: [{ key: 'speeches', label: '审议发言', value: 0, target: 0 }],
+      },
+    });
+
+    const result = await DISCUSSION_ENGINE.onMessageCommitted({
+      conversation: chat,
+      characters: [buildCharacter('analyst-a', '分析师A')],
+      message: {
+        type: 'ai',
+        senderId: 'analyst-a',
+        content: '我觉得合租的关键不是共享客厅，而是边界能不能低成本维护。例如凌晨留一盒常温奶说明关心可以不打扰，这也意味着公约只能解决一部分问题。',
+        metadata: {
+          deliberationArtifacts: {
+            claims: [{ text: '合租关键是低成本维护边界', stance: 'review', reason: '将议题焦点从空间共享转向边界维护', confidence: 0.88 }],
+            evidence: [{ text: '凌晨留常温奶作为不打扰的关心例子', reason: '用具体例子支撑低打扰关心', confidence: 0.81 }],
+            issues: [{ text: '边界能不能低成本维护', reason: '这是该方案是否成立的待回应条件', confidence: 0.8 }],
+            verdicts: [{ text: '公约只能解决一部分问题', tendency: 'mixed', reason: '形成阶段性限制判断', confidence: 0.76 }],
+          },
+        },
+      },
+      previousAiMessage: null,
+    });
+
+    expect(result.chatPatch.scenarioState?.deliberationClaims?.[0]?.text).toContain('合租');
+    expect(result.chatPatch.scenarioState?.deliberationClaims?.[0]?.reason).toContain('焦点');
+    expect(result.chatPatch.scenarioState?.deliberationEvidence?.[0]?.text).toContain('常温奶');
+    expect(result.chatPatch.scenarioState?.deliberationIssues?.[0]?.text).toContain('边界');
+    expect(result.chatPatch.scenarioState?.deliberationVerdicts?.[0]?.text).toContain('公约');
+  });
+
+  it('does not locally infer deliberation artifacts when model metadata is absent', async () => {
+    const chat = buildChat();
+    const result = await DISCUSSION_ENGINE.onMessageCommitted({
+      conversation: chat,
+      characters: [buildCharacter('analyst-a', '分析师A')],
+      message: {
+        type: 'ai',
+        senderId: 'analyst-a',
+        content: '证据是日志显示延迟，为什么还要继续推进？我认为风险很大。',
+      },
+      previousAiMessage: null,
+    });
+
+    expect(result.chatPatch.scenarioState?.deliberationClaims).toEqual([]);
+    expect(result.chatPatch.scenarioState?.deliberationEvidence).toEqual([]);
+    expect(result.chatPatch.scenarioState?.deliberationIssues).toEqual([]);
+    expect(result.chatPatch.scenarioState?.deliberationVerdicts).toEqual([]);
   });
 
   it('keeps roundtable turn order and moves to the next speaker', async () => {
@@ -182,7 +290,7 @@ describe('DISCUSSION_ENGINE', () => {
       previousAiMessage: null,
     });
 
-    expect(context?.promptPrefix).toContain('moderated roundtable deliberation');
+    expect(context?.promptPrefix).toContain('Roundtable');
     expect(context?.promptPrefix).toContain('current turn belongs to: 分析师B');
     expect(result.chatPatch.scenarioState?.phase).toBe('roundtable');
     expect(result.chatPatch.scenarioState?.currentTurnActorId).toBe('analyst-c');
@@ -310,9 +418,9 @@ describe('DISCUSSION_ENGINE', () => {
       previousAiMessage: null,
     });
 
-    expect(context?.promptPrefix).toContain('structured character debate');
+    expect(context?.promptPrefix).toContain('Debate');
     expect(context?.promptPrefix).toContain('affirmative / supporting side');
-    expect(context?.additionalConstraints?.join('\n')).toContain('strongest opposing point');
+    expect(context?.promptPrefix).toContain('strongest opposing point');
     expect(result.chatPatch.scenarioState?.phase).toBe('debate');
     expect(result.chatPatch.scenarioState?.discussionMode).toBe('debate');
     expect(result.chatPatch.scenarioState?.currentTurnActorId).toBe('analyst-b');
@@ -354,9 +462,9 @@ describe('DISCUSSION_ENGINE', () => {
       previousAiMessage: null,
     });
 
-    expect(context?.promptPrefix).toContain('courtroom-style deliberation');
+    expect(context?.promptPrefix).toContain('Courtroom');
     expect(context?.promptPrefix).toContain('claimant / presenting the case');
-    expect(context?.additionalConstraints?.join('\n')).toContain('evidence quality');
+    expect(context?.promptPrefix).toContain('evidence');
     expect(result.chatPatch.scenarioState?.phase).toBe('courtroom');
     expect(result.chatPatch.scenarioState?.currentTurnActorId).toBe('analyst-b');
     expect(result.chatPatch.scenarioState?.progress).toEqual([
@@ -389,8 +497,8 @@ describe('DISCUSSION_ENGINE', () => {
       previousAiMessage: null,
     });
 
-    expect(context?.promptPrefix).toContain('expert review');
-    expect(context?.additionalConstraints?.join('\n')).toContain('explicit criteria');
+    expect(context?.promptPrefix).toContain('Expert review');
+    expect(context?.promptPrefix).toContain('criteria');
     expect(result.chatPatch.scenarioState?.phase).toBe('expert_review');
     expect(result.chatPatch.scenarioState?.currentTurnActorId).toBeNull();
     expect(result.chatPatch.scenarioState?.progress).toEqual([
@@ -423,8 +531,8 @@ describe('DISCUSSION_ENGINE', () => {
       previousAiMessage: null,
     });
 
-    expect(context?.promptPrefix).toContain('public inquiry');
-    expect(context?.additionalConstraints?.join('\n')).toContain('unresolved contradictions');
+    expect(context?.promptPrefix).toContain('Public inquiry');
+    expect(context?.promptPrefix).toContain('focused question');
     expect(result.chatPatch.scenarioState?.phase).toBe('public_inquiry');
     expect(result.chatPatch.scenarioState?.currentTurnActorId).toBeNull();
     expect(result.chatPatch.scenarioState?.progress).toEqual([
@@ -457,8 +565,8 @@ describe('DISCUSSION_ENGINE', () => {
       previousAiMessage: null,
     });
 
-    expect(context?.promptPrefix).toContain('brainstorming workshop');
-    expect(context?.additionalConstraints?.join('\n')).toContain('at least two concrete ideas');
+    expect(context?.promptPrefix).toContain('Brainstorm');
+    expect(context?.promptPrefix).toContain('concrete options');
     expect(result.chatPatch.scenarioState?.phase).toBe('brainstorm');
     expect(result.chatPatch.scenarioState?.progress).toEqual([
       { key: 'speeches', label: '点子进展', value: 2, target: 0 },
@@ -491,7 +599,7 @@ describe('DISCUSSION_ENGINE', () => {
     });
 
     expect(context?.promptPrefix).toContain('retrospective');
-    expect(context?.additionalConstraints?.join('\n')).toContain('observable fact');
+    expect(context?.promptPrefix).toContain('observable fact');
     expect(result.chatPatch.scenarioState?.phase).toBe('retrospective');
     expect(result.chatPatch.scenarioState?.progress).toEqual([
       { key: 'speeches', label: '复盘进展', value: 3, target: 0 },

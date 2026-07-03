@@ -762,11 +762,13 @@ describe('STORY_ENGINE', () => {
     expect(scenePrompt?.additionalConstraints).toEqual(expect.arrayContaining([
       expect.stringContaining('beatKind=establish; choicePolicy=forbid'),
       expect.stringContaining('Do not output storyEvents.choice_point'),
-      expect.stringContaining('2-5 short character chat bubbles'),
+      expect.stringContaining('A common visible rhythm is 2-5 character chat bubbles'),
+      expect.stringContaining('do not force that shape when the scene needs'),
       expect.stringContaining('Do not output alternate rewrites of the same moment'),
       expect.stringContaining('End the beat with at least one trackable hook'),
       expect.stringContaining('Prefer spoken tension'),
     ]));
+    expect(scenePrompt?.additionalConstraints?.join('\n')).toContain('scene needs');
 
     const branchChat = buildStoryChat();
     branchChat.scenarioState = { ...(branchChat.scenarioState || {}), phase: 'branch' };
@@ -774,10 +776,13 @@ describe('STORY_ENGINE', () => {
     expect(branchPrompt?.additionalConstraints).toEqual(expect.arrayContaining([
       expect.stringContaining('beatKind=consequence; choicePolicy=forbid'),
       expect.stringContaining('Do not output alternate rewrites of the same consequence'),
-      expect.stringContaining('1 short narrator setup block followed by 2-5 character chat bubbles'),
+      expect.stringContaining('A common shape is 1 concise narrator setup followed by 2-5 character chat bubbles'),
+      expect.stringContaining('scene needs override this suggestion'),
       expect.stringContaining('End the beat with at least one trackable hook'),
-      expect.stringContaining('Each character bubble should be 1-3 sentences'),
+      expect.stringContaining('Character bubbles often work best at 1-3 sentences'),
+      expect.stringContaining('soft rhythm suggestion'),
     ]));
+    expect(branchPrompt?.additionalConstraints?.join('\n')).toContain('scene needs override');
 
     const decisionChat = buildStoryChat();
     decisionChat.scenarioState = { ...(decisionChat.scenarioState || {}), phase: 'scene', sceneBeatCount: 3 };

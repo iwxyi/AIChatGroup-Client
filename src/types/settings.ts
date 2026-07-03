@@ -431,6 +431,8 @@ export interface DeveloperUIPrefs {
   showLocalInterceptionHints: boolean;
   showSpeechStyle: boolean;
   showAdvancedRuntimePanels: boolean;
+  showDeliberationDebug: boolean;
+  showPresenceDebug: boolean;
   showCompanionshipDebug: boolean;
   showMomentDebug: boolean;
   showWithdrawnMessageContent: boolean;
@@ -464,6 +466,8 @@ export function normalizeDeveloperUiPrefs(input?: Partial<DeveloperUIPrefs> | nu
     showLocalInterceptionHints: Boolean(input?.showLocalInterceptionHints),
     showSpeechStyle: Boolean(input?.showSpeechStyle),
     showAdvancedRuntimePanels: Boolean(input?.showAdvancedRuntimePanels),
+    showDeliberationDebug: Boolean(input?.showDeliberationDebug),
+    showPresenceDebug: Boolean(input?.showPresenceDebug),
     showCompanionshipDebug: Boolean(input?.showCompanionshipDebug),
     showMomentDebug: Boolean(input?.showMomentDebug),
     showWithdrawnMessageContent: Boolean(input?.showWithdrawnMessageContent),
@@ -490,7 +494,7 @@ export function getDeveloperUiVisibility(input: Partial<DeveloperUIPrefs> | null
 }
 
 export function getDeveloperUiToggleKeys() {
-  return ['showMemoryDebug', 'showRelationshipEvents', 'showAffectEvents', 'showConflictEvents', 'showStateEvents', 'showMemoryDistillationEvents', 'showCalendarEvents', 'showLocalInterceptionHints', 'showSpeechStyle', 'showAdvancedRuntimePanels', 'showCompanionshipDebug', 'showMomentDebug', 'showWithdrawnMessageContent', 'enableHumanAppraisal', 'dramaBoost'] as const;
+  return ['showMemoryDebug', 'showRelationshipEvents', 'showAffectEvents', 'showConflictEvents', 'showStateEvents', 'showMemoryDistillationEvents', 'showCalendarEvents', 'showLocalInterceptionHints', 'showSpeechStyle', 'showAdvancedRuntimePanels', 'showDeliberationDebug', 'showPresenceDebug', 'showCompanionshipDebug', 'showMomentDebug', 'showWithdrawnMessageContent', 'enableHumanAppraisal', 'dramaBoost'] as const;
 }
 
 export function getDeveloperUiAffectKey() {
@@ -805,6 +809,8 @@ export const DEFAULT_DEVELOPER_UI_PREFS: DeveloperUIPrefs = {
   showLocalInterceptionHints: false,
   showSpeechStyle: false,
   showAdvancedRuntimePanels: false,
+  showDeliberationDebug: false,
+  showPresenceDebug: false,
   showCompanionshipDebug: false,
   showMomentDebug: false,
   showWithdrawnMessageContent: false,

@@ -70,12 +70,12 @@ function buildStanceSummary(memory: StanceMemory) {
 }
 
 function buildArchetypeExecutionHint(archetype: MessageArchetype) {
-  if (archetype.key === 'pushback') return '可以直接顶一句、挑一个漏洞、或者在真有压迫感时反问。';
-  if (archetype.key === 'backing') return '可以顺着站边、补半句、或者替对方递刀。';
-  if (archetype.key === 'probe') return '可以短追问，但提问不只用于缺信息：也可以拿来逼表态、转移问题、带节奏、开玩笑、或者把话题拧去你想要的方向。';
-  if (archetype.key === 'side_comment') return '像群里插一句，不要自成完整段落。';
+  if (archetype.key === 'pushback') return '可以直接顶一句、挑一个漏洞、或者在真有压迫感时反问；如果当前任务需要论证，也可以完整展开。';
+  if (archetype.key === 'backing') return '可以顺着站边、补半句、或者替对方递刀；如果用户在请求实质内容，先把内容说够。';
+  if (archetype.key === 'probe') return '可以短追问，但提问不只用于缺信息：也可以拿来逼表态、转移问题、带节奏、开玩笑、或者把话题拧去你想要的方向；不要用追问逃避需要回答的任务。';
+  if (archetype.key === 'side_comment') return '可以像群里插一句，但这只是入口方式；当前场景或用户任务需要时，可以写成完整段落或更长说明。';
   if (archetype.key === 'redirect') return '把话扯回你在意的主线，但依然保持口语。';
-  return '像即时聊天接话，不要写成解释。';
+  return '像即时聊天接话；不要无故写成解释，但当场景、玩法或用户任务需要解释时要说完整。';
 }
 
 function buildCatchphraseHint(character: AICharacter) {
@@ -271,18 +271,18 @@ export function buildStanceMemory(messages: Message[], speakerId: string, recent
   }
   const content = latestTarget.content;
   const conversationCarry = buildCarryLineFromConversation(relevant, speakerId, recentTargetId);
-  return { targetId: recentTargetId || null, bias: 'watching', carryLine: conversationCarry || '只抓住你在意的一个点回应，不必完整覆盖对方。', topicLatch: pickTopicLatch(content) };
+  return { targetId: recentTargetId || null, bias: 'watching', carryLine: conversationCarry || '优先抓住你在意的一个点回应；这是注意力锚点，不是覆盖范围或长度限制。', topicLatch: pickTopicLatch(content) };
 }
 
 export function buildSelectiveMisread(intent: SpeakIntent, latestTargetText: string): SelectiveMisread {
   const topicLatch = pickTopicLatch(latestTargetText);
   if (intent.stance === 'challenge' || intent.stance === 'pile_on') {
-    return { mode: 'twist', instruction: `不要完整回应，把注意力钉在“${topicLatch}”这一点上，顺手放大、反问或挑刺。` };
+    return { mode: 'twist', instruction: `把注意力优先钉在“${topicLatch}”这一点上，顺手放大、反问或挑刺；如果用户任务需要完整回应，不要故意漏答。` };
   }
   if (intent.delivery === 'side_remark' || intent.messageShape === 'fragment') {
-    return { mode: 'partial', instruction: `只接“${topicLatch}”这一小点，像群里顺手插一句。` };
+    return { mode: 'partial', instruction: `可以从“${topicLatch}”这一小点切入，像群里顺手插一句；但这不是长度上限，任务需要时要继续说完整。` };
   }
-  return { mode: 'literal', instruction: `主要回应“${topicLatch}”这一点，不必覆盖整段。` };
+  return { mode: 'literal', instruction: `主要回应“${topicLatch}”这一点；不必机械覆盖整段，但不要省掉用户当前真正需要的内容。` };
 }
 
 function buildGuidanceCarryoverOverride(guidance?: UserGuidanceIntent | null) {
@@ -327,6 +327,7 @@ export function buildHumanizationPrompt(character: AICharacter, intent: SpeakInt
 - Latch onto this phrase or point if useful: ${pickTopicLatch(latestTargetText)}
 - Selective response mode: ${selectiveMisread.mode}
 - ${selectiveMisread.instruction}
+- Selective focus is an attention prior only. It must not cap answer length, forbid paragraphs, or override the current scene, play mode, or user task.
 - Do not force a fixed opener, filler, closer, or catchphrase. Use character flavor only when it naturally fits this exact turn.
 - In realistic group chat, many turns are statements, reactions, stance-taking, jokes, fragments, or casual questions; do not make every turn a neat question-response pair.
 - Questions are welcome when they feel socially useful: to get information, pressure someone, test a stance, redirect the topic, dodge a point, fish for alignment, or make the room more playful.

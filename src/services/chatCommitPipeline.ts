@@ -10,6 +10,7 @@ import { createRuntimeMemoryTimer } from './runtimeMemoryTimer';
 import { isLocalOnlyMediaMode, processRichMessageMedia } from './richMessageMedia';
 import { parseRuntimeEvent } from './runtimeEventFactory';
 import { attachMessageToActiveBranch } from './messageBranching';
+import { applyPresenceUpdateToTransition } from './characterPresence';
 
 export interface ChatCommitPipelineResult {
   persistedMessage: Message;
@@ -106,14 +107,17 @@ export async function runChatCommitPipeline(params: {
     });
 
     const commitContext = buildChatCommitContext(nextMessages);
-    const transition = await finalizeChatCommitRuntime({
-      api: params.api,
-      chat: params.chat,
-      characters: params.characters,
+    const transition = applyPresenceUpdateToTransition({
       message: persistedMessage,
-      previousAiMessage: commitContext.previousAiMessage,
-      recentMessages: nextMessages,
-      onCommit: params.onCommit,
+      transition: await finalizeChatCommitRuntime({
+        api: params.api,
+        chat: params.chat,
+        characters: params.characters,
+        message: persistedMessage,
+        previousAiMessage: commitContext.previousAiMessage,
+        recentMessages: nextMessages,
+        onCommit: params.onCommit,
+      }),
     });
     timer.mark('after-finalize-runtime', { transition });
 

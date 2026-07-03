@@ -132,6 +132,11 @@ function getCommittedSpeechCount(conversation: GroupChat) {
   return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, value) : 0;
 }
 
+function getOrderedTurnOrder(conversation: GroupChat) {
+  const baseOrder = conversation.scenarioState?.turnOrder?.length ? conversation.scenarioState.turnOrder : conversation.memberIds;
+  return baseOrder.filter((id) => id && id !== 'user' && !isChatMemberMuted(conversation, id));
+}
+
 function compactDeliberationText(value: string, max = 80) {
   const normalized = value.replace(/\s+/g, ' ').trim();
   if (normalized.length <= max) return normalized;
@@ -144,31 +149,88 @@ function appendCapped<T extends { text: string }>(items: T[] | undefined, item: 
   return next.slice(-limit);
 }
 
-function classifyDeliberationStance(conversation: GroupChat, speakerId: string | null | undefined, content: string) {
-  const roleId = conversation.scenarioState?.roleAssignments?.find((role) => role.actorId === speakerId)?.roleId;
-  if (roleId === 'affirmative' || roleId === 'plaintiff') return 'support' as const;
-  if (roleId === 'negative' || roleId === 'defendant') return 'oppose' as const;
-  if (roleId === 'reviewer' || roleId === 'judge' || roleId === 'witness') return 'review' as const;
-  if (/质询|追问|漏洞|矛盾|为什么|如何证明|证据不足|责任/.test(content)) return 'inquiry' as const;
-  if (/反对|不赞成|风险|不能|不可|问题/.test(content)) return 'oppose' as const;
-  if (/支持|赞成|应该|建议|可行|有必要/.test(content)) return 'support' as const;
-  return 'neutral' as const;
+function appendCappedMany<T extends { text: string }>(items: T[] | undefined, nextItems: T[], limit = 8) {
+  if (!nextItems.length) return (items || []).slice(-limit);
+  return [...(items || []), ...nextItems.filter((item) => item.text)].slice(-limit);
 }
 
-function extractDeliberationEvidence(content: string) {
-  if (!/(证据|事实|数据显示|记录|案例|因为|依据|材料|日志|责任链|证词)/.test(content)) return '';
-  return compactDeliberationText(content, 86);
+function normalizeArtifactConfidence(value: number | undefined) {
+  return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : undefined;
 }
 
-function extractDeliberationIssue(content: string) {
-  if (!/(？|\?|漏洞|矛盾|待回应|没有回应|证据不足|风险|责任不清|为什么|如何证明|谁负责)/.test(content)) return '';
-  return compactDeliberationText(content, 86);
+function normalizeArtifactText(value: string | undefined, max = 96) {
+  const normalized = typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
+  if (!normalized) return '';
+  return compactDeliberationText(normalized, max);
 }
 
-function extractDeliberationVerdict(mode: DiscussionMode, phase: string, content: string) {
-  if (phase !== 'synthesis' && mode !== 'courtroom' && mode !== 'expert_review') return '';
-  if (!/(结论|裁决|判断|建议|倾向|评分|修改|下一步|责任|采信|不采信)/.test(content)) return '';
-  return compactDeliberationText(content, 96);
+function buildModelDeliberationArtifacts(params: {
+  conversation: GroupChat;
+  message: Parameters<SessionEngineDefinition['onMessageCommitted']>[0]['message'];
+  nextCount: number;
+  sourceMessageId?: string;
+  createdAt?: number;
+}) {
+  const artifacts = params.message.metadata?.deliberationArtifacts || null;
+  const actorId = params.message.senderId;
+  const sourceMessageId = params.sourceMessageId;
+  const createdAt = params.createdAt;
+  const prefix = sourceMessageId || `${params.nextCount}-${actorId || 'unknown'}`;
+  const validMemberIds = new Set(params.conversation.memberIds);
+  return {
+    claims: (artifacts?.claims || []).flatMap((item, index) => {
+      const text = normalizeArtifactText(item.text, 96);
+      return text ? [{
+        id: `claim-${prefix}-${index}`,
+        actorId,
+        stance: item.stance || 'neutral',
+        text,
+        reason: normalizeArtifactText(item.reason, 100) || undefined,
+        confidence: normalizeArtifactConfidence(item.confidence),
+        sourceMessageId,
+        createdAt,
+      }] : [];
+    }),
+    evidence: (artifacts?.evidence || []).flatMap((item, index) => {
+      const text = normalizeArtifactText(item.text, 96);
+      return text ? [{
+        id: `evidence-${prefix}-${index}`,
+        actorId,
+        text,
+        reason: normalizeArtifactText(item.reason, 100) || undefined,
+        confidence: normalizeArtifactConfidence(item.confidence),
+        sourceMessageId,
+        createdAt,
+      }] : [];
+    }),
+    issues: (artifacts?.issues || []).flatMap((item, index) => {
+      const text = normalizeArtifactText(item.text, 96);
+      return text ? [{
+        id: `issue-${prefix}-${index}`,
+        targetActorId: item.targetActorId && validMemberIds.has(item.targetActorId) ? item.targetActorId : null,
+        text,
+        status: 'open' as const,
+        reason: normalizeArtifactText(item.reason, 100) || undefined,
+        confidence: normalizeArtifactConfidence(item.confidence),
+        sourceMessageId,
+        createdAt,
+      }] : [];
+    }),
+    verdicts: (artifacts?.verdicts || []).flatMap((item, index) => {
+      const text = normalizeArtifactText(item.text, 110);
+      return text ? [{
+        id: `verdict-${prefix}-${index}`,
+        actorId,
+        text,
+        tendency: item.tendency || 'mixed',
+        reason: normalizeArtifactText(item.reason, 100) || undefined,
+        confidence: normalizeArtifactConfidence(item.confidence),
+        sourceMessageId,
+        createdAt,
+      }] : [];
+    }),
+    summaryText: normalizeArtifactText(artifacts?.summary?.text, 220),
+  };
 }
 
 function buildDeliberationMomentum(claims: NonNullable<GroupChat['scenarioState']>['deliberationClaims'] = []) {
@@ -186,8 +248,7 @@ function buildDeliberationMomentum(claims: NonNullable<GroupChat['scenarioState'
 
 function getNextRoundtableSpeakerId(conversation: GroupChat, committedCount = getCommittedSpeechCount(conversation)) {
   if (!isOrderedDiscussion(conversation)) return null;
-  const turnOrder = (conversation.scenarioState?.turnOrder?.length ? conversation.scenarioState.turnOrder : conversation.memberIds)
-    .filter((id) => id && id !== 'user' && !isChatMemberMuted(conversation, id));
+  const turnOrder = getOrderedTurnOrder(conversation);
   if (!turnOrder.length) return null;
   return turnOrder[committedCount % turnOrder.length] || null;
 }
@@ -315,6 +376,17 @@ function getActionSchema(context: SessionEngineActionContext) {
   return mergeGovernanceActionSchema({ title: '审议动作', actions }, context);
 }
 
+function resolveTurnPolicy(context: Parameters<NonNullable<SessionEngineDefinition['resolveTurnPolicy']>>[0]) {
+  const latestVisible = context.messages
+    .filter((message) => !message.isDeleted && message.type !== 'system' && message.type !== 'event')
+    .at(-1);
+  return {
+    runChat: !latestVisible || latestVisible.type === 'user' || latestVisible.type === 'god',
+    runAction: false,
+    interleaveAction: false,
+  };
+}
+
 function buildGenerationPromptContext(params: Parameters<NonNullable<SessionEngineDefinition['buildGenerationPromptContext']>>[0]): SessionGenerationPromptContext {
   const mode = getDiscussionMode(params.conversation);
   const ordered = isOrderedDiscussion(params.conversation);
@@ -330,25 +402,46 @@ function buildGenerationPromptContext(params: Parameters<NonNullable<SessionEngi
     .slice(-6)
     .map((message) => getSpeakerName({ conversation: params.conversation, characters: params.characters, speakerId: message.senderId }) || message.senderName || message.senderId)
     .filter(Boolean);
+  const structuralCounts = {
+    claims: params.conversation.scenarioState?.deliberationClaims?.length || 0,
+    evidence: params.conversation.scenarioState?.deliberationEvidence?.length || 0,
+    issues: params.conversation.scenarioState?.deliberationIssues?.length || 0,
+    verdicts: params.conversation.scenarioState?.deliberationVerdicts?.length || 0,
+    hasSummary: Boolean(params.conversation.scenarioState?.summaryText?.trim()),
+  };
+  const structuralPrompt = [
+    `Structured materials so far: claims=${structuralCounts.claims}, evidence=${structuralCounts.evidence}, issues=${structuralCounts.issues}, verdicts=${structuralCounts.verdicts}, summary=${structuralCounts.hasSummary ? 'present' : 'absent'}.`,
+    structuralCounts.claims + structuralCounts.evidence + structuralCounts.issues >= 3 && structuralCounts.verdicts === 0 && !structuralCounts.hasSummary
+      ? 'The room has enough material for an interim judgment if your own visible reply can honestly make one; otherwise identify the exact missing evidence or unresolved issue.'
+      : '',
+  ].filter(Boolean).join('\n');
+  const modeInstruction = mode === 'roundtable'
+    ? 'Roundtable: one distinct angle, criterion, objection, or synthesis step; hand the floor forward.'
+    : mode === 'debate'
+      ? 'Debate: make a claim from your side and answer the strongest opposing point without collapsing into consensus.'
+      : mode === 'courtroom'
+        ? 'Courtroom: focus on evidence, testimony, responsibility, contradiction, or interim ruling.'
+        : mode === 'expert_review'
+          ? 'Expert review: evaluate by criteria, risk, tradeoff, and concrete revision.'
+          : mode === 'public_inquiry'
+            ? 'Public inquiry: close a concrete gap with a focused question or direct answer.'
+            : mode === 'brainstorm'
+              ? 'Brainstorm: offer concrete options or combinations, then defer evaluation unless it improves the idea.'
+              : mode === 'retrospective'
+                ? 'Retrospective: separate observable fact, likely cause, lesson, and next action.'
+                : 'Open deliberation: advance a claim, evidence check, unresolved issue, counterexample, boundary, tradeoff, or interim judgment.';
+  const phaseInstruction = phase === 'synthesis'
+    ? 'Synthesis phase: organize strongest points and unresolved disagreements into a clear takeaway.'
+    : 'Deliberation phase: keep the room on the goal; do not drift into pure social closure or decorative banter.';
   return {
     promptPrefix: [
-      mode === 'roundtable'
-        ? 'You are participating in a moderated roundtable deliberation, not a casual group chat.'
-        : mode === 'debate'
-          ? 'You are participating in a structured character debate. Argue from the assigned side, test claims, and avoid casual small talk.'
-          : mode === 'courtroom'
-            ? 'You are participating in a courtroom-style deliberation. Examine claims, evidence, testimony, responsibility, and interim rulings.'
-          : mode === 'expert_review'
-            ? 'You are participating in an expert review. Evaluate the proposal through explicit criteria, risks, tradeoffs, and revision suggestions.'
-          : mode === 'public_inquiry'
-            ? 'You are participating in a public inquiry. Ask focused questions, expose unresolved holes, and require direct answers.'
-          : mode === 'brainstorm'
-            ? 'You are participating in a brainstorming workshop. Generate concrete options, variations, and combinations before judging too early.'
-            : mode === 'retrospective'
-              ? 'You are participating in a retrospective. Separate facts, causes, lessons, and next actions.'
-              : 'You are participating in an open deliberation. Establish positions, test assumptions, question weak evidence, and preserve unresolved disagreements.',
-      `Deliberation goal: ${goal}.`,
-      `Current phase: ${phase}. Progress: ${progressText}.`,
+      'Deliberation protocol: this is a structured analysis room, not ordinary group chat.',
+      `Goal: ${goal}.`,
+      `Phase: ${phase}. Progress: ${progressText}.`,
+      structuralPrompt,
+      modeInstruction,
+      phaseInstruction,
+      'Every visible reply should move the deliberation forward when there is substance to add; return deliberationArtifacts only when the visible reply creates durable claims, evidence, issues, verdicts, or summary material.',
       ordered && nextSpeakerName ? `Structured turn order says the current turn belongs to: ${nextSpeakerName}.` : '',
       debateRole ? `Your assigned role: ${debateRole}.` : '',
       recentSpeakers.length ? `Recent speakers: ${recentSpeakers.join(' -> ')}.` : '',
@@ -356,44 +449,9 @@ function buildGenerationPromptContext(params: Parameters<NonNullable<SessionEngi
     responseStyle: 'professional',
     allowMarkdown: true,
     styleProfile: 'analytical_room',
-    additionalConstraints: phase === 'synthesis'
-      ? ['Synthesize the strongest points and move toward a clear takeaway instead of reopening the full debate.']
-      : mode === 'roundtable'
-        ? [
-          'Speak from this character only, make one focused contribution, and hand the floor forward instead of debating every prior point.',
-          'Respect the roundtable format: add a distinct angle, concrete criterion, objection, or synthesis step without interrupting the turn order.',
-        ]
-        : mode === 'debate'
-          ? [
-            'Make one clear claim, support it with a reason or example, and directly address the strongest opposing point.',
-            'Do not collapse into consensus yet; preserve productive disagreement until synthesis.',
-          ]
-          : mode === 'courtroom'
-            ? [
-              'State the claim, evidence, contradiction, or interim ruling from your assigned role.',
-              'Do not invent a final verdict unless the phase is synthesis; focus on evidence quality, responsibility, and unanswered questions.',
-            ]
-          : mode === 'expert_review'
-            ? [
-              'Evaluate against explicit criteria and name at least one concrete risk or revision.',
-              'Avoid generic praise; make the review actionable and tied to the stated goal.',
-            ]
-          : mode === 'public_inquiry'
-            ? [
-              'Ask or answer one focused question that closes a concrete gap in the inquiry.',
-              'Keep pressure on unresolved contradictions, responsibility, and missing evidence.',
-            ]
-          : mode === 'brainstorm'
-            ? [
-              'Contribute at least two concrete ideas, variants, or combinations; defer harsh evaluation unless it improves the idea.',
-              'Build on prior ideas with "combine", "extend", "reverse", or "constraint" moves instead of repeating them.',
-            ]
-            : mode === 'retrospective'
-              ? [
-                'Name one observable fact, one likely cause, and one practical follow-up action.',
-                'Avoid blame-heavy phrasing; focus on evidence, responsibility, and future process changes.',
-              ]
-        : ['Add one materially new stance, evidence check, tradeoff, counterpoint, or synthesis step instead of restating agreement.'],
+    additionalConstraints: [
+      'If the next natural thing would only be praise, farewell, or decorative banter, instead ask a useful question, name a boundary, give a counterexample, or briefly state that no new claim follows from this point. Do not represent pause or silence with empty content.',
+    ],
   };
 }
 
@@ -438,48 +496,17 @@ function onMessageCommitted(params: {
   const currentPhase = getActiveDiscussionPhase(params.conversation);
   const nextCount = getCommittedSpeechCount(params.conversation) + 1;
   const shouldSynthesize = currentPhase === 'synthesis';
-  const nextSpeakerId = shouldSynthesize ? null : getNextRoundtableSpeakerId(params.conversation, nextCount);
+  const nextSpeakerId = shouldSynthesize ? null : isOrderedDiscussion(params.conversation) ? getNextRoundtableSpeakerId(params.conversation, nextCount) : null;
   const goalLabel = getDiscussionGoal(params.conversation);
   const nextPhase = currentPhase;
   const goalProgress = 0.75;
-  const compactSummary = compactDeliberationText(params.message.content, 86);
   const sourceMessageId = params.message.metadata?.branching?.nodeId || params.message.metadata?.branching?.revisionRootId || undefined;
   const createdAt = undefined;
-  const claim = compactSummary ? {
-    id: sourceMessageId || `claim-${nextCount}-${params.message.senderId || 'unknown'}`,
-    actorId: params.message.senderId,
-    stance: classifyDeliberationStance(params.conversation, params.message.senderId, params.message.content),
-    text: compactSummary,
-    sourceMessageId,
-    createdAt,
-  } : null;
-  const evidenceText = extractDeliberationEvidence(params.message.content);
-  const issueText = extractDeliberationIssue(params.message.content);
-  const verdictText = extractDeliberationVerdict(mode, currentPhase, params.message.content);
-  const nextClaims = appendCapped(params.conversation.scenarioState?.deliberationClaims, claim);
-  const nextEvidence = appendCapped(params.conversation.scenarioState?.deliberationEvidence, evidenceText ? {
-    id: sourceMessageId ? `evidence-${sourceMessageId}` : `evidence-${nextCount}-${params.message.senderId || 'unknown'}`,
-    actorId: params.message.senderId,
-    text: evidenceText,
-    sourceMessageId,
-    createdAt,
-  } : null);
-  const nextIssues = appendCapped(params.conversation.scenarioState?.deliberationIssues, issueText ? {
-    id: sourceMessageId ? `issue-${sourceMessageId}` : `issue-${nextCount}-${params.message.senderId || 'unknown'}`,
-    targetActorId: params.message.senderId,
-    text: issueText,
-    status: 'open' as const,
-    sourceMessageId,
-    createdAt,
-  } : null);
-  const nextVerdicts = appendCapped(params.conversation.scenarioState?.deliberationVerdicts, verdictText ? {
-    id: sourceMessageId ? `verdict-${sourceMessageId}` : `verdict-${nextCount}-${params.message.senderId || 'unknown'}`,
-    actorId: params.message.senderId,
-    text: verdictText,
-    tendency: claim?.stance === 'support' || claim?.stance === 'oppose' ? claim.stance : 'mixed',
-    sourceMessageId,
-    createdAt,
-  } : null, 6);
+  const modelArtifacts = buildModelDeliberationArtifacts({ conversation: params.conversation, message: params.message, nextCount, sourceMessageId, createdAt });
+  const nextClaims = appendCappedMany(params.conversation.scenarioState?.deliberationClaims, modelArtifacts.claims);
+  const nextEvidence = appendCappedMany(params.conversation.scenarioState?.deliberationEvidence, modelArtifacts.evidence);
+  const nextIssues = appendCappedMany(params.conversation.scenarioState?.deliberationIssues, modelArtifacts.issues);
+  const nextVerdicts = appendCappedMany(params.conversation.scenarioState?.deliberationVerdicts, modelArtifacts.verdicts, 6);
   return {
     chatPatch: {
       scenarioState: {
@@ -499,6 +526,7 @@ function onMessageCommitted(params: {
         deliberationIssues: nextIssues,
         deliberationVerdicts: nextVerdicts,
         deliberationMomentum: buildDeliberationMomentum(nextClaims),
+        summaryText: modelArtifacts.summaryText || params.conversation.scenarioState?.summaryText,
       },
       worldState: {
         ...params.conversation.worldState,
@@ -530,6 +558,7 @@ export const DISCUSSION_ENGINE: SessionEngineDefinition = {
   getVisiblePanels,
   getAvailableActions,
   getActionSchema,
+  resolveTurnPolicy,
   buildGenerationPromptContext,
   buildRuntimeContextBundle,
   onMessageCommitted,

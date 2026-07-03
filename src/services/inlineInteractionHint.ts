@@ -1,10 +1,11 @@
 import type { AICharacter } from '../types/character';
 import type { GroupChat } from '../types/chat';
-import type { MediaGenerationDecision, Message } from '../types/message';
+import type { MediaGenerationDecision, Message, MessagePresenceUpdate } from '../types/message';
 import type { AddressedTargetHintEnvelope, ConflictFocusPayload, InteractionHintCollection, RecentSocialEventSummary, SocialEventHintEnvelope } from '../types/runtimeEvent';
 import { normalizeSocialEventHints } from '../types/runtimeEvent';
 import type { TurnPlan } from './turnPlanner';
 import { hasVisibleStoryEvents, normalizeStoryEvents } from './narrativeRuntime';
+import { resolveSessionFamilyKey } from './sessionEngineKeys';
 
 export interface InlineStoryChoice {
   label: string;
@@ -36,6 +37,38 @@ export interface InlineStoryBlock {
   text: string;
 }
 
+export interface InlineDeliberationArtifacts {
+  claims?: Array<{
+    text: string;
+    stance?: 'support' | 'oppose' | 'neutral' | 'review' | 'inquiry';
+    reason?: string;
+    confidence?: number;
+  }>;
+  evidence?: Array<{
+    text: string;
+    reason?: string;
+    confidence?: number;
+  }>;
+  issues?: Array<{
+    text: string;
+    targetActorId?: string | null;
+    reason?: string;
+    confidence?: number;
+  }>;
+  verdicts?: Array<{
+    text: string;
+    tendency?: 'support' | 'oppose' | 'mixed' | 'undecided';
+    reason?: string;
+    confidence?: number;
+  }>;
+  summary?: {
+    text: string;
+    reason?: string;
+    confidence?: number;
+  } | null;
+  overallReason?: string | null;
+}
+
 export interface InlineInteractionEnvelope {
   content: string;
   narrativeText?: string | null;
@@ -49,6 +82,8 @@ export interface InlineInteractionEnvelope {
   conflictFocus?: ConflictFocusPayload | null;
   mediaDecision?: MediaGenerationDecision | null;
   storyChoices?: InlineStoryChoice[] | null;
+  deliberationArtifacts?: InlineDeliberationArtifacts | null;
+  presenceUpdate?: MessagePresenceUpdate | null;
 }
 
 function cleanJsonLikeText(value: string) {
@@ -112,6 +147,86 @@ function sanitizeConflictFocus(conflictFocus: ConflictFocusPayload | null | unde
   return conflictFocus;
 }
 
+function normalizeConfidence(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.max(0, Math.min(1, value))
+    : undefined;
+}
+
+function cleanArtifactText(value: unknown, max = 180) {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.replace(/\s+/g, ' ').trim();
+  if (!trimmed || isContractPlaceholderText(trimmed)) return undefined;
+  return trimmed.length > max ? `${trimmed.slice(0, max - 1).trimEnd()}…` : trimmed;
+}
+
+function normalizeArtifactList<T extends Record<string, unknown>>(
+  value: unknown,
+  map: (item: Record<string, unknown>) => T | null,
+  limit = 3,
+) {
+  if (!Array.isArray(value)) return undefined;
+  const normalized = value
+    .map((item) => (item && typeof item === 'object') ? map(item as Record<string, unknown>) : null)
+    .filter(Boolean) as T[];
+  return normalized.length ? normalized.slice(0, limit) : undefined;
+}
+
+function sanitizeDeliberationArtifacts(value: InlineDeliberationArtifacts | null | undefined): InlineDeliberationArtifacts | null {
+  if (!value || typeof value !== 'object') return null;
+  const claims = normalizeArtifactList(value.claims, (item) => {
+    const text = cleanArtifactText(item.text);
+    if (!text) return null;
+    const stance = ['support', 'oppose', 'neutral', 'review', 'inquiry'].includes(String(item.stance)) ? item.stance as NonNullable<NonNullable<InlineDeliberationArtifacts['claims']>[number]['stance']> : 'neutral';
+    return { text, stance, reason: cleanArtifactText(item.reason, 100), confidence: normalizeConfidence(item.confidence) };
+  });
+  const evidence = normalizeArtifactList(value.evidence, (item) => {
+    const text = cleanArtifactText(item.text);
+    return text ? { text, reason: cleanArtifactText(item.reason, 100), confidence: normalizeConfidence(item.confidence) } : null;
+  });
+  const issues = normalizeArtifactList(value.issues, (item) => {
+    const text = cleanArtifactText(item.text);
+    return text ? {
+      text,
+      targetActorId: typeof item.targetActorId === 'string' ? item.targetActorId : null,
+      reason: cleanArtifactText(item.reason, 100),
+      confidence: normalizeConfidence(item.confidence),
+    } : null;
+  });
+  const verdicts = normalizeArtifactList(value.verdicts, (item) => {
+    const text = cleanArtifactText(item.text);
+    if (!text) return null;
+    const tendency = ['support', 'oppose', 'mixed', 'undecided'].includes(String(item.tendency)) ? item.tendency as NonNullable<NonNullable<InlineDeliberationArtifacts['verdicts']>[number]['tendency']> : 'mixed';
+    return { text, tendency, reason: cleanArtifactText(item.reason, 100), confidence: normalizeConfidence(item.confidence) };
+  });
+  const summaryText = cleanArtifactText(value.summary?.text, 220);
+  const summary = summaryText ? {
+    text: summaryText,
+    reason: cleanArtifactText(value.summary?.reason, 100),
+    confidence: normalizeConfidence(value.summary?.confidence),
+  } : null;
+  const overallReason = cleanArtifactText(value.overallReason, 140) || null;
+  if (!claims && !evidence && !issues && !verdicts && !summary && !overallReason) return null;
+  return { claims, evidence, issues, verdicts, summary, overallReason };
+}
+
+function sanitizePresenceUpdate(value: MessagePresenceUpdate | null | undefined): MessagePresenceUpdate | null {
+  if (!value || typeof value !== 'object') return null;
+  const status = value.status === 'away' ? 'away' : value.status === 'online' ? 'online' : null;
+  if (!status) return null;
+  const activity = cleanArtifactText(value.activity, 60);
+  const reason = cleanArtifactText(value.reason, 100);
+  const durationMinutes = typeof value.durationMinutes === 'number' && Number.isFinite(value.durationMinutes)
+    ? Math.max(3, Math.min(720, Math.round(value.durationMinutes)))
+    : status === 'away' ? 30 : undefined;
+  return {
+    status,
+    activity,
+    reason,
+    durationMinutes,
+  };
+}
+
 function sanitizeEnvelope(envelope: InlineInteractionEnvelope): InlineInteractionEnvelope {
   return {
     ...envelope,
@@ -119,6 +234,8 @@ function sanitizeEnvelope(envelope: InlineInteractionEnvelope): InlineInteractio
     socialEventHints: normalizeSocialEventHints(envelope.socialEventHints),
     conflictFocus: sanitizeConflictFocus(envelope.conflictFocus),
     storyEvents: normalizeStoryEvents(envelope.storyEvents),
+    deliberationArtifacts: sanitizeDeliberationArtifacts(envelope.deliberationArtifacts),
+    presenceUpdate: sanitizePresenceUpdate(envelope.presenceUpdate),
   };
 }
 
@@ -183,15 +300,22 @@ export function buildInlineInteractionContract(params: {
     image: boolean;
     audio: boolean;
   };
+  mediaRequested?: boolean;
 }) {
   const isStoryReader = params.chat.sessionKind?.scenarioId === 'story-reader';
+  const isAnalysisRoom = resolveSessionFamilyKey(params.chat) === 'analysis';
+  const mediaCapabilities = params.mediaCapabilities || { image: false, audio: false };
+  const shouldIncludeMediaDecision = Boolean(params.mediaRequested && !isStoryReader && (mediaCapabilities.image || mediaCapabilities.audio));
   const transcriptScope = buildRecentTranscriptScope(params.recentMessages);
   const recentSocialEvents = buildRecentSocialEventContext(params.chat)
     .map((event) => `- ${event.eventKind}${event.title ? ` / ${event.title}` : ''}${event.activityType ? ` / ${event.activityType}` : ''}: ${event.summary}`)
     .join('\n');
 
-  const mediaExample = !isStoryReader && (params.mediaCapabilities?.image || params.mediaCapabilities?.audio)
-    ? `,\n  "mediaDecision": {${params.mediaCapabilities.image ? `\n    "image": {\n      "shouldGenerate": false,\n      "reason": "只有当这条消息确实需要视觉补充时才为 true",\n      "prompt": null,\n      "altText": null\n    }` : ''}${params.mediaCapabilities.image && params.mediaCapabilities.audio ? ',' : ''}${params.mediaCapabilities.audio ? `\n    "audio": {\n      "shouldGenerate": false,\n      "reason": "只有当这条消息特别适合语音播放时才为 true",\n      "text": null,\n      "voiceProfileId": null\n    }` : ''}\n  }`
+  const mediaExample = shouldIncludeMediaDecision
+    ? `,\n  "mediaDecision": {${mediaCapabilities.image ? `\n    "image": {\n      "shouldGenerate": false,\n      "reason": "只有当这条消息确实需要视觉补充时才为 true",\n      "prompt": null,\n      "altText": null\n    }` : ''}${mediaCapabilities.image && mediaCapabilities.audio ? ',' : ''}${mediaCapabilities.audio ? `\n    "audio": {\n      "shouldGenerate": false,\n      "reason": "只有当这条消息特别适合语音播放时才为 true",\n      "text": null,\n      "voiceProfileId": null\n    }` : ''}\n  }`
+    : '';
+  const deliberationExample = isAnalysisRoom
+    ? `,\n  "deliberationArtifacts": {"claims":[{"text":"从本条可见回复中抽取的论点","stance":"review","reason":"这条可见回复为什么支持该论点","confidence":0.8}]}`
     : '';
 
   const intentionalRepeatRules = `\n\nRules for intentionalRepeat:
@@ -200,12 +324,12 @@ export function buildInlineInteractionContract(params: {
 3. intentionalRepeat=true is not limited to exact same text. It can cover deliberate repeated tone, keyword, rhythm, format, or call-and-response structure.
 4. Do not use intentionalRepeat=true for accidental template drift. If you are merely falling back into the same opener, explanation scaffold, punctuation habit, or generic answer shape, set false and rewrite with a different discourse move.`;
 
-  const mediaRules = (!isStoryReader && (params.mediaCapabilities?.image || params.mediaCapabilities?.audio)
-    ? `\n\nRules for mediaDecision:\n1. mediaDecision is required when a media capability is available. If no media is needed, set shouldGenerate=false for each available media type.\n${params.mediaCapabilities.image ? '2. For image, set image.shouldGenerate=true when the user asks to see, view, receive, test, or be shown a picture/photo/screenshot/selfie, or when your content says or implies that you are showing/sending an image. If true, write prompt and altText based on the speaker identity, personality, behavior, current line, and recent context.\n3. Do not pretend the user can see a picture in content unless image.shouldGenerate=true. If you choose not to generate an image, explain briefly in character instead of saying “you see/look at this/just sent”.\n4. image.prompt must be a complete image-generation prompt, not a short label. Include the visual subject, scene/location, action or moment, mood, composition, lighting, and concrete details that are justified by the speaker and recent context.\n5. Treat the requested image type as the center of the prompt. A selfie should detail the person; a milk tea or food image should detail the drink/food, packaging, table, lighting, hand/props, and why this character would frame it that way; a sports/activity image should detail motion, gear, posture, sweat/weather, location, and social energy; an object/product/environment image should detail material, scale, use context, and surrounding clues.\n6. Make every image feel like it belongs to the speaker and current conversation, not like a generic stock image. Use the character identity, personality, habits, hobbies, social role, taste level, likely budget, environment, behavior, and relationships to choose concrete visual details, while keeping them temporary and context-dependent.\n7. Prefer believable chat-photo realism when the message implies a photo/snapshot: natural phone camera perspective, plausible lens and distance, ordinary indoor/outdoor lighting, mild motion blur or imperfect framing when appropriate, real material texture, background clutter, and small lived-in details. Avoid glossy stock-photo polish, plastic skin, over-symmetry, impossible hands, unreadable text, extra limbs, duplicated faces, watermark-like marks, and text overlays.\n8. For a recurring character appearing in the image, keep stable identity anchors across images when known or reasonably inferred: age range, face shape, hair length/color/style, usual vibe, body type, signature accessories, and baseline fashion taste. Vary temporary clothes, pose, lighting, location, expression, and activity according to the current scene.\n9. For group photos or activity photos, describe every visible participant separately with stable identity anchors, relative positions, interactions, scale, and the shared environment. Do not collapse multiple characters into generic people.\n10. If the conversation says the character is eating hotpot, hiking, at work, in a rural home, taking a group photo, or showing a product/food/object, reflect that current scene. If no scene is established, choose a natural in-character setting for this specific image type instead of a generic portrait.\n11. The prompt should describe the artifact to generate, not the chat UI. Avoid unrelated generic portraits, watermarks, captions, UI screenshots, URLs, or text-heavy images.\n12. altText should be concise but specific enough for future AI context.\n' : ''}${params.mediaCapabilities.audio ? '13. For audio, only set shouldGenerate=true when this exact text benefits from voice playback. audio.text must be the spoken version of content and must not add new facts.\n' : ''}14. Never output URLs, base64, markdown image links, or binary data.`
+  const mediaRules = (shouldIncludeMediaDecision
+    ? `\n\nRules for mediaDecision:\n1. mediaDecision is included because this turn has an explicit media request. If the request is not actually for media, set shouldGenerate=false.\n${mediaCapabilities.image ? '2. For image requests, set image.shouldGenerate=true only when the visible reply is sending/showing/generating an image. Write a concrete prompt centered on the requested subject, grounded in speaker identity and current context; avoid generic stock-photo wording, impossible anatomy, watermarks, URLs, and text overlays.\n3. Do not pretend an image exists unless image.shouldGenerate=true. altText should be concise and specific.\n' : ''}${mediaCapabilities.audio ? '4. For audio requests, set audio.shouldGenerate=true only when this exact text should be spoken. audio.text must not add new facts.\n' : ''}5. Never output URLs, base64, markdown image links, or binary data.`
     : '') + intentionalRepeatRules;
 
   const turnPlanRules = params.turnPlan
-    ? `\nTurn plan for this response:\n- rhythm tendency=${params.turnPlan.rhythm}.\n- Do not target a fixed length. Let the current request, character comfort, and actual substance decide the size.\n- extraMessages is available on every chat turn. Use it when the reply naturally arrives as consecutive sends; keep it null when one bubble feels right.`
+    ? `\nTurn plan: rhythm=${params.turnPlan.rhythm}; use extraMessages only when consecutive sends feel natural.`
     : '';
   const aiDirectInteractionRules = params.chat.type === 'ai_direct'
     ? '\n8. In AI direct chats, target the other participant when the turn clearly supports, challenges, probes, defends, mocks, or dismisses them; do not target the speaker or the user unless the user is an actual participant.'
@@ -213,15 +337,15 @@ export function buildInlineInteractionContract(params: {
   const storyNarrativeRules = isStoryReader
     ? `\n\nRules for story event DSL:
 1. Story-reader turns must use storyEvents as the authoritative visible story body. Do not copy the JSON shape with storyEvents=null for a normal story turn.
-2. storyEvents must be an ordered array for every normal story-reader turn and must include at least one visible narration or speech event. Do not set storyEvents=null; even a single spoken line must be represented as a speech event. Use as many narration and speech events as the current story beat needs; do not pad, truncate, or stop early just to fit a fixed count. Each event is one of:
+2. storyEvents must be an ordered array for every normal story-reader turn and must include at least one visible narration or speech event. Do not set storyEvents=null; even a single spoken line must be represented as a speech event. Use as many narration and speech events as the current story beat needs; suggested event counts are guidance, not enforcement. Do not pad, truncate, or stop early just to fit a fixed count. Each event is one of:
    - {"type":"narration","actorId":"narrator","text":"brief external scene action or visible consequence"}
    - {"type":"speech","actorId":"character-id-or-null","actorName":"exact display name or null","text":"spoken line only"}
    - {"type":"choice_point","choices":[{"label":"让某人做具体动作","prompt":"选择后要推进的具体后果","intent":"逼问/保护/追踪/隐瞒/冒险/揭露","risk":"可能付出的代价","reward":"可能获得的信息或关系推进"}]}
    - {"type":"chapter_update","title":"4-10 Chinese characters, concrete and memorable","summary":"optional short recap","status":"active or completed","startNewChapter":false}
 3. narration carries action, movement, consequences, inner pressure, scene changes, clue reveals, and time jumps. Narration renders as正文段落.
-4. speech is optional and should be brief. Use it only for words actually spoken aloud by a character; every speech event must include either a valid actorId or an exact actorName.
+4. speech is optional. Use it only for words actually spoken aloud by a character; every speech event must include either a valid actorId or an exact actorName.
 5. A whole turn may contain only narration. This is valid when the beat needs setting, consequence, or pressure more than dialogue.
-6. Speech text must be chat-like: 1-3 sentences, no camera direction, no omniscient analysis, no private inner monologue, no describing the whole room's reaction.
+6. Speech text must be chat-like. A common speech event is 1-3 sentences, but scene and character pressure decide the actual size: it can be terse, interrupted, or more developed when needed. No camera direction, omniscient analysis, private inner monologue, or describing the whole room's reaction.
 7. Do not let one character inherit another character's private object, gesture, memory, clothing detail, wording, or sensory detail unless that detail was explicitly spoken aloud or publicly visible.
 8. Put each narration and each character line in its own event, preserving story order. Do not merge narration and speech into one event.
 9. Do not output alternate rewrites of the same moment. If you revise a narration or spoken line, keep only the final version; do not include both drafts in storyEvents.
@@ -274,7 +398,40 @@ Story-reader visible body rule:
 Recent transcript scope:
 ${transcriptScope}${recentSocialEvents ? `\n\nRecent social events to avoid duplicating:\n${recentSocialEvents}` : ''}`;
   }
-  return `\n\nOutput contract:\nReturn one valid JSON object only. This is the required shape:\n{\n  "content": "按当前请求自然作答；可短可长。如果要引用词语，优先使用中文引号，例如“某个词”。",\n  "extraMessages": null,\n  "intentionalRepeat": false${mediaExample},\n  "conflictFocus": null,\n  "interactionHints": null,\n  "socialEventHints": null\n}\n\nJSON validity rules:\n1. The response must be parseable by JSON.parse.\n2. Do not output TypeScript syntax such as string | null, undefined, comments, or trailing commas.\n3. Use null for absent optional fields. Never use undefined.\n4. If content contains ASCII double quote characters, escape each quote with a backslash. Prefer Chinese quotes inside Chinese content.\n5. intensity must be an integer from 1 to 5. confidence must be a decimal from 0 to 1, not 0 to 100.\n6. The example values above are structural placeholders, not dialogue content, conflict content, or memory.\n\nRules for extraMessages:\n1. content is the first visible chat bubble and is streamed while generating.\n2. extraMessages is optional. Use null for one bubble.\n3. Use extraMessages only when this reply would naturally be sent as 2-5 consecutive chat bubbles by the same person. Put only the later bubbles there, not a repeat of content. extraMessages may contain at most 4 later bubbles.\n4. Each extraMessages item must be a complete visible bubble, not a punctuation-based fragment.\n5. The full visible turn is content followed by extraMessages in order. Judge interactionHints, conflictFocus, and socialEventHints from that full turn.\n6. Do not use extraMessages for markdown, longform, images, audio, or formal answers.\n7. Vary lengths naturally. Do not make every part the same size.${turnPlanRules}\n\nAllowed interactionHint values:\n- kind: "support", "challenge", "mock", "dismiss", "defend", "probe", "side_comment"\n- tone: "warm", "annoyed", "defensive", "excited", "sarcastic", "cold"\n\nRules for interactionHints:\n1. primary is the strongest directed relationship effect in the full visible turn.\n2. secondary may include other directed effects from the same turn, but only when they are real and specific.\n3. If you are just making a general comment, set interactionHints to null.\n4. If present, interactionHints must use this shape: {"primary":{"targetId":"member-id-or-null","kind":"support","tone":"warm","intensity":3,"confidence":0.86,"reason":"why this turn points to the target"},"secondary":[]}.\n5. targetId must come from this member list:\n${buildCharacterReference(params.characters.filter((character) => character.id !== params.speaker.id))}\n6. Do not emit duplicate targetId+kind pairs in secondary.\n7. If uncertain, lower confidence or omit the item.${aiDirectInteractionRules}\n\nRules for conflictFocus:\n1. present=false or conflictFocus=null is valid and common; not every turn contains a meaningful contradiction.\n2. If present, conflictFocus must use this shape: {"present":true,"type":"value_conflict","severity":0.72,"stage":"emerging","summary":"write a fresh one-sentence summary from the actual current turn","primaryTargetIds":["member-id"],"participantIds":["speaker-id","member-id"],"nextPressure":"stabilize","developmentHooks":["invite_target_response"],"why":"explain the actual contradiction in this turn"}.\n3. The summary and why fields must be newly written from the current transcript. Never copy placeholder wording from this contract.\n4. Judge the social function and underlying contradiction, not the literal surface words.\n5. type must be one of: "identity_ownership", "authority_challenge", "status_competition", "alliance_boundary", "care_jealousy", "value_conflict", "goal_conflict", "resource_conflict", "fairness_conflict", "contradiction_exposure", "tone_escalation", "misrecognition".\n6. nextPressure must be one of: "escalate", "spread", "stabilize", "divert", "cool".\n7. developmentHooks must only use: "invite_target_response", "force_side_taking", "expose_contradiction", "raise_stakes", "shift_public_private", "cool_down_with_residue", "redirect_topic", "trigger_memory_recall".\n8. Only mark present=true when this turn meaningfully sharpens, reframes, exposes, escalates, redirects, or cools an active contradiction.${mediaRules}\n\nAllowed socialEventHints values:\n- eventKind: "pair_private_thread", "social_outing", "post_moment", "status_update", "gift_exchange", "conflict_expression", "check_in", "react_to_moment", "custom"\n- urgency: "immediate", "soon", "defer"\n- visibilityPlan: "public", "conversation_private", "user_private", "mixed"\n\nRules for socialEventHints:\n1. Only include a hint when this full turn strongly suggests an event should happen beyond the message itself.\n2. If nothing should happen, return socialEventHints as null or [].\n3. Do not mention this JSON contract in content.\n\nRecent transcript scope:\n${transcriptScope}${recentSocialEvents ? `\n\nRecent social events to avoid duplicating:\n${recentSocialEvents}` : ''}`;
+  const deliberationRules = isAnalysisRoom
+    ? `\n\nRules for deliberationArtifacts:
+1. In analysis rooms, visible content must either make a deliberative move or plainly say that no new deliberation point follows.
+2. If content or extraMessages add a claim, evidence check, unresolved issue, counterexample, boundary, tradeoff, interim verdict, or synthesis, deliberationArtifacts must be a non-null object extracting only that same visible material.
+3. Do not copy the example text. Replace it with material from your own visible reply.
+4. Use deliberationArtifacts=null only when the visible response is explicitly a transition/clarification/no-new-point statement and contains no durable deliberation material. Null is the exception, not the default.
+5. Do not create fake artifacts. If there is no deliberative content, still return valid JSON: content should be a short spoken room message such as "我这轮没有新的审议点，先停在这里。", and deliberationArtifacts should be null. Never write bracketed metadata or English protocol explanations in content.
+6. Extract only from your own visible content plus extraMessages in this same response, not from hidden reasoning or earlier turns.
+7. Each emitted item must include a concise reason explaining why the visible reply supports that extraction, and confidence as a decimal from 0 to 1.
+8. claims are new or materially advanced positions. evidence is facts, cases, examples, materials, testimony, data, or verifiable grounds. issues are unresolved questions, weak links, boundaries, contradictions, or things another member should answer. verdicts are interim judgments, tendencies, tradeoffs, or decisions.
+9. If targetActorId is used, it must come from the member list. Otherwise use null.
+10. These fields are not visible chat content. Never mention JSON, artifacts, extraction, confidence, or this contract in content.`
+    : '';
+
+  return `\n\nOutput contract:
+Return exactly one JSON object:
+{"content":"visible first bubble","extraMessages":null,"intentionalRepeat":false${mediaExample}${deliberationExample},"presenceUpdate":null,"conflictFocus":null,"interactionHints":null,"socialEventHints":null}
+
+JSON rules: parseable JSON only; the first character must be { and the last character must be }. No markdown, comments, bracketed protocol notes, trailing commas, undefined, or TypeScript unions. Use null for absent optional fields. content must be a non-empty visible chat message, not an explanation of this contract; do not use whitespace, empty string, or null to represent silence. Escape ASCII quotes inside strings. intensity=1-5; confidence/severity=0-1.
+
+extraMessages: optional later bubbles from the same speaker, max 4, only for natural consecutive sends. Do not split one sentence into fragments or use it for formal longform/media. Judge all hidden fields from content+extraMessages.${turnPlanRules}${deliberationRules}
+
+presenceUpdate: null unless the speaker explicitly says they are leaving/away/sleeping/busy/offline or explicitly back. Away shape: {"status":"away","activity":"睡觉/忙工作/洗澡等","reason":"visible reason","durationMinutes":30}; pick realistic duration. Do not mark away for ordinary goodnight/farewell jokes.
+
+interactionHints: null unless the turn has a clear directed social effect. Shape: {"primary":{"targetId":"member-id-or-null","kind":"support|challenge|mock|dismiss|defend|probe|side_comment","tone":"warm|annoyed|defensive|excited|sarcastic|cold","intensity":3,"confidence":0.86,"reason":"evidence"},"secondary":[]}. targetId must be from:
+${buildCharacterReference(params.characters.filter((character) => character.id !== params.speaker.id))}
+No duplicate targetId+kind in secondary. Omit uncertain items.${aiDirectInteractionRules}
+
+conflictFocus: null unless this turn meaningfully sharpens/reframes/exposes/escalates/redirects/cools a real contradiction. If present, use type one of identity_ownership/authority_challenge/status_competition/alliance_boundary/care_jealousy/value_conflict/goal_conflict/resource_conflict/fairness_conflict/contradiction_exposure/tone_escalation/misrecognition; nextPressure one of escalate/spread/stabilize/divert/cool; developmentHooks from invite_target_response/force_side_taking/expose_contradiction/raise_stakes/shift_public_private/cool_down_with_residue/redirect_topic/trigger_memory_recall. Write fresh summary and why from this turn; never copy placeholder wording.${mediaRules}
+
+socialEventHints: this is the only per-turn semantic source for world/social events. Include only when the visible full turn strongly suggests an event beyond the message itself; otherwise null or []. eventKind can be pair_private_thread/social_outing/post_moment/status_update/gift_exchange/conflict_expression/check_in/react_to_moment/custom; urgency immediate/soon/defer; visibilityPlan public/conversation_private/user_private/mixed. Include reason/seedIntent/confidence when useful, and do not duplicate recent events.
+
+Recent transcript scope:
+${transcriptScope}${recentSocialEvents ? `\n\nRecent social events to avoid duplicating:\n${recentSocialEvents}` : ''}`;
 }
 
 export function parseInlineInteractionEnvelope(raw: string): InlineInteractionEnvelope | null {

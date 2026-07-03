@@ -36,10 +36,6 @@ function buildApiConfig() {
   };
 }
 
-function jsonResponse(payload: unknown) {
-  return JSON.stringify(payload);
-}
-
 function buildChat(patch: Partial<ReturnType<typeof normalizeConversation>> = {}) {
   return normalizeConversation({
     id: 'chat-1',
@@ -220,7 +216,7 @@ describe('openChatEngine.onMessageCommitted', () => {
         type: 'user',
         senderId: 'user',
         content: '聊聊今晚要不要一起去看烟花。',
-      },
+      } as OpenChatCommittedMessageForTest,
       previousAiMessage: null,
       recentMessages: [],
     });
@@ -3025,29 +3021,41 @@ describe('openChatEngine.onMessageCommitted', () => {
     expect(events.some((event) => event.kind === 'artifact' && (event.payload as { artifactType?: string }).artifactType === 'outing_summary')).toBe(true);
   });
 
-  it('falls back to AI post moment analysis when no hint is provided', async () => {
-    generateResponseMock
-      .mockResolvedValueOnce(jsonResponse({ shouldCreate: true, title: '朋友圈动态', activityType: '记录聚会', targetIds: ['b'], confidence: 0.91, reasonType: 'celebration', dedupeKey: 'moment-fallback-1', seedIntent: '想把刚才的开心时刻发成动态。' }));
-
+  it('creates post moment candidates from main-response social event hints', async () => {
     const chat = buildChat();
     const characters = [buildCharacter('a', '甲'), buildCharacter('b', '乙')];
+    const message: OpenChatCommittedMessageForTest = {
+      type: 'ai',
+      senderId: 'a',
+      content: '今天太开心了，刚才那一幕我都想发出来。',
+      interactionHint: {
+        kind: 'support',
+        actorId: 'a',
+        targetId: 'b',
+        intensity: 3,
+        tone: 'warm',
+        evidenceText: '今天太开心了，刚才那一幕我都想发出来。',
+        confidence: 0.9,
+      },
+      socialEventHints: [{
+        eventKind: 'post_moment',
+        participantIds: ['a'],
+        targetIds: ['b'],
+        reasonType: 'celebration',
+        confidence: 0.91,
+        urgency: 'soon',
+        seedIntent: '想把刚才的开心时刻发成动态。',
+        visibilityPlan: 'public',
+        expectedArtifacts: ['moment_text'],
+        title: '朋友圈动态',
+        activityType: '记录聚会',
+        dedupeKey: 'moment-main-hint-1',
+      }],
+    };
     const result = await openChatEngine.onMessageCommitted({
       conversation: chat,
       characters,
-      message: {
-        type: 'ai',
-        senderId: 'a',
-        content: '今天太开心了，刚才那一幕我都想发出来。',
-        interactionHint: {
-          kind: 'support',
-          actorId: 'a',
-          targetId: 'b',
-          intensity: 3,
-          tone: 'warm',
-          evidenceText: '今天太开心了，刚才那一幕我都想发出来。',
-          confidence: 0.9,
-        },
-      },
+      message,
       previousAiMessage: null,
       recentMessages: [],
       apiConfig: buildApiConfig(),
@@ -3056,14 +3064,10 @@ describe('openChatEngine.onMessageCommitted', () => {
     const events = readRuntimeEvents(result);
     expect(events.some((event) => event.kind === 'event_candidate' && (event.payload as { eventKind?: string }).eventKind === 'post_moment')).toBe(true);
     expect(events.some((event) => event.kind === 'artifact' && (event.payload as { artifactType?: string }).artifactType === 'moment_text')).toBe(true);
-    expect(generateResponseMock.mock.calls.length).toBe(1);
-    expect(generateResponseMock.mock.calls.some(([, prompt]) => typeof prompt === 'string' && prompt.includes('朋友圈/动态'))).toBe(true);
+    expect(generateResponseMock).not.toHaveBeenCalled();
   });
 
-  it('ignores malformed AI post moment analysis and keeps runtime stable', async () => {
-    generateResponseMock
-      .mockResolvedValueOnce('not-json');
-
+  it('does not run AI post moment analysis when no main-response hint is provided', async () => {
     const chat = buildChat();
     const characters = [buildCharacter('a', '甲'), buildCharacter('b', '乙')];
     const result = await openChatEngine.onMessageCommitted({
@@ -3092,7 +3096,7 @@ describe('openChatEngine.onMessageCommitted', () => {
     expect(events.some((event) => event.kind === 'event_candidate' && (event.payload as { eventKind?: string }).eventKind === 'post_moment')).toBe(false);
     expect(events.some((event) => event.kind === 'artifact' && (event.payload as { artifactType?: string }).artifactType === 'moment_text')).toBe(false);
     expect(events.some((event) => event.kind === 'message_generated')).toBe(true);
-    expect(generateResponseMock).toHaveBeenCalledTimes(1);
+    expect(generateResponseMock).not.toHaveBeenCalled();
   });
 
   it('does not run social event LLM analysis for ordinary messages without explicit hints', async () => {

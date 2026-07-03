@@ -37,6 +37,13 @@ describe('sessionEngineRegistry', () => {
     expect(resolveSessionFamilyKey(chat({ mode: 'murder_mystery' }))).toBe('mystery');
   });
 
+  it('treats discussion modes as analysis even when legacy sessionKind is empty', () => {
+    expect(resolveSessionFamilyKey(chat({ mode: 'group_discussion', sessionKind: {} as never }))).toBe('analysis');
+    expect(resolveSessionEngineKey(chat({ mode: 'group_discussion', sessionKind: {} as never }))).toBe('group_discussion');
+    expect(resolveSessionFamilyKey(chat({ mode: 'roundtable', sessionKind: {} as never }))).toBe('analysis');
+    expect(resolveSessionEngineKey(chat({ mode: 'roundtable', sessionKind: {} as never }))).toBe('group_discussion');
+  });
+
   it('falls back to open chat engine when neither scenario nor family resolves', () => {
     expect(resolveSessionEngineKey(chat({ mode: 'scripted_play' }))).toBe('open_chat');
   });

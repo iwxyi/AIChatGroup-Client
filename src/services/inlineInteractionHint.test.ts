@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { parseInlineInteractionEnvelope } from './inlineInteractionHint';
+import type { AICharacter } from '../types/character';
+import type { GroupChat } from '../types/chat';
+import { buildInlineInteractionContract, parseInlineInteractionEnvelope } from './inlineInteractionHint';
 
 describe('parseInlineInteractionEnvelope story events', () => {
   it('accepts story-reader output with empty content when storyEvents have visible narration', () => {
@@ -35,5 +37,28 @@ describe('parseInlineInteractionEnvelope story events', () => {
     }));
 
     expect(parsed).toBeNull();
+  });
+});
+
+describe('buildInlineInteractionContract analysis room detection', () => {
+  it('requires deliberation artifacts when scenario resolves to analysis even if family is stale', () => {
+    const contract = buildInlineInteractionContract({
+      chat: {
+        id: 'chat-1',
+        type: 'group',
+        mode: 'group_discussion',
+        sessionKind: { topology: 'group', family: 'conversation', scenarioId: 'opinion-review', surfaceProfile: 'text' },
+        memberIds: ['speaker'],
+        runtimeEventsV2: [],
+      } as unknown as GroupChat,
+      speaker: { id: 'speaker', name: '审议者' } as AICharacter,
+      characters: [{ id: 'speaker', name: '审议者' } as AICharacter],
+      recentMessages: [],
+    });
+
+    expect(contract).toContain('"deliberationArtifacts": {"claims"');
+    expect(contract).not.toContain('"deliberationArtifacts": null');
+    expect(contract).toContain('Rules for deliberationArtifacts');
+    expect(contract).toContain('visible content must either make a deliberative move');
   });
 });

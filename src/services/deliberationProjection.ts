@@ -2,6 +2,7 @@ import type { AICharacter } from '../types/character';
 import type { GroupChat } from '../types/chat';
 import { sanitizeUserFacingText, type DisplayTextMember } from './displayTextSanitizer';
 import { formatScenarioRoleLabel } from './scenarioPresentation';
+import { resolveSessionFamilyKey } from './sessionEngineKeys';
 
 function memberName(id: string | null | undefined, members: AICharacter[]) {
   if (!id) return '成员';
@@ -46,8 +47,12 @@ function formatActorPrefix(actorId: string | null | undefined, members: AICharac
   return actorId ? `${memberName(actorId, members)}：` : '';
 }
 
+function formatReason(reason: string | null | undefined, clean: (text: string) => string) {
+  return reason ? `（因：${clean(reason)}）` : '';
+}
+
 export function projectDeliberationSidebarRows(chat: GroupChat, members: AICharacter[]) {
-  if (chat.sessionKind?.family !== 'analysis') return [];
+  if (resolveSessionFamilyKey(chat) !== 'analysis') return [];
   const displayMembers: DisplayTextMember[] = [{ id: 'user', name: '我' }, ...members.map((member) => ({ id: member.id, name: member.name }))];
   const clean = (text: string) => sanitizeUserFacingText(text, displayMembers);
   const progress = chat.scenarioState?.progress?.find((item) => item.key === 'speeches' || item.key === 'analysis-progress');
@@ -73,19 +78,19 @@ export function projectDeliberationSidebarRows(chat: GroupChat, members: AIChara
   if (inquiry) rows.push(inquiry);
   const claims = chat.scenarioState?.deliberationClaims || [];
   if (claims.length) {
-    rows.push(`论点树 ${claims.slice(-3).map((item) => `${formatClaimStance(item.stance)}·${formatActorPrefix(item.actorId, members)}${clean(item.text)}`).join(' / ')}`);
+    rows.push(`论点树 ${claims.slice(-3).map((item) => `${formatClaimStance(item.stance)}·${formatActorPrefix(item.actorId, members)}${clean(item.text)}${formatReason(item.reason, clean)}`).join(' / ')}`);
   }
   const evidence = chat.scenarioState?.deliberationEvidence || [];
   if (evidence.length) {
-    rows.push(`证据 ${evidence.slice(-2).map((item) => `${formatActorPrefix(item.actorId, members)}${clean(item.text)}`).join(' / ')}`);
+    rows.push(`证据 ${evidence.slice(-2).map((item) => `${formatActorPrefix(item.actorId, members)}${clean(item.text)}${formatReason(item.reason, clean)}`).join(' / ')}`);
   }
   const issues = (chat.scenarioState?.deliberationIssues || []).filter((item) => item.status !== 'answered');
   if (issues.length) {
-    rows.push(`待回应漏洞 ${issues.slice(-2).map((item) => `${item.targetActorId ? `${memberName(item.targetActorId, members)} · ` : ''}${clean(item.text)}`).join(' / ')}`);
+    rows.push(`待回应漏洞 ${issues.slice(-2).map((item) => `${item.targetActorId ? `${memberName(item.targetActorId, members)} · ` : ''}${clean(item.text)}${formatReason(item.reason, clean)}`).join(' / ')}`);
   }
   const verdicts = chat.scenarioState?.deliberationVerdicts || [];
   if (verdicts.length) {
-    rows.push(`裁决记录 ${verdicts.slice(-2).map((item) => `${formatActorPrefix(item.actorId, members)}${clean(item.text)}`).join(' / ')}`);
+    rows.push(`裁决记录 ${verdicts.slice(-2).map((item) => `${formatActorPrefix(item.actorId, members)}${clean(item.text)}${formatReason(item.reason, clean)}`).join(' / ')}`);
   }
   const momentum = chat.scenarioState?.deliberationMomentum;
   if (momentum && (momentum.support || momentum.oppose || momentum.inquiry || momentum.review)) {

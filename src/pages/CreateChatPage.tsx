@@ -22,7 +22,8 @@ import {
   DEFAULT_CONVERSATION_DRAMA_RULES,
   DEFAULT_CONVERSATION_GOVERNANCE,
   DEFAULT_CONVERSATION_WORLD_STATE,
-  DEFAULT_OPEN_CHAT_MODE_STATE,
+  defaultTopologySummaryForConversation,
+  deriveSessionMemoryLayerSummary,
 } from '../types/chat';
 import {
   buildGroupChatDraft,
@@ -69,6 +70,82 @@ function hasGameplayRuntimeData(chat: GroupChat) {
     || Number(scenario?.choiceEpoch || 0) > 0
     || Number(scenario?.selectedChoiceEpoch || 0) > 0
   );
+}
+
+function buildInitialSessionResetPatch(chat: GroupChat): Partial<GroupChat> {
+  const initialDraft = buildGroupChatDraft({
+    type: 'group',
+    name: chat.name,
+    topic: chat.topic,
+    style: chat.style,
+    runtimeEvolutionIntensity: chat.runtimeEvolutionIntensity,
+    sessionKind: chat.sessionKind,
+    storyBranchMode: chat.scenarioState?.branches?.some((branch) => branch.status === 'chosen') ? 'open' : 'guided',
+    storyBackground: String(chat.scenarioState?.storyBackground || ''),
+    storyDirection: String(chat.scenarioState?.storyDirection || ''),
+    storyOutline: String(chat.scenarioState?.storyOutline || ''),
+    studyGoalLabel: chat.scenarioState?.goals?.find((item) => item.goalId === 'study-goal')?.label || '',
+    agentGoalLabel: chat.scenarioState?.goals?.find((item) => item.goalId === 'agent-goal')?.label || '',
+    boardColumns: chat.scenarioState?.board?.schema?.columns || 8,
+    boardRows: chat.scenarioState?.board?.schema?.rows || 8,
+    deductionFactionCount: chat.scenarioState?.factions?.length || 2,
+    werewolfRoleConfig: String(chat.scenarioState?.werewolfRoleConfig || ''),
+    werewolfPostGameMode: String(chat.scenarioState?.werewolfPostGameMode || 'free_talk'),
+    mysteryClueCount: chat.scenarioState?.progress?.find((item) => item.key === 'mystery-progress')?.target || 6,
+    mysteryScript: String(chat.scenarioState?.mysteryScript || ''),
+    mysteryRoleMappingMode: String(chat.scenarioState?.mysteryRoleMappingMode || 'alias'),
+    memberIds: chat.memberIds,
+    operatorIds: chat.operatorIds || [],
+    showRoleActions: Boolean(chat.showRoleActions),
+    seedMemoryText: '',
+    seedArtifactText: '',
+    ownerCharacterId: chat.governance?.ownerCharacterId || null,
+    adminCharacterIds: chat.governance?.adminCharacterIds || [],
+    autoModeration: Boolean(chat.governance?.autoModeration),
+    allowMute: chat.governance?.allowMute !== false,
+    allowPrivateThreads: Boolean(chat.governance?.allowPrivateThreads),
+    allowCliques: Boolean(chat.dramaRules?.allowCliques),
+    allowMockery: Boolean(chat.dramaRules?.allowMockery),
+    mood: '',
+    focus: '',
+    recentEvent: '',
+    allowSpeakAs: chat.directorControls?.allowSpeakAs !== false,
+    allowDirectorMode: chat.directorControls?.allowDirectorMode !== false,
+    allowEventInjection: chat.directorControls?.allowEventInjection !== false,
+    allowForcedReply: chat.directorControls?.allowForcedReply !== false,
+  });
+
+  return {
+    isActive: false,
+    modeState: initialDraft.modeState,
+    scenarioState: initialDraft.scenarioState,
+    channels: initialDraft.channels,
+    layoutState: initialDraft.layoutState,
+    scenarioPackage: initialDraft.scenarioPackage,
+    judgeAgent: initialDraft.judgeAgent,
+    layeredGrowth: { persistentCharacterCores: [], conversationCharacterStates: [] },
+    modeStateSummary: { family: chat.sessionKind?.family || 'conversation', scenarioId: chat.sessionKind?.scenarioId || initialDraft.scenarioPackage?.scenarioId || 'open-chat' },
+    topologySummary: defaultTopologySummaryForConversation({ type: chat.type, mode: chat.mode, sessionKind: chat.sessionKind }),
+    runtimeSeed: { notes: [], artifacts: [] },
+    layeredMemories: [],
+    runtimeTimeline: [],
+    runtimeEventsV2: [],
+    relationshipLedger: [],
+    growthSnapshots: [],
+    roleMemorySummaries: [],
+    scenarioMemorySummary: { conversationId: chat.id, summary: '' },
+    memoryLayerSummary: deriveSessionMemoryLayerSummary({ mode: chat.mode }),
+    messageBranchState: null,
+    worldState: {
+      ...DEFAULT_CONVERSATION_WORLD_STATE,
+      mood: '',
+      focus: '',
+      recentEvent: '',
+      conflictAxes: [],
+      structuredRoomState: null,
+      conflictState: null,
+    },
+  };
 }
 
 function buildSaveAsChatName(sourceName: string, existingNames: string[]) {
@@ -678,54 +755,35 @@ export default function CreateChatPage() {
     try {
       await apiClient.clearChatMessages(editingChat.id);
       useMessageStore.getState().clearChatMessagesLocal(editingChat.id);
+      await updateChat(editingChat.id, buildInitialSessionResetPatch(editingChat));
       await seedOpeningTopicMessage(editingChat.id, editingChat.topic);
+      markChatsWarm();
+      void prefetchChats();
       setClearMessagesConfirmOpen(false);
       setSnackbar({
         open: true,
-        message: i18n.language.startsWith('zh') ? '已清空聊天记录' : 'Chat messages cleared',
+        message: i18n.language.startsWith('zh') ? '已清空聊天记录和会话状态' : 'Chat messages and session state cleared',
         severity: 'success',
       });
     } catch (error) {
       showError(getActionErrorMessage(error, i18n.language.startsWith('zh') ? '清空聊天记录失败' : 'Failed to clear chat messages'));
     }
-  }, [editingChat, i18n.language, seedOpeningTopicMessage]);
+  }, [editingChat, i18n.language, markChatsWarm, prefetchChats, seedOpeningTopicMessage, updateChat]);
 
   const handleClearMemory = useCallback(async () => {
     if (!editingChat) return;
     try {
-      await updateChat(editingChat.id, {
-        isActive: false,
-        modeState: {
-          ...DEFAULT_OPEN_CHAT_MODE_STATE,
-        },
-        runtimeSeed: { notes: [], artifacts: [] },
-        layeredMemories: [],
-        runtimeTimeline: [],
-        runtimeEventsV2: [],
-        relationshipLedger: [],
-        growthSnapshots: [],
-        roleMemorySummaries: [],
-        scenarioMemorySummary: { conversationId: editingChat.id, summary: '' },
-        memoryLayerSummary: undefined,
-        worldState: {
-          ...DEFAULT_CONVERSATION_WORLD_STATE,
-          phase: DEFAULT_CONVERSATION_WORLD_STATE.phase,
-          recentEvent: '',
-          conflictAxes: [],
-          structuredRoomState: null,
-          conflictState: null,
-        },
-      });
+      await updateChat(editingChat.id, buildInitialSessionResetPatch(editingChat));
       markChatsWarm();
       void prefetchChats();
       setClearMemoryConfirmOpen(false);
       setSnackbar({
         open: true,
-        message: i18n.language.startsWith('zh') ? '已清空聊天记忆' : 'Chat memory cleared',
+        message: i18n.language.startsWith('zh') ? '已清空会话状态' : 'Session state cleared',
         severity: 'success',
       });
     } catch (error) {
-      showError(getActionErrorMessage(error, i18n.language.startsWith('zh') ? '清空聊天记忆失败' : 'Failed to clear chat memory'));
+      showError(getActionErrorMessage(error, i18n.language.startsWith('zh') ? '重置会话状态失败' : 'Failed to reset session state'));
     }
   }, [editingChat, i18n.language, markChatsWarm, prefetchChats, updateChat]);
 
@@ -819,11 +877,11 @@ export default function CreateChatPage() {
   const cancelLabel = t('common.cancel');
   const confirmDeleteLabel = t('common.delete');
   const clearMessagesTitle = isZh ? '清空聊天记录' : 'Clear chat messages';
-  const clearMessagesConfirm = isZh ? `这会永久删除当前${conversationNoun}的全部消息记录，但保留关系、情绪、记忆和运行态。此操作无法撤销。` : `This permanently deletes all messages in this ${conversationNoun} while keeping relationships, emotions, memories, and runtime state. This action cannot be undone.`;
+  const clearMessagesConfirm = isZh ? `这会永久删除当前${conversationNoun}的全部消息记录，并把场景规则、运行态、事件、会话级记忆与摘要重置成新${conversationNoun}状态；角色自身记忆会保留。此操作无法撤销。` : `This permanently deletes all messages in this ${conversationNoun} and resets scene rules, runtime state, events, session-level memory, and summaries as a fresh ${conversationNoun}. Character memory is kept. This action cannot be undone.`;
   const clearMessagesLabel = isZh ? '清空聊天记录' : 'Clear chat messages';
-  const clearMemoryTitle = isZh ? '清空聊天记忆' : 'Clear session memory';
-  const clearMemoryConfirm = isZh ? `这会清除当前${conversationNoun}自身的运行态、事件、会话级记忆与摘要，但保留聊天记录，以及角色自身的成长与记忆。此操作无法撤销。` : `This clears session-level runtime state, events, and memory for this ${conversationNoun} while keeping message history and character growth. This action cannot be undone.`;
-  const clearMemoryLabel = isZh ? '清空聊天记忆' : 'Clear session memory';
+  const clearMemoryTitle = isZh ? '重置会话状态' : 'Reset session state';
+  const clearMemoryConfirm = isZh ? `这会把当前${conversationNoun}的场景规则、运行态、事件、会话级记忆与摘要重置成新${conversationNoun}状态，但保留聊天记录和角色自身记忆。此操作无法撤销。` : `This resets scene rules, runtime state, events, session-level memory, and summaries for this ${conversationNoun} as a fresh ${conversationNoun}, while keeping message history and character memory. This action cannot be undone.`;
+  const clearMemoryLabel = isZh ? '重置会话状态' : 'Reset session state';
   const noOwnerLabel = isZh ? '未设置' : 'None';
   const adminNotesValue = adminCharacterIds.length ? adminCharacterIds.map((memberId) => selectedCharacters.find((char) => char.id === memberId)?.name).filter(Boolean).join(', ') : noOwnerLabel;
 

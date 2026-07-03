@@ -94,6 +94,8 @@ export interface ScenarioDeliberationClaimState {
   actorId?: string | null;
   stance?: 'support' | 'oppose' | 'neutral' | 'review' | 'inquiry';
   text: string;
+  reason?: string;
+  confidence?: number;
   sourceMessageId?: string;
   createdAt?: number;
 }
@@ -102,6 +104,8 @@ export interface ScenarioDeliberationEvidenceState {
   id: string;
   actorId?: string | null;
   text: string;
+  reason?: string;
+  confidence?: number;
   sourceMessageId?: string;
   createdAt?: number;
 }
@@ -111,6 +115,8 @@ export interface ScenarioDeliberationIssueState {
   targetActorId?: string | null;
   text: string;
   status?: 'open' | 'answered' | 'deferred';
+  reason?: string;
+  confidence?: number;
   sourceMessageId?: string;
   createdAt?: number;
 }
@@ -120,6 +126,8 @@ export interface ScenarioDeliberationVerdictState {
   actorId?: string | null;
   text: string;
   tendency?: 'support' | 'oppose' | 'mixed' | 'undecided';
+  reason?: string;
+  confidence?: number;
   sourceMessageId?: string;
   createdAt?: number;
 }
@@ -456,8 +464,20 @@ export function createDefaultSessionKind(type: ConversationType, mode: Conversat
   };
 }
 
+function isValidSessionKind(value: unknown): value is SessionKind {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<SessionKind>;
+  return Boolean(candidate.topology && candidate.family && candidate.scenarioId && candidate.surfaceProfile);
+}
+
+function resolveNormalizedSessionKind(input: Pick<GroupChat, 'type' | 'mode'> & Partial<Pick<GroupChat, 'sessionKind'>>) {
+  return isValidSessionKind(input.sessionKind)
+    ? input.sessionKind
+    : createDefaultSessionKind(input.type || 'group', input.mode || 'open_chat');
+}
+
 export function resolveSessionDefinitionForConversation(conversation: Pick<GroupChat, 'type' | 'mode' | 'sessionKind'>): SessionResolvedDefinition {
-  const kind = conversation.sessionKind || createDefaultSessionKind(conversation.type, conversation.mode);
+  const kind = resolveNormalizedSessionKind(conversation);
   return {
     kind,
     scenario: {
@@ -835,6 +855,11 @@ export const DEFAULT_RUNTIME_EVOLUTION_INTENSITY: RuntimeEvolutionIntensity = 'b
 
 export function normalizeConversation(input: (Omit<GroupChat, 'type' | 'governance' | 'dramaRules' | 'worldState' | 'directorControls' | 'runtimeEvolutionIntensity'> & Partial<Pick<GroupChat, 'type' | 'governance' | 'dramaRules' | 'worldState' | 'directorControls' | 'runtimeEvolutionIntensity'>>) & { runtimeNotes?: string[]; runtimeArtifacts?: string[] }): GroupChat {
   const showRoleActions = resolveShowRoleActions(input);
+  const sessionKind = resolveNormalizedSessionKind({
+    type: input.type || 'group',
+    mode: input.mode || 'open_chat',
+    sessionKind: input.sessionKind,
+  });
   const modeConfig = {
     ...DEFAULT_OPEN_CHAT_MODE_CONFIG,
     ...(input.modeConfig || {}),
@@ -844,20 +869,20 @@ export function normalizeConversation(input: (Omit<GroupChat, 'type' | 'governan
     ...input,
     type: input.type || 'group',
     mode: input.mode || 'open_chat',
-    sessionKind: input.sessionKind || createDefaultSessionKind(input.type || 'group', input.mode || 'open_chat'),
+    sessionKind,
     modeConfig,
     modeState: input.modeState || DEFAULT_OPEN_CHAT_MODE_STATE,
     showRoleActions,
     scenarioState: input.scenarioState || {
       turnOrder: input.memberIds || [],
       currentTurnActorId: null,
-      board: (input.sessionKind?.surfaceProfile || createDefaultSessionKind(input.type || 'group', input.mode || 'open_chat').surfaceProfile) === 'board'
+      board: sessionKind.surfaceProfile === 'board'
         ? { schema: { kind: 'grid', columns: 8, rows: 8 }, pieces: [] }
         : null,
       factions: [],
-      phase: (input.sessionKind?.family || createDefaultSessionKind(input.type || 'group', input.mode || 'open_chat').family) === 'analysis'
+      phase: sessionKind.family === 'analysis'
         ? 'discussion'
-        : (input.sessionKind?.family || createDefaultSessionKind(input.type || 'group', input.mode || 'open_chat').family) === 'study'
+        : sessionKind.family === 'study'
           ? 'learning'
           : undefined,
       goals: [],
@@ -868,15 +893,15 @@ export function normalizeConversation(input: (Omit<GroupChat, 'type' | 'governan
     },
     channels: input.channels || [{ channelId: 'public', visibility: 'public', label: 'Public' }],
     layoutState: input.layoutState || { slots: (input.memberIds || []).map((memberId, index) => ({ slotId: `slot-${index + 1}`, x: index, y: 0, actorId: memberId })) },
-    scenarioPackage: input.scenarioPackage || { scenarioId: (input.sessionKind?.scenarioId || createDefaultSessionKind(input.type || 'group', input.mode || 'open_chat').scenarioId), label: (input.sessionKind?.scenarioId || createDefaultSessionKind(input.type || 'group', input.mode || 'open_chat').scenarioId) },
-    judgeAgent: input.judgeAgent || { enabled: (input.sessionKind?.family || createDefaultSessionKind(input.type || 'group', input.mode || 'open_chat').family) === 'board_game', style: 'assistive' },
+    scenarioPackage: input.scenarioPackage || { scenarioId: sessionKind.scenarioId, label: sessionKind.scenarioId },
+    judgeAgent: input.judgeAgent || { enabled: sessionKind.family === 'board_game', style: 'assistive' },
     layeredGrowth: input.layeredGrowth || { persistentCharacterCores: [], conversationCharacterStates: [] },
-    modeStateSummary: input.modeStateSummary || { family: (input.sessionKind?.family || createDefaultSessionKind(input.type || 'group', input.mode || 'open_chat').family), scenarioId: (input.sessionKind?.scenarioId || createDefaultSessionKind(input.type || 'group', input.mode || 'open_chat').scenarioId) },
+    modeStateSummary: input.modeStateSummary || { family: sessionKind.family, scenarioId: sessionKind.scenarioId },
     memoryLayerSummary: input.memoryLayerSummary || deriveSessionMemoryLayerSummary({ mode: input.mode || 'open_chat' }),
     growthSnapshots: input.growthSnapshots || [],
     roleMemorySummaries: input.roleMemorySummaries || [],
     scenarioMemorySummary: input.scenarioMemorySummary || { conversationId: input.id, summary: '' },
-    topologySummary: input.topologySummary || defaultTopologySummaryForConversation({ type: input.type || 'group', mode: input.mode || 'open_chat', sessionKind: input.sessionKind }),
+    topologySummary: input.topologySummary || defaultTopologySummaryForConversation({ type: input.type || 'group', mode: input.mode || 'open_chat', sessionKind }),
     runtimeEvolutionIntensity: input.runtimeEvolutionIntensity || DEFAULT_RUNTIME_EVOLUTION_INTENSITY,
     sourceChatId: input.sourceChatId || null,
     sourceMemberIds: input.sourceMemberIds || [],

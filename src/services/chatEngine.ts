@@ -3,7 +3,7 @@ import { resolveShowRoleActions, type GroupChat } from '../types/chat';
 import type { Message, StoryEvent } from '../types/message';
 import type { APIConfig, AIModelProfile } from '../types/settings';
 import type { MediaGenerationDecision, MessageAttachment, MessageMetadata, NarrativeBlock } from '../types/message';
-import type { SessionEngineDefinition, SessionGenerationPromptContext } from '../types/sessionEngine';
+import type { SessionEngineDefinition, SessionGenerationPromptContext, SessionGenerationRuntimeBundle } from '../types/sessionEngine';
 import type { MemoryItem } from './memoryTypes';
 import { getPreferredAIProfile } from '../types/settings';
 import type { ConflictFocusPayload, InteractionEventPayload, SocialEventHintEnvelope } from '../types/runtimeEvent';
@@ -40,6 +40,10 @@ import { projectWorldAttentionStates, projectWorldCalendar, projectWorldMoments 
 import { buildTurnPlanPrompt, deriveTurnPlan, type TurnPlan } from './turnPlanner';
 import { resolvePersonaActivation, type PersonaActivation } from './personaActivation';
 import { buildGenerationRuntimeBundle } from './generationRuntime';
+import { buildConversationMovePrompt, planConversationMove } from './conversationMovePlanner';
+import { buildPromptPlayModeBlock, composePromptBlocks, resolvePromptPlayMode, type PromptBlock } from './promptBlockComposer';
+import { resolveSessionFamilyKey } from './sessionEngineKeys';
+import { isCharacterAvailableForScheduling } from './characterPresence';
 import { enrichRuntimeBundleWithHumanAppraisal } from './humanAppraisal';
 import { normalizeStoryChoiceSuggestions } from './storyChoices';
 import type { StoryContinuationState } from './narrativeRuntime';
@@ -58,9 +62,16 @@ export interface GeneratedRoundMessage extends Omit<Message, 'id' | 'timestamp' 
 
 export type LocalInterceptionKind =
   | 'guidance_retry'
+  | 'analysis_artifacts_missing'
+  | 'presence_metadata_missing'
+  | 'surface_contract_warning'
+  | 'surface_echo_warning'
   | 'surface_echo_retry'
   | 'surface_echo_skip'
+  | 'surface_contract_retry'
+  | 'surface_contract_skip'
   | 'empty_generation_skip'
+  | 'streamed_draft_committed'
   | 'auto_withdraw';
 
 export interface LocalInterceptionEvent {
@@ -96,6 +107,7 @@ type GenerationWithGuidanceTrace = {
   extraMessages?: string[] | null;
   storyEvents?: import('../types/message').StoryEvent[] | null;
   guidanceExecution?: GuidanceExecutionTrace;
+  streamedFallbackUsed?: boolean;
 };
 
 const MAX_EXTRA_MESSAGES = 4;
@@ -139,7 +151,7 @@ async function buildCompanionshipTraceIfNeeded(params: {
   });
 }
 
-class EmptyGeneratedResponseError extends Error {
+export class EmptyGeneratedResponseError extends Error {
   localInterceptionReported: boolean;
   reason: string;
 
@@ -184,6 +196,40 @@ function buildSessionSystemPrompt(args: {
   });
 }
 
+function compactAnalysisPromptText(text: string | undefined | null, max = 180) {
+  const normalized = sanitizeUserFacingText(text).replace(/\s+/g, ' ').trim();
+  return normalized.length > max ? `${normalized.slice(0, max)}...` : normalized;
+}
+
+function buildAnalysisSpeakerSystemPrompt(args: {
+  speaker: AICharacter;
+  chat: GroupChat;
+  messages: Message[];
+}) {
+  const memoryLines = [
+    args.speaker.memory?.shortTermSummary ? `- Short memory: ${compactAnalysisPromptText(args.speaker.memory.shortTermSummary, 140)}` : '',
+    ...(args.speaker.memory?.longTerm || []).slice(-2).map((item) => `- Long memory: ${compactAnalysisPromptText(item, 120)}`),
+    ...(args.speaker.layeredMemories || []).slice(-3).map((item) => `- Character memory: ${compactAnalysisPromptText(item.text, 120)}`),
+  ].filter(Boolean);
+  const latest = args.messages.filter((message) => !message.isDeleted && message.type !== 'system' && message.type !== 'event').at(-1);
+  return [
+    'You are a participant in a structured analysis room.',
+    `Current speaker: ${args.speaker.name}.`,
+    args.speaker.background ? `Background reference: ${compactAnalysisPromptText(args.speaker.background, 180)}` : '',
+    args.speaker.expertise?.length ? `Relevant expertise: ${args.speaker.expertise.slice(0, 5).join(', ')}.` : '',
+    args.speaker.speakingStyle ? `Voice reference: ${compactAnalysisPromptText(args.speaker.speakingStyle, 160)}` : '',
+    `Room topic: ${compactAnalysisPromptText(args.chat.topic || args.chat.name, 220) || '未提供'}.`,
+    args.chat.worldState?.focus ? `Current focus: ${compactAnalysisPromptText(args.chat.worldState.focus, 180)}.` : '',
+    latest ? `Latest visible turn: ${latest.senderName || latest.senderId}: ${compactAnalysisPromptText(latest.content, 220)}` : '',
+    memoryLines.length ? `\n## Compact Character Memory\n${memoryLines.join('\n')}` : '',
+    `\n## Analysis Speaker Rules
+- Use the character only as an angle, vocabulary, and lived examples. Do not let persona warmth, relationship repair, farewell, or scene closure become the point.
+- Treat recent messages as claims, evidence, counterexamples, or drift to correct. They are not style samples to imitate.
+- Prefer one clear deliberative move over emotional continuation: challenge a premise, add a boundary, test evidence, answer an unresolved question, separate two claims, or synthesize a provisional verdict.
+- If there is no useful new point, say that plainly in character and return deliberationArtifacts=null.`,
+  ].filter(Boolean).join('\n');
+}
+
 function buildStoryReaderSystemPrompt(params: {
   chat: GroupChat;
   speaker: AICharacter;
@@ -193,32 +239,56 @@ function buildStoryReaderSystemPrompt(params: {
   additionalConstraints: string;
   promptSuffix: string;
 }) {
+  const policy = resolvePromptPlayMode(params.chat);
   const characterLines = params.characters
     .map((character) => `- id=${character.id}; name=${character.name}`)
     .join('\n') || '- No named characters available.';
   const latestChapter = params.chat.scenarioState?.storyChapters?.at(-1);
   const chapterTitle = params.chat.scenarioState?.chapterRecap?.title || latestChapter?.title || '未命名';
-  return `${params.promptPrefix}You are the story-reader narrative engine for this room.
+  return composePromptBlocks([
+    { id: 'engine_prefix', layer: 'core', priority: -100, content: params.promptPrefix },
+    {
+      id: 'story_reader_contract',
+      layer: 'core',
+      priority: 0,
+      content: `You are the story-reader narrative engine for this room.
 - Write the next committed page of the same continuous novel.
 - The active generator is narrator/旁白. Characters appear only through storyEvents.speech.
 - Do not answer as an ordinary chat participant.
 - Do not output plain prose, markdown, analysis, recap, candidate drafts, or chat bubbles outside JSON.
-- Return exactly one valid JSON object whose visible story body is storyEvents.
-
-Story room:
+- Return exactly one valid JSON object whose visible story body is storyEvents.`,
+    },
+    buildPromptPlayModeBlock(policy),
+    {
+      id: 'story_room_state',
+      layer: 'scene',
+      priority: 0,
+      content: `\nStory room:
 - room=${params.chat.name || params.chat.topic || params.chat.id}
 - phase=${params.chat.scenarioState?.phase || 'scene'}
-- chapter=${chapterTitle}
-
-Available story actors:
-${characterLines}
-${params.additionalConstraints}
-${buildInlineInteractionContract({
-  chat: params.chat,
-  speaker: params.speaker,
-  characters: params.characters,
-  recentMessages: params.activeMessages,
-})}${params.promptSuffix}`;
+- chapter=${chapterTitle}`,
+    },
+    {
+      id: 'story_actors',
+      layer: 'character',
+      priority: 0,
+      content: `\nAvailable story actors:
+${characterLines}`,
+    },
+    { id: 'engine_constraints', layer: 'task', priority: 10, content: params.additionalConstraints },
+    {
+      id: 'inline_interaction_contract',
+      layer: 'output',
+      priority: 20,
+      content: buildInlineInteractionContract({
+        chat: params.chat,
+        speaker: params.speaker,
+        characters: params.characters,
+        recentMessages: params.activeMessages,
+      }),
+    },
+    { id: 'engine_suffix', layer: 'suffix', priority: 100, content: params.promptSuffix },
+  ], policy);
 }
 
 function mergePromptContexts(base: SessionGenerationPromptContext | null | undefined, extra: SessionGenerationPromptContext | null | undefined) {
@@ -249,6 +319,9 @@ function buildChannelSemanticPrefix(chat: GroupChat) {
 }
 
 function buildSessionPrompt(prompt: string, messages: Message[], chat: GroupChat) {
+  if (resolveSessionFamilyKey(chat) === 'analysis') {
+    return `This is a structured analysis room. Recent transcript is deliberation evidence, not a social script or style sample.\n\n${prompt}\n\nRecent context signals:\n- Complete recent transcript is supplied as separate chat messages and is not repeated here.\n${buildRecentContextSignalSummary(messages)}`;
+  }
   const semanticPrefix = buildChannelSemanticPrefix(chat);
   const transcriptInstruction = getChannelSemantics(chat).transcriptInstruction;
   return `${semanticPrefix}\n\n${prompt}\n\nRecent context signals:\n- ${transcriptInstruction}\n${buildRecentContextSignalSummary(messages)}`;
@@ -262,14 +335,20 @@ function buildSpeakerSystemPrompt(args: {
   characterMap: Map<string, AICharacter>;
   preferEnginePromptAdapter?: boolean;
 }) {
-  const basePrompt = buildSessionSystemPrompt({
-    speaker: args.speaker,
-    chat: args.chat,
-    emotion: args.emotion,
-    messages: args.activeMessages,
-    characters: args.characterMap,
-    preferEnginePromptAdapter: args.preferEnginePromptAdapter,
-  });
+  const basePrompt = resolveSessionFamilyKey(args.chat) === 'analysis'
+    ? buildAnalysisSpeakerSystemPrompt({
+      speaker: args.speaker,
+      chat: args.chat,
+      messages: args.activeMessages,
+    })
+    : buildSessionSystemPrompt({
+      speaker: args.speaker,
+      chat: args.chat,
+      emotion: args.emotion,
+      messages: args.activeMessages,
+      characters: args.characterMap,
+      preferEnginePromptAdapter: args.preferEnginePromptAdapter,
+    });
   return buildSessionPrompt(basePrompt, args.activeMessages, args.chat);
 }
 
@@ -360,6 +439,54 @@ export function stripRoleActions(content: string) {
     .replace(/\*[^*\n]{1,24}\*/g, '')
     .replace(/\s{2,}/g, ' ')
     .replace(/^[\s\n]+|[\s\n]+$/g, '');
+}
+
+function extractParentheticalSegments(content: string) {
+  const matches = content.match(/[（(][^）)\n]{2,260}[）)]/gu) || [];
+  return matches.map((segment) => segment.slice(1, -1).trim()).filter(Boolean);
+}
+
+function hasLongNarrativeStageAside(content: string) {
+  const trimmed = content.trim();
+  const segments = extractParentheticalSegments(content);
+  if (!segments.length) return false;
+  if (/^[（(]/u.test(trimmed) && segments[0].length >= 14) return true;
+  if (segments.some((segment) => segment.length >= 28)) return true;
+  if (segments.length >= 2 && segments.reduce((sum, segment) => sum + segment.length, 0) >= 24) return true;
+  return false;
+}
+
+function findLeakedSpeakerLine(content: string, speaker: AICharacter, characters: AICharacter[] = []) {
+  const otherNames = characters
+    .filter((character) => character.id !== speaker.id)
+    .map((character) => character.name)
+    .filter((name) => name && name.length <= 24);
+  return otherNames.find((name) => {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`(^|[\\n。！？!?]\\s*)${escaped}\\s*[:：]`, 'u').test(content);
+  }) || '';
+}
+
+function evaluateVisibleSurfaceContract(params: {
+  chat: GroupChat;
+  speaker: AICharacter;
+  characters?: AICharacter[];
+  content: string;
+  showRoleActions?: boolean;
+}) {
+  if (params.chat.sessionKind?.scenarioId === 'story-reader') return null;
+  const content = params.content.trim();
+  if (!content) return null;
+  const analysisRoom = resolveSessionFamilyKey(params.chat) === 'analysis';
+  const roleActionsDisabled = params.showRoleActions === false || analysisRoom;
+  if ((roleActionsDisabled || analysisRoom) && hasLongNarrativeStageAside(content)) {
+    return 'contains narrated stage directions or parenthesized scene beats';
+  }
+  const leakedSpeaker = findLeakedSpeakerLine(content, params.speaker, params.characters || []);
+  if (leakedSpeaker) {
+    return `contains another speaker line inside one response (${leakedSpeaker})`;
+  }
+  return null;
 }
 
 function trimSpeakerPrefix(content: string, speakerName: string) {
@@ -610,6 +737,14 @@ function buildRetryPrompt(basePrompt: string, priorAttempt: string) {
   return `${basePrompt}\n\nRetry rule:\n- Your previous draft was too close to recent chat or repetitive.\n- Write a meaningfully different line now.\n- Do not reuse this draft's surface or semantic core: ${priorAttempt.slice(0, 120)}`;
 }
 
+function buildEmptyContentRetryPrompt(basePrompt: string) {
+  return `${basePrompt}\n\nEmpty-output retry:
+- The previous model output had no visible content. It was not a valid pause, not a valid silence marker, and not a valid JSON chat turn.
+- Return one valid JSON object now with a non-empty content string.
+- If the room feels low-pressure, write a real boundary, counterexample, unresolved issue, interim judgment, or natural pause line instead of using whitespace or an empty string. Keep it as short or as developed as the scene actually needs.
+- Do not output only spaces, newlines, null content, or an object whose visible fields are empty.`;
+}
+
 function buildSurfaceEchoRetryPrompt(basePrompt: string, priorAttempt: string, reason: string) {
   return `${basePrompt}\n\nAnti-echo retry:
 - The previous draft was rejected because it borrowed too much surface from recent chat: ${reason}
@@ -620,14 +755,24 @@ function buildSurfaceEchoRetryPrompt(basePrompt: string, priorAttempt: string, r
 - Return a fresh valid JSON object only.`;
 }
 
+function buildSurfaceContractRetryPrompt(basePrompt: string, priorAttempt: string, reason: string) {
+  return `${basePrompt}\n\nVisible-surface retry:
+- The previous draft was rejected because it violated this room's visible-message surface: ${reason}
+- Keep the same substantive intent, but return a spoken chat message only.
+- Do not include stage directions, narrated actions, camera-like descriptions, parenthesized scene beats, or multiple speakers inside one content field.
+- If the transcript contains those forms, treat them as invalid old surface drift, not as a style to continue.
+- Rejected draft: ${priorAttempt.slice(0, 180)}
+- Return one fresh valid JSON object only.`;
+}
+
 function buildStoryProtocolPrompt(basePrompt: string) {
   return `${basePrompt}
 
 Final story-reader output requirements:
 - Return exactly one valid JSON object, with no markdown and no prose outside JSON.
 - storyEvents is mandatory and must contain at least one visible narration or speech event. It may also include a choice_point event for a real decision pause and a chapter_update event for structured chapter indexing.
-- Write a complete novel-like section, not a stub. Aim for roughly 900-1600 Chinese characters for ordinary story beats, and 1200-2200 Chinese characters for consequence, reveal, danger, or chapter-climax beats when the scene needs room.
-- Use as many narration and speech events as the current story beat needs. Do not follow a fixed event count, do not pad with filler, and do not stop early just to be concise.
+- Write a complete novel-like beat, not a stub. As a soft default, ordinary story beats often land around 900-1600 Chinese characters, while consequence, reveal, danger, or chapter-climax beats often need 1200-2200 Chinese characters. Scene needs override these ranges: a sharp exchange can be shorter, and a major scene can be longer.
+- Use as many narration and speech events as the current story beat needs. Suggested ranges are guidance, not enforcement: do not pad with filler, truncate, or stop early merely to fit a count or character range.
 - Put all visible story text inside storyEvents only. Do not write story prose as markdown, plain text, or any separate top-level prose container.
 - If a character speaks, represent it as a storyEvents speech event with actorId or exact actorName.
 - If you output a choice_point, each choice should include label, prompt, intent, risk, and reward.
@@ -865,8 +1010,8 @@ function buildStreamingDisplayContent(raw: string, speaker: AICharacter, showRol
 
 function buildRoleActionVisibilityPrompt(showRoleActions: boolean) {
   return showRoleActions
-    ? '\n\nVisible role action policy:\n- Brief physical beats may appear when they naturally change the meaning, pacing, or social temperature of the line.\n- Role actions are available as one expressive tool, not a required wrapper. Do not reuse the same action-dialogue-action layout just because the previous turn used it.'
-    : '\n\nVisible role action policy:\n- Output only the spoken chat message as visible content.\n- Do not include standalone action narration, stage directions, gesture beats, or parenthesized physical descriptions in the visible reply.\n- If a physical reaction matters, express its emotional effect through the spoken line instead of writing an action aside.';
+    ? '\n\nRole actions: brief physical beats are optional only when they change meaning or social temperature; do not use a fixed action-dialogue-action wrapper.'
+    : '\n\nRole actions: visible content must be spoken chat only. No standalone stage directions, gesture beats, or parenthesized action asides.';
 }
 
 function createStreamingDisplayBridge(
@@ -997,18 +1142,7 @@ function collectRecentConstraintLines(messages: Message[], speakerId: string) {
 
 function inferResponseSurfaceFromText(text: string, style: GroupChat['style']): { kind: ResponseSurfaceKind | null; basis: string[] } {
   const basis: string[] = [];
-  if (/(作文|文章|论文|报告|长文|一篇|不少于|不低于|以上|[0-9０-９]{2,4}\s*字|写作)/i.test(text)) {
-    basis.push('topic:longform-writing-task');
-    return { kind: 'longform', basis };
-  }
-  if (/(每个人写|每人写|分别写|每个人都写|各写一篇|各自写一篇)/i.test(text)) {
-    basis.push('topic:longform-writing-task');
-    return { kind: 'longform', basis };
-  }
-  if (/(方案|步骤|计划|教程|说明|评审|分析|总结|对比|利弊|优缺点|实现|架构|设计)/i.test(text)) {
-    basis.push('topic:professional-task');
-    return { kind: 'professional', basis };
-  }
+  void text;
   if (style === 'debate' || style === 'brainstorm') basis.push(`style:${style}-open-ended`);
   return { kind: null, basis };
 }
@@ -1373,7 +1507,9 @@ function resolveResponseSurface(chat: GroupChat, context: SessionGenerationPromp
     ? 'longform'
     : inferred.kind === 'longform'
       ? 'longform'
-      : explicit || inferred.kind || modeSurface || 'chat';
+      : inferred.kind && (!explicit || explicit === 'chat')
+        ? inferred.kind
+        : explicit || inferred.kind || modeSurface || 'chat';
   const allowRichText = Boolean(context?.allowMarkdown || (kind !== 'chat' && roleFit !== 'limited'));
   return {
     kind,
@@ -1397,15 +1533,27 @@ function buildResponseSurfacePrompt(surface: ResponseSurface) {
       ? '\n- The speaker has enough role/expertise support for structured output when the task asks for it, but structure is not mandatory.'
       : '\n- Match the speaker’s actual background and speech profile; use structure only when it feels natural.';
   if (surface.kind === 'chat') {
-    return `\nResponse surface:\n- Default to live chat presence, not a fixed length or fixed format. The model must decide whether this exact reply should be tiny, conversational, multiline, media-aware, Markdown-capable, or fully explanatory from the current request, character, and room context.\n- Newlines, Markdown, lists, quoted lines, and richer formatting are allowed when they fit the current content. The issue to avoid is repeated template layout, not formatting itself.${roleFitHint}`;
+    return `\nResponse surface: live chat. Pick the natural size and shape from this moment; Markdown/newlines are allowed only when they genuinely help.${roleFitHint}`;
   }
   if (surface.kind === 'creative') {
-    return `\nResponse surface:\n- Creative form is available when the model judges that the current request calls for it. It may be a brief idea, a scene, an outline, dialogue, critique, or richer prose.\n- Do not use a fixed template. Choose form from the actual request, character voice, room style, and discussion topic.\n- Do not limit word count artificially, but do not inflate beyond what this speaker would plausibly write.\n- Preserve paragraphs, lists, headings, and quoted excerpts only when they improve readability.${roleFitHint}`;
+    return `\nResponse surface: creative form is available when the request calls for it. Choose the form from the actual task and character voice; avoid fixed templates or padding.${roleFitHint}`;
   }
   if (surface.kind === 'longform') {
-    return `\nResponse surface:\n- Longform writing is available because the current request asks for a written deliverable, explicit length, article, essay, report, or comparable artifact.\n- Produce the requested artifact rather than chatting around the topic. Preserve the speaker's own voice, limits, opinions, and examples while honoring the requested form.\n- Do not artificially shrink the answer into a chat quip. If the user requested a length or structure, aim for that shape as far as the character and model context reasonably allow.\n- Use real paragraph structure. In the JSON content string, write paragraph breaks as escaped newline sequences such as \\n\\n; after parsing, they must become visible line breaks in the chat bubble.\n- If you include a preface or afterword, put it on separate paragraph(s) from the artifact. Do not cram separators, headings, and body text into one visible line.\n- Paragraphs, headings, lists, and Markdown are allowed when they improve readability.${roleFitHint}`;
+    return `\nResponse surface: longform requested. Produce the deliverable in this speaker's voice; preserve real paragraph breaks as escaped \\n\\n in JSON content, and do not shrink it into banter.${roleFitHint}`;
   }
-  return `\nResponse surface:\n- Professional form is available when the model judges that the current request calls for it. It may be concise, detailed, structured, or conversational.\n- Do not use a fixed template. Choose form from the actual request, character voice, room style, and discussion topic.\n- Do not limit word count artificially, but do not inflate beyond what this speaker would plausibly write.\n- Preserve paragraphs, lists, headings, and tables only when they improve readability.${roleFitHint}`;
+  return `\nResponse surface: professional form is available when useful. Choose concise, detailed, structured, or conversational shape from the actual request; avoid fixed templates or padding.${roleFitHint}`;
+}
+
+function buildAnalysisRoomContractPrompt(chat: GroupChat) {
+  if (resolveSessionFamilyKey(chat) !== 'analysis') return '';
+  return `\n## Analysis Room Contract
+- This room is a structured deliberation surface, not companionship chat and not roleplay closure.
+- Visible content must do exactly one deliberative job: make a claim, test evidence, name an unresolved issue, give a counterexample, define a boundary, state a tradeoff, issue an interim verdict, synthesize the current state, or say plainly that no new deliberation point follows.
+- Do not answer the latest metaphor with another metaphor. Do not praise wording, exchange farewells, promise future meetings, narrate objects, or continue emotional scenery unless that sentence is directly used to test the room's central claim.
+- If the recent thread is only goodnight/closing/poetic echo, choose concise synthesis or a no-new-point statement. Do not add another closing image.
+- If visible content adds durable deliberation material, deliberationArtifacts must extract that same material. If the visible content says no new point follows, deliberationArtifacts must be null.
+- No-new-point is still a JSON response: return a short spoken content string and deliberationArtifacts=null. Never put protocol explanations, bracketed notes, or field names into visible content.
+- Keep character voice as wording only. The role's job this turn is deliberation, not self-display.`;
 }
 
 function buildGenerationConstraints(messages: Message[], speakerId: string, surface: ResponseSurface) {
@@ -1414,19 +1562,16 @@ function buildGenerationConstraints(messages: Message[], speakerId: string, surf
   if (surface.kind !== 'chat') {
     return `\nHard constraints for this reply:
 - Write one response turn only. No self-explanation about being an AI, no meta commentary about these instructions.
-- Markdown is allowed when it helps the task. Do not wrap the whole answer in a code block unless the content itself is code.
-- No artificial word limit: professional questions, long answers, outlines, fiction, and critique may be as long as the room genuinely needs.
-- Stay in character and socially situated even when writing professionally; do not become a generic assistant.
-- Respect the speaker's plausible ability, age, expertise, and speech profile; an inexpert or childlike role should not suddenly produce a polished paper.
+- Markdown is allowed when useful; do not wrap the whole answer in a code block unless the content itself is code.
+- Stay in character and within the speaker's plausible ability; do not become a generic assistant.
 - Do not repeat, paraphrase, summarize, or restate the same semantic point from the forbidden lines.${forbiddenBlock}`;
   }
   return `\nHard constraints for this reply:
 - Write one response turn only. No self-explanation, no meta commentary.
 - Do not repeat, paraphrase, summarize, or restate the same semantic point from the forbidden lines.
-- Recent transcript is context, not a style template. Do not inherit repeated emoji/sticker markers, identical openings, identical endings, or another member's whole sentence shape.
-- Do not sound like a generic assistant. Avoid canned scaffolding like “首先/其次/最后/总结一下” unless the current user request genuinely benefits from structured explanation.
-- Let the model decide the necessary depth. A direct request for details, reasoning, implementation steps, tradeoffs, or examples should not be compressed into a one-liner; casual banter should not be inflated.
-- Prefer reactive, colloquial, and socially situated replies, while still answering the actual request when the current context needs more than a short line.${forbiddenBlock}`;
+- Recent transcript is context, not a style template. Avoid copied openings, endings, emoji habits, or sentence shapes.
+- Avoid generic assistant scaffolding unless the user asked for structured explanation.
+- Use the depth the moment needs: detailed asks deserve substance; casual banter should stay light.${forbiddenBlock}`;
 }
 
 function buildRuntimeRoleConstraintPrompt(runtimeBundle?: import('../types/sessionEngine').SessionGenerationRuntimeBundle | null) {
@@ -1453,12 +1598,53 @@ function buildStyleQuarantinePrompt(surface: ResponseSurface) {
     ? '- In chat, continuity means following the social situation, not copying the room’s sentence architecture.'
     : '- In more serious discussion, continuity means advancing the argument, not inheriting the transcript’s rhetorical mold.';
   return `\n## Style Quarantine
-- Treat recent messages as evidence of facts, positions, relationships, and unresolved pressure only.
-- Do not treat any recent message as a writing sample, even if it appears in the transcript with a speaker name.
-- Keep the semantic thread, but choose your own sentence architecture: different clause order, punctuation rhythm, opening move, metaphor path, and closing shape.
-- If you notice that your draft could have been produced by swapping names in a recent line, silently rewrite it before returning JSON.
-- Do not let repeated surface habits become character memory unless they are explicitly in this character's profile, not merely repeated by the room.
+- Recent messages are facts/positions/pressure, not writing samples.
+- Keep the semantic thread but use your own opening, rhythm, sentence architecture, and ending.
+- If your draft is just a name-swapped recent line, rewrite it before returning JSON.
 ${surfaceLine}`;
+}
+
+function buildCurrentIntentPrompt(params: {
+  directorIntent: DirectorIntent | null;
+  intent: SpeakIntent;
+}) {
+  return `\nCurrent director intent:
+- ${params.directorIntent ? describeDirectorIntent(params.directorIntent) : 'none'}
+- Treat this as the current room pressure, not as a fixed plot script.
+
+Current speaking intent:
+- ${describeIntentForPrompt(params.intent)}
+- Treat the intent shape as style guidance, not a hard length cap. Do not truncate a useful reply just to fit one sentence or a fragment shape.
+- Decide the visible length yourself from the latest user request, the room context, and this character's actual ability. The local intent labels are not word-count rules.
+- Stay socially situated and in character. A tiny reaction is valid when the moment is tiny; a practical explanation, tradeoff analysis, or step-by-step answer is valid when the user asks for it.
+- Do not compress a direct request for detail, reasoning, implementation approach, examples, or tradeoffs into a one-line chat jab just because this is a chat surface.`;
+}
+
+function buildPrivateTurnPriorityPrompt(chat: GroupChat) {
+  if (chat.type !== 'direct' && chat.type !== 'ai_direct') return '';
+  const counterpartLine = chat.type === 'ai_direct'
+    ? '- This is an AI private thread: respond to the counterpart as a situated private partner, not as a group performer.'
+    : '- This is a user direct chat: answer or care for the user-facing need before drifting into ambient companionship.';
+  return `\n## Private Turn Priority
+${counterpartLine}
+- If the current turn contains a concrete task, question, requested format, or requested deliverable, complete that job first in this character's voice.
+- Relationship memory, warmth, teasing, protectiveness, or distance can change tone and omissions; it must not replace the current private-room job.
+- If the moment is only companionship, keep it natural and relational instead of forcing a formal answer.`;
+}
+
+function buildVisibleMessageSurfaceContractPrompt(chat: GroupChat, showRoleActions?: boolean) {
+  if (chat.sessionKind?.scenarioId === 'story-reader') return '';
+  const analysisLine = resolveSessionFamilyKey(chat) === 'analysis'
+    ? '\n- In analysis rooms, visible content must not enact a scene, close like a novel chapter, or continue decorative farewell staging. Move the issue forward, ask a focused question, name a boundary, or give a concise spoken pause.'
+    : '';
+  const roleActionLine = showRoleActions
+    ? '- Brief role actions are only allowed if this room explicitly uses them and they are short, non-standalone, and not a narrator camera.'
+    : '- Role actions are disabled here: do not include parenthesized actions, gesture beats, stage directions, or narrated camera movement.';
+  return `\n## Visible Message Surface Contract
+- The content field is one speaker's visible chat message, not a script page, transcript editor, or narrator prose.
+${roleActionLine}
+- Do not write another character's line inside this speaker's content. Use extraMessages only for later bubbles from the same speaker, never for another actor.
+- If recent transcript contains stage directions or parenthesized scene beats, treat them as invalid old surface drift and do not continue that form.${analysisLine}`;
 }
 
 function buildNaturalChatRhythmPrompt(messages: Message[], innerLife: InnerLifeProjection, surface: ResponseSurface) {
@@ -1468,12 +1654,9 @@ function buildNaturalChatRhythmPrompt(messages: Message[], innerLife: InnerLifeP
     ? `- The inner rhythm can be ${innerLife.expressionPlan.messageCount} bubbles. Use extraMessages only if the thought really lands as separate sends; otherwise use one bubble.`
     : '- The inner rhythm favors one bubble, but that bubble may be very short, medium, or occasionally longer if the social move needs it.';
   return `\n## Natural Chat Rhythm
-- The model chooses the length from the social moment and the user request, not from a fixed template.
-- Real chat has uneven turns: sometimes a tiny reaction, sometimes a clipped sentence, sometimes a longer explanation, defense, or practical answer.
-- Avoid making consecutive messages all similar in size, opening pattern, or cadence.
+- Real chat is uneven; choose size from the moment, not a fixed template.
 ${rhythm}
-- If you use extraMessages, keep content as the first visible bubble and put only the later consecutive bubbles in extraMessages. The full turn may contain up to 5 visible bubbles total. Vary lengths naturally. Do not split purely by punctuation.
-- Do not use extraMessages to separate action narration from dialogue. A later bubble needs its own social purpose, not just another stage direction.`;
+- extraMessages are only for later consecutive sends with their own social purpose, not punctuation splitting or action/dialogue separation.`;
 }
 
 function isBracketedLine(line: string) {
@@ -1594,6 +1777,7 @@ function buildTurnLengthVarietyPrompt(messages: Message[], speakerId: string, su
     : runtimeBundle?.trace?.hotspotState === 'warm'
       ? '\n- This speaker has been active recently. Avoid sprawling by inertia.'
       : '';
+  if (!clustered && !hotspotLine) return '';
   return `\n## Turn Length Variety
 - Recent own turn lengths: ${recentOwnLengths.join(' / ')} chars (${bands}).${clusterLine}
 ${surfaceLine}${hotspotLine}
@@ -1627,16 +1811,19 @@ function buildExpressionSurfaceChoicePrompt(input: {
     input.turnPlan.rhythm,
   ].join('|'));
   const lengthOptions = input.turnPlan.rhythm === 'micro_ack'
-    ? ['tiny fragment', 'short sentence', 'one practical line']
+    ? ['low-pressure tiny option', 'concise line if enough', 'substantive line if needed']
     : input.turnPlan.rhythm === 'multi_bubble'
       ? ['first bubble short, later bubble carries detail', 'two uneven chat bubbles', 'brief setup plus separate afterthought']
-      : ['short sentence', 'ordinary chat line', 'longer practical paragraph', 'tiny side comment', 'specific follow-up question'];
+      : ['short sentence if enough', 'ordinary chat line', 'longer practical paragraph', 'brief side comment if enough', 'specific follow-up question'];
+  const isAnalysisRoom = resolveSessionFamilyKey(input.chat) === 'analysis';
   const moveOptions = input.intent.stance === 'probe'
     ? ['ask one pointed follow-up', 'test a hidden assumption', 'ask for a concrete detail', 'turn the question back socially']
     : input.intent.stance === 'challenge' || input.intent.stance === 'pile_on'
       ? ['push back on one point', 'make a dry side comment', 'give a concrete counterexample', 'refuse the frame briefly']
       : input.intent.stance === 'support' || input.intent.stance === 'back_up'
-        ? ['back the previous speaker with one concrete reason', 'soften the room with a small practical offer', 'add a detail without restating the joke', 'agree briefly and move the scene forward']
+        ? isAnalysisRoom
+          ? ['answer warmly while separating person from claim', 'add a condition or limitation without turning cold', 'name the part that needs evidence', 'extend the topic with a distinct criterion']
+          : ['back the previous speaker with one concrete reason', 'soften the room with a small practical offer', 'add a detail without restating the joke', 'agree briefly and move the scene forward']
         : ['move the scene forward', 'answer the practical next step', 'make a small observation', 'ask one socially useful question'];
   const ornamentOptions = roomDecorativeCount >= Math.max(3, Math.ceil(recentAi.length * 0.45))
     ? ['plain text', 'plain text', 'one character-specific marker only if it adds new social meaning']
@@ -1649,12 +1836,10 @@ function buildExpressionSurfaceChoicePrompt(input: {
     ? `\n- Recent room lengths: ${roomLengths.slice(-8).join(' / ')} chars; decorative-marker turns ${roomDecorativeCount}/${recentAi.length}.`
     : '';
   return `\n## Expression Surface Choice
-- This is a generation prior, not output filtering. Do not remove valid Markdown, multiline content, media phrasing, or expressive markers when they genuinely fit.
-- Current surface move: ${selectedMove}.
-- Current length tendency: ${selectedLength}. This is not a word count; it is permission to avoid the room's default middle length.
-- Current ornamentation tendency: ${selectedOrnament}. Decorative markers are optional social choices, not automatic proof of warmth or humor.
-- Do not balance every turn as setup + joke + explanatory tail + marker. Some believable replies are blunt, unfinished, practical, curious, or quiet.${roomLine}${ownLine}
-- If the recent room has converged on the same marker density, sentence size, or joke rhythm, continue the situation with a different visible surface rather than copying the mold.`;
+- Surface prior: ${selectedMove}; weak length tendency: ${selectedLength}; ornamentation: ${selectedOrnament}.
+- This is not output filtering. Keep valid Markdown, multiline content, media phrasing, or expressive markers when they genuinely fit.
+- The length tendency is not a cap. Scene needs, user tasks, play-mode obligations, and role competence override it.
+- Avoid defaulting every turn to setup + joke + explanation + marker; believable replies can be blunt, unfinished, practical, curious, or quiet.${roomLine}${ownLine}`;
 }
 
 function buildWorldEventContextPrompt(input: {
@@ -1730,20 +1915,20 @@ function buildWorldEventInfluenceSnapshot(input: {
   if (attention && attention.targetId === 'user' && attention.suggestedActions.includes('comfort') && attention.attentionScore >= 0.56 && attention.restraint <= 0.75) {
     ruleEntries.push({
       id: 'comfort_first',
-      text: 'Before expanding into analysis or room banter, start with one concrete caring move toward the user (check-in / reassurance / gentle follow-up).',
+      text: 'Before expanding into analysis or room banter, include a concrete caring move toward the user (check-in / reassurance / gentle follow-up) if it fits. This shapes priority and tone, not response length.',
     });
   }
   if (attention && attention.restraint >= 0.72) {
     ruleEntries.push({
       id: 'low_pressure_restraint',
-      text: 'Keep this turn low-pressure: avoid pushing new plans, avoid repeated nudges, and prefer concise, non-intrusive wording.',
+      text: 'Keep this turn low-pressure: avoid pushing new plans and repeated nudges. Low-pressure means optional and non-intrusive, not necessarily short; still answer substantive user requests completely.',
     });
   }
   const urgentEvent = upcomingCalendar.find((item) => typeof item.startAt === 'number' && (item.startAt as number) - now <= 6 * 60 * 60_000);
   if (urgentEvent) {
     ruleEntries.push({
       id: 'urgent_calendar_first',
-      text: `You have an upcoming schedule (${urgentEvent.title}) within 6 hours. If context allows, prioritize a concise reminder/confirmation before starting unrelated expansion.`,
+      text: `You have an upcoming schedule (${urgentEvent.title}) within 6 hours. If context allows, give a clear reminder/confirmation before unrelated expansion. Do not let the reminder prevent a complete answer when the user asked for one.`,
     });
   }
   const conflictEvent = upcomingCalendar.find((item) => Boolean(item.conflict?.hasConflict));
@@ -1997,6 +2182,8 @@ function buildMessageMetadata(params: {
   capabilities: { image: boolean; audio: boolean };
   content: string;
   runtimeDecision?: MessageMetadata['runtimeDecision'];
+  deliberationArtifacts?: MessageMetadata['deliberationArtifacts'] | null;
+  presenceUpdate?: MessageMetadata['presenceUpdate'] | null;
   storyEvents?: MessageMetadata['storyEvents'] | null;
   storyEventsNormalized?: boolean;
   storyQuality?: MessageMetadata['storyQuality'] | null;
@@ -2009,7 +2196,7 @@ function buildMessageMetadata(params: {
   const storyChoices = normalizeStoryChoiceSuggestions(params.storyChoices);
   const storyEvents = params.storyEventsNormalized ? (params.storyEvents || []) : [];
   const storyQuality = params.storyQuality || null;
-  if (!decision && !params.runtimeDecision && !params.narrativeTurn && !storyChoices?.length && !storyEvents.length) return undefined;
+  if (!decision && !params.runtimeDecision && !params.deliberationArtifacts && !params.presenceUpdate && !params.narrativeTurn && !storyChoices?.length && !storyEvents.length) return undefined;
   const now = typeof params.now === 'number' && Number.isFinite(params.now) ? Math.round(params.now) : Date.now();
   const contextText = params.narrativeTurn?.blocks.map((block) => block.text).filter(Boolean).join('\n\n') || params.content;
   const attachments: MessageAttachment[] = [];
@@ -2056,6 +2243,8 @@ function buildMessageMetadata(params: {
       generation: { status: 'queued' as const, updatedAt: now },
     } : {}),
     ...(params.runtimeDecision ? { runtimeDecision: params.runtimeDecision } : {}),
+    ...(params.deliberationArtifacts ? { deliberationArtifacts: params.deliberationArtifacts } : {}),
+    ...(params.presenceUpdate ? { presenceUpdate: params.presenceUpdate } : {}),
   };
 }
 
@@ -2196,6 +2385,90 @@ function buildRuntimeDecisionMetadata(params: {
   };
 }
 
+function hasDeliberationArtifactContent(artifacts: MessageMetadata['deliberationArtifacts'] | null | undefined) {
+  if (!artifacts) return false;
+  return Boolean(
+    artifacts.claims?.length
+    || artifacts.evidence?.length
+    || artifacts.issues?.length
+    || artifacts.verdicts?.length
+    || artifacts.summary?.text?.trim(),
+  );
+}
+
+function isMoveExpectedToProduceDeliberationArtifacts(moveType: string | undefined) {
+  return Boolean(moveType && [
+    'add_boundary_condition',
+    'answer_unresolved_question',
+    'synthesize',
+    'test_assumption',
+    'counterexample',
+    'separate_claims',
+    'ask_evidence',
+    'name_tradeoff',
+  ].includes(moveType));
+}
+
+function buildDeliberationArtifactTrace(params: {
+  chat: GroupChat;
+  parsedEnvelope: ReturnType<typeof parseInlineInteractionEnvelope> | null;
+  conversationMovePlan: ReturnType<typeof planConversationMove>;
+}) {
+  if (resolveSessionFamilyKey(params.chat) !== 'analysis') return null;
+  const artifacts = params.parsedEnvelope?.deliberationArtifacts || null;
+  const present = hasDeliberationArtifactContent(artifacts);
+  const expectedByMove = isMoveExpectedToProduceDeliberationArtifacts(params.conversationMovePlan.moveType);
+  const policyHits = [
+    present ? 'deliberation_artifacts:present' : 'deliberation_artifacts:absent',
+    params.parsedEnvelope ? 'deliberation_artifacts:json_envelope_parsed' : 'deliberation_artifacts:no_json_envelope',
+    expectedByMove ? `deliberation_artifacts:expected_by_move:${params.conversationMovePlan.moveType}` : `deliberation_artifacts:not_expected_by_move:${params.conversationMovePlan.moveType}`,
+  ];
+  const guidanceValidation = [
+    `deliberationArtifacts=${present ? 'present' : 'absent'}`,
+    `expectedByMove=${expectedByMove ? 'yes' : 'no'}`,
+    `move=${params.conversationMovePlan.moveType}`,
+  ].join(';');
+  return {
+    present,
+    expectedByMove,
+    policyHits,
+    guidanceValidation,
+    reason: present
+      ? 'model_returned_deliberation_artifacts'
+      : expectedByMove
+        ? 'model_omitted_deliberation_artifacts_for_deliberative_move'
+        : 'model_omitted_deliberation_artifacts_for_nonartifact_move',
+  };
+}
+
+function contentExplicitlySignalsAway(content: string) {
+  const normalized = content.replace(/\s+/g, ' ').trim();
+  if (!normalized) return false;
+  return /(?:^|[。！？!?，,\s])(我|俺|大妈|大姐|这边|我这边|这回|这就|我先|先|我真|真|真的).{0,12}(走了|撤了|下线|关机|睡了|睡觉|去睡|去忙|忙去了|去收租|收租去了|赶车|赶公交|去开会|去洗澡|离开|不回了|挂了|先到这|先这样|回头聊)(?:$|[。！？!?，,\s])/.test(normalized)
+    || /(晚安|明天见|回头见|包子铺见).{0,16}(我|俺|大妈|大姐)?.{0,8}(走了|撤了|睡了|下线|关机|挂了)/.test(normalized);
+}
+
+function appendRuntimeTraceDiagnostics(
+  runtimeBundle: SessionGenerationRuntimeBundle,
+  diagnostics: ReturnType<typeof buildDeliberationArtifactTrace>,
+): SessionGenerationRuntimeBundle {
+  if (!diagnostics) return runtimeBundle;
+  return {
+    ...runtimeBundle,
+    trace: {
+      ...(runtimeBundle.trace || {}),
+      policyHits: [
+        ...(runtimeBundle.trace?.policyHits || []),
+        ...diagnostics.policyHits,
+      ],
+      guidanceValidation: [
+        runtimeBundle.trace?.guidanceValidation || '',
+        diagnostics.guidanceValidation,
+      ].filter(Boolean).join(' | ') || null,
+    },
+  };
+}
+
 function inferExpressionFeedbackLabel(item: MemoryItem) {
   const signal = summarizeExpressionFeedbackInfluence([item])[0];
   if (signal) return getExpressionFeedbackCategoryLabel(signal.category);
@@ -2238,6 +2511,33 @@ function collectExpressionFeedbackTrace(character: AICharacter, innerLife?: Inne
     });
 }
 
+function isDeepSeekLikeConfig(config: Pick<APIConfig, 'provider' | 'model'>) {
+  return config.provider === 'deepseek'
+    || config.provider === 'official-deepseek'
+    || /deepseek/i.test(config.model || '');
+}
+
+function shouldUseJsonResponseFormat(chat: Pick<GroupChat, 'mode' | 'sessionKind'>, config: Pick<APIConfig, 'provider' | 'model'>) {
+  if (isDeepSeekLikeConfig(config)) return false;
+  return chat.sessionKind?.scenarioId === 'story-reader'
+    || resolveSessionFamilyKey(chat) === 'analysis';
+}
+
+function shouldAddJsonProtocolReminder(chat: Pick<GroupChat, 'mode' | 'sessionKind'>, config: Pick<APIConfig, 'provider' | 'model'>) {
+  return isDeepSeekLikeConfig(config)
+    && (chat.sessionKind?.scenarioId === 'story-reader' || resolveSessionFamilyKey(chat) === 'analysis');
+}
+
+function buildJsonProtocolReminder(chat: Pick<GroupChat, 'mode' | 'sessionKind'>): ReturnType<typeof buildChatMessages>[number] {
+  const isAnalysisRoom = resolveSessionFamilyKey(chat) === 'analysis';
+  return {
+    role: 'user',
+    content: isAnalysisRoom
+      ? '格式校验：只返回一个可解析 JSON 对象，不要直接输出聊天正文。JSON 必须包含 content 字符串；如果本轮提出了观点、证据、问题、裁决或小结，必须在 deliberationArtifacts 中写入对应数组。'
+      : '格式校验：只返回一个可解析 JSON 对象，不要直接输出正文。JSON 必须遵守本轮输出协议。',
+  };
+}
+
 async function generateWithPrompt(params: {
   chat: GroupChat;
   resolvedApi: APIConfig;
@@ -2256,8 +2556,30 @@ async function generateWithPrompt(params: {
 }) {
   const streamBridge = createStreamingDisplayBridge(params.speaker, params.showRoleActions, params.onChunk);
   const jsonPrompt = `${params.systemPrompt}\n\nThe response must be exactly one valid JSON object. Do not wrap it in markdown.`;
+  const useJsonResponseFormat = shouldUseJsonResponseFormat(params.chat, params.resolvedApi);
+  const requestMessages = shouldAddJsonProtocolReminder(params.chat, params.resolvedApi)
+    ? [...params.chatMessages, buildJsonProtocolReminder(params.chat)]
+    : params.chatMessages;
   const requestStartedAt = nowMs();
   let firstRawChunkLogged = false;
+  const rawChunkHandler = !useJsonResponseFormat && params.onChunk
+    ? (raw: string) => {
+        if (!firstRawChunkLogged) {
+          firstRawChunkLogged = true;
+          logDeveloperDiagnostic('chat-run:model-first-raw-chunk', {
+            chatId: params.chat.id,
+            speakerId: params.speaker.id,
+            speakerName: params.speaker.name,
+            provider: params.resolvedApi.provider,
+            model: params.resolvedApi.model,
+            attempt: params.attempt,
+            rawLength: raw.length,
+            elapsedMs: Number((nowMs() - requestStartedAt).toFixed(2)),
+          }, 'info', 'chat-run');
+        }
+        streamBridge.push(raw);
+    }
+    : undefined;
   logDeveloperDiagnostic('chat-run:model-request-start', {
     chatId: params.chat.id,
     speakerId: params.speaker.id,
@@ -2265,35 +2587,18 @@ async function generateWithPrompt(params: {
     provider: params.resolvedApi.provider,
     model: params.resolvedApi.model,
     attempt: params.attempt,
-    streaming: Boolean(params.onChunk),
+    streaming: Boolean(rawChunkHandler),
     promptLength: jsonPrompt.length,
-    messageCount: params.chatMessages.length,
+    messageCount: requestMessages.length,
   }, 'debug', 'chat-run');
   const response = await generateResponse(
     params.resolvedApi,
     jsonPrompt,
-    params.chatMessages,
-    params.onChunk
-      ? (raw) => {
-          if (!firstRawChunkLogged) {
-            firstRawChunkLogged = true;
-            logDeveloperDiagnostic('chat-run:model-first-raw-chunk', {
-              chatId: params.chat.id,
-              speakerId: params.speaker.id,
-              speakerName: params.speaker.name,
-              provider: params.resolvedApi.provider,
-              model: params.resolvedApi.model,
-              attempt: params.attempt,
-              rawLength: raw.length,
-              elapsedMs: Number((nowMs() - requestStartedAt).toFixed(2)),
-            }, 'info', 'chat-run');
-          }
-          streamBridge.push(raw);
-      }
-      : undefined,
+    requestMessages,
+    rawChunkHandler,
     {
       signal: params.signal,
-      responseFormat: params.chat.sessionKind?.scenarioId === 'story-reader' ? 'json' : 'text',
+      responseFormat: useJsonResponseFormat ? 'json' : 'text',
       aiUsage: {
         type: params.chat.sessionKind?.scenarioId === 'story-reader' ? 'story_chat' : params.chat.type === 'direct' ? 'direct_chat' : 'group_chat',
         label: params.chat.sessionKind?.scenarioId === 'story-reader' ? '生成故事回复' : params.chat.type === 'direct' ? '生成单聊回复' : '生成群聊回复',
@@ -2335,7 +2640,19 @@ async function generateWithPrompt(params: {
   const keepStoryEventsAsContent = isStoryReader
     && storyEvents.length > 0
     && !params.chat.memberIds.includes(params.speaker.id);
-  const finalResponse = narrativeBlocks.length && !keepStoryEventsAsContent ? '' : finalizedResponse;
+  let finalResponse = narrativeBlocks.length && !keepStoryEventsAsContent ? '' : finalizedResponse;
+  let streamedFallbackUsed = false;
+  if (!isStoryReader && !normalizeForComparison(finalResponse)) {
+    const streamedFallback = streamBridge.getLastContent();
+    if (normalizeForComparison(streamedFallback)) {
+      finalResponse = sanitizeUserFacingText(
+        trimHumanChatStyle(params.showRoleActions === false ? stripRoleActions(streamedFallback) : streamedFallback, params.surface?.preserveParagraphs),
+        [],
+        { preserveLineBreaks: true },
+      );
+      streamedFallbackUsed = true;
+    }
+  }
   const extraMessages = isStoryReader ? null : normalizeExtraMessages({
     content: finalResponse,
     extraMessages: parsedEnvelope?.extraMessages,
@@ -2351,7 +2668,7 @@ async function generateWithPrompt(params: {
   const storyChoices = eventStoryChoices?.length ? eventStoryChoices : normalizeStoryChoiceSuggestions(parsedEnvelope?.storyChoices);
   const fullNarrativeResponse = narrativeBlocks.map((block) => block.text).join('\n\n') || finalizedNarrativeText;
   streamBridge.flush(fullNarrativeResponse || finalResponse);
-  return { parsedEnvelope, rawContent, rawNarrativeText, finalResponse, narrativeText: finalizedNarrativeText, narrativeBlocks, storyChoices, fullResponse, fullNarrativeResponse, extraMessages, storyEvents };
+  return { parsedEnvelope, rawContent, rawNarrativeText, finalResponse, narrativeText: finalizedNarrativeText, narrativeBlocks, storyChoices, fullResponse, fullNarrativeResponse, extraMessages, storyEvents, streamedFallbackUsed };
 }
 
 async function generateNonDuplicateResponse(params: {
@@ -2368,6 +2685,7 @@ async function generateNonDuplicateResponse(params: {
   turnPlan?: TurnPlan | null;
   guidance?: UserGuidanceIntent | null;
   mediaCapabilities?: { image: boolean; audio: boolean };
+  conversationMovePlan?: ReturnType<typeof planConversationMove> | null;
   onChunk?: (content: string) => void;
   onLocalInterception?: (event: LocalInterceptionEvent) => void | Promise<void>;
   signal?: AbortSignal;
@@ -2387,10 +2705,12 @@ async function generateNonDuplicateResponse(params: {
   let lastExtraMessages: string[] | null = null;
   let lastStoryEvents: import('../types/message').StoryEvent[] | null = null;
   let lastStoryChoices: MessageMetadata['storyChoices'] | null = null;
+  let lastStreamedFallbackUsed = false;
   const rejectedReasons: GuidanceRejectionReason[] = [];
   let finalReason: GuidanceExecutionReason = params.guidance ? 'empty_content' : 'matched';
+  const requestUsesJsonResponseFormat = shouldUseJsonResponseFormat(params.chat, params.resolvedApi);
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const shouldStreamAttempt = !isStoryReader && !params.guidance && attempt === 0;
+    const shouldStreamAttempt = !requestUsesJsonResponseFormat && !isStoryReader && !params.guidance && attempt === 0;
     const generated = await generateWithPrompt({ ...params, characters: params.characters || [], systemPrompt: prompt, attempt: attempt + 1, onChunk: shouldStreamAttempt ? params.onChunk : undefined });
     lastParsedEnvelope = generated.parsedEnvelope;
     lastFinalResponse = generated.finalResponse;
@@ -2401,6 +2721,7 @@ async function generateNonDuplicateResponse(params: {
     lastExtraMessages = generated.extraMessages || null;
     lastStoryEvents = generated.storyEvents || null;
     lastStoryChoices = generated.storyChoices || null;
+    lastStreamedFallbackUsed = Boolean(generated.streamedFallbackUsed);
     const storyProtocolIssue = isStoryReader && narrativeRuntime ? validateStoryReaderGeneration({
       chat: params.chat,
       parsedEnvelope: generated.parsedEnvelope,
@@ -2482,6 +2803,33 @@ async function generateNonDuplicateResponse(params: {
         });
         continue;
       }
+      const surfaceContractIssue = evaluateVisibleSurfaceContract({
+        chat: params.chat,
+        speaker: params.speaker,
+        characters: params.characters || [],
+        content: evaluationResponse,
+        showRoleActions: params.showRoleActions,
+      });
+      if (surfaceContractIssue) {
+        await params.onLocalInterception?.({
+          kind: 'surface_contract_warning',
+          speakerId: params.speaker.id,
+          speakerName: params.speaker.name,
+          draft: evaluationResponse,
+          reason: surfaceContractIssue,
+          attempt: attempt + 1,
+        });
+      }
+      if (generated.streamedFallbackUsed) {
+        await params.onLocalInterception?.({
+          kind: 'streamed_draft_committed',
+          speakerId: params.speaker.id,
+          speakerName: params.speaker.name,
+          draft: evaluationResponse,
+          reason: '最终结构化正文为空，但流式阶段已经产生可见内容；已保留并提交这段流式草稿。',
+          attempt: attempt + 1,
+        });
+      }
       const echoReason = evaluateHiddenEchoDraft(
         evaluationResponse,
         params.activeMessages,
@@ -2489,37 +2837,62 @@ async function generateNonDuplicateResponse(params: {
         Boolean(generated.parsedEnvelope?.intentionalRepeat),
       );
       if (echoReason) {
-        // Legacy fallback: until every caller consumes validator results directly, keep a minimal bridge here.
-        if (attempt < 2) {
-          await params.onLocalInterception?.({
-            kind: 'surface_echo_retry',
-            speakerId: params.speaker.id,
-            speakerName: params.speaker.name,
-            draft: evaluationResponse,
-            reason: echoReason,
-            attempt: attempt + 1,
-          });
-          prompt = buildSurfaceEchoRetryPrompt(params.systemPrompt, evaluationResponse, echoReason);
-          continue;
-        }
         await params.onLocalInterception?.({
-          kind: 'surface_echo_skip',
+          kind: 'surface_echo_warning',
           speakerId: params.speaker.id,
           speakerName: params.speaker.name,
           draft: evaluationResponse,
           reason: echoReason,
           attempt: attempt + 1,
         });
-        logAiGenerationFailure({
-          chat: params.chat,
-          speaker: params.speaker,
-          reason: 'duplicate_content',
-          message: `连续生成重复内容：${echoReason}`,
-          attempt: attempt + 1,
+      }
+      const conversationMovePlan = params.conversationMovePlan;
+      const analysisProtocolTrace = conversationMovePlan ? buildDeliberationArtifactTrace({
+        chat: params.chat,
+        parsedEnvelope: generated.parsedEnvelope,
+        conversationMovePlan,
+      }) : null;
+      if (conversationMovePlan && analysisProtocolTrace && !analysisProtocolTrace.present && analysisProtocolTrace.expectedByMove) {
+        const reason = '本轮回复做了审议动作，但模型没有返回结构化审议产物；消息已保留，面板不会新增审议产物。';
+        logDeveloperDiagnostic('chat-run:analysis-artifacts-missing', {
+          chatId: params.chat.id,
+          speakerId: params.speaker.id,
+          speakerName: params.speaker.name,
+          kind: 'analysis_artifacts_missing',
           draft: evaluationResponse,
-          details: { echoReason },
+          reason,
+          attempt: attempt + 1,
+          moveType: conversationMovePlan.moveType,
+          moveReason: conversationMovePlan.reason,
+        }, 'warn', 'chat-run');
+        await params.onLocalInterception?.({
+          kind: 'analysis_artifacts_missing',
+          speakerId: params.speaker.id,
+          speakerName: params.speaker.name,
+          draft: evaluationResponse,
+          reason,
+          attempt: attempt + 1,
         });
-        throw new EmptyGeneratedResponseError(params.speaker.name, { localInterceptionReported: true });
+      }
+      if (contentExplicitlySignalsAway(evaluationResponse) && !generated.parsedEnvelope?.presenceUpdate) {
+        const reason = '可见回复表示离开、睡觉或忙碌，但模型没有返回下线状态标记；消息已保留，角色在线状态不变。';
+        logDeveloperDiagnostic('chat-run:presence-metadata-missing', {
+          chatId: params.chat.id,
+          speakerId: params.speaker.id,
+          speakerName: params.speaker.name,
+          kind: 'presence_metadata_missing',
+          draft: evaluationResponse,
+          reason,
+          attempt: attempt + 1,
+        }, 'warn', 'chat-run');
+        await params.onLocalInterception?.({
+          kind: 'presence_metadata_missing',
+          speakerId: params.speaker.id,
+          speakerName: params.speaker.name,
+          draft: evaluationResponse,
+          reason,
+          attempt: attempt + 1,
+        });
       }
       if (params.guidance || attempt > 0) params.onChunk?.(generated.narrativeText || generated.finalResponse);
       return {
@@ -2564,7 +2937,9 @@ async function generateNonDuplicateResponse(params: {
         mediaCapabilities: params.mediaCapabilities,
       });
     } else {
-      prompt = buildRetryPrompt(params.systemPrompt, generated.rawContent);
+      prompt = normalizeForComparison(generated.rawContent)
+        ? buildRetryPrompt(params.systemPrompt, generated.rawContent)
+        : buildEmptyContentRetryPrompt(params.systemPrompt);
     }
   }
   return {
@@ -2577,6 +2952,7 @@ async function generateNonDuplicateResponse(params: {
     fullNarrativeResponse: lastFullNarrativeResponse || lastNarrativeText || lastFullResponse || lastFinalResponse,
     extraMessages: lastExtraMessages,
     storyEvents: lastStoryEvents,
+    streamedFallbackUsed: lastStreamedFallbackUsed,
     guidanceExecution: params.guidance ? {
       status: 'failed_after_retry',
       validated: false,
@@ -2650,10 +3026,14 @@ function createNarratorCharacter(chat: GroupChat): AICharacter {
 }
 
 function resolveEffectiveChatMembers(chat: GroupChat, characters: AICharacter[]) {
-  const chatMembers = characters.filter((c) => chat.memberIds.includes(c.id));
+  const chatMembers = characters.filter((c) => chat.memberIds.includes(c.id) && !c.deletedAt);
   if (chat.sessionKind?.scenarioId !== 'story-reader') return chatMembers;
   if (chatMembers.some((member) => member.id === 'narrator')) return chatMembers;
   return [createNarratorCharacter(chat), ...chatMembers];
+}
+
+function countSpeakableParticipants(chat: GroupChat, autoSpeakableMembers: AICharacter[]) {
+  return autoSpeakableMembers.length + (chat.memberIds.includes('user') ? 1 : 0);
 }
 
 function resolveSpeakerFromCandidates(chatMembers: AICharacter[], candidates: ReturnType<typeof calculateWeights>) {
@@ -2745,7 +3125,10 @@ export async function generateSpeakerMessage(params: {
   const emotion = getEmotion(params.speaker.id);
   const recentTargetId = resolveRecentTargetIdForSpeaker(params.chat, params.speaker, activeMessages, params.pendingReplyContext);
   const recentText = activeMessages.at(-1)?.content || '';
-  const intent = deriveSpeakIntentFromContext(params.speaker, recentTargetId, recentText, effectiveDirectorIntent);
+  const intent = deriveSpeakIntentFromContext(params.speaker, recentTargetId, recentText, effectiveDirectorIntent, {
+    conversationFamily: params.chat.sessionKind?.family,
+    scenarioId: params.chat.sessionKind?.scenarioId,
+  });
   const innerLife = projectInnerLife({ chat: params.chat, character: params.speaker, messages: activeMessages });
   const typingDelayMs = await waitForInnerLifeTypingDelay(innerLife, params.chat, params.delay);
   if (typingDelayMs > 0) {
@@ -2801,6 +3184,26 @@ export async function generateSpeakerMessage(params: {
     speaker: params.speaker,
     messages: activeMessages,
   });
+  const conversationMovePlan = planConversationMove({
+    chat: params.chat,
+    speaker: params.speaker,
+    messages: activeMessages,
+  });
+  const runtimeBundleWithMovePlan = {
+    ...runtimeBundle,
+    trace: {
+      ...(runtimeBundle.trace || {}),
+      policyHits: [
+        ...(runtimeBundle.trace?.policyHits || []),
+        `conversation_move:${conversationMovePlan.moveType}`,
+        `conversation_move_reason:${conversationMovePlan.reason}`,
+      ],
+      guidanceValidation: [
+        runtimeBundle.trace?.guidanceValidation || '',
+        `move=${conversationMovePlan.moveType};posture=${conversationMovePlan.socialPosture.warmth}/${conversationMovePlan.socialPosture.directness};confidence=${conversationMovePlan.confidence.toFixed(2)}`,
+      ].filter(Boolean).join(' | ') || null,
+    },
+  };
   const pendingReplyPrompt = params.pendingReplyContext?.targetIds.includes(params.speaker.id) && params.pendingReplyContext.sourceSpeakerId
     ? `\nPending reply expectation:\n- You were explicitly addressed by ${characterMap.get(params.pendingReplyContext.sourceSpeakerId)?.name || params.pendingReplyContext.sourceSpeakerId}.\n- Reply to that character first instead of pivoting to another member.\n- Acknowledge their question or emotion before expanding to the room.`
     : '';
@@ -2819,7 +3222,10 @@ export async function generateSpeakerMessage(params: {
   const expressionFeedbackTrace = collectExpressionFeedbackTrace(params.speaker, innerLife);
   const memoryTrace = buildPromptMemoryTrace(params.speaker, params.chat, activeMessages, characterMap);
   const memoryTraceReadyAt = nowMs();
-  const companionshipTrace = await buildCompanionshipTraceIfNeeded({ chat: params.chat, character: params.speaker, messages: activeMessages });
+  const isAnalysisRoom = resolveSessionFamilyKey(params.chat) === 'analysis';
+  const companionshipTrace = isAnalysisRoom
+    ? null
+    : await buildCompanionshipTraceIfNeeded({ chat: params.chat, character: params.speaker, messages: activeMessages });
   const companionshipTraceReadyAt = nowMs();
   const userGuidance = effectiveDirectorIntent?.userGuidance || null;
   const worldInfluenceSnapshot = buildWorldEventInfluenceSnapshot({
@@ -2828,6 +3234,45 @@ export async function generateSpeakerMessage(params: {
     members: effectiveMembers,
   });
   const isStoryReader = params.chat.sessionKind?.scenarioId === 'story-reader';
+  const promptPlayMode = resolvePromptPlayMode(params.chat);
+  const speakerSystemPrompt = buildSpeakerSystemPrompt({
+    speaker: params.speaker,
+    chat: params.chat,
+    emotion,
+    activeMessages,
+    characterMap,
+    preferEnginePromptAdapter: !enginePromptContext,
+  });
+  const promptBlocks: PromptBlock[] = [
+    { id: 'engine_prefix', layer: 'core', priority: -100, content: promptPrefix },
+    { id: 'speaker_identity', layer: 'core', priority: 0, content: speakerSystemPrompt },
+    buildPromptPlayModeBlock(promptPlayMode),
+    { id: 'humanization', layer: 'character', priority: 20, content: buildHumanizationPrompt(params.speaker, intent, activeMessages, userGuidance) },
+    { id: 'inner_life', layer: 'character', priority: 30, content: buildInnerLifePromptBlock(innerLife) },
+    { id: 'pending_reply', layer: 'task', priority: 10, content: pendingReplyPrompt },
+    { id: 'user_guidance', layer: 'task', priority: 20, content: buildUserGuidancePrompt(userGuidance, params.speaker, effectiveMembers, mediaCapabilities) },
+    { id: 'world_event_context', layer: 'scene', priority: 20, content: buildWorldEventContextPrompt({ chat: params.chat, speaker: params.speaker, members: effectiveMembers }) },
+    { id: 'world_influence', layer: 'scene', priority: 30, content: worldInfluenceSnapshot.prompt },
+    { id: 'current_intent', layer: 'task', priority: 30, content: buildCurrentIntentPrompt({ directorIntent: effectiveDirectorIntent, intent }) },
+    { id: 'private_turn_priority', layer: 'task', priority: 35, content: buildPrivateTurnPriorityPrompt(params.chat) },
+    { id: 'engine_constraints', layer: 'task', priority: 40, content: additionalConstraints },
+    { id: 'analysis_room_contract', layer: 'task', priority: 45, content: buildAnalysisRoomContractPrompt(params.chat) },
+    { id: 'role_action_visibility', layer: 'runtime', priority: 10, content: buildRoleActionVisibilityPrompt(showRoleActions) },
+    { id: 'expression_feedback', layer: 'runtime', priority: 20, content: buildExpressionFeedbackPrompt(expressionFeedbackTrace) },
+    { id: 'natural_chat_rhythm', layer: 'style', priority: 10, content: buildNaturalChatRhythmPrompt(activeMessages, innerLife, responseSurface) },
+    { id: 'conversation_move', layer: 'task', priority: 50, content: buildConversationMovePrompt(conversationMovePlan, params.chat) },
+    { id: 'expression_surface_choice', layer: 'style', priority: 20, content: buildExpressionSurfaceChoicePrompt({ chat: params.chat, speaker: params.speaker, messages: activeMessages, intent, surface: responseSurface, turnPlan }) },
+    { id: 'turn_length_variety', layer: 'style', priority: 30, content: buildTurnLengthVarietyPrompt(activeMessages, params.speaker.id, responseSurface, runtimeBundleWithMovePlan) },
+    { id: 'turn_format_variety', layer: 'style', priority: 40, content: buildTurnFormatVarietyPrompt(activeMessages, params.speaker.id, responseSurface) },
+    { id: 'turn_plan', layer: 'runtime', priority: 30, content: buildTurnPlanPrompt(turnPlan) },
+    { id: 'runtime_role_constraint', layer: 'runtime', priority: 40, content: buildRuntimeRoleConstraintPrompt(runtimeBundleWithMovePlan) },
+    { id: 'response_surface', layer: 'style', priority: 50, content: buildResponseSurfacePrompt(responseSurface) },
+    { id: 'style_quarantine', layer: 'style', priority: 60, content: buildStyleQuarantinePrompt(responseSurface) },
+    { id: 'visible_message_surface_contract', layer: 'output', priority: 0, content: buildVisibleMessageSurfaceContractPrompt(params.chat, showRoleActions) },
+    { id: 'generation_constraints', layer: 'output', priority: 10, content: buildGenerationConstraints(activeMessages, params.speaker.id, responseSurface) },
+    { id: 'inline_interaction_contract', layer: 'output', priority: 20, content: buildInlineInteractionContract({ chat: params.chat, speaker: params.speaker, characters: effectiveMembers, recentMessages: activeMessages, turnPlan, mediaCapabilities, mediaRequested: Boolean(userGuidance?.mediaRequest) }) },
+    { id: 'engine_suffix', layer: 'suffix', priority: 100, content: promptSuffix },
+  ];
   const systemPrompt = isStoryReader
     ? buildStoryReaderSystemPrompt({
       chat: params.chat,
@@ -2838,25 +3283,7 @@ export async function generateSpeakerMessage(params: {
       additionalConstraints,
       promptSuffix,
     })
-    : `${promptPrefix}${buildSpeakerSystemPrompt({
-      speaker: params.speaker,
-      chat: params.chat,
-      emotion,
-      activeMessages,
-      characterMap,
-      preferEnginePromptAdapter: !enginePromptContext,
-    })}${buildHumanizationPrompt(params.speaker, intent, activeMessages, userGuidance)}${buildInnerLifePromptBlock(innerLife)}${pendingReplyPrompt}${buildUserGuidancePrompt(userGuidance, params.speaker, effectiveMembers, mediaCapabilities)}${buildWorldEventContextPrompt({ chat: params.chat, speaker: params.speaker, members: effectiveMembers })}${worldInfluenceSnapshot.prompt}
-
-Current director intent:
-- ${effectiveDirectorIntent ? describeDirectorIntent(effectiveDirectorIntent) : 'none'}
-- Treat this as the current room pressure, not as a fixed plot script.
-
-Current speaking intent:
-- ${describeIntentForPrompt(intent)}
-- Treat the intent shape as style guidance, not a hard length cap. Do not truncate a useful reply just to fit one sentence or a fragment shape.
-- Decide the visible length yourself from the latest user request, the room context, and this character's actual ability. The local intent labels are not word-count rules.
-- Stay socially situated and in character. A tiny reaction is valid when the moment is tiny; a practical explanation, tradeoff analysis, or step-by-step answer is valid when the user asks for it.
-- Do not compress a direct request for detail, reasoning, implementation approach, examples, or tradeoffs into a one-line chat jab just because this is a chat surface.${additionalConstraints}${buildRoleActionVisibilityPrompt(showRoleActions)}${buildExpressionFeedbackPrompt(expressionFeedbackTrace)}${buildNaturalChatRhythmPrompt(activeMessages, innerLife, responseSurface)}${buildExpressionSurfaceChoicePrompt({ chat: params.chat, speaker: params.speaker, messages: activeMessages, intent, surface: responseSurface, turnPlan })}${buildTurnLengthVarietyPrompt(activeMessages, params.speaker.id, responseSurface, runtimeBundle)}${buildTurnFormatVarietyPrompt(activeMessages, params.speaker.id, responseSurface)}${buildTurnPlanPrompt(turnPlan)}${buildRuntimeRoleConstraintPrompt(runtimeBundle)}${buildResponseSurfacePrompt(responseSurface)}${buildStyleQuarantinePrompt(responseSurface)}${buildGenerationConstraints(activeMessages, params.speaker.id, responseSurface)}${buildInlineInteractionContract({ chat: params.chat, speaker: params.speaker, characters: effectiveMembers, recentMessages: activeMessages, turnPlan, mediaCapabilities })}${promptSuffix}`;
+    : composePromptBlocks(promptBlocks, promptPlayMode);
   const chatMessages = buildChatMessages(activeMessages, characterMap, MAX_HISTORY_FOR_PROMPT, {
     currentSpeakerId: isStoryReader ? undefined : params.speaker.id,
     chatType: params.chat.type,
@@ -2896,6 +3323,7 @@ Current speaking intent:
     showRoleActions,
     surface: responseSurface,
     turnPlan,
+    conversationMovePlan,
     guidance: userGuidance,
     mediaCapabilities,
     onChunk: params.onChunk,
@@ -2973,6 +3401,24 @@ Current speaking intent:
     narrativeTurn: baseNarrativeTurn,
     choices: storyChoices,
   }) : baseNarrativeTurn;
+  const deliberationArtifactTrace = buildDeliberationArtifactTrace({
+    chat: params.chat,
+    parsedEnvelope: generated.parsedEnvelope,
+    conversationMovePlan,
+  });
+  const runtimeBundleWithDiagnostics = appendRuntimeTraceDiagnostics(runtimeBundleWithMovePlan, deliberationArtifactTrace);
+  if (deliberationArtifactTrace && !deliberationArtifactTrace.present && deliberationArtifactTrace.expectedByMove) {
+    logDeveloperDiagnostic('chat-run:deliberation-artifacts-missing', {
+      chatId: params.chat.id,
+      speakerId: params.speaker.id,
+      speakerName: params.speaker.name,
+      reason: deliberationArtifactTrace.reason,
+      moveType: conversationMovePlan.moveType,
+      moveReason: conversationMovePlan.reason,
+      parsedEnvelope: Boolean(generated.parsedEnvelope),
+      responseLength: generatedStoryResponse.length,
+    }, 'warn', 'chat-run');
+  }
   const completedMessage = buildCompletedMessage({
     chat: params.chat,
     speakerId: params.speaker.id,
@@ -2992,6 +3438,8 @@ Current speaking intent:
         storyQuality: narrativeRuntime && storyEvents.length ? narrativeRuntime.evaluateStoryEventQuality(storyEvents) : null,
         narrativeTurn,
         storyChoices,
+        deliberationArtifacts: generated.parsedEnvelope?.deliberationArtifacts || null,
+        presenceUpdate: generated.parsedEnvelope?.presenceUpdate || null,
 	      runtimeDecision: buildRuntimeDecisionMetadata({
 	        directorIntent: effectiveDirectorIntent,
 	        narrativeLines: params.narrativeLines,
@@ -3007,7 +3455,7 @@ Current speaking intent:
           expressionFeedback: expressionFeedbackTrace,
           guidanceExecution,
           worldInfluence: worldInfluenceSnapshot,
-          runtimeBundle,
+          runtimeBundle: runtimeBundleWithDiagnostics,
 	      }),
 	    }),
 	  });
@@ -3064,6 +3512,26 @@ export const runOneRound = async (
     callbacks.onError(new Error('No AI members in this chat'));
     return;
   }
+  const now = Date.now();
+  const autoSpeakableMembers = chatMembers.filter((member) => isCharacterAvailableForScheduling(member, now));
+  const storyNarrator = chat.sessionKind?.scenarioId === 'story-reader'
+    ? chatMembers.find((member) => member.id === 'narrator')
+    : null;
+  if (!storyNarrator && countSpeakableParticipants(chat, autoSpeakableMembers) < 2) {
+    const reason = autoSpeakableMembers.length === 0
+      ? '群里已无多人在线，当前没有可自动发言的角色'
+      : '群里已无多人在线，只剩一个可发言成员';
+    logDeveloperDiagnostic('chat-run:speaker-selection-idle', {
+      chatId: chat.id,
+      type: chat.type,
+      scenarioId: resolveSessionDefinition(chat).kind.scenarioId,
+      reason,
+      memberCount: chat.memberIds.length,
+      autoSpeakableCount: autoSpeakableMembers.length,
+    }, 'info', 'chat-run');
+    callbacks.onIdle?.(reason);
+    return;
+  }
 
   const messageSpeakTimestamps: Record<string, number> = {};
   for (const msg of messages) {
@@ -3075,16 +3543,13 @@ export const runOneRound = async (
   };
 
   const activeMessages = messages.filter((m) => !m.isDeleted);
-  const pendingReplyContext = chat.type === 'group' ? resolvePendingReplyContext(chatMembers, activeMessages) : null;
-  const runtimePressure = projectRuntimePressure({ chat, characters: chatMembers, messages: activeMessages, pendingReplyContext });
+  const pendingReplyContext = chat.type === 'group' ? resolvePendingReplyContext(autoSpeakableMembers, activeMessages) : null;
+  const runtimePressure = projectRuntimePressure({ chat, characters: autoSpeakableMembers, messages: activeMessages, pendingReplyContext });
   const narrativeLines = runtimePressure.narrativeLines;
   const directorIntent = runtimePressure.directorIntent;
-  const candidates = calculateWeights(chatMembers, activeMessages, effectiveCooldownMap, chat.speed, BASE_COOLDOWN_MS, pendingReplyContext, chat, directorIntent);
-  const lockedGuidanceSpeaker = resolveUserGuidanceLockedSpeaker(chatMembers, directorIntent);
-  const storyNarrator = chat.sessionKind?.scenarioId === 'story-reader'
-    ? chatMembers.find((member) => member.id === 'narrator')
-    : null;
-  const roundtableTurnSpeaker = resolveRoundtableTurnSpeaker(chat, chatMembers);
+  const candidates = calculateWeights(autoSpeakableMembers, activeMessages, effectiveCooldownMap, chat.speed, BASE_COOLDOWN_MS, pendingReplyContext, chat, directorIntent);
+  const lockedGuidanceSpeaker = resolveUserGuidanceLockedSpeaker(autoSpeakableMembers, directorIntent);
+  const roundtableTurnSpeaker = resolveRoundtableTurnSpeaker(chat, autoSpeakableMembers);
   const speakerSelection = storyNarrator
     ? {
       speakerId: storyNarrator.id,

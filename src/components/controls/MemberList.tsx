@@ -14,6 +14,7 @@ import { useSettingsStore } from '../../stores/useSettingsStore';
 import { microPillChipSx } from '../../styles/interaction';
 import { canRunAiMemberActions } from '../../services/memberActionPolicy';
 import { inferSystemAgentSubtypeFromId } from '../../services/actorRefPresentation';
+import { buildMemberAvailabilityChips } from '../../services/memberAvailabilityPresentation';
 
 interface MemberListProps {
   members: AICharacter[];
@@ -225,6 +226,7 @@ export default function MemberList({ members, thinkingId, chat, onRemove, onSpea
           const innerLifeChips = buildMemberInnerLifeChips(member, i18n.language);
           const expressionFeedbackChips = buildMemberExpressionFeedbackChips(member, i18n.language, showDebugDetails);
           const emotionChips = buildMemberEmotionChips(member, i18n.language, showDebugDetails);
+          const availabilityChips = buildMemberAvailabilityChips({ member, chat, language: i18n.language });
           const subtitle = buildMemberSubtitle(member, thinkingId, i18n.language.startsWith('zh') ? '思考中' : 'Thinking');
           return (
             <ListItem
@@ -262,6 +264,17 @@ export default function MemberList({ members, thinkingId, chat, onRemove, onSpea
                       </Typography>
                     ) : null}
                     <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                      {availabilityChips.map((item) => (
+                        <Tooltip key={`${member.id}-availability-${item.key}`} title={item.hint} arrow placement="top">
+                          <Chip
+                            size="small"
+                            label={item.label}
+                            color={item.color}
+                            variant={item.variant}
+                            sx={{ ...microPillChipSx, cursor: 'help' }}
+                          />
+                        </Tooltip>
+                      ))}
                       {innerLifeChips.map((item) => (
                         <Tooltip key={`${member.id}-inner-${item.label}`} title={item.hint} arrow placement="top">
                           <Chip

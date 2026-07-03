@@ -1,5 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GroupChat } from '../types/chat';
+import type { Message } from '../types/message';
 import { runSessionLoop } from './sessionRunner';
 import { GenerationCancelledError } from './generationCancellation';
 
@@ -149,19 +150,20 @@ beforeEach(() => {
 });
 
 function buildCommitPipelineResult(args: { message: Partial<import('../types/message').Message>; chat: GroupChat; characters: unknown[] }) {
+  const persistedMessage = {
+    id: `persisted-${Math.random()}`,
+    chatId: 'chat-1',
+    type: 'ai',
+    senderId: args.message.senderId || 'a',
+    senderName: args.message.senderName || '甲',
+    content: args.message.content || '',
+    emotion: 0,
+    timestamp: 1,
+    isDeleted: false,
+    ...args.message,
+  } as Message;
   return {
-    persistedMessage: {
-      id: `persisted-${Math.random()}`,
-      chatId: 'chat-1',
-      type: 'ai',
-      senderId: args.message.senderId || 'a',
-      senderName: args.message.senderName || '甲',
-      content: args.message.content || '',
-      emotion: 0,
-      timestamp: 1,
-      isDeleted: false,
-      ...args.message,
-    },
+    persistedMessage,
     transition: { chatPatch: {}, characterPatches: [], runtimeEvents: [] },
     nextChat: args.chat,
     nextCharacters: args.characters,
@@ -204,7 +206,7 @@ function buildLoopParams(chat: GroupChat) {
     chat,
     characters: [{ id: 'a', name: '甲' }, { id: 'b', name: '乙' }] as never[],
     api: { provider: 'openai', apiKey: 'x', baseUrl: 'http://localhost', model: 'test' },
-    getCurrentMessages: () => [],
+    getCurrentMessages: () => [] as Message[],
     isRunning: () => running,
     isPaused: () => false,
     isActiveLoop: (loopId: string) => loopId === 'loop-1',
@@ -217,6 +219,7 @@ function buildLoopParams(chat: GroupChat) {
     onTurnWorkFinished: undefined as (() => void) | undefined,
     getCurrentChat: undefined as (() => GroupChat | undefined) | undefined,
     onMessageChunk: vi.fn(),
+    onIdle: vi.fn(() => { running = false; }),
     onClearStreamingState: vi.fn(),
     onEngineError: vi.fn(),
     onLoopError: vi.fn(() => { running = false; }),
@@ -272,13 +275,14 @@ describe('runSessionLoop', () => {
     expect(params.onEngineError).not.toHaveBeenCalled();
   });
 
-  it('reports blocked interview actions when no executable schema action is available', async () => {
+  it('idles blocked interview actions when no executable schema action is available', async () => {
     const params = buildLoopParams(buildChat({ mode: 'interview', worldState: { phase: 'idle', mood: '', focus: '', recentEvent: '', conflictAxes: [] } as never }));
     await runSessionLoop(params as never);
     expect(runSessionActionExecutorMock).not.toHaveBeenCalled();
     expect(runOneRoundMock).not.toHaveBeenCalled();
     expect(params.updateChat).not.toHaveBeenCalled();
-    expect(params.onLoopError).toHaveBeenCalled();
+    expect(params.onIdle).toHaveBeenCalled();
+    expect(params.onLoopError).not.toHaveBeenCalled();
   });
 
   it('does not auto-run manual governance actions from the action schema', async () => {
@@ -302,7 +306,8 @@ describe('runSessionLoop', () => {
 
     expect(runSessionActionExecutorMock).not.toHaveBeenCalled();
     expect(params.updateChat).not.toHaveBeenCalled();
-    expect(params.onLoopError).toHaveBeenCalled();
+    expect(params.onIdle).toHaveBeenCalled();
+    expect(params.onLoopError).not.toHaveBeenCalled();
   });
 
   it('does not auto-run form actions when required fields have no payload', async () => {
@@ -329,14 +334,16 @@ describe('runSessionLoop', () => {
 
     expect(runSessionActionExecutorMock).not.toHaveBeenCalled();
     expect(params.updateChat).not.toHaveBeenCalled();
-    expect(params.onLoopError).toHaveBeenCalled();
+    expect(params.onIdle).toHaveBeenCalled();
+    expect(params.onLoopError).not.toHaveBeenCalled();
   });
 
   it('skips chat ticks when engine policy disallows werewolf speaking', async () => {
     const params = buildLoopParams(buildChat({ mode: 'werewolf', sessionKind: { topology: 'table', family: 'deduction', scenarioId: 'werewolf-classic', surfaceProfile: 'hybrid' }, worldState: { phase: 'warming', mood: '', focus: '', recentEvent: '', conflictAxes: [] } as never }));
     await runSessionLoop(params as never);
     expect(runOneRoundMock).not.toHaveBeenCalled();
-    expect(params.onLoopError).toHaveBeenCalled();
+    expect(params.onIdle).toHaveBeenCalled();
+    expect(params.onLoopError).not.toHaveBeenCalled();
   });
 
   it('runs speaking ticks and commits the generated message', async () => {
@@ -354,6 +361,30 @@ describe('runSessionLoop', () => {
     expect(runOneRoundMock).toHaveBeenCalledTimes(1);
     expect(params.onSpeakerSelected).toHaveBeenCalledWith('a', expect.objectContaining({ id: 'a' }));
     expect(runSessionCommitPipelineMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not pause the whole room when recent members naturally close the conversation', async () => {
+    runSessionCommitPipelineMock.mockImplementation(async (args) => buildCommitPipelineResult(args));
+    runOneRoundMock.mockImplementation(async (_chat, _characters, _messages, _api, hooks) => {
+      hooks.onSpeakerSelected('b', { id: 'b', name: '乙' });
+      await hooks.onMessageComplete({ id: 'msg-1', chatId: 'chat-1', type: 'ai', senderId: 'b', senderName: '乙', content: '我还在，继续。', emotion: 0 });
+    });
+    const params = buildLoopParams(buildChat({ mode: 'open_chat', sessionKind: { topology: 'group', family: 'conversation', scenarioId: 'open-chat', surfaceProfile: 'text' }, worldState: { phase: 'warming', mood: '', focus: '', recentEvent: '', conflictAxes: [] } as never }));
+    const pauseLoop = vi.fn(params.pauseLoop);
+    params.pauseLoop = pauseLoop;
+    params.onClearStreamingState = vi.fn(() => {
+      params.onLoopError();
+    });
+    params.getCurrentMessages = () => [
+      { id: 'm1', chatId: 'chat-1', type: 'ai', senderId: 'a', senderName: '甲', content: '那今天先这样吧。', emotion: 0, timestamp: 1, isDeleted: false },
+      { id: 'm2', chatId: 'chat-1', type: 'ai', senderId: 'b', senderName: '乙', content: '晚安，我去睡了。', emotion: 0, timestamp: 2, isDeleted: false },
+      { id: 'm3', chatId: 'chat-1', type: 'ai', senderId: 'a', senderName: '甲', content: '明早见，收工。', emotion: 0, timestamp: 3, isDeleted: false },
+    ] as never[];
+
+    await runSessionLoop(params as never);
+
+    expect(pauseLoop).not.toHaveBeenCalled();
+    expect(runOneRoundMock).toHaveBeenCalledTimes(1);
   });
 
   it('keeps story-reader loops running after an ordinary committed narrative round', async () => {
@@ -494,11 +525,73 @@ describe('runSessionLoop', () => {
     expect(runOneRoundMock.mock.calls[0]?.[6]).toMatchObject({ buildPromptContext: expect.any(Function) });
   });
 
-  it('reports blocked speaking phases as loop errors', async () => {
+  it('applies analysis run policy so manual activation can start from an old AI turn', async () => {
+    const messages: Message[] = [{
+      id: 'm1',
+      chatId: 'chat-1',
+      type: 'ai',
+      senderId: 'b',
+      senderName: '乙',
+      content: '普通聊天式承接，没有结构化审议产物。',
+      emotion: 0,
+      timestamp: 1,
+      isDeleted: false,
+    }];
+    runSessionCommitPipelineMock.mockImplementation(async (args) => {
+      const result = buildCommitPipelineResult(args);
+      messages.push(result.persistedMessage);
+      return result;
+    });
+    runOneRoundMock.mockImplementation(async (_chat, _characters, _messages, _api, hooks) => {
+      hooks.onSpeakerSelected('a', { id: 'a', name: '甲' });
+      await hooks.onMessageComplete({
+        id: 'msg-analysis-manual',
+        chatId: 'chat-1',
+        type: 'ai',
+        senderId: 'a',
+        senderName: '甲',
+        content: '我先重新拉回审议问题。',
+        emotion: 0,
+      });
+    });
+    const analysisEngine = {
+      key: 'analysis-test',
+      createInitialConfig: () => ({}),
+      createInitialState: () => ({}),
+      buildParticipants: () => [],
+      getVisiblePanels: () => [],
+      getAvailableActions: () => [],
+      getActionSchema: () => null,
+      resolveTurnPolicy: () => ({ runChat: false, runAction: false, interleaveAction: false }),
+      buildGenerationPromptContext: () => ({ promptPrefix: 'analysis' }),
+      onMessageCommitted: async () => ({ chatPatch: {}, characterPatches: [], runtimeEvents: [] }),
+    };
+    const params = buildLoopParams(buildChat({
+      mode: 'group_discussion',
+      sessionKind: { topology: 'group', family: 'analysis', scenarioId: 'opinion-review', surfaceProfile: 'text' },
+    }));
+    params.getCurrentMessages = () => messages;
+    params.onClearStreamingState = vi.fn(() => {
+      if (runOneRoundMock.mock.calls.length >= 2) params.pauseLoop();
+    });
+
+    await runSessionLoop({ ...params, resolveSessionEngine: async () => analysisEngine } as never);
+
+    expect(runOneRoundMock).toHaveBeenCalledTimes(2);
+    expect(params.appendEventMessage).not.toHaveBeenCalledWith('chat-1', expect.objectContaining({
+      eventType: 'analysis_run_policy',
+      metrics: expect.objectContaining({ reason: 'no_structural_progress' }),
+    }));
+    expect(params.onIdle).not.toHaveBeenCalled();
+    expect(params.onLoopError).not.toHaveBeenCalled();
+  });
+
+  it('idles blocked speaking phases without reporting loop errors', async () => {
     const params = buildLoopParams(buildChat({ mode: 'open_chat', worldState: { phase: 'aligned', mood: '', focus: '', recentEvent: '', conflictAxes: [] } as never }));
     await runSessionLoop(params as never);
     expect(runOneRoundMock).not.toHaveBeenCalled();
-    expect(params.onLoopError).toHaveBeenCalled();
+    expect(params.onIdle).toHaveBeenCalled();
+    expect(params.onLoopError).not.toHaveBeenCalled();
   });
 
   it('stops retrying after an engine error is paused by the UI layer', async () => {

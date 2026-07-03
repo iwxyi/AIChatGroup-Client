@@ -117,7 +117,7 @@ export function migrateMessageStoreState<T extends { messages?: Array<Record<str
 
 export function migrateSettingsStoreState<T extends Record<string, unknown>>(persisted: VersionedPersistedState<T>): VersionedPersistedState<T> {
   if (!persisted) return persisted;
-  const developerUI = (persisted.developerUI as { showMemoryDebug?: boolean; showRelationshipEvents?: boolean; showAffectEvents?: boolean; showConflictEvents?: boolean; showStateEvents?: boolean; showMemoryDistillationEvents?: boolean; showCalendarEvents?: boolean; showLocalInterceptionHints?: boolean; showSpeechStyle?: boolean; showAdvancedRuntimePanels?: boolean; showCompanionshipDebug?: boolean; showMomentDebug?: boolean; showWithdrawnMessageContent?: boolean; enableHumanAppraisal?: boolean; dramaBoost?: boolean } | undefined) || {};
+  const developerUI = (persisted.developerUI as { showMemoryDebug?: boolean; showRelationshipEvents?: boolean; showAffectEvents?: boolean; showConflictEvents?: boolean; showStateEvents?: boolean; showMemoryDistillationEvents?: boolean; showCalendarEvents?: boolean; showLocalInterceptionHints?: boolean; showSpeechStyle?: boolean; showAdvancedRuntimePanels?: boolean; showDeliberationDebug?: boolean; showPresenceDebug?: boolean; showCompanionshipDebug?: boolean; showMomentDebug?: boolean; showWithdrawnMessageContent?: boolean; enableHumanAppraisal?: boolean; dramaBoost?: boolean } | undefined) || {};
   const artifactAppearance = (persisted.artifactAppearance as { paperVariant?: string } | undefined) || {};
   const chatAppearance = (persisted.chatAppearance as { maxContentWidth?: number; storyReader?: { fontFamily?: string; fontSize?: number; lineHeight?: number } } | undefined) || {};
   return {
@@ -133,6 +133,8 @@ export function migrateSettingsStoreState<T extends Record<string, unknown>>(per
       showLocalInterceptionHints: Boolean(developerUI.showLocalInterceptionHints),
       showSpeechStyle: Boolean(developerUI.showSpeechStyle),
       showAdvancedRuntimePanels: Boolean(developerUI.showAdvancedRuntimePanels),
+      showDeliberationDebug: Boolean(developerUI.showDeliberationDebug),
+      showPresenceDebug: Boolean(developerUI.showPresenceDebug),
       showCompanionshipDebug: Boolean(developerUI.showCompanionshipDebug),
       showMomentDebug: Boolean(developerUI.showMomentDebug),
       showWithdrawnMessageContent: Boolean(developerUI.showWithdrawnMessageContent),
