@@ -169,9 +169,20 @@ function DeliberationSectionCard({ section }: { section: DeliberationSidebarSect
                   </Stack>
                   <Typography variant="body2" sx={{ lineHeight: 1.52 }}>{item.text}</Typography>
                   {item.reason ? (
-                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.45 }}>
-                      {`依据：${item.reason}`}
-                    </Typography>
+                    <Box sx={(theme) => ({
+                      mt: 0.15,
+                      pl: 0.75,
+                      py: 0.35,
+                      borderLeft: '2px solid',
+                      borderColor: theme.palette.mode === 'light' ? 'rgba(100,116,139,0.34)' : 'rgba(203,213,225,0.26)',
+                      bgcolor: theme.palette.mode === 'light' ? 'rgba(248,250,252,0.62)' : 'rgba(255,255,255,0.026)',
+                      borderTopRightRadius: 0.75,
+                      borderBottomRightRadius: 0.75,
+                    })}>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.45 }}>
+                        {`依据：${item.reason}`}
+                      </Typography>
+                    </Box>
                   ) : null}
                 </Stack>
               </Box>
