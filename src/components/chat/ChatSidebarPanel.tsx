@@ -188,10 +188,29 @@ function DeliberationSectionCard({ section }: { section: DeliberationSidebarSect
               </Box>
             );
           })}
-          {hiddenInWindow && !expanded ? (
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.45 }}>
-              {`还有 ${hiddenInWindow} 条近期产物可展开查看`}
-            </Typography>
+          {canExpand ? (
+            <Button
+              size="small"
+              onClick={() => setExpanded((value) => !value)}
+              endIcon={expanded ? <ExpandMoreRoundedIcon fontSize="small" /> : <ChevronRightRoundedIcon fontSize="small" />}
+              sx={(theme) => ({
+                alignSelf: 'stretch',
+                justifyContent: 'flex-start',
+                minWidth: 0,
+                px: 0.85,
+                py: 0.45,
+                borderRadius: 0.9,
+                color: 'text.secondary',
+                bgcolor: theme.palette.mode === 'light' ? 'rgba(255,255,255,0.44)' : 'rgba(255,255,255,0.026)',
+                '&:hover': {
+                  bgcolor: theme.palette.mode === 'light' ? 'rgba(241,245,249,0.88)' : 'rgba(255,255,255,0.055)',
+                },
+              })}
+            >
+              <Typography variant="caption" sx={{ lineHeight: 1.45, textAlign: 'left' }}>
+                {expanded ? '收起近期产物' : `还有 ${hiddenInWindow} 条近期产物可展开查看`}
+              </Typography>
+            </Button>
           ) : null}
         </Stack>
       ) : (
