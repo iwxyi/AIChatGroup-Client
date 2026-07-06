@@ -265,13 +265,13 @@ export function buildStanceMemory(messages: Message[], speakerId: string, recent
     return {
       targetId: recentTargetId || null,
       bias: 'shrug',
-      carryLine: '别重新分析全局，像群里顺着当前气口说。',
+      carryLine: '别重新分析全局；可以顺着当前气口说，也可以只插一句旁边的观察。',
       topicLatch: '当前这个点',
     };
   }
   const content = latestTarget.content;
   const conversationCarry = buildCarryLineFromConversation(relevant, speakerId, recentTargetId);
-  return { targetId: recentTargetId || null, bias: 'watching', carryLine: conversationCarry || '优先抓住你在意的一个点回应；这是注意力锚点，不是覆盖范围或长度限制。', topicLatch: pickTopicLatch(content) };
+  return { targetId: recentTargetId || null, bias: 'watching', carryLine: conversationCarry || '可以抓住你在意的一个点，也可以只回应大意、跳过不懂的术语，或换一个更日常的入口。', topicLatch: pickTopicLatch(content) };
 }
 
 export function buildSelectiveMisread(intent: SpeakIntent, latestTargetText: string): SelectiveMisread {
@@ -282,7 +282,7 @@ export function buildSelectiveMisread(intent: SpeakIntent, latestTargetText: str
   if (intent.delivery === 'side_remark' || intent.messageShape === 'fragment') {
     return { mode: 'partial', instruction: `可以从“${topicLatch}”这一小点切入，像群里顺手插一句；但这不是长度上限，任务需要时要继续说完整。` };
   }
-  return { mode: 'literal', instruction: `主要回应“${topicLatch}”这一点；不必机械覆盖整段，但不要省掉用户当前真正需要的内容。` };
+  return { mode: 'literal', instruction: `“${topicLatch}”只是可用入口；你可以回应它、回应大意、承认没接住其中的术语，或换一个更自然的生活角度。不要省掉用户当前真正需要的内容。` };
 }
 
 function buildGuidanceCarryoverOverride(guidance?: UserGuidanceIntent | null) {
@@ -330,6 +330,7 @@ export function buildHumanizationPrompt(character: AICharacter, intent: SpeakInt
 - Selective focus is an attention prior only. It must not cap answer length, forbid paragraphs, or override the current scene, play mode, or user task.
 - Do not force a fixed opener, filler, closer, or catchphrase. Use character flavor only when it naturally fits this exact turn.
 - In realistic group chat, many turns are statements, reactions, stance-taking, jokes, fragments, or casual questions; do not make every turn a neat question-response pair.
+- Natural group chat often leaves part of the previous message untouched. Do not prove you understood every metaphor, acronym, or example.
 - Questions are welcome when they feel socially useful: to get information, pressure someone, test a stance, redirect the topic, dodge a point, fish for alignment, or make the room more playful.
 - If you ask, let it sound like a live human move rather than a formal interviewer move.
 - Question tendency: ${fingerprint.prefersQuestions ? [fingerprint.asksForInformation ? 'info-seeking' : '', fingerprint.usesQuestionAsPushback ? 'pushback' : '', fingerprint.usesQuestionToSteer ? 'steering' : '', fingerprint.usesQuestionPlayfully ? 'playful' : ''].filter(Boolean).join(' / ') : 'not preferred'}

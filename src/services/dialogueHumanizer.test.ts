@@ -73,7 +73,28 @@ describe('dialogueHumanizer', () => {
     expect(prompt).toContain('Selective focus is an attention prior only');
     expect(prompt).toContain('must not cap answer length');
     expect(prompt).toContain('任务需要时要继续说完整');
+    expect(prompt).toContain('Natural group chat often leaves part of the previous message untouched');
+    expect(prompt).toContain('Do not prove you understood every metaphor, acronym, or example');
     expect(prompt).not.toContain('不要自成完整段落');
+  });
+
+  it('allows ordinary chat to respond to gist instead of proving every technical term was understood', () => {
+    const prompt = buildHumanizationPrompt(
+      character(),
+      {
+        shouldSpeak: true,
+        reason: 'test',
+        target: 'group',
+        stance: 'support',
+        emotionalTone: 'cold',
+        delivery: 'short_reply',
+        messageShape: 'single_sentence',
+      },
+      [message('这个外部 watchdog 要是没人维护，定时器本身也会失效。')],
+    );
+
+    expect(prompt).toContain('Do not prove you understood every metaphor, acronym, or example');
+    expect(prompt).toContain('承认没接住其中的术语');
   });
 
   it('keeps a long follow-up stance after a question instead of truncating to the first sentence', () => {

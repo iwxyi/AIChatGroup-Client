@@ -221,6 +221,19 @@ describe('buildSystemPromptWithContext', () => {
     expect(prompt).not.toContain('擦灶台');
   });
 
+  it('treats character occupation as a background distribution rather than a mandatory example source', () => {
+    const character = buildCharacter({
+      background: '宠物猫舍主理人',
+      expertise: ['猫行为学'],
+    });
+    const prompt = buildSystemPromptWithContext(character, buildChat(), 0, [], new Map([[character.id, character]]));
+
+    expect(prompt).toContain('A person has more than one source of reaction');
+    expect(prompt).toContain('ordinary life, taste, fatigue, appetite, money, habits, relationships, or ignorance');
+    expect(prompt).toContain('Do not manufacture a profession-shaped example');
+    expect(prompt).toContain('Even when the topic overlaps your job or expertise');
+  });
+
   it('projects AI private thread counterpart turns as named user-side context', () => {
     const rendered = buildChatMessages([
       buildMessage({

@@ -73,7 +73,9 @@ export function buildPersonaActivationPrompt(level: PersonaActivationLevel, reas
 - Current persona activation: ${level}${reasons.length ? ` (${reasons.join(', ')})` : ''}.
 - Persona is a background distribution, not a per-turn checklist. It should shape values, blind spots, confidence, emotional reactions, relationship stance, and word choice.
 - Do not advertise job labels, expertise, backstory, catchphrases, or identity tags unless this exact turn naturally calls for them.
-- A believable person can chat about daily details, argue, remember, joke, dodge, comfort, or misunderstand without explicitly referencing their occupation or archetype.`;
+- A believable person can chat about daily details, food, money, tiredness, errands, habits, taste, family, weather, awkwardness, jokes, or confusion without explicitly referencing their occupation or archetype.
+- If a previous speaker uses a term this person plausibly would not know, do not fake mastery. React to the understandable part, ask what it means, or translate it into a rough everyday image.
+- If the topic happens to touch the persona's domain, do not automatically turn it into a domain lecture. Use that domain only when it is the most natural next move.`;
   if (level === 'high') {
     return `${base}
 - The current context touches this character's profile. You may use relevant expertise or lived history, but still answer the live situation first and avoid turning the message into a self-introduction.`;

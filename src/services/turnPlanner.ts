@@ -126,6 +126,16 @@ function chooseAnalysisContinuationPlan(input: TurnPlanInput, latestLength: numb
   }
 
   const allowExtraMessages = latestLength >= 120 && (input.intent.delivery === 'group_redirect' || input.intent.messageShape === 'two_sentences');
+  if (!latestIsHuman && latestLength >= 120) {
+    return {
+      rhythm: 'short_reply',
+      targetBubbleCount: 1,
+      lengthBand: 'short',
+      allowExtraMessages: false,
+      waitSensitive: false,
+      reasons: [`surface:${input.surface.kind}`, 'analysis_room', 'ai_continuation', `latest_length:${latestLength}`, 'avoid_ai_chain_essay'],
+    };
+  }
   return {
     rhythm: input.intent.delivery === 'quick_question' || input.intent.messageShape === 'question_only' ? 'short_reply' : allowExtraMessages ? 'multi_bubble' : 'full_reply',
     targetBubbleCount: allowExtraMessages ? 2 : 1,
@@ -191,6 +201,17 @@ export function deriveTurnPlan(input: TurnPlanInput): TurnPlan {
     };
   }
 
+  if (!latestIsHuman && input.chat.type === 'group' && latestLength >= 90) {
+    return {
+      rhythm: 'short_reply',
+      targetBubbleCount: 1,
+      lengthBand: 'short',
+      allowExtraMessages: false,
+      waitSensitive: false,
+      reasons: [...reasons, 'group_ai_chain_needs_brevity'],
+    };
+  }
+
   const canMultiBubble = input.chat.type !== 'group' || talkativeness >= 58 || input.intent.delivery === 'side_remark';
   const shouldMultiBubble = canMultiBubble
     && ownStats.recentMultiBubbleCount === 0
@@ -233,11 +254,19 @@ export function buildTurnPlanPrompt(plan: TurnPlan) {
   const bubbleLine = plan.allowExtraMessages
     ? '- Consecutive bubbles are allowed if this reply would naturally arrive as separate chat messages. In analysis rooms, use them for one speaker splitting a structured point, not for more social aftertalk.'
     : '- Prefer one visible bubble unless the current moment clearly wants a natural follow-up message.';
+  const rhythmLine = plan.rhythm === 'micro_ack'
+    ? '\n- This turn can be a tiny acknowledgement or quick nudge. Do not expand it into a paragraph unless the user directly asked for substance.'
+    : plan.rhythm === 'short_reply'
+      ? '\n- This turn should normally be one compact social or deliberative move. Do not match a previous long paragraph just because it is there.'
+      : plan.rhythm === 'multi_bubble'
+        ? '\n- If using multiple bubbles, keep each bubble purposeful and uneven; do not use them to continue a lecture.'
+        : '';
   return `\n## Turn Plan
 - Rhythm tendency: ${plan.rhythm}
 ${bubbleLine}
 - Do not target a fixed length band. Choose length from the live situation, the user's request, the character's comfort, and the amount of actual substance available.
 - Very short reactions, ordinary one-sentence replies, rambling multi-sentence thoughts, and fuller explanations are all valid when the moment calls for them.
 - This is a weak planning prior, not a keyword rule, output template, or length cap. Follow the current request, scene, and play mode if they need a different shape.
+${rhythmLine}
 - Plan reasons: ${plan.reasons.join(', ')}`;
 }

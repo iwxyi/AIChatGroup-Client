@@ -54,6 +54,11 @@ function isOpenQuestion(text: string) {
   return isQuestionLike(text) && !/(哈哈|笑死|不是吧)$/.test(text.trim());
 }
 
+function isExplicitlyAddressedToSpeaker(text: string, speaker: AICharacter) {
+  const names = [speaker.name, speaker.id].filter(Boolean);
+  return names.some((name) => text.includes(name));
+}
+
 function isAgreementOpener(text: string) {
   return /^(确实|对[，,。 ]|没错|就是|我也|我同意|同意|赞同|太准|太真实|说得|这个.*好|.*起得好|.*有画面感)/.test(text.trim());
 }
@@ -69,12 +74,14 @@ function normalizeTopicPhrase(text: string) {
   return compact.at(-1) || '';
 }
 
-function findUnresolvedQuestion(messages: Message[], speakerId: string) {
+function findUnresolvedQuestion(messages: Message[], speaker: AICharacter, chat: GroupChat) {
   const recent = visibleMessages(messages).slice(-8);
+  const isGroup = chat.type === 'group';
   for (let index = recent.length - 1; index >= 0; index -= 1) {
     const message = recent[index];
-    if (message.senderId === speakerId) continue;
+    if (message.senderId === speaker.id) continue;
     if (!isOpenQuestion(message.content)) continue;
+    if (isGroup && message.type === 'ai' && !isExplicitlyAddressedToSpeaker(message.content, speaker)) continue;
     const later = recent.slice(index + 1);
     const answered = later.some((item) => item.type === 'ai' && item.senderId !== message.senderId && item.content.length >= 24 && !isAgreementOpener(item.content));
     if (!answered) return message;
@@ -175,7 +182,7 @@ function chooseDefaultMove(chat: GroupChat, speaker: AICharacter, latest: Messag
     return latest?.type === 'user' ? 'ask_followup' : 'add_boundary_condition';
   }
   if ((speaker.behavior?.humorIntensity || 0) >= 68) return 'challenge_playfully';
-  if ((speaker.behavior?.proactivity || 0) >= 62) return 'ask_followup';
+  if ((speaker.behavior?.proactivity || 0) >= 68 && latest?.type === 'user') return 'ask_followup';
   return latest?.type === 'user' ? 'add_personal_angle' : 'react_lightly';
 }
 
@@ -187,7 +194,7 @@ export function planConversationMove(params: {
   const messages = visibleMessages(params.messages);
   const latest = messages.at(-1) || null;
   const analysis = isAnalysisRoom(params.chat);
-  const unresolvedQuestion = analysis ? null : findUnresolvedQuestion(messages, params.speaker.id);
+  const unresolvedQuestion = analysis ? null : findUnresolvedQuestion(messages, params.speaker, params.chat);
   const echoCount = analysis ? 0 : agreementEchoCount(messages);
   const repeatedCount = analysis ? 0 : repeatedPhraseCount(messages);
   const priorDroppedPoint = analysis ? null : findPriorDroppedPoint(messages, latest?.id);
@@ -330,7 +337,7 @@ export function buildConversationMovePrompt(plan: ConversationMovePlan | null | 
   const analysis = isAnalysisRoom(chat);
   const moveLabels: Record<ConversationMoveType, string> = {
     react_lightly: 'make a light situated reaction without copying the previous wording',
-    add_personal_angle: 'add a character-specific angle or lived example',
+    add_personal_angle: 'add a situated angle from this person; it may be ordinary life, taste, mood, practical habit, or expertise only if truly relevant',
     ask_followup: 'ask a useful follow-up that opens the next branch',
     challenge_playfully: 'push back lightly or playfully without turning hostile',
     add_boundary_condition: 'add a boundary condition or limitation to the current claim',
@@ -347,7 +354,7 @@ export function buildConversationMovePrompt(plan: ConversationMovePlan | null | 
   const targetLine = plan.targetClaimText ? '\n- Thread focus: engage the selected prior thread from the transcript without copying its wording.' : '';
   const analysisLine = analysis
     ? '\n- In analysis rooms, warmth is interpersonal tone only. It does not mean viewpoint agreement.'
-    : '\n- In casual rooms, keep the move natural and conversational rather than meeting-like.';
+    : '\n- In casual rooms, keep the move natural and conversational rather than meeting-like. You may ignore part of the previous line, react to the gist, admit a term is outside your lane, or switch to a nearby everyday angle.';
   const scrutinyLine = analysis && ['ask_evidence', 'counterexample', 'test_assumption', 'separate_claims'].includes(plan.moveType)
     ? '\n- Do not add another supporting analogy. Give the requested scrutiny: evidence condition, counterexample, assumption test, or claim split.\n- This turn is expected to create deliberationArtifacts from your visible reply; do not use a no-new-point response for this move.'
     : '';

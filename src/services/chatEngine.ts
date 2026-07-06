@@ -1534,7 +1534,7 @@ function buildResponseSurfacePrompt(surface: ResponseSurface) {
       ? '\n- The speaker has enough role/expertise support for structured output when the task asks for it, but structure is not mandatory.'
       : '\n- Match the speaker’s actual background and speech profile; use structure only when it feels natural.';
   if (surface.kind === 'chat') {
-    return `\nResponse surface: live chat. Pick the natural size and shape from this moment; Markdown/newlines are allowed only when they genuinely help.${roleFitHint}`;
+    return `\nResponse surface: live chat. Pick the natural size and shape from this moment; Markdown/newlines are allowed only when they genuinely help. Natural chat may be partial: the speaker can answer one piece, miss a term, shrug, ask what a word means, or pivot to a concrete nearby detail instead of completing a neat response chain.${roleFitHint}`;
   }
   if (surface.kind === 'creative') {
     return `\nResponse surface: creative form is available when the request calls for it. Choose the form from the actual task and character voice; avoid fixed templates or padding.${roleFitHint}`;
@@ -1542,7 +1542,7 @@ function buildResponseSurfacePrompt(surface: ResponseSurface) {
   if (surface.kind === 'longform') {
     return `\nResponse surface: longform requested. Produce the deliverable in this speaker's voice; preserve real paragraph breaks as escaped \\n\\n in JSON content, and do not shrink it into banter.${roleFitHint}`;
   }
-  return `\nResponse surface: professional form is available when useful. Choose concise, detailed, structured, or conversational shape from the actual request; avoid fixed templates or padding.${roleFitHint}`;
+  return `\nResponse surface: professional form is available when useful. Choose concise, detailed, structured, or conversational shape from the actual request; avoid fixed templates or padding. Professional does not mean every AI-to-AI continuation needs a long paragraph.${roleFitHint}`;
 }
 
 function buildAnalysisRoomContractPrompt(chat: GroupChat) {
@@ -1618,7 +1618,8 @@ Current speaking intent:
 - Treat the intent shape as style guidance, not a hard length cap. Do not truncate a useful reply just to fit one sentence or a fragment shape.
 - Decide the visible length yourself from the latest user request, the room context, and this character's actual ability. The local intent labels are not word-count rules.
 - Stay socially situated and in character. A tiny reaction is valid when the moment is tiny; a practical explanation, tradeoff analysis, or step-by-step answer is valid when the user asks for it.
-- Do not compress a direct request for detail, reasoning, implementation approach, examples, or tradeoffs into a one-line chat jab just because this is a chat surface.`;
+- Do not compress a direct request for detail, reasoning, implementation approach, examples, or tradeoffs into a one-line chat jab just because this is a chat surface.
+- In AI-to-AI group flow, do not treat the latest line as homework. It is valid to take only the understandable part, challenge the premise, make a short aside, or let a different angle enter the room.`;
 }
 
 function buildPrivateTurnPriorityPrompt(chat: GroupChat) {
@@ -3233,7 +3234,10 @@ export async function generateSpeakerMessage(params: {
     },
   };
   const pendingReplyPrompt = params.pendingReplyContext?.targetIds.includes(params.speaker.id) && params.pendingReplyContext.sourceSpeakerId
-    ? `\nPending reply expectation:\n- You were explicitly addressed by ${characterMap.get(params.pendingReplyContext.sourceSpeakerId)?.name || params.pendingReplyContext.sourceSpeakerId}.\n- Reply to that character first instead of pivoting to another member.\n- Acknowledge their question or emotion before expanding to the room.`
+    ? `\nPending reply expectation:
+- You were explicitly addressed by ${characterMap.get(params.pendingReplyContext.sourceSpeakerId)?.name || params.pendingReplyContext.sourceSpeakerId}.
+- Give that address some priority, but do not over-answer by default.
+- If the address is a casual aside, technical metaphor, or broad riff, you may respond to the gist, say the term is not your lane, ask a small clarification, or answer briefly before moving on.`
     : '';
   const mediaProfiles = resolveMediaProfiles(params.apiConfig, params.profiles);
   const mediaCapabilities = buildMediaCapabilities(params.speaker, mediaProfiles);

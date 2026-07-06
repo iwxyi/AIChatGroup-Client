@@ -166,6 +166,54 @@ describe('deriveTurnPlan', () => {
     expect(plan.reasons).toContain('ai_continuation');
   });
 
+  it('keeps long analysis AI-to-AI continuations short by default', () => {
+    const plan = deriveTurnPlan({
+      chat: chat({
+        type: 'group',
+        sessionKind: { topology: 'group', family: 'analysis', scenarioId: 'opinion-review', surfaceProfile: 'text' },
+      }),
+      speaker: character(),
+      messages: [
+        message({
+          type: 'ai',
+          senderId: 'other',
+          senderName: '甲',
+          content: '我觉得这个问题需要先拆成规则、意愿、空间和经济压力四层来看。'.repeat(8),
+          timestamp: 10,
+        }),
+      ],
+      intent: { ...intent, stance: 'support', delivery: 'short_reply', messageShape: 'single_sentence' },
+      surface: { kind: 'professional' },
+    });
+
+    expect(plan.rhythm).toBe('short_reply');
+    expect(plan.lengthBand).toBe('short');
+    expect(plan.allowExtraMessages).toBe(false);
+    expect(plan.reasons).toContain('avoid_ai_chain_essay');
+  });
+
+  it('keeps long casual group AI-to-AI continuations short', () => {
+    const plan = deriveTurnPlan({
+      chat: chat({ type: 'group' }),
+      speaker: character(),
+      messages: [
+        message({
+          type: 'ai',
+          senderId: 'other',
+          senderName: '甲',
+          content: '我刚才又想了一圈，感觉这事不能只看房租，也不能只看陪伴，还要看作息、卫生、边界和社交电量。'.repeat(4),
+          timestamp: 10,
+        }),
+      ],
+      intent,
+      surface: { kind: 'chat' },
+    });
+
+    expect(plan.rhythm).toBe('short_reply');
+    expect(plan.lengthBand).toBe('short');
+    expect(plan.reasons).toContain('group_ai_chain_needs_brevity');
+  });
+
   it('still allows full analysis replies when a human turn asks for substance', () => {
     const plan = deriveTurnPlan({
       chat: chat({
@@ -209,6 +257,7 @@ describe('deriveTurnPlan', () => {
 
     expect(prompt).toContain('Do not target a fixed length band');
     expect(prompt).toContain('not a keyword rule, output template, or length cap');
+    expect(prompt).toContain('one compact social or deliberative move');
     expect(prompt).not.toContain('Target length band');
   });
 });

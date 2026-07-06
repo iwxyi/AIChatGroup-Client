@@ -77,12 +77,40 @@ function withArtifacts(base: Message, artifacts: NonNullable<Message['metadata']
 }
 
 describe('conversationMovePlanner', () => {
-  it('targets unresolved questions before simply following the latest line', () => {
+  it('targets human unresolved questions before simply following the latest line', () => {
     const plan = planConversationMove({
       chat: chat('conversation'),
       speaker: character(),
       messages: [
+        message('m1', 'user', '如果按需热闹最后变成全需怎么办？', 'user'),
+        message('m2', 'c', '这个词挺有意思，我也觉得有点像插件。'),
+      ],
+    });
+
+    expect(plan.moveType).toBe('answer_unresolved_question');
+    expect(plan.targetMessageId).toBe('m1');
+  });
+
+  it('does not force casual group speakers to answer every AI question in the room', () => {
+    const plan = planConversationMove({
+      chat: chat('conversation'),
+      speaker: character({ id: 'a', name: '小甲' }),
+      messages: [
         message('m1', 'b', '如果按需热闹最后变成全需怎么办？'),
+        message('m2', 'c', '这个词挺有意思，我也觉得有点像插件。'),
+      ],
+    });
+
+    expect(plan.moveType).not.toBe('answer_unresolved_question');
+    expect(plan.targetMessageId).not.toBe('m1');
+  });
+
+  it('still treats an AI question as pending when it explicitly names the speaker', () => {
+    const plan = planConversationMove({
+      chat: chat('conversation'),
+      speaker: character({ id: 'a', name: '小甲' }),
+      messages: [
+        message('m1', 'b', '小甲，如果按需热闹最后变成全需怎么办？'),
         message('m2', 'c', '这个词挺有意思，我也觉得有点像插件。'),
       ],
     });
@@ -169,7 +197,7 @@ describe('conversationMovePlanner', () => {
       chat: chat('conversation'),
       speaker: character(),
       messages: [
-        message('m1', 'b', '但猫不能在你崩溃时问你还撑得住吗，这个陪伴缺口怎么办？'),
+        message('m1', 'user', '但猫不能在你崩溃时问你还撑得住吗，这个陪伴缺口怎么办？', 'user'),
         message('m2', 'c', '确实这个说法很准。'),
         message('m3', 'b', '我也觉得这个比喻很好。'),
         message('m4', 'c', '说得太真实了。'),
@@ -204,6 +232,19 @@ describe('conversationMovePlanner', () => {
     }, chat('analysis'));
 
     expect(prompt).toContain('Do not add another supporting analogy');
+  });
+
+  it('tells casual rooms they may skip jargon or enter from everyday life', () => {
+    const prompt = buildConversationMovePrompt({
+      speakerId: 'a',
+      moveType: 'react_lightly',
+      socialPosture: { warmth: 'neutral', directness: 'plain' },
+      reason: 'default_room_move',
+      confidence: 0.55,
+    }, chat('conversation'));
+
+    expect(prompt).toContain('admit a term is outside your lane');
+    expect(prompt).toContain('nearby everyday angle');
   });
 
 });
