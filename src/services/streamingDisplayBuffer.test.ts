@@ -2,15 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { getNextStreamingDisplayContent } from './streamingDisplayBuffer';
 
 describe('getNextStreamingDisplayContent', () => {
-  it('shows incoming streaming text immediately', () => {
-    expect(getNextStreamingDisplayContent('', 'abcdef')).toBe('abcdef');
-    expect(getNextStreamingDisplayContent('a', 'abcdef')).toBe('abcdef');
+  it('reveals incoming streaming text progressively', () => {
+    expect(getNextStreamingDisplayContent('', 'abcdef')).toBe('ab');
+    expect(getNextStreamingDisplayContent('ab', 'abcdef')).toBe('abcd');
   });
 
-  it('does not throttle long incoming text', () => {
+  it('uses larger steps for long incoming text without jumping to the end', () => {
     const target = 'x'.repeat(160);
 
-    expect(getNextStreamingDisplayContent('', target)).toBe(target);
+    expect(getNextStreamingDisplayContent('', target)).toBe('x'.repeat(8));
+    expect(getNextStreamingDisplayContent('x'.repeat(8), target)).toBe('x'.repeat(16));
   });
 
   it('jumps to target when stream content is rewritten', () => {

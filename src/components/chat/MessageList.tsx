@@ -1252,8 +1252,6 @@ export default function MessageList({
       }
       return;
     }
-    if (!shouldStickToBottomRef.current) return;
-    if (!lastReportedBottomPinnedRef.current) return;
     if (
       currentMetrics.itemCount === previousMetrics.itemCount
       && currentMetrics.lastItemContentLength === previousMetrics.lastItemContentLength
@@ -1264,8 +1262,25 @@ export default function MessageList({
       return;
     }
 
+    const tailChanged = currentMetrics.lastItemKey !== previousMetrics.lastItemKey
+      || currentMetrics.itemCount !== previousMetrics.itemCount
+      || currentMetrics.hasTailContent !== previousMetrics.hasTailContent
+      || currentMetrics.storyChoiceKey !== previousMetrics.storyChoiceKey;
+    const tailGrew = currentMetrics.lastItemKey === previousMetrics.lastItemKey
+      && currentMetrics.lastItemContentLength > previousMetrics.lastItemContentLength;
+    const shouldFollowTail = shouldStickToBottomRef.current
+      || lastReportedBottomPinnedRef.current === true
+      || (!hasUserScrollIntentRef.current && (tailChanged || tailGrew));
+    if (!shouldFollowTail) return;
+
+    shouldStickToBottomRef.current = true;
+    if (!hasMoreNewer && lastReportedBottomPinnedRef.current !== true) {
+      lastReportedBottomPinnedRef.current = true;
+      onBottomPinnedChange?.(true);
+    }
+
     followScrollToBottom({ animate: false });
-  }, [autoStickToBottom, followScrollToBottom, renderItems, restoreScrollAnchor, storyChoiceMessageId, storyChoiceOptions, storyChoiceSubmittingValue, tailContent]);
+  }, [autoStickToBottom, followScrollToBottom, hasMoreNewer, onBottomPinnedChange, renderItems, restoreScrollAnchor, storyChoiceMessageId, storyChoiceOptions, storyChoiceSubmittingValue, tailContent]);
 
   useLayoutEffect(() => {
     const previousValue = previousStoryChoiceSubmittingValueRef.current;

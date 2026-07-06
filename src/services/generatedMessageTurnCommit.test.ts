@@ -86,6 +86,8 @@ describe('commitGeneratedMessageTurn', () => {
 
     expect(persistStreamingMessageMock).toHaveBeenCalledTimes(2);
     expect(persistStreamingMessageMock.mock.calls.map((call) => call[0].message.content)).toEqual(['等下', '你刚说谁来着？']);
+    expect(persistStreamingMessageMock.mock.calls[0]?.[0]?.localReveal).toBeFalsy();
+    expect(persistStreamingMessageMock.mock.calls[1]?.[0]?.localReveal).toBe(true);
     expect(runSessionCommitPipelineMock).not.toHaveBeenCalled();
     expect(runPersistedSessionCommitRuntimeMock).toHaveBeenCalledTimes(1);
     expect(runPersistedSessionCommitRuntimeMock.mock.calls[0]?.[0].message.content).toBe('等下\n你刚说谁来着？');

@@ -171,6 +171,41 @@ describe('persistLocalFirstMessage', () => {
     expect(upserts[0]?.content).toBe(existingLocalMessage.content);
   });
 
+  it('can reveal a newly committed local message before syncing the final text', async () => {
+    const upserts: Message[] = [];
+    const delays: number[] = [];
+
+    const localMessage = await persistLocalFirstMessage({
+      timestamp: 666666,
+      message: {
+        chatId: 'chat-1',
+        type: 'ai',
+        senderId: 'char-1',
+        senderName: '甲',
+        content: '第二个气泡慢慢出现',
+        emotion: 0,
+      },
+      upsertMessage: (message) => {
+        upserts.push(message);
+      },
+      localReveal: true,
+      localRevealTickMs: 5,
+      delay: async (ms) => {
+        delays.push(ms);
+      },
+    });
+
+    expect(localMessage.content).toBe('第二个气泡慢慢出现');
+    expect(upserts[0]).toMatchObject({ content: '', isStreaming: true });
+    expect(upserts.at(-1)).toMatchObject({ content: '第二个气泡慢慢出现', isStreaming: false });
+    expect(delays.length).toBeGreaterThan(0);
+    expect(queueMessageSyncMock).toHaveBeenCalledTimes(1);
+    expect(queueMessageSyncMock).toHaveBeenCalledWith(expect.objectContaining({
+      id: localMessage.id,
+      content: '第二个气泡慢慢出现',
+    }));
+  });
+
   it('briefly reveals the original text before writing the withdrawn notice', async () => {
     const upserts: Message[] = [];
     const delays: number[] = [];

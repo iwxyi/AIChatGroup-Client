@@ -2,6 +2,7 @@ import type { Message } from '../types/message';
 import { resolveCommittedStreamContent } from './streamingMessageLifecycle';
 import { useMessageStore } from '../stores/useMessageStore';
 import { compactMessageMetadata } from './messageMetadataCompaction';
+import { getNextStreamingDisplayContent, STREAMING_DISPLAY_TICK_MS } from './streamingDisplayBuffer';
 
 interface PersistLocalFirstMessageParams {
   message: Omit<Message, 'id' | 'timestamp' | 'isDeleted'>;
@@ -11,6 +12,8 @@ interface PersistLocalFirstMessageParams {
   existingLocalMessage?: Message | null;
   deferLocalUpsert?: boolean;
   withdrawalRevealDelayMs?: number;
+  localReveal?: boolean;
+  localRevealTickMs?: number;
   delay?: (ms: number) => Promise<void>;
 }
 
@@ -58,6 +61,24 @@ function queueMessageSync(message: Message) {
 
 function delayMs(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
+async function revealLocalMessage(params: {
+  message: Message;
+  upsertMessage: (message: Message) => void;
+  delay?: (ms: number) => Promise<void>;
+  tickMs?: number;
+}) {
+  let displayed = '';
+  const wait = params.delay || delayMs;
+  params.upsertMessage({ ...params.message, content: '', isStreaming: true });
+  while (displayed !== params.message.content) {
+    displayed = getNextStreamingDisplayContent(displayed, params.message.content);
+    params.upsertMessage({ ...params.message, content: displayed, isStreaming: displayed !== params.message.content });
+    if (displayed !== params.message.content) {
+      await wait(params.tickMs ?? STREAMING_DISPLAY_TICK_MS);
+    }
+  }
 }
 
 let streamingLocalMessageSequence = 0;
@@ -151,7 +172,16 @@ export async function persistLocalFirstMessage(params: PersistLocalFirstMessageP
     writeMessage(params.upsertMessage, revealMessage, params.deferLocalUpsert);
     await (params.delay || delayMs)(params.withdrawalRevealDelayMs ?? 1200);
   }
-  writeMessage(params.upsertMessage, localMessage, params.deferLocalUpsert);
+  if (params.localReveal && !params.existingLocalMessage && !params.deferLocalUpsert && localMessage.content) {
+    await revealLocalMessage({
+      message: localMessage,
+      upsertMessage: params.upsertMessage,
+      delay: params.delay,
+      tickMs: params.localRevealTickMs,
+    });
+  } else {
+    writeMessage(params.upsertMessage, localMessage, params.deferLocalUpsert);
+  }
   queueMessageSync(localMessage);
   params.onPersisted?.(localMessage);
 

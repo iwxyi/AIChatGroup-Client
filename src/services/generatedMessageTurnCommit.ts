@@ -59,6 +59,7 @@ export async function commitGeneratedMessageTurn(params: {
           ? { ...params.streamingMessage, content: segments[index].content }
           : null,
         timestamp: index === 0 ? undefined : baseTimestamp + index,
+        localReveal: index > 0,
       });
       persistedSegments.push(persisted);
     }
