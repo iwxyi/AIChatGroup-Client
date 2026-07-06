@@ -182,23 +182,35 @@ function formatLedgerSourceType(value: unknown) {
   return LEDGER_SOURCE_TYPE_LABELS[key] || key || '-';
 }
 
+function getNestedMetadataRecord(value: unknown) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function getLedgerProviderModelLabel(row: Record<string, unknown>) {
+  const provider = String(row.provider_code || '').trim();
+  const model = String(row.model || '').trim();
+  if (provider && model) return `${provider}/${model}`;
+  return model || provider || '-';
+}
+
 function getLedgerSourcePresentation(row: Record<string, unknown>) {
   const amount = Number(row.amount || 0);
   const sourceType = String(row.source_type || '');
   const metadata = parseMetadata(row.metadata);
+  const aiUsage = getNestedMetadataRecord(metadata.aiUsage ?? metadata.ai_usage);
   if (sourceType === 'ai_invocation') {
-    const usage = formatUsageType(metadata.usageType || metadata.usage_type || row.entry_type);
-    const model = String(metadata.model || '').trim();
+    const usageLabel = String(row.usage_label || aiUsage.label || metadata.usageLabel || metadata.usage_label || '').trim();
+    const usageType = row.usage_type || aiUsage.type || metadata.usageType || metadata.usage_type || 'unknown';
     return {
-      label: usage || '调用消耗',
-      secondary: model,
+      label: usageLabel || formatUsageType(usageType) || '调用消耗',
+      secondary: '',
       sx: { fontWeight: 800 },
     };
   }
   const label = formatLedgerSourceType(sourceType);
   return {
     label,
-    secondary: String(row.provider_code || '').trim(),
+    secondary: '',
     sx: amount > 0 ? { color: '#1b5e20', fontWeight: 800 } : { fontWeight: 800 },
   };
 }
@@ -388,7 +400,7 @@ export default function AdminAiUserUsageDialog({
                     <TableHead>
                       <TableRow>
                         <TableCell>来源</TableCell>
-                        {providerCode === 'all' ? <TableCell>平台</TableCell> : null}
+                        {providerCode === 'all' ? <TableCell>模型</TableCell> : null}
                         <TableCell>额度</TableCell>
                         <TableCell>余额</TableCell>
                         <TableCell>时间</TableCell>
@@ -403,7 +415,7 @@ export default function AdminAiUserUsageDialog({
                               <Typography variant="body2" sx={source.sx}>{source.label}</Typography>
                               {source.secondary ? <Typography variant="caption" color="text.secondary">{source.secondary}</Typography> : null}
                             </TableCell>
-                            {providerCode === 'all' ? <TableCell>{String(row.provider_code || '-')}</TableCell> : null}
+                            {providerCode === 'all' ? <TableCell>{getLedgerProviderModelLabel(row)}</TableCell> : null}
                             <TableCell><Typography variant="body2" sx={getLedgerAmountSx(row.amount)}>{formatPoint(row.amount, providerCode)}</Typography></TableCell>
                             <TableCell>{row.balance_after == null ? '-' : formatPoint(row.balance_after, providerCode)}</TableCell>
                             <TableCell>{formatTime(row.created_at)}</TableCell>

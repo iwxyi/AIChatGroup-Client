@@ -290,6 +290,10 @@ class AdminApiClient {
     return this.request<Record<string, unknown>>('POST', `/ai/providers/${encodeURIComponent(providerCode)}/users/${encodeURIComponent(userId)}/points`, payload);
   }
 
+  transferAiUserPoints(userId: string, payload: { amount: number }) {
+    return this.request<Record<string, unknown>>('POST', `/ai/users/${encodeURIComponent(userId)}/points`, payload);
+  }
+
   getAiEntitlement(userId: string) {
     return this.request<{ entitlement: Record<string, unknown> | null; keys: Array<Record<string, unknown>>; quotaLedger?: Array<Record<string, unknown>> }>('GET', `/ai/entitlements${this.buildQuery({ userId })}`);
   }

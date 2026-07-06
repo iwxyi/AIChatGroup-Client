@@ -120,6 +120,7 @@ export default function AdminUsersPage() {
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [selectedUser, setSelectedUser] = useState<Record<string, unknown> | null>(null);
   const [usageDialogOpen, setUsageDialogOpen] = useState(false);
+  const [aiPointDraft, setAiPointDraft] = useState('');
   const [selectedRestrictions, setSelectedRestrictions] = useState<Array<Record<string, unknown>>>([]);
   const [restrictionReason, setRestrictionReason] = useState('');
   const [keyDrafts, setKeyDrafts] = useState<Record<string, KeyDraft>>({});
@@ -328,6 +329,48 @@ export default function AdminUsersPage() {
     }
   };
 
+  const transferSelectedUserAiPoints = async (userId: string, amount: number) => {
+    if (!userId) throw new Error('用户不存在');
+    if (!Number.isFinite(amount) || amount === 0) {
+      throw new Error('请输入非 0 的额度，负数表示扣除');
+    }
+    setActionLoading(true);
+    setDetailError(null);
+    try {
+      const result = await adminApi.transferAiUserPoints(userId, { amount });
+      const balanceAfter = Number(result.balanceAfter);
+      if (Number.isFinite(balanceAfter)) {
+        setSelectedUser((prev) => prev && String(prev.id || '') === userId ? { ...prev, aiBalanceAmount: balanceAfter } : prev);
+        setItems((prev) => prev.map((item) => item.id === userId ? { ...item, aiBalanceAmount: balanceAfter } : item));
+      }
+      await Promise.all([
+        loadSelectedUser(userId),
+        loadUsers(),
+      ]);
+      return result;
+    } catch (saveError) {
+      setDetailError(getAdminErrorMessage(saveError));
+      throw saveError;
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const transferSelectedUserAiPointsFromCard = async () => {
+    if (!selectedUserId) return;
+    const amount = Number(aiPointDraft);
+    if (!Number.isFinite(amount) || amount === 0) {
+      setDetailError('请输入非 0 的额度，负数表示扣除');
+      return;
+    }
+    try {
+      await transferSelectedUserAiPoints(selectedUserId, amount);
+      setAiPointDraft('');
+    } catch (transferError) {
+      setDetailError(getAdminErrorMessage(transferError));
+    }
+  };
+
   const updateKeyLimits = async (key: Record<string, unknown>) => {
     if (!selectedUserId) return;
     const keyId = String(key.id || '');
@@ -382,6 +425,7 @@ export default function AdminUsersPage() {
     setExpandedUsage({});
     setKeyUsage({});
     setKeyBalance(null);
+    setAiPointDraft('');
     setManualKeyDraft({ visible: false, apiKey: '', externalKeyId: '' });
     void loadSelectedUser(selectedUserId);
   }, [selectedUserId]);
@@ -495,6 +539,25 @@ export default function AdminUsersPage() {
                       <Typography variant="caption" color="text.secondary">已使用点数</Typography>
                       <Typography variant="h6" sx={{ fontWeight: 900 }}>{formatAiAmount(selectedUserWithAiQuota?.aiUsedAmount ?? 0, 'deepseek')}</Typography>
                     </Box>
+                  </Stack>
+                  <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ mt: 1.5, alignItems: { xs: 'stretch', sm: 'center' } }}>
+                    <TextField
+                      size="small"
+                      label="增减点数"
+                      value={aiPointDraft}
+                      onChange={(event) => setAiPointDraft(event.target.value)}
+                      placeholder="负数扣除"
+                      sx={{ width: { xs: '100%', sm: 180 } }}
+                    />
+                    <Button
+                      variant="contained"
+                      disabled={actionLoading || !aiPointDraft.trim()}
+                      onClick={() => void transferSelectedUserAiPointsFromCard()}
+                      sx={{ height: 40, alignSelf: { xs: 'stretch', sm: 'center' } }}
+                    >
+                      增减点数
+                    </Button>
+                    <Typography variant="caption" color="text.secondary">正数转入，负数扣除</Typography>
                   </Stack>
                 </AdminDetailCard>
 
@@ -700,6 +763,7 @@ export default function AdminUsersPage() {
         user={selectedUserWithAiQuota}
         providerCode="all"
         onClose={() => setUsageDialogOpen(false)}
+        onTransferPoints={(userId, amount) => transferSelectedUserAiPoints(userId, amount)}
       />
     </Stack>
   );
