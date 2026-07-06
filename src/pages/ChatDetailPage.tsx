@@ -2155,8 +2155,6 @@ export default function ChatDetailPage() {
       await openChatWindow(id, { limit: CHAT_MESSAGE_WINDOW_SIZE, revalidate: true, resetWindow: true });
       await waitForNextFrame();
     }
-    const scrollContainer = document.querySelector<HTMLElement>('[data-chat-message-list]');
-    scrollContainer?.scrollTo({ top: scrollContainer.scrollHeight, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
   }, [hasMoreNewer, id, openChatWindow]);
 
   const fromTab = useMemo(() => new URLSearchParams(window.location.search).get('fromTab'), []);

@@ -26,7 +26,9 @@ const BOTTOM_STICKY_THRESHOLD = 96;
 const JUMP_TO_BOTTOM_PAGE_MULTIPLIER = 3;
 const BOTTOM_RESTORE_ANCHOR_THRESHOLD = 700;
 const SMOOTH_SCROLL_DISTANCE_LIMIT = 900;
-const FOLLOW_SCROLL_DURATION_MS = 180;
+const FOLLOW_SCROLL_DURATION_MS = 220;
+const JUMP_SCROLL_DURATION_MS = 260;
+const PROGRAMMATIC_SCROLL_SETTLE_MS = 120;
 const MIN_BOTTOM_PREFETCH_PAGES = 1;
 const MAX_BOTTOM_PREFETCH_PAGES = 3;
 const storyNodeFadeIn = keyframes`
@@ -649,6 +651,7 @@ export default function MessageList({
   const lastScrollSampleRef = useRef<{ top: number; at: number } | null>(null);
   const scrollAnchorFrameRef = useRef<number | null>(null);
   const followScrollAnimationRef = useRef<number | null>(null);
+  const programmaticScrollRef = useRef<{ mode: 'follow' | 'jump'; startedAt: number; targetTop: number } | null>(null);
   const previousStoryChoiceSubmittingValueRef = useRef<string | null>(storyChoiceSubmittingValue);
   const appliedScrollRequestKeyRef = useRef<string | null>(null);
   const previousRenderMetricsRef = useRef({
@@ -823,9 +826,18 @@ export default function MessageList({
     return nearBottom;
   }, [getAdaptiveBottomThreshold, getDistanceFromBottom, hasMoreNewer, onNearBottomChange]);
 
+  const cancelProgrammaticScroll = useCallback(() => {
+    if (followScrollAnimationRef.current != null) {
+      window.cancelAnimationFrame(followScrollAnimationRef.current);
+      followScrollAnimationRef.current = null;
+    }
+    programmaticScrollRef.current = null;
+  }, []);
+
   const markUserScrollIntent = useCallback(() => {
     hasUserScrollIntentRef.current = true;
-  }, []);
+    cancelProgrammaticScroll();
+  }, [cancelProgrammaticScroll]);
 
   const updateAdaptiveBottomPrefetch = useCallback((element: HTMLDivElement, isScrollingDown: boolean) => {
     if (!hasUserScrollIntentRef.current || !isScrollingDown) return;
@@ -998,19 +1010,23 @@ export default function MessageList({
     return pinned;
   }, [getDistanceFromBottom, hasMoreNewer, onBottomPinnedChange, shouldShowJumpToBottomButton, updateJumpToBottomVisibility]);
 
-  const stopFollowScrollAnimation = useCallback(() => {
-    if (followScrollAnimationRef.current == null) return;
-    window.cancelAnimationFrame(followScrollAnimationRef.current);
-    followScrollAnimationRef.current = null;
+  const isProgrammaticTailScrollActive = useCallback(() => {
+    const current = programmaticScrollRef.current;
+    if (!current) return false;
+    if (followScrollAnimationRef.current != null) return true;
+    return performance.now() - current.startedAt <= PROGRAMMATIC_SCROLL_SETTLE_MS;
   }, []);
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
     const container = containerRef.current;
     if (!container) return;
-    stopFollowScrollAnimation();
+    cancelProgrammaticScroll();
     const top = Math.max(0, container.scrollHeight - container.clientHeight);
     const distance = Math.abs(top - container.scrollTop);
     const effectiveBehavior = prefersReducedMotion() || distance > SMOOTH_SCROLL_DISTANCE_LIMIT ? 'auto' : behavior;
+    if (effectiveBehavior !== 'auto') {
+      programmaticScrollRef.current = { mode: 'jump', startedAt: performance.now(), targetTop: top };
+    }
     container.scrollTo({ top, behavior: effectiveBehavior });
     shouldStickToBottomRef.current = !hasMoreNewer;
     updateJumpToBottomVisibility(false);
@@ -1021,29 +1037,35 @@ export default function MessageList({
     if (effectiveBehavior === 'auto') {
       lastScrollTopRef.current = top;
     }
-  }, [hasMoreNewer, onBottomPinnedChange, stopFollowScrollAnimation, updateJumpToBottomVisibility]);
+  }, [cancelProgrammaticScroll, hasMoreNewer, onBottomPinnedChange, updateJumpToBottomVisibility]);
 
-  const followScrollToBottom = useCallback((options?: { animate?: boolean }) => {
+  const followScrollToBottom = useCallback((options?: { animate?: boolean; mode?: 'follow' | 'jump' }) => {
     const container = containerRef.current;
     if (!container) return;
-    stopFollowScrollAnimation();
+    cancelProgrammaticScroll();
     const startTop = container.scrollTop;
     const targetTop = Math.max(0, container.scrollHeight - container.clientHeight);
     const distance = targetTop - startTop;
     if (options?.animate === false || prefersReducedMotion() || Math.abs(distance) > SMOOTH_SCROLL_DISTANCE_LIMIT) {
       container.scrollTop = targetTop;
       lastScrollTopRef.current = targetTop;
+      programmaticScrollRef.current = { mode: options?.mode || 'follow', startedAt: performance.now(), targetTop };
+      shouldStickToBottomRef.current = !hasMoreNewer;
       return;
     }
     if (Math.abs(distance) < 1) return;
     let startTime: number | null = null;
+    const mode = options?.mode || 'follow';
+    programmaticScrollRef.current = { mode, startedAt: performance.now(), targetTop };
     const step = (time: number) => {
       if (!shouldStickToBottomRef.current) {
         followScrollAnimationRef.current = null;
+        programmaticScrollRef.current = null;
         return;
       }
       if (startTime == null) startTime = time;
-      const progress = Math.min(1, (time - startTime) / FOLLOW_SCROLL_DURATION_MS);
+      const duration = mode === 'jump' ? JUMP_SCROLL_DURATION_MS : FOLLOW_SCROLL_DURATION_MS;
+      const progress = Math.min(1, (time - startTime) / duration);
       const eased = 1 - ((1 - progress) ** 3);
       const nextTop = startTop + distance * eased;
       container.scrollTop = nextTop;
@@ -1052,16 +1074,17 @@ export default function MessageList({
         followScrollAnimationRef.current = window.requestAnimationFrame(step);
       } else {
         followScrollAnimationRef.current = null;
+        programmaticScrollRef.current = { mode, startedAt: performance.now(), targetTop };
       }
     };
     followScrollAnimationRef.current = window.requestAnimationFrame(step);
-  }, [stopFollowScrollAnimation]);
+  }, [cancelProgrammaticScroll, hasMoreNewer]);
 
-  useEffect(() => stopFollowScrollAnimation, [stopFollowScrollAnimation]);
+  useEffect(() => cancelProgrammaticScroll, [cancelProgrammaticScroll]);
 
   useEffect(() => {
     if (autoStickToBottom) return;
-    stopFollowScrollAnimation();
+    cancelProgrammaticScroll();
     const snapshot = latestScrollAnchorRef.current || captureScrollAnchor();
     latestScrollAnchorRef.current = snapshot;
     shouldStickToBottomRef.current = false;
@@ -1071,7 +1094,7 @@ export default function MessageList({
       lastReportedBottomPinnedRef.current = false;
       onBottomPinnedChange?.(false);
     }
-  }, [autoStickToBottom, captureScrollAnchor, onBottomPinnedChange, shouldShowJumpToBottomButton, stopFollowScrollAnimation, updateJumpToBottomVisibility]);
+  }, [autoStickToBottom, cancelProgrammaticScroll, captureScrollAnchor, onBottomPinnedChange, shouldShowJumpToBottomButton, updateJumpToBottomVisibility]);
 
   useEffect(() => {
     const content = contentRef.current;
@@ -1083,7 +1106,7 @@ export default function MessageList({
       frame = window.requestAnimationFrame(() => {
         frame = null;
         if (shouldStickToBottomRef.current && autoStickToBottom) {
-          followScrollToBottom({ animate: false });
+          followScrollToBottom({ animate: true, mode: 'follow' });
           return;
         }
         const snapshot = latestScrollAnchorRef.current;
@@ -1205,6 +1228,7 @@ export default function MessageList({
     const snapshot = prependRestoreRef.current;
     if (!snapshot) return;
     prependRestoreRef.current = null;
+    cancelProgrammaticScroll();
     restoreScrollAnchor(snapshot);
     updatePinnedState();
     const handle = window.requestAnimationFrame(() => {
@@ -1212,13 +1236,14 @@ export default function MessageList({
       updatePinnedState();
     });
     return () => window.cancelAnimationFrame(handle);
-  }, [renderItems, restoreScrollAnchor, updatePinnedState]);
+  }, [cancelProgrammaticScroll, renderItems, restoreScrollAnchor, updatePinnedState]);
 
   useLayoutEffect(() => {
     const distance = bottomRestoreDistanceRef.current;
     const container = containerRef.current;
     if (distance == null || !container) return;
     bottomRestoreDistanceRef.current = null;
+    cancelProgrammaticScroll();
     const restoreBottomDistance = () => {
       if (distance <= BOTTOM_STICKY_THRESHOLD) {
         scrollToBottom('auto');
@@ -1231,7 +1256,7 @@ export default function MessageList({
     restoreBottomDistance();
     const handle = window.requestAnimationFrame(restoreBottomDistance);
     return () => window.cancelAnimationFrame(handle);
-  }, [isLoadingNewer, renderItems, scrollToBottom, updatePinnedState]);
+  }, [cancelProgrammaticScroll, isLoadingNewer, renderItems, scrollToBottom, updatePinnedState]);
 
   useLayoutEffect(() => {
     const currentMetrics = {
@@ -1279,7 +1304,7 @@ export default function MessageList({
       onBottomPinnedChange?.(true);
     }
 
-    followScrollToBottom({ animate: false });
+    followScrollToBottom({ animate: true, mode: 'follow' });
   }, [autoStickToBottom, followScrollToBottom, hasMoreNewer, onBottomPinnedChange, renderItems, restoreScrollAnchor, storyChoiceMessageId, storyChoiceOptions, storyChoiceSubmittingValue, tailContent]);
 
   useLayoutEffect(() => {
@@ -1289,7 +1314,7 @@ export default function MessageList({
     if (!autoStickToBottom) return;
     if (!hasJumpedToBottomRef.current) return;
     shouldStickToBottomRef.current = true;
-    followScrollToBottom();
+    followScrollToBottom({ animate: true, mode: 'follow' });
   }, [autoStickToBottom, followScrollToBottom, storyChoiceSubmittingValue]);
 
   useEffect(() => {
@@ -1336,6 +1361,18 @@ export default function MessageList({
       onScroll={() => {
         const container = containerRef.current;
         if (!container) return;
+
+        if (isProgrammaticTailScrollActive()) {
+          lastScrollTopRef.current = container.scrollTop;
+          shouldStickToBottomRef.current = !hasMoreNewer;
+          updateJumpToBottomVisibility(false);
+          if (!hasMoreNewer && lastReportedBottomPinnedRef.current !== true) {
+            lastReportedBottomPinnedRef.current = true;
+            onBottomPinnedChange?.(true);
+          }
+          scheduleRememberScrollAnchor();
+          return;
+        }
 
         const previousScrollTop = lastScrollTopRef.current;
         const isScrollingUp = container.scrollTop < previousScrollTop - 2;
@@ -1466,10 +1503,16 @@ export default function MessageList({
           onClick={() => {
             markUserScrollIntent();
             if (onJumpToConversationBottom) {
-              void onJumpToConversationBottom();
+              void Promise.resolve(onJumpToConversationBottom()).finally(() => {
+                hasUserScrollIntentRef.current = false;
+                shouldStickToBottomRef.current = true;
+                followScrollToBottom({ animate: true, mode: 'jump' });
+              });
               return;
             }
-            scrollToBottom('smooth');
+            hasUserScrollIntentRef.current = false;
+            shouldStickToBottomRef.current = true;
+            followScrollToBottom({ animate: true, mode: 'jump' });
           }}
           sx={{
             position: 'fixed',
