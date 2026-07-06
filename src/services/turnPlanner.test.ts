@@ -214,6 +214,47 @@ describe('deriveTurnPlan', () => {
     expect(plan.reasons).toContain('group_ai_chain_needs_brevity');
   });
 
+  it('allows direct human depth requests to split into consecutive bubbles', () => {
+    const plan = deriveTurnPlan({
+      chat: chat({ type: 'direct' }),
+      speaker: character(),
+      messages: [
+        message({
+          content: '我现在有点说不清楚，就是既想要有人陪，又特别怕别人一直打扰我。你能不能别只安慰我，帮我拆一下这个矛盾到底卡在哪里，以及我到底该选合租还是独居？',
+          timestamp: 10,
+        }),
+      ],
+      intent,
+      surface: { kind: 'chat' },
+      now: 10,
+    });
+
+    expect(plan.rhythm).toBe('multi_bubble');
+    expect(plan.allowExtraMessages).toBe(true);
+    expect(plan.targetBubbleCount).toBe(2);
+    expect(plan.reasons).toContain('human_depth_can_split_bubbles');
+  });
+
+  it('allows addressed group human depth requests to use extra bubbles without changing AI-chain brevity', () => {
+    const plan = deriveTurnPlan({
+      chat: chat({ type: 'group' }),
+      speaker: character(),
+      messages: [
+        message({
+          content: '你们刚才说得都有道理，但我想问一个更具体的：如果室友之间作息完全错开，只靠冰箱标签和群消息，还能算是陪伴吗，还是说这只是比较高级的安全感？',
+          timestamp: 10,
+        }),
+      ],
+      intent: { ...intent, delivery: 'group_redirect', messageShape: 'question_only' },
+      surface: { kind: 'chat' },
+      now: 10,
+    });
+
+    expect(plan.rhythm).toBe('multi_bubble');
+    expect(plan.allowExtraMessages).toBe(true);
+    expect(plan.reasons).toContain('human_depth_can_split_bubbles');
+  });
+
   it('still allows full analysis replies when a human turn asks for substance', () => {
     const plan = deriveTurnPlan({
       chat: chat({

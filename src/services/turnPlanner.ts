@@ -191,13 +191,22 @@ export function deriveTurnPlan(input: TurnPlanInput): TurnPlan {
 
   const asksForDepth = latestIsHuman && latestLength >= 44;
   if (asksForDepth || input.intent.stance === 'summarize') {
+    const canUseExtraMessages = asksForDepth
+      && latestLength >= 64
+      && ownStats.recentMultiBubbleCount === 0
+      && (
+        input.chat.type !== 'group'
+        || bucket >= 54
+        || input.intent.delivery === 'group_redirect'
+        || input.intent.messageShape === 'question_only'
+      );
     return {
-      rhythm: 'full_reply',
-      targetBubbleCount: 1,
+      rhythm: canUseExtraMessages ? 'multi_bubble' : 'full_reply',
+      targetBubbleCount: canUseExtraMessages ? 2 : 1,
       lengthBand: latestLength >= 90 ? 'long' : 'medium',
-      allowExtraMessages: false,
+      allowExtraMessages: canUseExtraMessages,
       waitSensitive: false,
-      reasons: [...reasons, asksForDepth ? 'human_depth_request' : 'summarize_intent'],
+      reasons: [...reasons, asksForDepth ? 'human_depth_request' : 'summarize_intent', ...(canUseExtraMessages ? ['human_depth_can_split_bubbles'] : [])],
     };
   }
 

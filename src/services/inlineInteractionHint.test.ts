@@ -61,4 +61,57 @@ describe('buildInlineInteractionContract analysis room detection', () => {
     expect(contract).toContain('Rules for deliberationArtifacts');
     expect(contract).toContain('visible content must either make a deliberative move');
   });
+
+  it('describes extraMessages as optional later bubbles without null example bias', () => {
+    const contract = buildInlineInteractionContract({
+      chat: {
+        id: 'chat-1',
+        type: 'direct',
+        memberIds: ['speaker'],
+        runtimeEventsV2: [],
+      } as unknown as GroupChat,
+      speaker: { id: 'speaker', name: '说话人' } as AICharacter,
+      characters: [{ id: 'speaker', name: '说话人' } as AICharacter],
+      recentMessages: [],
+      turnPlan: {
+        rhythm: 'multi_bubble',
+        targetBubbleCount: 3,
+        lengthBand: 'medium',
+        allowExtraMessages: true,
+        waitSensitive: false,
+        reasons: ['test'],
+      },
+    });
+
+    expect(contract).toContain('"extraMessages":["optional later bubble from the same speaker"]');
+    expect(contract).toContain('use null when there are no later sends');
+    expect(contract).toContain('first send in content and later sends in extraMessages');
+    expect(contract).toContain('A bubble may contain one or more paragraphs');
+    expect(contract).not.toContain('"extraMessages":null');
+  });
+
+  it('still allows paragraph breaks inside one-bubble turns', () => {
+    const contract = buildInlineInteractionContract({
+      chat: {
+        id: 'chat-1',
+        type: 'group',
+        memberIds: ['speaker'],
+        runtimeEventsV2: [],
+      } as unknown as GroupChat,
+      speaker: { id: 'speaker', name: '说话人' } as AICharacter,
+      characters: [{ id: 'speaker', name: '说话人' } as AICharacter],
+      recentMessages: [],
+      turnPlan: {
+        rhythm: 'short_reply',
+        targetBubbleCount: 1,
+        lengthBand: 'short',
+        allowExtraMessages: false,
+        waitSensitive: false,
+        reasons: ['test'],
+      },
+    });
+
+    expect(contract).toContain('one bubble is the default');
+    expect(contract).toContain('content may still contain paragraph breaks');
+  });
 });

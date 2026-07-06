@@ -2585,6 +2585,9 @@ describe('chatEngine streaming preview', () => {
     expect(prompt).toContain('## Expression Surface Choice');
     expect(prompt).toContain('decorative-marker turns');
     expect(prompt).toContain('This is not output filtering');
+    expect(prompt).toContain('Relation to previous turn');
+    expect(prompt).toContain('Persona lens for this turn');
+    expect(prompt).toContain('A character profile is not a job interview');
     expect(message.content).toBe('我也有点想排队了😂');
   });
 

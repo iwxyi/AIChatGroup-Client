@@ -329,7 +329,9 @@ export function buildInlineInteractionContract(params: {
     : '') + intentionalRepeatRules;
 
   const turnPlanRules = params.turnPlan
-    ? `\nTurn plan: rhythm=${params.turnPlan.rhythm}; use extraMessages only when consecutive sends feel natural.`
+    ? params.turnPlan.allowExtraMessages
+      ? `\nTurn plan: rhythm=${params.turnPlan.rhythm}; this turn may use 2-${Math.max(2, params.turnPlan.targetBubbleCount)} consecutive bubbles if that is how the speaker would naturally send it. Put the first send in content and later sends in extraMessages. A bubble may contain one or more paragraphs when that reads more naturally than separate sends.`
+      : `\nTurn plan: rhythm=${params.turnPlan.rhythm}; one bubble is the default, but content may still contain paragraph breaks if the visible reply genuinely has separate thoughts.`
     : '';
   const aiDirectInteractionRules = params.chat.type === 'ai_direct'
     ? '\n8. In AI direct chats, target the other participant when the turn clearly supports, challenges, probes, defends, mocks, or dismisses them; do not target the speaker or the user unless the user is an actual participant.'
@@ -414,11 +416,11 @@ ${transcriptScope}${recentSocialEvents ? `\n\nRecent social events to avoid dupl
 
   return `\n\nOutput contract:
 Return exactly one JSON object:
-{"content":"visible first bubble","extraMessages":null,"intentionalRepeat":false${mediaExample}${deliberationExample},"presenceUpdate":null,"conflictFocus":null,"interactionHints":null,"socialEventHints":null}
+{"content":"visible first bubble","extraMessages":["optional later bubble from the same speaker"],"intentionalRepeat":false${mediaExample}${deliberationExample},"presenceUpdate":null,"conflictFocus":null,"interactionHints":null,"socialEventHints":null}
 
 JSON rules: parseable JSON only; the first character must be { and the last character must be }. No markdown, comments, bracketed protocol notes, trailing commas, undefined, or TypeScript unions. Use null for absent optional fields. content must be a non-empty visible chat message, not an explanation of this contract; do not use whitespace, empty string, or null to represent silence. Escape ASCII quotes inside strings. intensity=1-5; confidence/severity=0-1.
 
-extraMessages: optional later bubbles from the same speaker, max 4, only for natural consecutive sends. Do not split one sentence into fragments or use it for formal longform/media. Judge all hidden fields from content+extraMessages.${turnPlanRules}${deliberationRules}
+extraMessages: use null when there are no later sends. Use an array only for optional later bubbles from the same speaker, max 4, when the reply would naturally arrive as consecutive chat messages. Do not split one sentence into fragments or use it for another actor. One bubble may contain multiple paragraphs; multiple bubbles should have distinct social purposes. Judge all hidden fields from content+extraMessages.${turnPlanRules}${deliberationRules}
 
 presenceUpdate: null unless the speaker explicitly says they are leaving/away/sleeping/busy/offline or explicitly back. Away shape: {"status":"away","activity":"睡觉/忙工作/洗澡等","reason":"visible reason","durationMinutes":30}; pick realistic duration. Do not mark away for ordinary goodnight/farewell jokes.
 

@@ -331,6 +331,8 @@ export function buildHumanizationPrompt(character: AICharacter, intent: SpeakInt
 - Do not force a fixed opener, filler, closer, or catchphrase. Use character flavor only when it naturally fits this exact turn.
 - In realistic group chat, many turns are statements, reactions, stance-taking, jokes, fragments, or casual questions; do not make every turn a neat question-response pair.
 - Natural group chat often leaves part of the previous message untouched. Do not prove you understood every metaphor, acronym, or example.
+- If a prior speaker used jargon, a niche metaphor, or a professional analogy, you may answer the human meaning, ask what it means, or ignore that surface term. Do not pretend every character fluently understands every domain.
+- Do not route every example through the character's listed job or expertise. People also speak from food, commute, family, money, sleep, habits, annoyances, taste, mood, memory, or plain uncertainty.
 - Questions are welcome when they feel socially useful: to get information, pressure someone, test a stance, redirect the topic, dodge a point, fish for alignment, or make the room more playful.
 - If you ask, let it sound like a live human move rather than a formal interviewer move.
 - Question tendency: ${fingerprint.prefersQuestions ? [fingerprint.asksForInformation ? 'info-seeking' : '', fingerprint.usesQuestionAsPushback ? 'pushback' : '', fingerprint.usesQuestionToSteer ? 'steering' : '', fingerprint.usesQuestionPlayfully ? 'playful' : ''].filter(Boolean).join(' / ') : 'not preferred'}

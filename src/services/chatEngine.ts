@@ -1658,7 +1658,9 @@ function buildNaturalChatRhythmPrompt(messages: Message[], innerLife: InnerLifeP
   return `\n## Natural Chat Rhythm
 - Real chat is uneven; choose size from the moment, not a fixed template.
 ${rhythm}
-- extraMessages are only for later consecutive sends with their own social purpose, not punctuation splitting or action/dialogue separation.`;
+- One bubble can contain multiple paragraphs when the speaker is making one continuous point.
+- Multiple bubbles are for consecutive sends with separate social purposes: correction, afterthought, softened add-on, practical follow-up, or a second beat that would feel typed after pressing send.
+- Do not use extraMessages for punctuation splitting, action/dialogue separation, another actor's line, or making a lecture longer.`;
 }
 
 function isBracketedLine(line: string) {
@@ -1833,15 +1835,24 @@ function buildExpressionSurfaceChoicePrompt(input: {
   const selectedLength = lengthOptions[bucket % lengthOptions.length];
   const selectedMove = moveOptions[Math.floor(bucket / 7) % moveOptions.length];
   const selectedOrnament = ornamentOptions[Math.floor(bucket / 13) % ornamentOptions.length];
+  const relationOptions = input.chat.type === 'group'
+    ? ['answer only the part that caught this speaker', 'respond to the gist without proving full comprehension', 'let a nearby everyday angle enter', 'ask about one missing concrete condition', 'push one assumption instead of carrying the whole chain']
+    : ['answer the current person directly', 'start with the practical answer before warmth', 'name the emotional point without overexplaining', 'ask one clarifying question only if needed', 'reply to the need rather than every phrase'];
+  const personaLensOptions = ['ordinary life', 'taste or mood', 'relationship stance', 'practical habit', 'ignorance or uncertainty', 'domain expertise only if it is the natural lens'];
+  const selectedRelation = relationOptions[Math.floor(bucket / 17) % relationOptions.length];
+  const selectedPersonaLens = personaLensOptions[Math.floor(bucket / 19) % personaLensOptions.length];
   const ownLine = ownLengths.length ? `\n- Recent own lengths: ${ownLengths.join(' / ')} chars.` : '';
   const roomLine = roomLengths.length
     ? `\n- Recent room lengths: ${roomLengths.slice(-8).join(' / ')} chars; decorative-marker turns ${roomDecorativeCount}/${recentAi.length}.`
     : '';
   return `\n## Expression Surface Choice
 - Surface prior: ${selectedMove}; weak length tendency: ${selectedLength}; ornamentation: ${selectedOrnament}.
+- Relation to previous turn: ${selectedRelation}.
+- Persona lens for this turn: ${selectedPersonaLens}.
 - This is not output filtering. Keep valid Markdown, multiline content, media phrasing, or expressive markers when they genuinely fit.
 - The length tendency is not a cap. Scene needs, user tasks, play-mode obligations, and role competence override it.
-- Avoid defaulting every turn to setup + joke + explanation + marker; believable replies can be blunt, unfinished, practical, curious, or quiet.${roomLine}${ownLine}`;
+- A character profile is not a job interview. Background and expertise are available sources, not the required source of every example.
+- Avoid defaulting every turn to setup + joke + explanation + marker or acknowledgement + full carry-forward. Believable replies can be blunt, unfinished, practical, curious, quiet, partially informed, or locally off-angle.${roomLine}${ownLine}`;
 }
 
 function buildWorldEventContextPrompt(input: {
