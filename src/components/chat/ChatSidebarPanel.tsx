@@ -1,5 +1,7 @@
-import { lazy, Suspense } from 'react';
-import { Box, Chip, Stack, Typography } from '@mui/material';
+import { lazy, Suspense, useState } from 'react';
+import { Box, Button, Chip, Stack, Typography } from '@mui/material';
+import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded';
+import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
 import type { AICharacter } from '../../types/character';
 import type { GroupChat, StoryChapterState } from '../../types/chat';
 import type { Message } from '../../types/message';
@@ -87,23 +89,108 @@ function SidebarSurface({ title, children }: { title: string; children: React.Re
   );
 }
 
+function formatConfidence(value: number | undefined) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '';
+  const normalized = value <= 1 ? value * 100 : value;
+  return `置信 ${Math.round(Math.max(0, Math.min(100, normalized)))}%`;
+}
+
+function deliberationSectionTone(sectionKey: DeliberationSidebarSection['key']) {
+  if (sectionKey === 'issues') return { color: 'warning.main', bg: 'rgba(245,158,11,0.08)' };
+  if (sectionKey === 'evidence') return { color: 'info.main', bg: 'rgba(14,165,233,0.075)' };
+  if (sectionKey === 'verdicts') return { color: 'success.main', bg: 'rgba(34,197,94,0.075)' };
+  return { color: 'primary.main', bg: 'rgba(99,102,241,0.075)' };
+}
+
 function DeliberationSectionCard({ section }: { section: DeliberationSidebarSection }) {
+  const [expanded, setExpanded] = useState(false);
+  const tone = deliberationSectionTone(section.key);
+  const visibleLimit = expanded ? section.items.length : Math.min(section.defaultVisible, section.items.length);
+  const visibleItems = section.items.slice(0, visibleLimit);
+  const hiddenInWindow = Math.max(0, section.items.length - visibleLimit);
+  const hiddenByWindow = Math.max(0, section.totalCount - section.items.length);
+  const canExpand = section.items.length > section.defaultVisible;
+  const windowCaption = hiddenByWindow
+    ? `显示最近 ${section.items.length} 条，另有 ${hiddenByWindow} 条已归档在消息中`
+    : section.totalCount > 0
+      ? `显示最近 ${section.items.length} 条`
+      : section.emptyText;
+
   return (
-    <Box sx={{ p: 1, borderRadius: 1, bgcolor: 'action.hover' }}>
-      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 700, mb: 0.5 }}>{section.title}</Typography>
+    <Box sx={(theme) => ({
+      p: 1,
+      borderRadius: 1,
+      bgcolor: theme.palette.mode === 'light' ? 'rgba(248,250,252,0.72)' : 'rgba(255,255,255,0.045)',
+      border: '1px solid',
+      borderColor: theme.palette.mode === 'light' ? 'rgba(15,23,42,0.07)' : 'rgba(226,232,240,0.095)',
+    })}>
+      <Stack direction="row" spacing={0.7} useFlexGap sx={{ alignItems: 'center', justifyContent: 'space-between', mb: 0.65, minWidth: 0 }}>
+        <Stack direction="row" spacing={0.55} useFlexGap sx={{ alignItems: 'center', minWidth: 0 }}>
+          <Box sx={{
+            width: 6,
+            height: 18,
+            borderRadius: 999,
+            bgcolor: tone.color,
+            flexShrink: 0,
+          }} />
+          <Typography variant="caption" color="text.primary" sx={{ display: 'block', fontWeight: 800 }}>{section.title}</Typography>
+          <Chip size="small" label={`${section.totalCount} 条`} variant="outlined" sx={compactPillChipSx} />
+        </Stack>
+        {canExpand ? (
+          <Button
+            size="small"
+            onClick={() => setExpanded((value) => !value)}
+            endIcon={expanded ? <ExpandMoreRoundedIcon fontSize="small" /> : <ChevronRightRoundedIcon fontSize="small" />}
+            sx={{ minWidth: 0, px: 0.7, py: 0.1, fontSize: 12, color: 'text.secondary' }}
+          >
+            {expanded ? '收起' : `展开 ${hiddenInWindow}`}
+          </Button>
+        ) : null}
+      </Stack>
       {section.items.length ? (
         <Stack spacing={0.7}>
-          {section.items.map((item) => (
-            <Box key={item.key}>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>{item.label}</Typography>
-              <Typography variant="body2" sx={{ lineHeight: 1.55 }}>{item.text}</Typography>
-              {item.reason ? <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.45 }}>因：{item.reason}</Typography> : null}
-            </Box>
-          ))}
+          {visibleItems.map((item, index) => {
+            const confidence = formatConfidence(item.confidence);
+            return (
+              <Box
+                key={item.key}
+                sx={(theme) => ({
+                  p: 0.85,
+                  borderRadius: 0.9,
+                  bgcolor: index === 0 ? tone.bg : (theme.palette.mode === 'light' ? 'rgba(255,255,255,0.66)' : 'rgba(255,255,255,0.035)'),
+                  border: '1px solid',
+                  borderColor: theme.palette.mode === 'light' ? 'rgba(15,23,42,0.065)' : 'rgba(226,232,240,0.085)',
+                })}
+              >
+                <Stack spacing={0.35}>
+                  <Stack direction="row" spacing={0.5} useFlexGap sx={{ flexWrap: 'wrap', alignItems: 'center' }}>
+                    <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>{item.label}</Typography>
+                    {confidence ? <Chip size="small" label={confidence} variant="outlined" sx={compactPillChipSx} /> : null}
+                  </Stack>
+                  <Typography variant="body2" sx={{ lineHeight: 1.52 }}>{item.text}</Typography>
+                  {item.reason ? (
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.45 }}>
+                      {`依据：${item.reason}`}
+                    </Typography>
+                  ) : null}
+                </Stack>
+              </Box>
+            );
+          })}
+          {hiddenInWindow && !expanded ? (
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.45 }}>
+              {`还有 ${hiddenInWindow} 条近期产物可展开查看`}
+            </Typography>
+          ) : null}
         </Stack>
       ) : (
         <Typography variant="caption" color="text.secondary">{section.emptyText}</Typography>
       )}
+      {hiddenByWindow ? (
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.65, lineHeight: 1.45 }}>
+          {windowCaption}
+        </Typography>
+      ) : null}
     </Box>
   );
 }

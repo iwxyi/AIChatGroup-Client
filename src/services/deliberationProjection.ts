@@ -158,12 +158,16 @@ export interface DeliberationSidebarArtifactItem {
   label: string;
   text: string;
   reason?: string;
+  confidence?: number;
 }
 
 export interface DeliberationSidebarSection {
   key: 'claims' | 'evidence' | 'issues' | 'verdicts';
   title: string;
   emptyText: string;
+  totalCount: number;
+  windowLimit: number;
+  defaultVisible: number;
   items: DeliberationSidebarArtifactItem[];
 }
 
@@ -204,6 +208,7 @@ export function projectDeliberationSidebarModel(chat: GroupChat, members: AIChar
     : '';
 
   const mapReason = (reason: string | null | undefined) => reason ? compactDisplayText(reason, clean, 82) : undefined;
+  const artifactWindowLimit = 12;
   return {
     phaseLabel: formatDeliberationPhaseLabel(chat.scenarioState?.phase, chat.scenarioState?.discussionMode || chat.mode),
     topic: compactDisplayText(String(chat.scenarioState?.goals?.[0]?.label || chat.topic || ''), clean, 120),
@@ -222,44 +227,60 @@ export function projectDeliberationSidebarModel(chat: GroupChat, members: AIChar
         key: 'claims',
         title: '核心论点',
         emptyText: '暂无结构化论点',
-        items: claims.slice(-3).reverse().map((item) => ({
+        totalCount: claims.length,
+        windowLimit: artifactWindowLimit,
+        defaultVisible: 3,
+        items: claims.slice(-artifactWindowLimit).reverse().map((item) => ({
           key: item.id,
           label: `${formatClaimStance(item.stance)}${item.actorId ? ` · ${memberName(item.actorId, members)}` : ''}`,
           text: compactDisplayText(item.text, clean),
           reason: mapReason(item.reason),
+          confidence: item.confidence,
         })),
       },
       {
         key: 'issues',
         title: '待质询',
         emptyText: '暂无待回应漏洞',
-        items: issues.slice(-2).reverse().map((item) => ({
+        totalCount: issues.length,
+        windowLimit: artifactWindowLimit,
+        defaultVisible: 2,
+        items: issues.slice(-artifactWindowLimit).reverse().map((item) => ({
           key: item.id,
           label: item.targetActorId ? `对象 · ${memberName(item.targetActorId, members)}` : '未指定对象',
           text: compactDisplayText(item.text, clean),
           reason: mapReason(item.reason),
+          confidence: item.confidence,
         })),
       },
       {
         key: 'evidence',
         title: '证据',
         emptyText: '暂无证据',
-        items: evidence.slice(-2).reverse().map((item) => ({
+        totalCount: evidence.length,
+        windowLimit: artifactWindowLimit,
+        defaultVisible: 2,
+        items: evidence.slice(-artifactWindowLimit).reverse().map((item) => ({
           key: item.id,
           label: item.actorId ? memberName(item.actorId, members) : '来源未指定',
           text: compactDisplayText(item.text, clean),
           reason: mapReason(item.reason),
+          confidence: item.confidence,
         })),
       },
       {
         key: 'verdicts',
         title: '阶段判断',
         emptyText: '暂无裁决记录',
-        items: verdicts.slice(-2).reverse().map((item) => ({
+        totalCount: verdicts.length,
+        windowLimit: artifactWindowLimit,
+        defaultVisible: 2,
+        items: verdicts.slice(-artifactWindowLimit).reverse().map((item) => ({
           key: item.id,
           label: item.actorId ? memberName(item.actorId, members) : '裁决',
           text: compactDisplayText(item.text, clean),
           reason: mapReason(item.reason),
+          confidence: item.confidence,
         })),
       },
     ],

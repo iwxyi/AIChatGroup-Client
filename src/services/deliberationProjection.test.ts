@@ -288,7 +288,9 @@ describe('deliberationProjection', () => {
     expect(model?.currentSpeaker).toBe('乙');
     expect(model?.counts).toMatchObject({ claims: 1, evidence: 1, issues: 1, verdicts: 1 });
     expect(model?.sections.map((section) => section.title)).toEqual(['核心论点', '待质询', '证据', '阶段判断']);
+    expect(model?.sections.find((section) => section.key === 'claims')).toMatchObject({ totalCount: 1, defaultVisible: 3 });
     expect(model?.sections.find((section) => section.key === 'claims')?.items[0]?.text).toContain('公共区域需要可仲裁规则');
+    expect(model?.sections.find((section) => section.key === 'claims')?.items[0]?.confidence).toBe(0.82);
     expect(model?.sections.find((section) => section.key === 'issues')?.items[0]?.label).toContain('乙');
     expect(model?.sections.find((section) => section.key === 'evidence')?.items[0]?.text).toContain('公共区域冲突');
     expect(model?.sections.find((section) => section.key === 'verdicts')?.items[0]?.text).toContain('只靠人情维系不稳定');
