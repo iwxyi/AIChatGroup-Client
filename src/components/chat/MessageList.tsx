@@ -29,6 +29,7 @@ const SMOOTH_SCROLL_DISTANCE_LIMIT = 900;
 const FOLLOW_SCROLL_DURATION_MS = 220;
 const JUMP_SCROLL_DURATION_MS = 260;
 const PROGRAMMATIC_SCROLL_SETTLE_MS = 120;
+const USER_SCROLL_INERTIA_GRACE_MS = 480;
 const MIN_BOTTOM_PREFETCH_PAGES = 1;
 const MAX_BOTTOM_PREFETCH_PAGES = 3;
 const storyNodeFadeIn = keyframes`
@@ -647,6 +648,7 @@ export default function MessageList({
   const autoFillTriggeredRef = useRef(false);
   const lastScrollTopRef = useRef(0);
   const hasUserScrollIntentRef = useRef(false);
+  const userScrollMomentumRef = useRef<{ direction: 'up' | 'down'; at: number; velocity: number } | null>(null);
   const adaptiveBottomPagesRef = useRef(MIN_BOTTOM_PREFETCH_PAGES);
   const lastScrollSampleRef = useRef<{ top: number; at: number } | null>(null);
   const scrollAnchorFrameRef = useRef<number | null>(null);
@@ -838,6 +840,22 @@ export default function MessageList({
     hasUserScrollIntentRef.current = true;
     cancelProgrammaticScroll();
   }, [cancelProgrammaticScroll]);
+
+  const recordUserScrollMomentum = useCallback((direction: 'up' | 'down' | null, velocity: number) => {
+    if (!direction || velocity <= 0) return;
+    userScrollMomentumRef.current = {
+      direction,
+      velocity,
+      at: performance.now(),
+    };
+  }, []);
+
+  const isUserScrollMomentumActive = useCallback((direction?: 'up' | 'down') => {
+    const current = userScrollMomentumRef.current;
+    if (!current) return false;
+    if (direction && current.direction !== direction) return false;
+    return performance.now() - current.at <= USER_SCROLL_INERTIA_GRACE_MS;
+  }, []);
 
   const updateAdaptiveBottomPrefetch = useCallback((element: HTMLDivElement, isScrollingDown: boolean) => {
     if (!hasUserScrollIntentRef.current || !isScrollingDown) return;
@@ -1230,13 +1248,13 @@ export default function MessageList({
     prependRestoreRef.current = null;
     cancelProgrammaticScroll();
     restoreScrollAnchor(snapshot);
-    updatePinnedState();
+    if (!isUserScrollMomentumActive('up')) updatePinnedState();
     const handle = window.requestAnimationFrame(() => {
       restoreScrollAnchor(snapshot);
-      updatePinnedState();
+      if (!isUserScrollMomentumActive('up')) updatePinnedState();
     });
     return () => window.cancelAnimationFrame(handle);
-  }, [cancelProgrammaticScroll, renderItems, restoreScrollAnchor, updatePinnedState]);
+  }, [cancelProgrammaticScroll, isUserScrollMomentumActive, renderItems, restoreScrollAnchor, updatePinnedState]);
 
   useLayoutEffect(() => {
     const distance = bottomRestoreDistanceRef.current;
@@ -1251,12 +1269,12 @@ export default function MessageList({
       }
       container.scrollTop = Math.max(0, container.scrollHeight - container.clientHeight - distance);
       lastScrollTopRef.current = container.scrollTop;
-      updatePinnedState();
+      if (!isUserScrollMomentumActive('down')) updatePinnedState();
     };
     restoreBottomDistance();
     const handle = window.requestAnimationFrame(restoreBottomDistance);
     return () => window.cancelAnimationFrame(handle);
-  }, [cancelProgrammaticScroll, isLoadingNewer, renderItems, scrollToBottom, updatePinnedState]);
+  }, [cancelProgrammaticScroll, isLoadingNewer, isUserScrollMomentumActive, renderItems, scrollToBottom, updatePinnedState]);
 
   useLayoutEffect(() => {
     const currentMetrics = {
@@ -1377,6 +1395,12 @@ export default function MessageList({
         const previousScrollTop = lastScrollTopRef.current;
         const isScrollingUp = container.scrollTop < previousScrollTop - 2;
         const isScrollingDown = container.scrollTop > previousScrollTop + 2;
+        const previousSample = lastScrollSampleRef.current;
+        const now = performance.now();
+        const velocity = previousSample
+          ? Math.abs(container.scrollTop - previousSample.top) / Math.max(16, now - previousSample.at)
+          : Math.abs(container.scrollTop - previousScrollTop) / 16;
+        recordUserScrollMomentum(isScrollingUp ? 'up' : isScrollingDown ? 'down' : null, velocity);
         updateAdaptiveBottomPrefetch(container, isScrollingDown);
         lastScrollTopRef.current = container.scrollTop;
         if (!autoStickToBottom && !hasUserScrollIntentRef.current) {
