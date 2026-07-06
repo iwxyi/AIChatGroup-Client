@@ -1,9 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import SaveIcon from '@mui/icons-material/Save';
 import { Alert, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, MenuItem, Stack, Tab, Table, TableBody, TableCell, TableHead, TableRow, Tabs, TextField, Switch, Typography } from '@mui/material';
+import { useSearchParams } from 'react-router-dom';
 import AdminResponsiveTable from '../../components/admin/AdminResponsiveTable';
 import AdminRequestState, { getAdminErrorMessage } from '../../components/admin/AdminRequestState';
+import { ADMIN_PERMISSION_CODES, adminHasPermission } from '../../constants/adminPermissions';
 import { adminApi } from '../../services/adminApi';
+import { useAdminAuthStore } from '../../stores/useAdminAuthStore';
+import { readPersistentUiValue, writePersistentUiValue } from '../../utils/persistentUiState';
+import AdminAIPage from './AdminAIPage';
 
 type FieldDef = {
   key: string;
@@ -15,10 +20,18 @@ type FieldDef = {
 };
 
 const CATEGORY_TABS = [
+  { value: 'ai', label: 'AI' },
   { value: 'payment', label: '支付' },
   { value: 'sms', label: '短信' },
   { value: 'email', label: '邮箱' },
 ] as const;
+
+type PlatformTab = typeof CATEGORY_TABS[number]['value'];
+const PLATFORM_TAB_STORAGE_KEY = 'admin.platform.tab';
+
+function isPlatformTab(value: unknown): value is PlatformTab {
+  return CATEGORY_TABS.some((item) => item.value === value);
+}
 
 const PROVIDER_POPULARITY: Record<string, number> = {
   'payment:alipay': 10,
@@ -254,7 +267,15 @@ function comparePlatformIntegration(left: Record<string, unknown>, right: Record
 }
 
 export default function AdminPlatformPage() {
-  const [category, setCategory] = useState<'payment' | 'sms' | 'email'>('payment');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const admin = useAdminAuthStore((s) => s.admin);
+  const canReadAi = adminHasPermission(admin, ADMIN_PERMISSION_CODES.aiRead);
+  const canReadPlatform = adminHasPermission(admin, ADMIN_PERMISSION_CODES.platformRead);
+  const [category, setCategory] = useState<PlatformTab>(() => {
+    const tab = searchParams.get('tab');
+    if (isPlatformTab(tab)) return tab;
+    return readPersistentUiValue<PlatformTab>(PLATFORM_TAB_STORAGE_KEY, 'ai', isPlatformTab);
+  });
   const [items, setItems] = useState<Array<Record<string, unknown>>>([]);
   const [selectedKey, setSelectedKey] = useState('');
   const [editorOpen, setEditorOpen] = useState(false);
@@ -267,6 +288,10 @@ export default function AdminPlatformPage() {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const visibleTabs = useMemo(
+    () => CATEGORY_TABS.filter((item) => (item.value === 'ai' ? canReadAi : canReadPlatform)),
+    [canReadAi, canReadPlatform],
+  );
 
   const visibleItems = useMemo(
     () => items
@@ -292,8 +317,27 @@ export default function AdminPlatformPage() {
   };
 
   useEffect(() => {
-    void load();
-  }, []);
+    if (canReadPlatform) void load();
+    else setItems([]);
+  }, [canReadPlatform]);
+
+  useEffect(() => {
+    const tab = searchParams.get('tab');
+    if (visibleTabs.some((item) => item.value === tab) && tab !== category) {
+      setCategory(tab as PlatformTab);
+      writePersistentUiValue(PLATFORM_TAB_STORAGE_KEY, tab as PlatformTab);
+    }
+  }, [category, searchParams, visibleTabs]);
+
+  useEffect(() => {
+    if (!visibleTabs.length || visibleTabs.some((item) => item.value === category)) return;
+    const nextCategory = visibleTabs[0].value;
+    setCategory(nextCategory);
+    writePersistentUiValue(PLATFORM_TAB_STORAGE_KEY, nextCategory);
+    const nextSearchParams = new URLSearchParams(searchParams);
+    nextSearchParams.set('tab', nextCategory);
+    setSearchParams(nextSearchParams, { replace: true });
+  }, [category, searchParams, setSearchParams, visibleTabs]);
 
   const openEditor = (item: Record<string, unknown>) => {
     setSelectedKey(integrationKey(item));
@@ -371,54 +415,64 @@ export default function AdminPlatformPage() {
         value={category}
         onChange={(_event, value) => {
           setCategory(value);
+          writePersistentUiValue(PLATFORM_TAB_STORAGE_KEY, value);
           setEditorOpen(false);
           setSelectedKey('');
+          const nextSearchParams = new URLSearchParams(searchParams);
+          nextSearchParams.set('tab', value);
+          setSearchParams(nextSearchParams, { replace: true });
         }}
         variant="scrollable"
         allowScrollButtonsMobile
       >
-        {CATEGORY_TABS.map((item) => <Tab key={item.value} value={item.value} label={item.label} />)}
+        {visibleTabs.map((item) => <Tab key={item.value} value={item.value} label={item.label} />)}
       </Tabs>
-      <AdminRequestState loading={loading} error={error} onRetry={() => void load()} />
-      <AdminResponsiveTable minWidth={760}>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell>服务商</TableCell>
-              <TableCell>状态</TableCell>
-              <TableCell>默认</TableCell>
-              <TableCell>配置概览</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {visibleItems.map((item) => (
-              <TableRow
-                key={integrationKey(item)}
-                hover
-                selected={editorOpen && integrationKey(item) === selectedKey}
-                onClick={() => openEditor(item)}
-                sx={{ cursor: 'pointer' }}
-              >
-                <TableCell>
-                  <Stack spacing={0.25}>
-                    <Typography variant="body2" sx={{ fontWeight: 800 }}>{String(item.displayName || '')}</Typography>
-                    <Typography variant="caption" color="text.secondary">{integrationKey(item)}</Typography>
-                  </Stack>
-                </TableCell>
-                <TableCell>
-                  <Chip size="small" label={statusLabel(item.status)} color={String(item.status || '') === 'active' ? 'success' : 'default'} />
-                </TableCell>
-                <TableCell>{item.isDefault ? '是' : '-'}</TableCell>
-                <TableCell>
-                  <Typography variant="caption" color="text.secondary">
-                    {Object.keys((item.config as Record<string, unknown>) || {}).slice(0, 4).join(' / ') || '-'}
-                  </Typography>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </AdminResponsiveTable>
+      {category === 'ai' ? (
+        canReadAi ? <AdminAIPage /> : <Alert severity="warning">当前管理员没有访问 AI 平台配置的权限。</Alert>
+      ) : (
+        <>
+          <AdminRequestState loading={loading} error={error} onRetry={() => void load()} />
+          <AdminResponsiveTable minWidth={760}>
+            <Table>
+              <TableHead>
+                <TableRow>
+                  <TableCell>服务商</TableCell>
+                  <TableCell>状态</TableCell>
+                  <TableCell>默认</TableCell>
+                  <TableCell>配置概览</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {visibleItems.map((item) => (
+                  <TableRow
+                    key={integrationKey(item)}
+                    hover
+                    selected={editorOpen && integrationKey(item) === selectedKey}
+                    onClick={() => openEditor(item)}
+                    sx={{ cursor: 'pointer' }}
+                  >
+                    <TableCell>
+                      <Stack spacing={0.25}>
+                        <Typography variant="body2" sx={{ fontWeight: 800 }}>{String(item.displayName || '')}</Typography>
+                        <Typography variant="caption" color="text.secondary">{integrationKey(item)}</Typography>
+                      </Stack>
+                    </TableCell>
+                    <TableCell>
+                      <Chip size="small" label={statusLabel(item.status)} color={String(item.status || '') === 'active' ? 'success' : 'default'} />
+                    </TableCell>
+                    <TableCell>{item.isDefault ? '是' : '-'}</TableCell>
+                    <TableCell>
+                      <Typography variant="caption" color="text.secondary">
+                        {Object.keys((item.config as Record<string, unknown>) || {}).slice(0, 4).join(' / ') || '-'}
+                      </Typography>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </AdminResponsiveTable>
+        </>
+      )}
 
       <Dialog open={editorOpen} onClose={() => setEditorOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>{selected ? `配置：${String(selected.displayName || '')}` : '配置'}</DialogTitle>

@@ -1,5 +1,5 @@
 import { lazy, Suspense, useMemo, useEffect, useState } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Box, LinearProgress, ThemeProvider, CssBaseline, useMediaQuery } from '@mui/material';
 import { createAppTheme } from './theme';
 import { useSettingsStore } from './stores/useSettingsStore';
@@ -39,7 +39,6 @@ const routePreloaders = [
   () => import('./pages/admin/AdminLoginPage'),
   () => import('./pages/admin/AdminDashboardPage'),
   () => import('./pages/admin/AdminUsersPage'),
-  () => import('./pages/admin/AdminAIPage'),
   () => import('./pages/admin/AdminAIProviderPage'),
   () => import('./pages/admin/AdminPlatformPage'),
   () => import('./pages/admin/AdminBillingPage'),
@@ -47,6 +46,7 @@ const routePreloaders = [
   () => import('./pages/admin/AdminRiskPage'),
   () => import('./pages/admin/AdminAuditPage'),
   () => import('./pages/admin/AdminNotificationsPage'),
+  () => import('./pages/admin/AdminSendRecordsPage'),
 ];
 
 const [
@@ -73,7 +73,6 @@ const [
   loadAdminLoginPage,
   loadAdminDashboardPage,
   loadAdminUsersPage,
-  loadAdminAIPage,
   loadAdminAIProviderPage,
   loadAdminPlatformPage,
   loadAdminBillingPage,
@@ -81,6 +80,7 @@ const [
   loadAdminRiskPage,
   loadAdminAuditPage,
   loadAdminNotificationsPage,
+  loadAdminSendRecordsPage,
 ] = routePreloaders;
 
 const HomePage = lazy(loadHomePage);
@@ -106,7 +106,6 @@ const AdminLayout = lazy(loadAdminLayout);
 const AdminLoginPage = lazy(loadAdminLoginPage);
 const AdminDashboardPage = lazy(loadAdminDashboardPage);
 const AdminUsersPage = lazy(loadAdminUsersPage);
-const AdminAIPage = lazy(loadAdminAIPage);
 const AdminAIProviderPage = lazy(loadAdminAIProviderPage);
 const AdminPlatformPage = lazy(loadAdminPlatformPage);
 const AdminBillingPage = lazy(loadAdminBillingPage);
@@ -114,6 +113,7 @@ const AdminModerationPage = lazy(loadAdminModerationPage);
 const AdminRiskPage = lazy(loadAdminRiskPage);
 const AdminAuditPage = lazy(loadAdminAuditPage);
 const AdminNotificationsPage = lazy(loadAdminNotificationsPage);
+const AdminSendRecordsPage = lazy(loadAdminSendRecordsPage);
 
 function RouteFallback() {
   return (
@@ -218,6 +218,16 @@ function AdminAuthBootstrap() {
   return null;
 }
 
+function LegacyAdminAIProviderRedirect() {
+  const { providerCode = '' } = useParams();
+  return (
+    <Navigate
+      to={providerCode ? `/admin/platform/ai/providers/${encodeURIComponent(providerCode)}` : '/admin/platform?tab=ai'}
+      replace
+    />
+  );
+}
+
 function AuthBootstrap() {
   const token = useAuthStore((s) => s.token);
   const authMode = useAuthStore((s) => s.authMode);
@@ -283,12 +293,14 @@ function RoutedApp() {
         <Route path="/admin" element={<RouteElement><AdminLayout /></RouteElement>}>
           <Route index element={<RouteElement><AdminPermissionGate permissions={ADMIN_DASHBOARD_PERMISSIONS}><AdminDashboardPage /></AdminPermissionGate></RouteElement>} />
           <Route path="users" element={<RouteElement><AdminPermissionGate permissions={[ADMIN_PERMISSION_CODES.usersRead]}><AdminUsersPage /></AdminPermissionGate></RouteElement>} />
-          <Route path="ai" element={<RouteElement><AdminPermissionGate permissions={[ADMIN_PERMISSION_CODES.aiRead]}><AdminAIPage /></AdminPermissionGate></RouteElement>} />
-          <Route path="ai/providers/:providerCode" element={<RouteElement><AdminPermissionGate permissions={[ADMIN_PERMISSION_CODES.aiRead]}><AdminAIProviderPage /></AdminPermissionGate></RouteElement>} />
-          <Route path="platform" element={<RouteElement><AdminPermissionGate permissions={[ADMIN_PERMISSION_CODES.platformRead]}><AdminPlatformPage /></AdminPermissionGate></RouteElement>} />
+          <Route path="ai" element={<Navigate to="/admin/platform?tab=ai" replace />} />
+          <Route path="ai/providers/:providerCode" element={<LegacyAdminAIProviderRedirect />} />
+          <Route path="platform/ai/providers/:providerCode" element={<RouteElement><AdminPermissionGate permissions={[ADMIN_PERMISSION_CODES.aiRead]}><AdminAIProviderPage /></AdminPermissionGate></RouteElement>} />
+          <Route path="platform" element={<RouteElement><AdminPermissionGate permissions={[ADMIN_PERMISSION_CODES.platformRead, ADMIN_PERMISSION_CODES.aiRead]}><AdminPlatformPage /></AdminPermissionGate></RouteElement>} />
           <Route path="billing" element={<RouteElement><AdminPermissionGate permissions={[ADMIN_PERMISSION_CODES.billingRead]}><AdminBillingPage /></AdminPermissionGate></RouteElement>} />
           <Route path="moderation" element={<RouteElement><AdminPermissionGate permissions={[ADMIN_PERMISSION_CODES.sharesReview]}><AdminModerationPage /></AdminPermissionGate></RouteElement>} />
           <Route path="notifications" element={<RouteElement><AdminPermissionGate permissions={[ADMIN_PERMISSION_CODES.notificationsRead]}><AdminNotificationsPage /></AdminPermissionGate></RouteElement>} />
+          <Route path="send-records" element={<RouteElement><AdminPermissionGate permissions={[ADMIN_PERMISSION_CODES.notificationsRead]}><AdminSendRecordsPage /></AdminPermissionGate></RouteElement>} />
           <Route path="risk" element={<RouteElement><AdminPermissionGate permissions={[ADMIN_PERMISSION_CODES.riskRead]}><AdminRiskPage /></AdminPermissionGate></RouteElement>} />
           <Route path="audit" element={<RouteElement><AdminPermissionGate permissions={[ADMIN_PERMISSION_CODES.auditRead]}><AdminAuditPage /></AdminPermissionGate></RouteElement>} />
         </Route>

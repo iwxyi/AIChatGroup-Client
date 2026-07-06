@@ -354,6 +354,26 @@ class AdminApiClient {
     return this.request<Record<string, unknown>>('POST', `/notifications/jobs/${encodeURIComponent(jobId)}/deliver`, {});
   }
 
+  getSmsSendRecords(params?: { status?: string; providerCode?: string; search?: string; page?: number; limit?: number }) {
+    return this.request<{ items: Array<Record<string, unknown>>; page: number; limit: number; total: number }>('GET', `/notifications/sms-send-records${this.buildQuery({
+      status: params?.status,
+      providerCode: params?.providerCode,
+      search: params?.search,
+      page: params?.page,
+      limit: params?.limit,
+    })}`);
+  }
+
+  getEmailSendRecords(params?: { status?: string; providerCode?: string; search?: string; page?: number; limit?: number }) {
+    return this.request<{ items: Array<Record<string, unknown>>; page: number; limit: number; total: number }>('GET', `/notifications/email-send-records${this.buildQuery({
+      status: params?.status,
+      providerCode: params?.providerCode,
+      search: params?.search,
+      page: params?.page,
+      limit: params?.limit,
+    })}`);
+  }
+
   getOrders(params?: { status?: string; userId?: string }) {
     return this.request<{ items: Array<Record<string, unknown>> }>('GET', `/billing/orders${this.buildQuery({ status: params?.status, userId: params?.userId })}`);
   }
@@ -368,6 +388,10 @@ class AdminApiClient {
 
   updateBillingPlan(planId: string, payload: Record<string, unknown>) {
     return this.request<Record<string, unknown>>('PUT', `/billing/plans/${encodeURIComponent(planId)}`, payload);
+  }
+
+  deleteBillingPlan(planId: string) {
+    return this.request<Record<string, unknown>>('DELETE', `/billing/plans/${encodeURIComponent(planId)}`);
   }
 
   markOrderPaid(orderId: string, payload?: Record<string, unknown>) {

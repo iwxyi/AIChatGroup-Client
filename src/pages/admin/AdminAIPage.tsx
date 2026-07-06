@@ -6,43 +6,94 @@ import AdminResponsiveTable from '../../components/admin/AdminResponsiveTable';
 import AdminRequestState, { getAdminErrorMessage } from '../../components/admin/AdminRequestState';
 import { adminApi } from '../../services/adminApi';
 
-function ProviderTable({ items, onOpen }: { items: Array<Record<string, unknown>>; onOpen: (providerCode: string) => void }) {
+type BalanceState = {
+  loading: boolean;
+  value: string;
+  error: string | null;
+};
+
+function providerSortWeight(item: Record<string, unknown>) {
+  const code = String(item.code || '');
+  if (code === 'api2d') return 100;
+  if (String(item.status || '') === 'active') return 0;
+  return 50;
+}
+
+function sortProviders(items: Array<Record<string, unknown>>) {
+  return items.slice().sort((left, right) => {
+    const leftWeight = providerSortWeight(left);
+    const rightWeight = providerSortWeight(right);
+    if (leftWeight !== rightWeight) return leftWeight - rightWeight;
+    return String(left.code || '').localeCompare(String(right.code || ''), 'zh-CN');
+  });
+}
+
+function formatBalance(result: Record<string, unknown>) {
+  const value = Number(result.availableBalance ?? result.available_balance ?? result.balance);
+  if (!Number.isFinite(value)) return '未知';
+  const unit = String(result.currencyUnit ?? result.currency_unit ?? '').trim();
+  const text = Number.isInteger(value) ? String(value) : String(Number(value.toFixed(4)));
+  if (unit === 'CNY') return `¥${text}`;
+  if (unit === 'moacode_balance') return `${text}`;
+  if (unit === 'provider_balance') return `${text}`;
+  return unit ? `${text} ${unit}` : text;
+}
+
+function ProviderTable({
+  items,
+  balances,
+  onOpen,
+}: {
+  items: Array<Record<string, unknown>>;
+  balances: Record<string, BalanceState>;
+  onOpen: (providerCode: string) => void;
+}) {
   return (
-    <AdminResponsiveTable minWidth={720}>
+    <AdminResponsiveTable minWidth={760}>
       <Table>
         <TableHead>
           <TableRow>
             <TableCell>Code</TableCell>
             <TableCell>Name</TableCell>
             <TableCell>AI 调用地址</TableCell>
-            <TableCell>管理 API 地址</TableCell>
+            <TableCell>余额</TableCell>
             <TableCell>Status</TableCell>
-            <TableCell>默认分组</TableCell>
           </TableRow>
         </TableHead>
         <TableBody>
-          {items.map((item) => (
-            <TableRow
-              key={String(item.id)}
-              hover
-              onClick={() => onOpen(String(item.code || ''))}
-              sx={{ cursor: 'pointer' }}
-            >
-              <TableCell>{String(item.code || '')}</TableCell>
-              <TableCell>{String(item.name || '')}</TableCell>
-              <TableCell>{String(item.base_url || '')}</TableCell>
-              <TableCell>{String(item.admin_base_url || '')}</TableCell>
-              <TableCell>
-                <Chip
-                  size="small"
-                  label={String(item.status || '') === 'active' ? '启用' : '停用'}
-                  color={String(item.status || '') === 'active' ? 'success' : 'default'}
-                  sx={{ height: 22 }}
-                />
-              </TableCell>
-              <TableCell>{String(item.default_key_type_id ?? '')}</TableCell>
-            </TableRow>
-          ))}
+          {items.map((item) => {
+            const code = String(item.code || '');
+            const balance = balances[code];
+            return (
+              <TableRow
+                key={String(item.id)}
+                hover
+                onClick={() => onOpen(code)}
+                sx={{ cursor: 'pointer' }}
+              >
+                <TableCell>{code}</TableCell>
+                <TableCell>{String(item.name || '')}</TableCell>
+                <TableCell>{String(item.base_url || '')}</TableCell>
+                <TableCell>
+                  {balance?.loading ? (
+                    <Typography variant="body2" color="text.secondary">查询中</Typography>
+                  ) : balance?.error ? (
+                    <Typography variant="body2" color="error.main">{balance.error}</Typography>
+                  ) : (
+                    <Typography variant="body2" sx={{ fontWeight: 800 }}>{balance?.value || '-'}</Typography>
+                  )}
+                </TableCell>
+                <TableCell>
+                  <Chip
+                    size="small"
+                    label={String(item.status || '') === 'active' ? '启用' : '停用'}
+                    color={String(item.status || '') === 'active' ? 'success' : 'default'}
+                    sx={{ height: 22 }}
+                  />
+                </TableCell>
+              </TableRow>
+            );
+          })}
         </TableBody>
       </Table>
     </AdminResponsiveTable>
@@ -52,6 +103,7 @@ function ProviderTable({ items, onOpen }: { items: Array<Record<string, unknown>
 export default function AdminAIPage() {
   const navigate = useNavigate();
   const [items, setItems] = useState<Array<Record<string, unknown>>>([]);
+  const [balances, setBalances] = useState<Record<string, BalanceState>>({});
   const [globalDialogOpen, setGlobalDialogOpen] = useState(false);
   const [globalForm, setGlobalForm] = useState({
     defaultProvisionEnabled: false,
@@ -75,7 +127,19 @@ export default function AdminAIPage() {
     setError(null);
     try {
       const result = await adminApi.getAiProviders();
-      setItems(result.items);
+      const nextItems = sortProviders(result.items || []);
+      setItems(nextItems);
+      setBalances(Object.fromEntries(nextItems.map((item) => [String(item.code || ''), { loading: true, value: '', error: null }])));
+      void Promise.all(nextItems.map(async (item) => {
+        const code = String(item.code || '');
+        if (!code) return;
+        try {
+          const balance = await adminApi.getAiProviderAccountBalance(code);
+          setBalances((prev) => ({ ...prev, [code]: { loading: false, value: formatBalance(balance), error: null } }));
+        } catch (balanceError) {
+          setBalances((prev) => ({ ...prev, [code]: { loading: false, value: '', error: getAdminErrorMessage(balanceError) } }));
+        }
+      }));
     } catch (loadError) {
       setError(getAdminErrorMessage(loadError));
     } finally {
@@ -170,7 +234,7 @@ export default function AdminAIPage() {
         <Button variant="outlined" onClick={openGlobalDialog} sx={{ ml: 'auto' }}>全局配置</Button>
       </AdminInlineGroup>
       <AdminRequestState loading={loading} error={error} onRetry={() => void loadProviders()} />
-      <ProviderTable items={items} onOpen={(providerCode) => navigate(`/admin/ai/providers/${encodeURIComponent(providerCode)}`)} />
+      <ProviderTable items={items} balances={balances} onOpen={(providerCode) => navigate(`/admin/platform/ai/providers/${encodeURIComponent(providerCode)}`)} />
       <Dialog open={globalDialogOpen} onClose={() => setGlobalDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>AI 全局配置</DialogTitle>
         <DialogContent>

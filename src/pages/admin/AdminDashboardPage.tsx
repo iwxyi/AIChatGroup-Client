@@ -7,7 +7,7 @@ import { adminApi } from '../../services/adminApi';
 
 const metricMeta: Record<string, { title: string; route?: string }> = {
   users: { title: '用户总数', route: '/admin/users' },
-  activeAiEntitlements: { title: 'AI开通数', route: '/admin/ai' },
+  activeAiEntitlements: { title: 'AI开通数', route: '/admin/platform?tab=ai' },
   pendingShareReviews: { title: '待处理审核', route: '/admin/moderation' },
   activeRestrictions: { title: '生效限制', route: '/admin/risk' },
   pendingOrders: { title: '待支付订单', route: '/admin/billing' },

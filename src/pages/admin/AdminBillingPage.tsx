@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import AddIcon from '@mui/icons-material/Add';
+import DeleteIcon from '@mui/icons-material/Delete';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import SaveIcon from '@mui/icons-material/Save';
 import {
@@ -28,16 +29,17 @@ import AdminDetailCard from '../../components/admin/AdminDetailCard';
 import AdminInlineGroup from '../../components/admin/AdminInlineGroup';
 import AdminResponsiveTable from '../../components/admin/AdminResponsiveTable';
 import AdminRequestState, { getAdminErrorMessage } from '../../components/admin/AdminRequestState';
+import ConfirmDialog from '../../components/common/ConfirmDialog';
 import { adminApi } from '../../services/adminApi';
-
-type PlanKind = 'vip' | 'points';
+import { readPersistentUiValue, writePersistentUiValue } from '../../utils/persistentUiState';
 
 type PlanForm = {
   id: string;
   code: string;
   name: string;
   description: string;
-  planKind: PlanKind;
+  vipEnabled: boolean;
+  pointsEnabled: boolean;
   priceAmount: string;
   currency: string;
   durationDays: string;
@@ -46,13 +48,7 @@ type PlanForm = {
   visibleToUsers: boolean;
   featured: boolean;
   sortOrder: string;
-  aiEnabled: boolean;
-  allowStream: boolean;
-  allowAdvancedModels: boolean;
-  defaultModelTier: string;
-  maxRequestsPerMinute: string;
-  maxConcurrentRequests: string;
-  maxContextTokens: string;
+  featureUnlockEnabled: boolean;
   featuresText: string;
 };
 
@@ -61,7 +57,8 @@ const EMPTY_PLAN_FORM: PlanForm = {
   code: '',
   name: '',
   description: '',
-  planKind: 'points',
+  vipEnabled: false,
+  pointsEnabled: true,
   priceAmount: '',
   currency: 'CNY',
   durationDays: '30',
@@ -70,15 +67,14 @@ const EMPTY_PLAN_FORM: PlanForm = {
   visibleToUsers: true,
   featured: false,
   sortOrder: '0',
-  aiEnabled: true,
-  allowStream: true,
-  allowAdvancedModels: false,
-  defaultModelTier: 'standard',
-  maxRequestsPerMinute: '30',
-  maxConcurrentRequests: '2',
-  maxContextTokens: '64000',
+  featureUnlockEnabled: true,
   featuresText: '',
 };
+const BILLING_TAB_STORAGE_KEY = 'admin.billing.tab';
+
+function isBillingTab(value: unknown): value is number {
+  return value === 0 || value === 1;
+}
 
 function formatOrderTime(value: unknown) {
   const parsed = Number(value || 0);
@@ -109,8 +105,11 @@ function formatPoints(value: unknown) {
   return `${Number.isInteger(parsed) ? parsed : Number(parsed.toFixed(2))}P`;
 }
 
-function planKindLabel(value: unknown) {
-  return String(value || '') === 'vip' ? 'VIP + 点数' : '点数包';
+function planBenefitsLabel(planKind: unknown, grantPoints: unknown) {
+  const benefits = [];
+  if (String(planKind || '') === 'vip') benefits.push('VIP');
+  if (Number(grantPoints || 0) > 0) benefits.push('点数');
+  return benefits.length ? benefits.join(' / ') : '-';
 }
 
 function statusLabel(value: unknown) {
@@ -140,27 +139,23 @@ function parseMetadataFeatures(value: unknown) {
 
 function toPlanForm(item: Record<string, unknown>): PlanForm {
   const planKind = String(item.plan_kind || '') === 'vip' ? 'vip' : 'points';
+  const grantPoints = numberText(item.grant_points);
   return {
     id: String(item.id || ''),
     code: String(item.code || ''),
     name: String(item.name || ''),
     description: String(item.description || ''),
-    planKind,
+    vipEnabled: planKind === 'vip',
+    pointsEnabled: Number(item.grant_points || 0) > 0,
     priceAmount: numberText(item.price_amount),
     currency: String(item.currency || 'CNY'),
     durationDays: item.duration_days == null ? '30' : numberText(item.duration_days, '30'),
-    grantPoints: numberText(item.grant_points),
+    grantPoints,
     status: String(item.status || 'active'),
     visibleToUsers: toBoolean(item.visible_to_users, true),
     featured: toBoolean(item.featured, false),
     sortOrder: numberText(item.sort_order, '0'),
-    aiEnabled: planKind === 'vip' ? toBoolean(item.ai_enabled, true) : false,
-    allowStream: toBoolean(item.allow_stream, true),
-    allowAdvancedModels: toBoolean(item.allow_advanced_models, false),
-    defaultModelTier: String(item.default_model_tier || 'standard'),
-    maxRequestsPerMinute: numberText(item.max_requests_per_minute, '30'),
-    maxConcurrentRequests: numberText(item.max_concurrent_requests, '2'),
-    maxContextTokens: numberText(item.max_context_tokens, '64000'),
+    featureUnlockEnabled: planKind === 'vip' ? toBoolean(item.ai_enabled, true) : false,
     featuresText: parseMetadataFeatures(item.metadata).join('\n'),
   };
 }
@@ -171,28 +166,31 @@ function toNumber(value: string, fallback: number) {
 }
 
 function buildPlanPayload(form: PlanForm) {
-  const isVip = form.planKind === 'vip';
+  const isVip = form.vipEnabled;
+  const pointsEnabled = form.pointsEnabled;
+  const benefits = [
+    isVip ? 'vip' : '',
+    pointsEnabled ? 'points' : '',
+  ].filter(Boolean);
   return {
     code: form.code.trim(),
     name: form.name.trim(),
     description: form.description.trim() || null,
-    planKind: form.planKind,
+    planKind: isVip ? 'vip' : 'points',
+    vipEnabled: isVip,
+    pointsEnabled,
+    benefits,
     priceAmount: Math.max(0, toNumber(form.priceAmount, 0)),
     currency: form.currency.trim() || 'CNY',
     durationDays: isVip ? Math.max(1, Math.floor(toNumber(form.durationDays, 30))) : null,
-    grantPoints: Math.max(0, toNumber(form.grantPoints, 0)),
+    grantPoints: pointsEnabled ? Math.max(0, toNumber(form.grantPoints, 0)) : 0,
     status: form.status,
     visibleToUsers: form.visibleToUsers,
     featured: form.featured,
     sortOrder: Math.floor(toNumber(form.sortOrder, 0)),
-    aiEnabled: isVip ? form.aiEnabled : false,
-    allowStream: isVip ? form.allowStream : true,
-    allowAdvancedModels: isVip ? form.allowAdvancedModels : false,
-    defaultModelTier: form.defaultModelTier.trim() || 'standard',
-    maxRequestsPerMinute: Math.max(1, Math.floor(toNumber(form.maxRequestsPerMinute, 30))),
-    maxConcurrentRequests: Math.max(1, Math.floor(toNumber(form.maxConcurrentRequests, 2))),
-    maxContextTokens: Math.max(1024, Math.floor(toNumber(form.maxContextTokens, 64000))),
-    features: form.featuresText.split('\n').map((item) => item.trim()).filter(Boolean),
+    aiEnabled: isVip ? form.featureUnlockEnabled : false,
+    featureUnlockEnabled: isVip ? form.featureUnlockEnabled : false,
+    features: isVip ? form.featuresText.split('\n').map((item) => item.trim()).filter(Boolean) : [],
   };
 }
 
@@ -216,15 +214,17 @@ function OrderDetailCard({ selectedOrder }: { selectedOrder: Record<string, unkn
 }
 
 export default function AdminBillingPage() {
-  const [tab, setTab] = useState(0);
+  const [tab, setTab] = useState(() => readPersistentUiValue<number>(BILLING_TAB_STORAGE_KEY, 0, isBillingTab));
   const [plans, setPlans] = useState<Array<Record<string, unknown>>>([]);
   const [orders, setOrders] = useState<Array<Record<string, unknown>>>([]);
   const [selectedOrder, setSelectedOrder] = useState<Record<string, unknown> | null>(null);
   const [planForm, setPlanForm] = useState<PlanForm>(EMPTY_PLAN_FORM);
   const [planDialogOpen, setPlanDialogOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Record<string, unknown> | null>(null);
   const [plansLoading, setPlansLoading] = useState(false);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [savingPlan, setSavingPlan] = useState(false);
+  const [deletingPlanId, setDeletingPlanId] = useState<string | null>(null);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
   const [plansError, setPlansError] = useState<string | null>(null);
   const [ordersError, setOrdersError] = useState<string | null>(null);
@@ -239,9 +239,12 @@ export default function AdminBillingPage() {
 
   const planSummary = useMemo(() => ({
     vip: plans.filter((item) => String(item.plan_kind || '') === 'vip').length,
-    points: plans.filter((item) => String(item.plan_kind || '') !== 'vip').length,
+    points: plans.filter((item) => Number(item.grant_points || 0) > 0).length,
     active: plans.filter((item) => String(item.status || '') === 'active').length,
   }), [plans]);
+  const planHasBenefit = planForm.vipEnabled || planForm.pointsEnabled;
+  const planPointsValid = !planForm.pointsEnabled || toNumber(planForm.grantPoints, 0) > 0;
+  const canSavePlan = planHasBenefit && planPointsValid && !savingPlan;
 
   const loadPlans = async () => {
     setPlansLoading(true);
@@ -294,6 +297,27 @@ export default function AdminBillingPage() {
     }
   };
 
+  const deletePlan = async () => {
+    if (deletingPlanId) return;
+    const planId = String(deleteTarget?.id || '');
+    if (!planId) return;
+    setDeletingPlanId(planId);
+    setPlansError(null);
+    try {
+      await adminApi.deleteBillingPlan(planId);
+      if (selectedPlanId === planId) {
+        setPlanDialogOpen(false);
+        setPlanForm(EMPTY_PLAN_FORM);
+      }
+      setDeleteTarget(null);
+      await loadPlans();
+    } catch (deleteError) {
+      setPlansError(getAdminErrorMessage(deleteError));
+    } finally {
+      setDeletingPlanId(null);
+    }
+  };
+
   const markPaid = async (orderId: string) => {
     setActionLoadingId(orderId);
     setOrdersError(null);
@@ -321,6 +345,8 @@ export default function AdminBillingPage() {
   };
 
   const openCreatePlanDialog = () => {
+    setTab(0);
+    writePersistentUiValue(BILLING_TAB_STORAGE_KEY, 0);
     setPlanForm(EMPTY_PLAN_FORM);
     setPlanDialogOpen(true);
   };
@@ -330,28 +356,35 @@ export default function AdminBillingPage() {
     setPlanDialogOpen(true);
   };
 
+  const changeTab = (_event: unknown, value: number) => {
+    setTab(value);
+    writePersistentUiValue(BILLING_TAB_STORAGE_KEY, value);
+  };
+
   return (
     <Stack spacing={2}>
-      <Tabs value={tab} onChange={(_event, value) => setTab(value)} variant="scrollable" allowScrollButtonsMobile>
-        <Tab label="套餐" />
-        <Tab label="订单" />
-      </Tabs>
+      <Stack direction="row" spacing={1.25} sx={{ alignItems: 'center', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap' }}>
+        <Tabs value={tab} onChange={changeTab} variant="scrollable" allowScrollButtonsMobile sx={{ minWidth: 0, flex: '1 1 auto' }}>
+          <Tab label="套餐" />
+          <Tab label="订单" />
+        </Tabs>
+        <Button
+          variant="outlined"
+          startIcon={<AddIcon />}
+          onClick={openCreatePlanDialog}
+          sx={{ flex: '0 0 auto' }}
+        >
+          新建套餐
+        </Button>
+      </Stack>
 
       {tab === 0 ? (
         <Stack spacing={2}>
           <AdminRequestState loading={plansLoading} error={plansError} onRetry={() => void loadPlans()} />
           <AdminInlineGroup gap={1.25}>
             <Alert severity="info">VIP 套餐：{planSummary.vip}</Alert>
-            <Alert severity="success">点数套餐：{planSummary.points}</Alert>
+            <Alert severity="success">含点数套餐：{planSummary.points}</Alert>
             <Alert severity="warning">启用中：{planSummary.active}</Alert>
-            <Button
-              variant="outlined"
-              startIcon={<AddIcon />}
-              onClick={openCreatePlanDialog}
-              sx={{ ml: 'auto' }}
-            >
-              新建套餐
-            </Button>
           </AdminInlineGroup>
 
           <Stack spacing={1.25}>
@@ -360,7 +393,7 @@ export default function AdminBillingPage() {
                 <TableHead>
                   <TableRow>
                     <TableCell>套餐</TableCell>
-                    <TableCell>类型</TableCell>
+                    <TableCell>权益</TableCell>
                     <TableCell>价格</TableCell>
                     <TableCell>赠送点数</TableCell>
                     <TableCell>时长</TableCell>
@@ -384,7 +417,7 @@ export default function AdminBillingPage() {
                         </Stack>
                       </TableCell>
                       <TableCell>
-                        <Chip size="small" label={planKindLabel(item.plan_kind)} color={String(item.plan_kind || '') === 'vip' ? 'primary' : 'default'} />
+                        <Chip size="small" label={planBenefitsLabel(item.plan_kind, item.grant_points)} color={String(item.plan_kind || '') === 'vip' ? 'primary' : 'default'} />
                       </TableCell>
                       <TableCell>{formatMoney(item.price_amount, item.currency)}</TableCell>
                       <TableCell>{formatPoints(item.grant_points)}</TableCell>
@@ -397,7 +430,21 @@ export default function AdminBillingPage() {
                         </Stack>
                       </TableCell>
                       <TableCell align="right">
-                        <Button size="small" onClick={(event) => { event.stopPropagation(); openEditPlanDialog(item); }}>编辑</Button>
+                        <Stack direction="row" spacing={0.5} sx={{ justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                          <Button size="small" onClick={(event) => { event.stopPropagation(); openEditPlanDialog(item); }}>编辑</Button>
+                          <Button
+                            size="small"
+                            color="error"
+                            startIcon={<DeleteIcon />}
+                            disabled={deletingPlanId === String(item.id)}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setDeleteTarget(item);
+                            }}
+                          >
+                            删除
+                          </Button>
+                        </Stack>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -412,33 +459,33 @@ export default function AdminBillingPage() {
               <Stack spacing={1.25} sx={{ pt: 1 }}>
                 <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25}>
                   <TextField label="套餐编码" value={planForm.code} onChange={(event) => updateForm('code', event.target.value)} fullWidth />
-                  <TextField select label="类型" value={planForm.planKind} onChange={(event) => updateForm('planKind', event.target.value as PlanKind)} sx={{ minWidth: 150 }}>
-                    <MenuItem value="points">点数包</MenuItem>
-                    <MenuItem value="vip">VIP + 点数</MenuItem>
-                  </TextField>
+                  <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', flex: '0 0 auto', flexWrap: 'wrap' }}>
+                    <FormControlLabel control={<Switch checked={planForm.vipEnabled} onChange={(event) => updateForm('vipEnabled', event.target.checked)} />} label="VIP" />
+                    <FormControlLabel control={<Switch checked={planForm.pointsEnabled} onChange={(event) => updateForm('pointsEnabled', event.target.checked)} />} label="点数" />
+                  </Stack>
                 </Stack>
                 <TextField label="套餐名称" value={planForm.name} onChange={(event) => updateForm('name', event.target.value)} fullWidth />
                 <TextField label="说明" value={planForm.description} onChange={(event) => updateForm('description', event.target.value)} fullWidth multiline minRows={2} />
                 <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25}>
                   <TextField label="价格" value={planForm.priceAmount} onChange={(event) => updateForm('priceAmount', event.target.value)} fullWidth />
                   <TextField label="币种" value={planForm.currency} onChange={(event) => updateForm('currency', event.target.value)} sx={{ minWidth: 100 }} />
-                  <TextField label="赠送点数" value={planForm.grantPoints} onChange={(event) => updateForm('grantPoints', event.target.value)} fullWidth />
                 </Stack>
-                {planForm.planKind === 'vip' ? (
+                {!planHasBenefit ? <Alert severity="warning">至少选择一个套餐权益。</Alert> : null}
+                {planForm.pointsEnabled ? (
+                  <TextField
+                    label="赠送点数"
+                    value={planForm.grantPoints}
+                    onChange={(event) => updateForm('grantPoints', event.target.value)}
+                    error={!planPointsValid}
+                    helperText={!planPointsValid ? '启用点数权益时，赠送点数必须大于 0' : undefined}
+                    fullWidth
+                  />
+                ) : null}
+                {planForm.vipEnabled ? (
                   <>
                     <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25}>
                       <TextField label="有效天数" value={planForm.durationDays} onChange={(event) => updateForm('durationDays', event.target.value)} fullWidth />
-                      <TextField label="模型等级" value={planForm.defaultModelTier} onChange={(event) => updateForm('defaultModelTier', event.target.value)} fullWidth />
-                    </Stack>
-                    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25}>
-                      <TextField label="每分钟请求" value={planForm.maxRequestsPerMinute} onChange={(event) => updateForm('maxRequestsPerMinute', event.target.value)} fullWidth />
-                      <TextField label="最大并发" value={planForm.maxConcurrentRequests} onChange={(event) => updateForm('maxConcurrentRequests', event.target.value)} fullWidth />
-                    </Stack>
-                    <TextField label="上下文 Token 上限" value={planForm.maxContextTokens} onChange={(event) => updateForm('maxContextTokens', event.target.value)} fullWidth />
-                    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={0.5}>
-                      <FormControlLabel control={<Switch checked={planForm.aiEnabled} onChange={(event) => updateForm('aiEnabled', event.target.checked)} />} label="解锁 AI" />
-                      <FormControlLabel control={<Switch checked={planForm.allowStream} onChange={(event) => updateForm('allowStream', event.target.checked)} />} label="流式" />
-                      <FormControlLabel control={<Switch checked={planForm.allowAdvancedModels} onChange={(event) => updateForm('allowAdvancedModels', event.target.checked)} />} label="高级模型" />
+                      <FormControlLabel control={<Switch checked={planForm.featureUnlockEnabled} onChange={(event) => updateForm('featureUnlockEnabled', event.target.checked)} />} label="解锁功能" />
                     </Stack>
                     <TextField label="功能权益（每行一项）" value={planForm.featuresText} onChange={(event) => updateForm('featuresText', event.target.value)} fullWidth multiline minRows={3} />
                   </>
@@ -459,11 +506,21 @@ export default function AdminBillingPage() {
             </DialogContent>
             <DialogActions>
               <Button onClick={() => setPlanDialogOpen(false)} disabled={savingPlan}>取消</Button>
-              <Button variant="contained" startIcon={<SaveIcon />} disabled={savingPlan} onClick={() => void savePlan()}>
+              <Button variant="contained" startIcon={<SaveIcon />} disabled={!canSavePlan} onClick={() => void savePlan()}>
                 {planForm.id ? '保存套餐' : '添加套餐'}
               </Button>
             </DialogActions>
           </Dialog>
+          <ConfirmDialog
+            open={Boolean(deleteTarget)}
+            title="删除套餐"
+            message={`确认删除套餐“${String(deleteTarget?.name || deleteTarget?.code || '')}”？如果已有订单或订阅引用它，系统会自动归档并隐藏，而不是破坏历史数据。`}
+            destructive
+            onCancel={() => {
+              if (!deletingPlanId) setDeleteTarget(null);
+            }}
+            onConfirm={() => void deletePlan()}
+          />
         </Stack>
       ) : (
         <Stack spacing={2}>
@@ -486,7 +543,7 @@ export default function AdminBillingPage() {
                   <TableCell>订单号</TableCell>
                   <TableCell>用户</TableCell>
                   <TableCell>套餐</TableCell>
-                  <TableCell>类型</TableCell>
+                  <TableCell>权益</TableCell>
                   <TableCell>金额</TableCell>
                   <TableCell>状态</TableCell>
                   <TableCell align="right">操作</TableCell>
@@ -498,7 +555,7 @@ export default function AdminBillingPage() {
                     <TableCell>{String(item.order_no || '')}</TableCell>
                     <TableCell>{String(item.user_nickname || item.user_phone || '')}</TableCell>
                     <TableCell>{String(item.plan_name || '')}</TableCell>
-                    <TableCell>{planKindLabel(item.order_type || item.plan_kind)}</TableCell>
+                    <TableCell>{planBenefitsLabel(item.order_type || item.plan_kind, item.grant_points)}</TableCell>
                     <TableCell>{formatMoney(item.amount, item.currency)}</TableCell>
                     <TableCell>{statusLabel(item.status)}</TableCell>
                     <TableCell align="right">
