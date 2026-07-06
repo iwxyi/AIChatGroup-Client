@@ -1,12 +1,28 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Box, Button, TextField, Typography, Chip, LinearProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, IconButton, InputLabel, MenuItem, Select } from '@mui/material';
+import { Alert, Box, Button, CircularProgress, TextField, Typography, LinearProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, IconButton, InputLabel, MenuItem, Select, Tooltip } from '@mui/material';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import SettingsIcon from '@mui/icons-material/Settings';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useShallow } from 'zustand/react/shallow';
+import { useTranslation } from 'react-i18next';
 import type { AIModelProfile } from '../types/settings';
 import type { AICharacter, CharacterBehaviorParams, PersonalityParams } from '../types/character';
 import { enqueueAvatarGenerationForCharacters } from '../services/avatarGeneration';
 import { initializeDefaultRelationshipsForCreatedCharacters } from '../services/defaultRelationshipInitializer';
+import { generateResponse } from '../services/aiClient';
+import { generateCharacterProfilesSafe } from '../services/characterGenerator';
 import AppSnackbar from '../components/common/AppSnackbar';
+import FloatingSegmentedTabs from '../components/common/FloatingSegmentedTabs';
+import CharacterRelationshipView, { type CharacterRelationshipViewCircle, type CharacterRelationshipViewEdge, type CharacterRelationshipViewNode } from '../components/relationship/CharacterRelationshipView';
+import { useLayoutHeaderActions } from '../components/layout/AppLayoutContext';
 import { BATCH_GENERATE_EXAMPLES } from '../constants/batchGenerateExamples';
+import { useSettingsStore } from '../stores/useSettingsStore';
+import { useCharacterStore } from '../stores/useCharacterStore';
+import { DEFAULT_CHARACTER_INTERVENTION, DEFAULT_CHARACTER_MEMORY } from '../types';
+import { getTopicDerivedCharacterGroup } from '../types/character';
+import { getPreferredAIProfile, isAIProfileUsable } from '../types/settings';
+import { chooseRandomBubbleStyleId, createCharacterBubbleStyleId } from '../utils/bubbleStyle';
 
 const BATCH_GENERATE_GROUP_SIZE = 10;
 const MOBILE_BOTTOM_NAV_FAB_OFFSET = 'calc(env(safe-area-inset-bottom, 0px) + 104px)';
@@ -26,12 +42,32 @@ interface ProgressState {
 }
 
 type NameFormat = 'roleName' | 'roleDotName' | 'nameDotRole' | 'nameDashRole' | 'roleDashName' | 'nameParenRole' | 'nameOnly' | 'roleOnly';
+type BatchGenerateTab = 'list' | 'relationships' | 'completion';
 
 interface CandidateCharacter {
   id: string;
   name: string;
   role: string;
   summary: string;
+}
+
+interface CandidateRelationship {
+  id: string;
+  fromName: string;
+  toName: string;
+  note: string;
+  tone: 'warm' | 'tense' | 'mixed' | 'neutral';
+  strength: number;
+  inferredFrom?: string;
+}
+
+interface CandidateRelationshipCircle {
+  id: string;
+  name: string;
+  summary: string;
+  characterNames: string[];
+  keyRelationshipIds: string[];
+  bridgeRelationshipIds: string[];
 }
 
 const NAME_FORMAT_OPTIONS: Array<{ value: NameFormat; label: string }> = [
@@ -114,7 +150,9 @@ function buildGeneratedCharacterPayload(params: {
     speakingStyle: string;
     background: string;
     speechProfile: NonNullable<AICharacter['speechProfile']>;
+    coreProfile: NonNullable<AICharacter['coreProfile']>;
     bubbleStyle: NonNullable<AICharacter['bubbleStyle']>;
+    visualIdentity: NonNullable<AICharacter['visualIdentity']>;
   };
   generatedGroup: string | null;
   allCharacters: Array<Pick<AICharacter, 'name' | 'group' | 'bubbleStyleId'>>;
@@ -186,8 +224,8 @@ async function processCharacterBatch(params: {
         description: [
           params.description?.trim() || '',
           params.language === 'zh'
-            ? `隐藏角色摘要：${creatableItems.map(({ candidate, displayName }) => `${displayName} => 本名：${candidate.name}；主要身份：${candidate.role}；摘要：${candidate.summary}`).join('；')}`
-            : `Hidden character summaries: ${creatableItems.map(({ candidate, displayName }) => `${displayName} => name: ${candidate.name}; primary role: ${candidate.role}; summary: ${candidate.summary}`).join('; ')}`,
+            ? `候选角色设定摘要：${creatableItems.map(({ candidate, displayName }) => `${displayName} => 本名：${candidate.name}；主要身份：${candidate.role}；设定摘要：${candidate.summary}`).join('；')}`
+            : `Candidate role setup summaries: ${creatableItems.map(({ candidate, displayName }) => `${displayName} => name: ${candidate.name}; primary role: ${candidate.role}; setup summary: ${candidate.summary}`).join('; ')}`,
         ].filter(Boolean).join('\n'),
       });
       failed.forEach(({ name, reason }) => {
@@ -206,7 +244,9 @@ async function processCharacterBatch(params: {
             speakingStyle: profile.speakingStyle,
             background: profile.background,
             speechProfile: profile.speechProfile,
+            coreProfile: profile.coreProfile,
             bubbleStyle: profile.bubbleStyle,
+            visualIdentity: profile.visualIdentity,
           },
           generatedGroup: params.generatedGroup,
           allCharacters: params.characters,
@@ -259,144 +299,22 @@ async function processCharacterBatch(params: {
   return allCreatedCharacters;
 }
 
-import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
-import SettingsIcon from '@mui/icons-material/Settings';
-import { useLocation, useNavigate } from 'react-router-dom';
-import { useLayoutHeaderActions } from '../components/layout/AppLayoutContext';
-import { useTranslation } from 'react-i18next';
-import { generateResponse } from '../services/aiClient';
-import { generateCharacterProfilesSafe } from '../services/characterGenerator';
-
-import { useSettingsStore } from '../stores/useSettingsStore';
-import { useCharacterStore } from '../stores/useCharacterStore';
-import { DEFAULT_CHARACTER_INTERVENTION, DEFAULT_CHARACTER_MEMORY } from '../types';
-import { getTopicDerivedCharacterGroup } from '../types/character';
-import { getPreferredAIProfile, isAIProfileUsable } from '../types/settings';
-import { BUILT_IN_BUBBLE_STYLES } from '../constants/bubbleStyles';
-import { chooseRandomBubbleStyleId, createCharacterBubbleStyleId } from '../utils/bubbleStyle';
-
-
-function getCustomBubbleStyleIds(settings: { customBubbleStyles?: Array<{ id: string }> }) {
-  return (settings.customBubbleStyles || []).map((style) => style.id);
-}
-
-function chooseBatchBubbleStyle(settings: { customBubbleStyles?: Array<{ id: string }> }, allCharacters: Array<{ group?: string | null; bubbleStyleId?: string | null }>, generatedGroup: string | null) {
-  return chooseRandomBubbleStyleId({
-    allCharacters,
-    generatedGroup,
-    customStyleIds: getCustomBubbleStyleIds(settings),
-  });
-}
-
-function filterMeaningfulRelationshipPairs(members: Array<{ name: string; relationships: Array<{ characterId: string; valence: number; respect: number; trust: number; tension: number; note?: string }>; }>, allMembers: Array<{ id: string; name: string }>) {
-  return members.flatMap((member) =>
-    member.relationships
-      .filter((relation) => Boolean(relation.note?.trim()) || Math.abs(relation.valence + relation.respect + relation.trust - relation.tension) >= 15 || relation.valence >= 12 || relation.respect >= 12 || relation.trust >= 12 || relation.tension >= 12 || relation.valence <= -12 || relation.respect <= -12 || relation.trust <= -12)
-      .map((relation) => ({
-        source: member.name,
-        target: allMembers.find((item) => item.id === relation.characterId)?.name || relation.characterId,
-        relation,
-        score: relation.valence + relation.respect + relation.trust - relation.tension,
-      }))
-  );
-}
-
-function getRuntimeRelationshipItems(members: Array<{ name: string; relationships: Array<{ characterId: string; valence: number; respect: number; trust: number; tension: number; note?: string }>; }>, allMembers: Array<{ id: string; name: string }>) {
-  return filterMeaningfulRelationshipPairs(members, allMembers).slice(0, 8);
-}
-
-function getMeaningfulRelationshipPairs(members: Array<{ name: string; relationships: Array<{ characterId: string; valence: number; respect: number; trust: number; tension: number; note?: string }>; }>, allMembers: Array<{ id: string; name: string }>) {
-  return getRuntimeRelationshipItems(members, allMembers);
-}
-
-function getFilteredRelationshipPairs(members: Array<{ name: string; relationships: Array<{ characterId: string; valence: number; respect: number; trust: number; tension: number; note?: string }>; }>, allMembers: Array<{ id: string; name: string }>) {
-  return getMeaningfulRelationshipPairs(members, allMembers);
-}
-
-function getLongerMemoryPreview(text: string, limit = 120) {
-  return text.length > limit ? `${text.slice(0, limit)}…` : text;
-}
-
-function getLongerTimelinePreview(text: string, limit = 140) {
-  return text.length > limit ? `${text.slice(0, limit)}…` : text;
-}
-
-function getLongerRelationshipPreview(text: string, limit = 90) {
-  return text.length > limit ? `${text.slice(0, limit)}…` : text;
-}
-
-function getLongerGeneratedNamePreview(text: string, limit = 60) {
-  return text.length > limit ? `${text.slice(0, limit)}…` : text;
-}
-
-function getBubbleStyleForBatchCharacter(settings: { customBubbleStyles?: Array<{ id: string }> }, characters: Array<{ group?: string | null; bubbleStyleId?: string | null }>, generatedGroup: string | null) {
-  return chooseBatchBubbleStyle(settings, characters, generatedGroup);
-}
-
-function getExpandedMemoryPreview(text: string) {
-  return getLongerMemoryPreview(text, 120);
-}
-
-function getExpandedTimelinePreview(text: string) {
-  return getLongerTimelinePreview(text, 140);
-}
-
-function getExpandedRelationshipPreview(text: string) {
-  return getLongerRelationshipPreview(text, 90);
-}
-
-function getExpandedGeneratedNamePreview(text: string) {
-  return getLongerGeneratedNamePreview(text, 60);
-}
-
-function buildBatchBubbleStyleId(settings: { customBubbleStyles?: Array<{ id: string }> }, characters: Array<{ group?: string | null; bubbleStyleId?: string | null }>, generatedGroup: string | null) {
-  return getBubbleStyleForBatchCharacter(settings, characters, generatedGroup);
-}
-
-function getReadableMemoryPreview(text: string) {
-  return getExpandedMemoryPreview(text);
-}
-
-function getReadableTimelinePreview(text: string) {
-  return getExpandedTimelinePreview(text);
-}
-
-function getReadableRelationshipPreview(text: string) {
-  return getExpandedRelationshipPreview(text);
-}
-
-function getReadableGeneratedNamePreview(text: string) {
-  return getExpandedGeneratedNamePreview(text);
-}
-
-function chooseGeneratedBubbleStyle(settings: { customBubbleStyles?: Array<{ id: string }> }, characters: Array<{ group?: string | null; bubbleStyleId?: string | null }>, generatedGroup: string | null) {
-  return buildBatchBubbleStyleId(settings, characters, generatedGroup);
-}
-
-function getVisibleMemoryText(text: string) {
-  return getReadableMemoryPreview(text);
-}
-
-function getVisibleTimelineText(text: string) {
-  return getReadableTimelinePreview(text);
-}
-
-function getVisibleRelationshipText(text: string) {
-  return getReadableRelationshipPreview(text);
-}
-
-function getVisibleGeneratedNameText(text: string) {
-  return getReadableGeneratedNamePreview(text);
-}
-
-const NAMES_SYSTEM_PROMPT = `You help generate candidate characters for a theme.
-Return strict JSON only in this shape: {"characters":[{"name":"Name","role":"primary role","summary":"hidden identity summary"}],"defaultSelectedNames":["Name"]}
+const NAMES_SYSTEM_PROMPT = `You help generate candidate characters from a theme, story, character roster, or dialogue transcript.
+Return strict JSON only in this shape: {"characters":[{"name":"Name","role":"primary role","summary":"character setup summary"}],"relationships":[{"fromName":"Name","toName":"Name","note":"relationship clue","tone":"warm|tense|mixed|neutral","strength":0-100,"inferredFrom":"short source clue"}],"circles":[{"name":"relationship circle name","summary":"circle summary","characterNames":["Name"],"keyRelationshipIndexes":[0],"bridgeRelationshipIndexes":[1]}],"defaultSelectedNames":["Name"]}
 Rules:
 - Build a usable cast, not just a protagonist list.
 - Each character must include name, role, and summary.
+- relationships should include the important directional relationships between returned characters. Do not generate every pair mechanically.
+- circles should group characters into coherent relationship communities: family, faction, workplace, romance/revenge line, conspiracy, old friendship, enemy camp, etc.
+- bridgeRelationshipIndexes should point to relationships that connect this circle to another circle.
 - name must be an actual person/character name, not only an identity, job title, archetype, or role.
 - role should be the most useful primary identity for group chat context; characters may have multiple identities, but include only the main one.
-- summary is hidden from users and later used to generate the full character; include enough context to disambiguate identity, status, relationship, era/genre fit, and why this character belongs in the requested cast.
+- summary is used later to generate the full character profile and initial relationship axes; include enough context to disambiguate identity, status, relationship, era/genre fit, and why this character belongs in the requested cast.
+- summary must name important relationships to other returned characters when available. Preserve layered or contradictory ties, such as spouse plus sibling, former lover plus enemy, sworn family plus political rival, mentor plus betrayer, debt plus protection, or public alliance plus private hatred.
+- When relationships are implied, include directional interaction cues that can initialize relationship axes: affection/warmth, trust/distrust, respect/competence, fear/threat, jealousy, guilt, dependency, obligation, rivalry, protection, taboo, secret, betrayal, or unresolved debt.
+- If the user provides a story, synopsis, script, chat log, or dialogue, extract concrete named speakers and recurring mentioned characters first. Do not invent extra cast members unless the text clearly implies them or the user asks for expansion.
+- For dialogue transcripts, infer each speaker's role, relationship, conflict position, and speaking constraints from the transcript.
+- For story text, preserve plot roles, factions, relationships, secrets, and period/world constraints in summary so the later full profile stays grounded in the source.
 - Use the user's language for names, roles, and summaries.
 - Include a mix of: core characters, major supporting characters, recurring side characters, rivals, mentors, family members, allies, comic relief, or strongly associated peripheral figures.
 - Aim for breadth around the theme: roughly 30-40% core names, 40-50% important supporting names, and 20-30% peripheral-but-recognizable related names.
@@ -407,7 +325,7 @@ Rules:
 - defaultSelectedNames must be a subset of characters[].name and must use the exact same name strings.
 - Prefer well-known, distinctive characters or figures strongly associated with the theme.
 - Do not include placeholders, headings, field names, or questions like "names?".
-- Every item in characters must be an actual character/person/figure with a primary role and hidden summary.
+- Every item in characters must be an actual character/person/figure with a primary role and setup summary.
 - No explanations, no markdown.`;
 
 const INVALID_NAME_PATTERNS = [
@@ -455,6 +373,201 @@ function sanitizeCandidates(candidates: CandidateCharacter[]) {
   });
 }
 
+function clampStrength(value: unknown) {
+  return Math.max(0, Math.min(100, typeof value === 'number' && Number.isFinite(value) ? Math.round(value) : 50));
+}
+
+function normalizeRelationshipTone(value: unknown): CandidateRelationship['tone'] {
+  return value === 'warm' || value === 'tense' || value === 'mixed' || value === 'neutral' ? value : 'neutral';
+}
+
+function inferRelationshipTone(text: string): CharacterRelationshipViewEdge['tone'] {
+  if (/(又爱又恨|爱恨|矛盾|纠缠|复杂|jealous|guilt|guilty|complicated|mixed|love-hate)/i.test(text)) return 'mixed';
+  if (/(仇|恨|敌|威胁|背叛|利用|禁忌|冲突|不信任|hostile|enemy|betray|threat|rival|distrust|conflict)/i.test(text)) return 'tense';
+  if (/(爱|恋|夫妻|情侣|保护|亲近|信任|同盟|家人|师徒|warm|lover|spouse|protect|trust|ally|family|mentor)/i.test(text)) return 'warm';
+  return 'neutral';
+}
+
+function resolveCandidateByName(candidates: CandidateCharacter[], value: string) {
+  const normalized = value.trim().toLowerCase();
+  return candidates.find((candidate) => {
+    return candidate.name.trim().toLowerCase() === normalized
+      || candidate.id.trim().toLowerCase() === normalized
+      || candidate.role.trim().toLowerCase() === normalized;
+  }) || null;
+}
+
+function sanitizeCandidateRelationships(candidates: CandidateCharacter[], rawItems: unknown): CandidateRelationship[] {
+  if (!Array.isArray(rawItems)) return [];
+  const relationships: CandidateRelationship[] = [];
+  rawItems.forEach((item, index) => {
+    if (!item || typeof item !== 'object') return;
+    const record = item as { fromName?: unknown; toName?: unknown; note?: unknown; tone?: unknown; strength?: unknown; inferredFrom?: unknown };
+    if (typeof record.fromName !== 'string' || typeof record.toName !== 'string') return;
+    const from = resolveCandidateByName(candidates, record.fromName);
+    const to = resolveCandidateByName(candidates, record.toName);
+    if (!from || !to || from.id === to.id) return;
+    const note = typeof record.note === 'string' && record.note.trim() ? record.note.trim() : `${from.name} -> ${to.name}`;
+    relationships.push({
+      id: `${from.id}->${to.id}::${index}`,
+      fromName: from.name,
+      toName: to.name,
+      note,
+      tone: normalizeRelationshipTone(record.tone) || inferRelationshipTone(note),
+      strength: clampStrength(record.strength),
+      inferredFrom: typeof record.inferredFrom === 'string' ? record.inferredFrom.trim().slice(0, 120) : '',
+    });
+  });
+  return relationships;
+}
+
+function buildFallbackRelationships(candidates: CandidateCharacter[], nameFormat: NameFormat): CandidateRelationship[] {
+  const relationships: CandidateRelationship[] = [];
+  candidates.forEach((candidate) => {
+    const summary = candidate.summary.toLowerCase();
+    candidates.forEach((target) => {
+      if (candidate.id === target.id) return;
+      const targetNames = [target.name, formatCandidateName(target, nameFormat)]
+        .map((item) => item.trim().toLowerCase())
+        .filter(Boolean);
+      if (!targetNames.some((name) => summary.includes(name))) return;
+      relationships.push({
+        id: `${candidate.id}->${target.id}`,
+        fromName: candidate.name,
+        toName: target.name,
+        note: candidate.summary,
+        tone: inferRelationshipTone(candidate.summary) || 'neutral',
+        strength: inferRelationshipTone(candidate.summary) === 'mixed' ? 74 : inferRelationshipTone(candidate.summary) === 'neutral' ? 46 : 64,
+        inferredFrom: candidate.summary.slice(0, 120),
+      });
+    });
+  });
+  return relationships;
+}
+
+function sanitizeCandidateCircles(candidates: CandidateCharacter[], relationships: CandidateRelationship[], rawItems: unknown): CandidateRelationshipCircle[] {
+  if (!Array.isArray(rawItems)) return [];
+  const relationshipIds = relationships.map((relationship) => relationship.id);
+  return rawItems.flatMap((item, index) => {
+    if (!item || typeof item !== 'object') return [];
+    const record = item as {
+      name?: unknown;
+      summary?: unknown;
+      characterNames?: unknown;
+      keyRelationshipIds?: unknown;
+      bridgeRelationshipIds?: unknown;
+      keyRelationshipIndexes?: unknown;
+      bridgeRelationshipIndexes?: unknown;
+    };
+    const names = Array.isArray(record.characterNames)
+      ? record.characterNames.filter((name): name is string => typeof name === 'string')
+      : [];
+    const characterNames = names
+      .map((name) => resolveCandidateByName(candidates, name)?.name)
+      .filter((name): name is string => Boolean(name));
+    if (characterNames.length < 2) return [];
+    const fromIndexes = (value: unknown) => Array.isArray(value)
+      ? value.filter((item): item is number => typeof item === 'number' && Number.isInteger(item)).map((item) => relationshipIds[item]).filter(Boolean)
+      : [];
+    return [{
+      id: `circle-${index}-${characterNames.join('-')}`,
+      name: typeof record.name === 'string' && record.name.trim() ? record.name.trim().slice(0, 40) : `关系圈 ${index + 1}`,
+      summary: typeof record.summary === 'string' ? record.summary.trim().slice(0, 180) : '',
+      characterNames,
+      keyRelationshipIds: [
+        ...(Array.isArray(record.keyRelationshipIds) ? record.keyRelationshipIds.filter((id): id is string => typeof id === 'string' && relationshipIds.includes(id)) : []),
+        ...fromIndexes(record.keyRelationshipIndexes),
+      ].slice(0, 8),
+      bridgeRelationshipIds: [
+        ...(Array.isArray(record.bridgeRelationshipIds) ? record.bridgeRelationshipIds.filter((id): id is string => typeof id === 'string' && relationshipIds.includes(id)) : []),
+        ...fromIndexes(record.bridgeRelationshipIndexes),
+      ].slice(0, 8),
+    }];
+  });
+}
+
+function buildFallbackCircles(candidates: CandidateCharacter[], relationships: CandidateRelationship[]): CandidateRelationshipCircle[] {
+  const parent = new Map(candidates.map((candidate) => [candidate.name, candidate.name]));
+  const find = (name: string): string => {
+    const current = parent.get(name) || name;
+    if (current === name) return current;
+    const root = find(current);
+    parent.set(name, root);
+    return root;
+  };
+  const union = (a: string, b: string) => {
+    const rootA = find(a);
+    const rootB = find(b);
+    if (rootA !== rootB) parent.set(rootB, rootA);
+  };
+  relationships.filter((relationship) => relationship.strength >= 45).forEach((relationship) => union(relationship.fromName, relationship.toName));
+  const groups = new Map<string, string[]>();
+  candidates.forEach((candidate) => {
+    const root = find(candidate.name);
+    groups.set(root, [...(groups.get(root) || []), candidate.name]);
+  });
+  return Array.from(groups.values())
+    .filter((names) => names.length >= 2)
+    .map((names, index) => {
+      const memberSet = new Set(names);
+      const internalRelationships = relationships.filter((relationship) => memberSet.has(relationship.fromName) && memberSet.has(relationship.toName));
+      const bridgeRelationships = relationships.filter((relationship) => memberSet.has(relationship.fromName) !== memberSet.has(relationship.toName));
+      return {
+        id: `fallback-circle-${index}`,
+        name: names.length <= 3 ? names.join(' / ') : `${names[0]} 等人的关系圈`,
+        summary: internalRelationships[0]?.note.slice(0, 140) || '',
+        characterNames: names,
+        keyRelationshipIds: internalRelationships.slice(0, 6).map((relationship) => relationship.id),
+        bridgeRelationshipIds: bridgeRelationships.slice(0, 6).map((relationship) => relationship.id),
+      };
+    });
+}
+
+function buildCandidateRelationshipView(candidates: CandidateCharacter[], nameFormat: NameFormat, relationships: CandidateRelationship[], circles: CandidateRelationshipCircle[]) {
+  const nodes: CharacterRelationshipViewNode[] = candidates.map((candidate) => ({
+    id: candidate.id,
+    name: formatCandidateName(candidate, nameFormat),
+    graphName: candidate.name,
+    role: candidate.role,
+    summary: candidate.summary,
+  }));
+  const candidateByName = new Map(candidates.map((candidate) => [candidate.name, candidate]));
+  const edges: CharacterRelationshipViewEdge[] = relationships.flatMap((relationship) => {
+    const from = candidateByName.get(relationship.fromName);
+    const to = candidateByName.get(relationship.toName);
+    if (!from || !to) return [];
+    return [{
+      id: relationship.id,
+      fromId: from.id,
+      toId: to.id,
+      note: relationship.note,
+      tone: relationship.tone,
+      strength: relationship.strength,
+      inferredFrom: relationship.inferredFrom,
+    }];
+  });
+
+  const seen = new Set<string>();
+  const viewEdges = edges.filter((edge) => {
+    const key = `${edge.fromId}->${edge.toId}`.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 36);
+  return {
+    nodes,
+    edges: viewEdges,
+    circles: circles.map((circle): CharacterRelationshipViewCircle => ({
+      id: circle.id,
+      name: circle.name,
+      summary: circle.summary,
+      nodeIds: circle.characterNames.map((name) => candidateByName.get(name)?.id).filter((id): id is string => Boolean(id)),
+      keyEdgeIds: circle.keyRelationshipIds,
+      bridgeEdgeIds: circle.bridgeRelationshipIds,
+    })).filter((circle) => circle.nodeIds.length >= 2),
+  };
+}
+
 function extractJsonObject(content: string) {
   const cleaned = content.trim().replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/, '');
   const firstBrace = cleaned.indexOf('{');
@@ -477,7 +590,7 @@ function extractJsonArray(content: string) {
 
 function tryParseNamesJson(content: string) {
   try {
-    const parsed = JSON.parse(extractJsonObject(content)) as { characters?: unknown; names?: unknown; defaultSelectedNames?: unknown };
+    const parsed = JSON.parse(extractJsonObject(content)) as { characters?: unknown; names?: unknown; relationships?: unknown; circles?: unknown; defaultSelectedNames?: unknown };
     if (Array.isArray(parsed.characters)) {
       const candidates = sanitizeCandidates(parsed.characters.flatMap((item) => {
         if (!item || typeof item !== 'object') return [];
@@ -497,7 +610,9 @@ function tryParseNamesJson(content: string) {
             .map((name) => candidates.find((candidate) => candidate.name === name)?.id)
             .filter((id): id is string => Boolean(id))
         : [];
-      return { candidates, defaultSelectedIds };
+      const relationships = sanitizeCandidateRelationships(candidates, parsed.relationships);
+      const circles = sanitizeCandidateCircles(candidates, relationships, parsed.circles);
+      return { candidates, relationships, circles, defaultSelectedIds };
     }
     if (Array.isArray(parsed.names)) {
       const candidates = sanitizeCandidates(parsed.names.flatMap((item) => {
@@ -510,7 +625,7 @@ function tryParseNamesJson(content: string) {
             .map((name) => candidates.find((candidate) => candidate.name === name || formatCandidateName(candidate, 'nameParenRole') === name)?.id)
             .filter((id): id is string => Boolean(id))
         : [];
-      return { candidates, defaultSelectedIds };
+      return { candidates, relationships: [], circles: [], defaultSelectedIds };
     }
   } catch {
     // ignore
@@ -523,7 +638,7 @@ function tryParseNamesJson(content: string) {
         const candidate = typeof item === 'string' ? buildCandidate(item) : null;
         return candidate ? [candidate] : [];
       }));
-      return { candidates, defaultSelectedIds: [] };
+      return { candidates, relationships: [], circles: [], defaultSelectedIds: [] };
     }
   } catch {
     // ignore
@@ -567,7 +682,7 @@ function parseNames(content: string) {
   if (candidates.length === 0) {
     throw new Error('AI 返回的名字列表格式无法解析');
   }
-  return { candidates, defaultSelectedIds: [] };
+  return { candidates, relationships: [], circles: [], defaultSelectedIds: [] };
 }
 
 function getErrorMessage(error: unknown) {
@@ -594,7 +709,14 @@ export default function BatchGenerateCharactersPage() {
   const [topic, setTopic] = useState('');
   const [description, setDescription] = useState('');
   const [candidateCharacters, setCandidateCharacters] = useState<CandidateCharacter[]>([]);
+  const [candidateRelationships, setCandidateRelationships] = useState<CandidateRelationship[]>([]);
+  const [candidateCircles, setCandidateCircles] = useState<CandidateRelationshipCircle[]>([]);
   const [selectedCandidateIds, setSelectedCandidateIds] = useState<string[]>([]);
+  const [previewCandidate, setPreviewCandidate] = useState<CandidateCharacter | null>(null);
+  const [activeTab, setActiveTab] = useState<BatchGenerateTab>('list');
+  const [lastCreatedCharacters, setLastCreatedCharacters] = useState<AICharacter[]>([]);
+  const [relationshipCompleting, setRelationshipCompleting] = useState(false);
+  const [relationshipCompletionCount, setRelationshipCompletionCount] = useState<number | null>(null);
   const [nameFormat, setNameFormat] = useState<NameFormat>('nameParenRole');
   const [pendingNameFormat, setPendingNameFormat] = useState<NameFormat>('nameParenRole');
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -626,6 +748,11 @@ export default function BatchGenerateCharactersPage() {
 
   const selectedSet = useMemo(() => new Set(selectedCandidateIds), [selectedCandidateIds]);
   const selectedCandidates = useMemo(() => candidateCharacters.filter((candidate) => selectedSet.has(candidate.id)), [candidateCharacters, selectedSet]);
+  const relationshipView = useMemo(() => {
+    const relationships = candidateRelationships.length ? candidateRelationships : buildFallbackRelationships(candidateCharacters, nameFormat);
+    const circles = candidateCircles.length ? candidateCircles : buildFallbackCircles(candidateCharacters, relationships);
+    return buildCandidateRelationshipView(candidateCharacters, nameFormat, relationships, circles);
+  }, [candidateCharacters, candidateCircles, candidateRelationships, nameFormat]);
   const example = useMemo(() => BATCH_GENERATE_EXAMPLES[Math.floor(Math.random() * BATCH_GENERATE_EXAMPLES.length)], []);
   const localizedExample = i18n.language.startsWith('zh') ? example.zh : example.en;
   const canGenerateNames = Boolean(topic.trim() || description.trim()) && !loadingNames;
@@ -650,18 +777,24 @@ export default function BatchGenerateCharactersPage() {
     try {
       const promptInput = [
         topic.trim() ? (i18n.language.startsWith('zh') ? `主题/分组：${topic.trim()}` : `Theme/group: ${topic.trim()}`) : '',
-        description.trim() ? (i18n.language.startsWith('zh') ? `描述：${description.trim()}` : `Description: ${description.trim()}`) : '',
+        description.trim() ? (i18n.language.startsWith('zh') ? `故事/对话/描述：${description.trim()}` : `Story/dialogue/description: ${description.trim()}`) : '',
       ].filter(Boolean).join('\n');
       const response = await generateResponse(
         profile,
         `${NAMES_SYSTEM_PROMPT}\nOutput exactly one valid JSON object. Do not include trailing commas. Do not truncate. Do not add explanations before or after the JSON.`,
-        [{ role: 'user', content: i18n.language.startsWith('zh') ? `${promptInput}\n请根据主题/分组和描述列出一个适合放进同一群聊的角色阵容；如果描述里指定数量或身份结构（例如“皇帝和10个妃子”），必须按描述生成对应数量与构成。每个角色必须有真实名字、主要身份和隐藏摘要。主要身份只写最有助于群聊理解的一个身份；隐藏摘要要说明角色在该主题/描述中的具体身份、地位、关系和设定约束，后续生成具体角色会依赖它避免跑偏。不要只给主角，需要同时包含核心角色、重要配角、反派/对手、老师/家人/同伴，以及少量但强相关的边缘角色。并请额外判断哪些角色应该默认选中作为初始群聊阵容。只返回合法JSON，格式必须是 {"characters":[{"name":"名字","role":"主要身份","summary":"隐藏摘要"}],"defaultSelectedNames":["名字"]}` : `${promptInput}\nReturn a cast suitable for the same group chat based on the theme/group and description. If the description specifies a count or role composition, follow it exactly. Each character must have a real name, primary role, and hidden summary. The role should be the single most useful identity for group chat context; the hidden summary must explain the character's concrete identity, status, relationships, and setting constraints within this exact theme/description, because full profile generation will rely on it to avoid drifting. Do not return only protagonists. Include core characters, important supporting characters, rivals/antagonists, mentors/family/allies, and a few strongly related peripheral figures. Also decide which characters should be selected by default as the initial cast. Return only valid JSON in the format {"characters":[{"name":"Name","role":"primary role","summary":"hidden summary"}],"defaultSelectedNames":["Name"]}.` }],
+        [{ role: 'user', content: i18n.language.startsWith('zh') ? `${promptInput}\n请根据主题/分组、故事、对话或描述列出一个适合放进同一群聊的角色阵容。如果输入是故事、剧本或聊天记录，优先提取文本中真实出现的说话者、核心人物和反复被提到的重要人物；不要为了凑数捏造无依据的新角色。如果描述里指定数量或身份结构（例如“皇帝和10个妃子”），必须按描述生成对应数量与构成。每个角色必须有真实名字、主要身份和设定摘要。主要身份只写最有助于群聊理解的一个身份；设定摘要要说明角色在该主题/故事/对话中的具体身份、地位、关系、冲突立场、说话约束和设定边界，后续生成具体角色和初始化角色关系会依赖它避免跑偏。如果角色之间有情侣、夫妻、前任、亲属、师徒、主仆、同盟、背叛、生死仇敌、债务、秘密、禁忌、互相保护或互相利用等关系，必须在相关角色的摘要里点名对方；如果同一对角色存在多重或矛盾关系，也要同时保留。关系摘要要能推断亲近、信任、尊重、威胁、嫉妒、愧疚、依赖、敌意等方向性差异。请额外输出 relationships 作为重要方向性关系边，不要机械生成所有组合；再输出 circles，把角色按家庭、阵营、旧情复仇线、阴谋线、敌对阵营等关系圈分组，并用 keyRelationshipIndexes/bridgeRelationshipIndexes 指向 relationships 数组下标。不要只给主角，需要同时包含核心角色、重要配角、反派/对手、老师/家人/同伴，以及少量但强相关的边缘角色。并请额外判断哪些角色应该默认选中作为初始群聊阵容。只返回合法JSON，格式必须是 {"characters":[{"name":"名字","role":"主要身份","summary":"设定摘要"}],"relationships":[{"fromName":"名字","toName":"名字","note":"关系线索","tone":"warm|tense|mixed|neutral","strength":80,"inferredFrom":"依据"}],"circles":[{"name":"关系圈名称","summary":"圈子摘要","characterNames":["名字"],"keyRelationshipIndexes":[0],"bridgeRelationshipIndexes":[1]}],"defaultSelectedNames":["名字"]}` : `${promptInput}\nReturn a cast suitable for the same group chat based on the theme/group, story, dialogue, or description. If the input is a story, script, or chat log, first extract concrete speakers, core characters, and important recurring mentioned characters from the source text; do not invent unsupported extra characters just to increase the count. If the description specifies a count or role composition, follow it exactly. Each character must have a real name, primary role, and setup summary. The role should be the single most useful identity for group chat context; the setup summary must explain the character's concrete identity, status, relationships, conflict position, speaking constraints, and setting boundaries within this exact theme/story/dialogue, because full profile generation and initial relationship inference will rely on it to avoid drifting. If characters are lovers, spouses, exes, relatives, mentor/student, master/servant, allies, betrayers, mortal enemies, debt-bound, secret-bound, taboo-bound, protectors, or manipulators, name the counterpart in the relevant summaries. Preserve layered or contradictory ties between the same pair. Relationship summaries should support directional warmth, trust, respect, threat, jealousy, guilt, dependency, hostility, and obligation inference. Also output relationships as important directional edges without mechanically generating every pair; then output circles that group characters by family, faction, romance/revenge line, conspiracy, enemy camp, workplace, or old friendship. Use keyRelationshipIndexes/bridgeRelationshipIndexes to reference indexes in the relationships array. Do not return only protagonists. Include core characters, important supporting characters, rivals/antagonists, mentors/family/allies, and a few strongly related peripheral figures. Also decide which characters should be selected by default as the initial cast. Return only valid JSON in the format {"characters":[{"name":"Name","role":"primary role","summary":"setup summary"}],"relationships":[{"fromName":"Name","toName":"Name","note":"relationship clue","tone":"warm|tense|mixed|neutral","strength":80,"inferredFrom":"basis"}],"circles":[{"name":"circle name","summary":"circle summary","characterNames":["Name"],"keyRelationshipIndexes":[0],"bridgeRelationshipIndexes":[1]}],"defaultSelectedNames":["Name"]}.` }],
         undefined,
         { aiUsage: { type: 'group_creation', label: '生成群聊角色阵容', scope: 'batch_character_generation' } },
       );
       const parsed = parseNames(response);
+      const fallbackRelationships = parsed.relationships.length ? parsed.relationships : buildFallbackRelationships(parsed.candidates, nameFormat);
       setCandidateCharacters(parsed.candidates);
+      setCandidateRelationships(fallbackRelationships);
+      setCandidateCircles(parsed.circles.length ? parsed.circles : buildFallbackCircles(parsed.candidates, fallbackRelationships));
       setSelectedCandidateIds(parsed.defaultSelectedIds.length ? parsed.defaultSelectedIds : parsed.candidates.slice(0, Math.min(4, parsed.candidates.length)).map((candidate) => candidate.id));
+      setLastCreatedCharacters([]);
+      setRelationshipCompletionCount(null);
+      setActiveTab('list');
     } catch (error) {
       setSnackbar({ open: true, message: error instanceof Error ? error.message : t('common.error'), severity: 'error' });
     } finally {
@@ -707,11 +840,17 @@ export default function BatchGenerateCharactersPage() {
           allCharacters: useCharacterStore.getState().characters,
           language: i18n.language.startsWith('zh') ? 'zh' : 'en',
           updateCharacters,
+          scope: 'created_only',
         }).catch((error) => {
           console.error('[batch-generate:default-relationships:error]', error);
         });
       }
 
+      setLastCreatedCharacters(createdCharacters);
+      setRelationshipCompletionCount(null);
+      if (!cancelGenerationRef.current && createdCharacters.length) {
+        setActiveTab('completion');
+      }
       markCharactersWarm();
       void prefetchCharacters();
       setSnackbar({
@@ -732,12 +871,49 @@ export default function BatchGenerateCharactersPage() {
     }
   };
 
+  const handleCompleteRelationships = async () => {
+    const profile = getPreferredAIProfile(useSettingsStore.getState().aiProfiles, 'text');
+    if (!isAIProfileUsable(profile)) {
+      setSnackbar({ open: true, message: i18n.language.startsWith('zh') ? '请先配置AI模型' : 'Configure AI model first', severity: 'error' });
+      return;
+    }
+    if (!lastCreatedCharacters.length) {
+      setSnackbar({ open: true, message: i18n.language.startsWith('zh') ? '还没有可补全关系的新角色' : 'No newly created characters to complete', severity: 'error' });
+      return;
+    }
+
+    setRelationshipCompleting(true);
+    setRelationshipCompletionCount(null);
+    try {
+      const patches = await initializeDefaultRelationshipsForCreatedCharacters({
+        config: profile,
+        createdCharacters: lastCreatedCharacters,
+        allCharacters: useCharacterStore.getState().characters,
+        language: i18n.language.startsWith('zh') ? 'zh' : 'en',
+        updateCharacters,
+        scope: 'created_and_existing',
+      });
+      setRelationshipCompletionCount(patches.length);
+      markCharactersWarm();
+      void prefetchCharacters();
+      setSnackbar({
+        open: true,
+        message: i18n.language.startsWith('zh') ? `已补全 ${patches.length} 个角色的默认关系` : `Completed default relationships for ${patches.length} character(s)`,
+        severity: 'success',
+      });
+    } catch (error) {
+      setSnackbar({ open: true, message: error instanceof Error ? error.message : t('common.error'), severity: 'error' });
+    } finally {
+      setRelationshipCompleting(false);
+    }
+  };
+
   return (
     <Box sx={{
       p: 3,
       pt: { xs: 1, sm: 1, md: 3 },
       pb: { xs: MOBILE_BOTTOM_NAV_CONTENT_PADDING, sm: 3 },
-      maxWidth: 960,
+      maxWidth: 1180,
       mx: 'auto',
       display: 'flex',
       flexDirection: 'column',
@@ -752,7 +928,7 @@ export default function BatchGenerateCharactersPage() {
           fullWidth
         />
         <TextField
-          label={i18n.language.startsWith('zh') ? '描述' : 'Description'}
+          label={i18n.language.startsWith('zh') ? '故事、对话或描述' : 'Story, dialogue, or description'}
           placeholder={i18n.language.startsWith('zh') ? `例如：${localizedExample.description}` : `e.g. ${localizedExample.description}`}
           value={description}
           onChange={(e) => setDescription(e.target.value)}
@@ -765,6 +941,13 @@ export default function BatchGenerateCharactersPage() {
           fullWidth
           multiline
           minRows={4}
+          maxRows={10}
+          sx={{
+            '& .MuiInputBase-inputMultiline': {
+              maxHeight: 280,
+              overflow: 'auto',
+            },
+          }}
         />
         <Button
           variant="contained"
@@ -779,63 +962,170 @@ export default function BatchGenerateCharactersPage() {
 
       {candidateCharacters.length > 0 ? (
         <>
-          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-            <Button size="small" variant="outlined" onClick={() => setSelectedCandidateIds(candidateCharacters.map((candidate) => candidate.id))}>
-              {i18n.language.startsWith('zh') ? '全选' : 'Select all'}
-            </Button>
-            <Button size="small" variant="outlined" onClick={() => setSelectedCandidateIds(candidateCharacters.filter((candidate) => !selectedSet.has(candidate.id)).map((candidate) => candidate.id))}>
-              {i18n.language.startsWith('zh') ? '反选' : 'Invert'}
-            </Button>
-            <Typography variant="caption" color="text.secondary" sx={{ alignSelf: 'center' }}>
-              {selectedCandidateIds.length} · {candidateCharacters.length}
-            </Typography>
+          <Box sx={{ alignSelf: 'flex-start' }}>
+            <FloatingSegmentedTabs
+              value={activeTab}
+              items={[
+                { value: 'list', label: i18n.language.startsWith('zh') ? '名单' : 'List' },
+                { value: 'relationships', label: i18n.language.startsWith('zh') ? '关系' : 'Relationships' },
+                ...(lastCreatedCharacters.length ? [{ value: 'completion' as const, label: i18n.language.startsWith('zh') ? '关系补全' : 'Complete' }] : []),
+              ]}
+              onChange={setActiveTab}
+              equalWidth={false}
+            />
           </Box>
 
-          <Box
-            sx={{
-              display: 'grid',
-              gridTemplateColumns: {
-                xs: 'repeat(2, minmax(0, 1fr))',
-                sm: 'repeat(3, minmax(0, 1fr))',
-                lg: 'repeat(4, minmax(0, 1fr))',
-              },
-              gap: 1,
-            }}
-          >
-            {candidateCharacters.map((candidate) => {
-              const selected = selectedSet.has(candidate.id);
-              return (
-                <Chip
-                  key={candidate.id}
-                  label={formatCandidateName(candidate, nameFormat)}
-                  clickable
-                  color={selected ? 'primary' : 'default'}
-                  variant={selected ? 'filled' : 'outlined'}
-                  onClick={() => toggleCandidate(candidate.id)}
-                  sx={{ justifyContent: 'flex-start' }}
-                />
-              );
-            })}
-          </Box>
+          {activeTab === 'list' ? (
+            <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 2, bgcolor: 'background.paper', p: { xs: 1.25, sm: 1.5 }, display: 'flex', flexDirection: 'column', gap: 1.25 }}>
+              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <Button size="small" variant="outlined" onClick={() => setSelectedCandidateIds(candidateCharacters.map((candidate) => candidate.id))}>
+                    {i18n.language.startsWith('zh') ? '全选' : 'Select all'}
+                  </Button>
+                  <Button size="small" variant="outlined" onClick={() => setSelectedCandidateIds(candidateCharacters.filter((candidate) => !selectedSet.has(candidate.id)).map((candidate) => candidate.id))}>
+                    {i18n.language.startsWith('zh') ? '反选' : 'Invert'}
+                  </Button>
+                </Box>
+                <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
+                  {selectedCandidateIds.length} · {candidateCharacters.length}
+                </Typography>
+              </Box>
+              <Box
+                sx={{
+                  columnCount: { xs: 2, sm: 3, md: 2, lg: 3 },
+                  columnGap: 1,
+                }}
+              >
+                {candidateCharacters.map((candidate) => {
+                  const selected = selectedSet.has(candidate.id);
+                  const displayName = formatCandidateName(candidate, nameFormat);
+                  return (
+                    <Box
+                      key={candidate.id}
+                      sx={{
+                        display: 'inline-grid',
+                        width: '100%',
+                        breakInside: 'avoid',
+                        mb: 1,
+                        gridTemplateColumns: { xs: 'minmax(0, 1fr) 34px', md: 'minmax(0, 1fr) 38px' },
+                        alignItems: 'stretch',
+                        minHeight: { xs: 44, md: 0 },
+                        border: 1,
+                        borderColor: selected ? 'primary.main' : 'divider',
+                        borderRadius: 2,
+                        bgcolor: selected ? { xs: 'primary.main', md: 'primary.main' } : 'background.default',
+                        color: selected ? 'primary.contrastText' : 'text.primary',
+                        overflow: 'hidden',
+                        transition: (theme) => theme.transitions.create(['border-color', 'background-color', 'box-shadow'], { duration: theme.transitions.duration.shortest }),
+                        boxShadow: selected ? '0 1px 5px rgba(0,0,0,0.14)' : 'none',
+                      }}
+                    >
+                      <Box
+                        component="button"
+                        type="button"
+                        onClick={() => toggleCandidate(candidate.id)}
+                        aria-pressed={selected}
+                        sx={{
+                          height: '100%',
+                          minWidth: 0,
+                          border: 0,
+                          bgcolor: 'transparent',
+                          color: 'inherit',
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                          px: { xs: 1.25, md: 1.35 },
+                          py: { xs: 0.75, md: 1.1 },
+                          font: 'inherit',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'stretch',
+                          gap: { xs: 0, md: 0.75 },
+                        }}
+                      >
+                        <Typography variant="body2" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: selected ? 600 : 500 }}>
+                          {displayName}
+                        </Typography>
+                        <Typography variant="caption" sx={{ display: { xs: 'none', md: '-webkit-box' }, color: selected ? 'inherit' : 'text.secondary', opacity: selected ? 0.9 : 1, WebkitLineClamp: 4, WebkitBoxOrient: 'vertical', overflow: 'hidden', whiteSpace: 'normal', wordBreak: 'break-word' }}>
+                          {candidate.summary}
+                        </Typography>
+                      </Box>
+                      <Tooltip title={i18n.language.startsWith('zh') ? '预览角色信息' : 'Preview role info'} arrow>
+                        <IconButton
+                          size="small"
+                          onClick={() => setPreviewCandidate(candidate)}
+                          aria-label={i18n.language.startsWith('zh') ? `预览${displayName}` : `Preview ${displayName}`}
+                          sx={{
+                            display: 'inline-flex',
+                            width: 32,
+                            height: 32,
+                            mr: 0.25,
+                            mt: { xs: 0, md: 0.5 },
+                            alignSelf: { xs: 'center', md: 'flex-start' },
+                            color: selected ? 'primary.contrastText' : 'text.secondary',
+                            '&:hover': { bgcolor: selected ? 'rgba(255,255,255,0.16)' : 'action.hover' },
+                          }}
+                        >
+                          <InfoOutlinedIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    </Box>
+                  );
+                })}
+              </Box>
+            </Box>
+          ) : null}
 
-          <Button
-            variant="contained"
-            startIcon={<AutoAwesomeIcon />}
-            onClick={handleGenerateCharacters}
-            disabled={!canGenerateCharacters}
-            sx={{
-              position: 'fixed',
-              right: { xs: 24, sm: 32, md: 36 },
-              bottom: { xs: MOBILE_BOTTOM_NAV_FAB_OFFSET, sm: 32, md: 36 },
-              zIndex: (theme) => theme.zIndex.drawer + 1,
-              minHeight: 56,
-              px: 2.25,
-              borderRadius: 18,
-              boxShadow: '0 10px 24px rgba(0,0,0,0.22), 0 3px 8px rgba(0,0,0,0.16)',
-            }}
-          >
-            {i18n.language.startsWith('zh') ? '批量生成' : 'Generate selected'}
-          </Button>
+          {activeTab === 'relationships' ? (
+            <CharacterRelationshipView
+              nodes={relationshipView.nodes}
+              edges={relationshipView.edges}
+              circles={relationshipView.circles}
+              emptyTitle={i18n.language.startsWith('zh') ? '暂未识别到明确关系线索' : 'No clear relationship clues yet'}
+              emptyDescription={i18n.language.startsWith('zh') ? '可以在故事或对话里点名角色之间的关系，重新生成名单后这里会显示。' : 'Mention relationships between characters in the story or dialogue, then regenerate the list.'}
+            />
+          ) : null}
+
+          {activeTab === 'completion' && lastCreatedCharacters.length ? (
+            <Box sx={{ minHeight: 240, border: 1, borderColor: 'divider', borderRadius: 2, bgcolor: 'background.paper', display: 'grid', placeItems: 'center', p: 3 }}>
+              <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1.5, maxWidth: 520, textAlign: 'center' }}>
+                {relationshipCompletionCount !== null ? (
+                  <Alert severity="success" sx={{ width: '100%' }}>
+                    {i18n.language.startsWith('zh') ? `已更新 ${relationshipCompletionCount} 个角色的默认关系` : `Updated default relationships for ${relationshipCompletionCount} character(s)`}
+                  </Alert>
+                ) : null}
+                <Button
+                  variant="contained"
+                  startIcon={relationshipCompleting ? <CircularProgress size={18} color="inherit" /> : <AutoAwesomeIcon />}
+                  onClick={handleCompleteRelationships}
+                  disabled={relationshipCompleting}
+                  sx={{ minHeight: 46, borderRadius: 999, px: 2.5 }}
+                >
+                  {i18n.language.startsWith('zh') ? '补全与已有角色的关系' : 'Complete relationships with existing characters'}
+                </Button>
+              </Box>
+            </Box>
+          ) : null}
+
+          {activeTab !== 'completion' ? (
+            <Button
+              variant="contained"
+              startIcon={<AutoAwesomeIcon />}
+              onClick={handleGenerateCharacters}
+              disabled={!canGenerateCharacters}
+              sx={{
+                position: 'fixed',
+                right: { xs: 24, sm: 32, md: 36 },
+                bottom: { xs: MOBILE_BOTTOM_NAV_FAB_OFFSET, sm: 32, md: 36 },
+                zIndex: (theme) => theme.zIndex.drawer + 1,
+                minHeight: 56,
+                px: 2.25,
+                borderRadius: 18,
+                boxShadow: '0 10px 24px rgba(0,0,0,0.22), 0 3px 8px rgba(0,0,0,0.16)',
+              }}
+            >
+              {i18n.language.startsWith('zh') ? '批量生成' : 'Generate selected'}
+            </Button>
+          ) : null}
         </>
       ) : null}
 
@@ -860,6 +1150,54 @@ export default function BatchGenerateCharactersPage() {
           <Button variant="contained" onClick={() => { setNameFormat(pendingNameFormat); setSettingsOpen(false); }}>
             {i18n.language.startsWith('zh') ? '确定' : 'OK'}
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={Boolean(previewCandidate)} onClose={() => setPreviewCandidate(null)} fullWidth maxWidth="sm">
+        <DialogTitle>{i18n.language.startsWith('zh') ? '角色设定预览' : 'Role setup preview'}</DialogTitle>
+        <DialogContent>
+          {previewCandidate ? (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, pt: 0.5 }}>
+              <Box
+                sx={{
+                  border: 1,
+                  borderColor: 'divider',
+                  borderRadius: 2,
+                  bgcolor: 'background.default',
+                  px: 2,
+                  py: 1.5,
+                }}
+              >
+                <Typography variant="h6" sx={{ fontSize: '1.05rem', fontWeight: 700, wordBreak: 'break-word' }}>
+                  {formatCandidateName(previewCandidate, nameFormat)}
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                  {previewCandidate.summary}
+                </Typography>
+              </Box>
+              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.5 }}>
+                <Box>
+                  <Typography variant="caption" color="text.secondary">
+                    {i18n.language.startsWith('zh') ? '本名' : 'Name'}
+                  </Typography>
+                  <Typography variant="body2" sx={{ wordBreak: 'break-word' }}>
+                    {previewCandidate.name}
+                  </Typography>
+                </Box>
+                <Box>
+                  <Typography variant="caption" color="text.secondary">
+                    {i18n.language.startsWith('zh') ? '主要身份' : 'Primary role'}
+                  </Typography>
+                  <Typography variant="body2" sx={{ wordBreak: 'break-word' }}>
+                    {previewCandidate.role || (i18n.language.startsWith('zh') ? '未填写' : 'Not provided')}
+                  </Typography>
+                </Box>
+              </Box>
+            </Box>
+          ) : null}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPreviewCandidate(null)}>{i18n.language.startsWith('zh') ? '关闭' : 'Close'}</Button>
         </DialogActions>
       </Dialog>
 

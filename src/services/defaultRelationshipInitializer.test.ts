@@ -64,6 +64,20 @@ describe('defaultRelationshipInitializer', () => {
     expect(patches.find((patch) => patch.id === 'new')).toBeTruthy();
   });
 
+  it('can restrict inference to newly created characters only', async () => {
+    const created = character('new', '新角色');
+    const old = character('old', '旧角色');
+    const patches = await buildDefaultRelationshipPatches({
+      config: { id: 'p', name: 'Text', type: 'text', provider: 'openai', apiKey: 'k', baseUrl: '', model: 'm' },
+      createdCharacters: [created],
+      allCharacters: [created, old],
+      language: 'zh',
+      scope: 'created_only',
+    });
+
+    expect(patches).toHaveLength(0);
+  });
+
   it('keeps now=0 as timeline and relationship timestamp', async () => {
     const created = character('new', '新角色');
     const old = character('old', '旧角色');
