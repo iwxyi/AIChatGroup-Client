@@ -5,6 +5,8 @@ import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import UnfoldLessIcon from '@mui/icons-material/UnfoldLess';
 import UnfoldMoreIcon from '@mui/icons-material/UnfoldMore';
+import type { Theme } from '@mui/material/styles';
+import { motion, reducedMotionSx, transition } from '../../styles/motion';
 
 export type CalendarViewMode = 'month' | 'week';
 
@@ -82,6 +84,93 @@ function isSameDate(left: Date, right: Date) {
   return toDateKey(left) === toDateKey(right);
 }
 
+const calendarControlBaseSx = {
+  borderRadius: 999,
+  border: '1px solid',
+  borderColor: (theme: Theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.08)' : 'rgba(226,232,240,0.10)',
+  bgcolor: (theme: Theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.56)' : 'rgba(18,20,28,0.54)',
+  color: 'text.secondary',
+  boxShadow: 'none',
+  transition: transition(['background-color', 'border-color', 'box-shadow', 'color', 'transform'], motion.durations.base, motion.softOut),
+  '&:hover': {
+    bgcolor: (theme: Theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.86)' : 'rgba(28,31,42,0.76)',
+    borderColor: (theme: Theme) => theme.palette.mode === 'light' ? 'rgba(49,90,156,0.24)' : 'rgba(120,156,220,0.26)',
+    color: 'primary.main',
+    boxShadow: (theme: Theme) => theme.palette.mode === 'light'
+      ? '0 8px 22px rgba(15,23,42,0.08)'
+      : '0 10px 26px rgba(0,0,0,0.24)',
+  },
+  '&:active': {
+    transform: 'scale(0.985)',
+    transitionTimingFunction: motion.press,
+    transitionDuration: `${motion.durations.instant}ms`,
+  },
+  '&.Mui-focusVisible': {
+    borderColor: 'primary.main',
+    boxShadow: (theme: Theme) => theme.palette.mode === 'light'
+      ? '0 0 0 3px rgba(49,90,156,0.14)'
+      : '0 0 0 3px rgba(120,156,220,0.18)',
+  },
+  ...reducedMotionSx,
+};
+
+const calendarIconButtonSx = {
+  ...calendarControlBaseSx,
+  width: 32,
+  height: 32,
+};
+
+function buildCalendarDayButtonSx({
+  inMonth,
+  selected,
+  warning,
+  today,
+  minHeight,
+}: {
+  inMonth: boolean;
+  selected: boolean;
+  warning: boolean;
+  today: boolean;
+  minHeight: number;
+}) {
+  return {
+    minWidth: 0,
+    minHeight,
+    p: 0.4,
+    borderRadius: 1,
+    display: 'grid',
+    placeItems: 'center',
+    color: inMonth ? (selected ? 'primary.main' : 'text.primary') : 'text.disabled',
+    bgcolor: selected ? (theme: Theme) => theme.palette.mode === 'light' ? 'rgba(59,130,246,0.08)' : 'rgba(96,165,250,0.14)' : 'transparent',
+    border: '1px solid',
+    borderColor: selected ? 'primary.main' : warning ? 'warning.main' : today ? 'primary.main' : 'transparent',
+    opacity: inMonth ? 1 : 0.42,
+    boxShadow: today && !selected ? '0 0 0 1px rgba(59,130,246,0.08) inset' : 'none',
+    transition: transition(['background-color', 'border-color', 'box-shadow', 'color', 'opacity', 'transform'], motion.durations.base, motion.softOut),
+    '&:hover': {
+      bgcolor: selected ? (theme: Theme) => theme.palette.mode === 'light' ? 'rgba(59,130,246,0.12)' : 'rgba(96,165,250,0.18)' : (theme: Theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.045)' : 'rgba(226,232,240,0.08)',
+      borderColor: selected ? 'primary.main' : warning ? 'warning.main' : today ? 'primary.main' : (theme: Theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.10)' : 'rgba(226,232,240,0.12)',
+      boxShadow: selected
+        ? '0 0 0 1px rgba(59,130,246,0.08) inset'
+        : (theme: Theme) => theme.palette.mode === 'light' ? '0 8px 18px rgba(15,23,42,0.06)' : '0 10px 24px rgba(0,0,0,0.18)',
+      transform: 'translateY(-1px)',
+    },
+    '&:active': {
+      transform: 'scale(0.985)',
+      transitionTimingFunction: motion.press,
+      transitionDuration: `${motion.durations.instant}ms`,
+    },
+    '&.Mui-focusVisible': {
+      borderColor: 'primary.main',
+      boxShadow: (theme: Theme) => theme.palette.mode === 'light'
+        ? '0 0 0 3px rgba(49,90,156,0.12)'
+        : '0 0 0 3px rgba(120,156,220,0.16)',
+    },
+    '&.Mui-disabled': { opacity: inMonth ? 0.58 : 0.22 },
+    ...reducedMotionSx,
+  };
+}
+
 export default function BaseCalendar({
   isZh,
   selectedDate,
@@ -135,7 +224,7 @@ export default function BaseCalendar({
           size="small"
           onClick={() => setVisibleMonth((prev) => addMonths(prev, -1))}
           aria-label={isZh ? '上个月' : 'Previous month'}
-          sx={{ borderRadius: 999, bgcolor: 'action.hover', '&:hover': { bgcolor: 'action.selected' } }}
+          sx={calendarIconButtonSx}
         >
           <ChevronLeftIcon fontSize="small" />
         </IconButton>
@@ -145,7 +234,7 @@ export default function BaseCalendar({
             size="small"
             disableRipple
             onClick={(event) => setYearMenuAnchor(event.currentTarget)}
-            sx={{ minWidth: 0, px: 0.8, borderRadius: 999, fontWeight: 750, textTransform: 'none' }}
+            sx={{ ...calendarControlBaseSx, minWidth: 0, minHeight: 30, px: 0.9, fontWeight: 750, textTransform: 'none', color: 'text.primary' }}
           >
             {yearLabel}
           </Button>
@@ -153,7 +242,7 @@ export default function BaseCalendar({
             size="small"
             disableRipple
             onClick={(event) => setMonthMenuAnchor(event.currentTarget)}
-            sx={{ minWidth: 0, px: 0.8, borderRadius: 999, fontWeight: 750, textTransform: 'none' }}
+            sx={{ ...calendarControlBaseSx, minWidth: 0, minHeight: 30, px: 0.9, fontWeight: 750, textTransform: 'none', color: 'text.primary' }}
           >
             {monthLabel}
           </Button>
@@ -162,7 +251,7 @@ export default function BaseCalendar({
           size="small"
           onClick={() => setVisibleMonth((prev) => addMonths(prev, 1))}
           aria-label={isZh ? '下个月' : 'Next month'}
-          sx={{ borderRadius: 999, bgcolor: 'action.hover', '&:hover': { bgcolor: 'action.selected' } }}
+          sx={calendarIconButtonSx}
         >
           <ChevronRightIcon fontSize="small" />
         </IconButton>
@@ -173,7 +262,7 @@ export default function BaseCalendar({
             onClick={toggle.onToggle}
             aria-label={toggle.expanded ? toggle.expandedAria : toggle.collapsedAria}
             endIcon={toggle.expanded ? <UnfoldLessIcon fontSize="small" /> : <UnfoldMoreIcon fontSize="small" />}
-            sx={{ borderRadius: 999, minHeight: 30, px: 1.2, whiteSpace: 'nowrap' }}
+            sx={{ ...calendarControlBaseSx, minHeight: 30, px: 1.2, whiteSpace: 'nowrap' }}
           >
             {toggle.expanded ? toggle.expandedLabel : toggle.collapsedLabel}
           </Button>
@@ -186,7 +275,7 @@ export default function BaseCalendar({
             onSelectDate(today);
           }}
           sx={{
-            borderRadius: 999,
+            ...calendarControlBaseSx,
             minHeight: 30,
             px: 1.15,
             whiteSpace: 'nowrap',
@@ -258,6 +347,7 @@ export default function BaseCalendar({
           const hiddenTitleCount = Math.max(0, (meta.eventCount ?? meta.titles?.length ?? 0) - visibleTitles.length);
           const dayIsToday = isSameDate(day, today);
           const dotColors = meta.dotColors?.length ? meta.dotColors : ['primary.main'];
+          const hasSupplement = visibleTitles.length > 0 || eventCount > 0;
           return (
             <Button
               key={toDateKey(day)}
@@ -265,29 +355,23 @@ export default function BaseCalendar({
               disableRipple
               disabled={disabled}
               onClick={() => onSelectDate(day)}
-              sx={{
-                minWidth: 0,
+              sx={buildCalendarDayButtonSx({
+                inMonth,
+                selected,
+                warning: Boolean(meta.warning),
+                today: dayIsToday,
                 minHeight: dayCellMinHeight ?? (mode === 'month' ? 38 : 34),
-                p: 0.4,
-                borderRadius: 1,
-                display: 'grid',
-                placeItems: 'center',
-                color: inMonth ? (selected ? 'primary.main' : 'text.primary') : 'text.disabled',
-                bgcolor: selected ? (theme) => theme.palette.mode === 'light' ? 'rgba(59,130,246,0.08)' : 'rgba(96,165,250,0.14)' : 'transparent',
-                border: '1px solid',
-                borderColor: selected ? 'primary.main' : meta.warning ? 'warning.main' : dayIsToday ? 'primary.main' : 'transparent',
-                opacity: inMonth ? 1 : 0.42,
-                boxShadow: dayIsToday && !selected ? '0 0 0 1px rgba(59,130,246,0.08) inset' : 'none',
-                transition: (theme) => theme.transitions.create(['background-color', 'border-color', 'box-shadow'], { duration: theme.transitions.duration.shortest }),
-                '&:hover': {
-                  bgcolor: selected ? (theme) => theme.palette.mode === 'light' ? 'rgba(59,130,246,0.12)' : 'rgba(96,165,250,0.18)' : 'action.hover',
-                  borderColor: selected ? 'primary.main' : meta.warning ? 'warning.main' : 'divider',
-                  boxShadow: selected ? '0 0 0 1px rgba(59,130,246,0.08) inset' : '0 0 0 1px rgba(127,127,127,0.04) inset',
-                },
-                '&.Mui-disabled': { opacity: inMonth ? 0.58 : 0.22 },
-              }}
+              })}
             >
-              <Stack spacing={0.15} sx={{ alignItems: 'center', width: '100%', minHeight: dayContentMinHeight ?? (mode === 'month' ? 30 : 22) }}>
+              <Stack
+                spacing={0.15}
+                sx={{
+                  alignItems: 'center',
+                  justifyContent: hasSupplement ? 'flex-start' : 'center',
+                  width: '100%',
+                  minHeight: dayContentMinHeight ?? (mode === 'month' ? 30 : 22),
+                }}
+              >
                 <Typography sx={{ fontSize: 12, lineHeight: 1, fontWeight: selected ? 800 : 600 }}>{day.getDate()}</Typography>
                 {visibleTitles.map((title, idx) => (
                   <Typography
