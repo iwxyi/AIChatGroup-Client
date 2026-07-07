@@ -37,6 +37,7 @@ interface BaseCalendarProps {
   };
   getDayMeta?: (date: Date, inMonth: boolean) => CalendarDayRenderMeta;
   detailsExpanded?: boolean;
+  maxWidth?: number | string;
   dayCellMinHeight?: number;
   dayContentMinHeight?: number;
 }
@@ -182,6 +183,7 @@ export default function BaseCalendar({
   toggle,
   getDayMeta,
   detailsExpanded: detailsExpandedProp,
+  maxWidth = 430,
   dayCellMinHeight,
   dayContentMinHeight,
 }: BaseCalendarProps) {
@@ -225,7 +227,7 @@ export default function BaseCalendar({
   const detailsExpanded = Boolean(detailsExpandedProp);
 
   return (
-    <Box sx={{ display: 'grid', gap: 1 }}>
+    <Box sx={{ display: 'grid', gap: 1, width: '100%', maxWidth, mx: 'auto' }}>
       <Box
         sx={{
           display: 'grid',
