@@ -1,0 +1,371 @@
+import { useEffect, useMemo, useState } from 'react';
+import {
+  Alert,
+  Box,
+  Button,
+  Checkbox,
+  Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  FormControl,
+  FormControlLabel,
+  InputLabel,
+  MenuItem,
+  OutlinedInput,
+  Select,
+  Stack,
+  TextField,
+  Typography,
+} from '@mui/material';
+import type { SelectChangeEvent } from '@mui/material/Select';
+import type { GroupChat } from '../../types/chat';
+import type { AICharacter } from '../../types/character';
+import type { RuntimeEventV2 } from '../../types/runtimeEvent';
+import { generateId } from '../../utils/id';
+
+interface ManualCalendarEventDialogProps {
+  open: boolean;
+  chats: GroupChat[];
+  characters: AICharacter[];
+  fixedConversationId?: string | null;
+  initialActorId?: string | null;
+  isZh: boolean;
+  onClose: () => void;
+  onCreate: (chatId: string, event: RuntimeEventV2) => Promise<void>;
+}
+
+interface FormState {
+  title: string;
+  allDay: boolean;
+  startDateTime: string;
+  endDateTime: string;
+  startDate: string;
+  endDate: string;
+  participantIds: string[];
+  conversationId: string;
+  location: string;
+  note: string;
+}
+
+const FIVE_MINUTES_SECONDS = 300;
+const FIVE_MINUTES_MS = FIVE_MINUTES_SECONDS * 1000;
+
+function pad2(value: number) {
+  return `${value}`.padStart(2, '0');
+}
+
+function toLocalDateInput(date: Date) {
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+}
+
+function toLocalDateTimeInput(date: Date) {
+  return `${toLocalDateInput(date)}T${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+}
+
+function roundUpToFiveMinutes(value: number) {
+  return Math.ceil(value / FIVE_MINUTES_MS) * FIVE_MINUTES_MS;
+}
+
+function addMinutes(date: Date, minutes: number) {
+  return new Date(date.getTime() + minutes * 60_000);
+}
+
+function parseLocalDate(value: string) {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function parseLocalDateTime(value: string) {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
+  if (!match) return null;
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), Number(match[4]), Number(match[5]));
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function createInitialForm(chats: GroupChat[], characters: AICharacter[], fixedConversationId?: string | null, initialActorId?: string | null): FormState {
+  const roundedStart = new Date(roundUpToFiveMinutes(Date.now() + 30 * 60_000));
+  const roundedEnd = addMinutes(roundedStart, 60);
+  const defaultConversationId = fixedConversationId || chats.find((chat) => !chat.deletedAt)?.id || '';
+  const initialParticipantIds = initialActorId && initialActorId !== 'user' && characters.some((character) => character.id === initialActorId && !character.deletedAt)
+    ? [initialActorId]
+    : [];
+  return {
+    title: '',
+    allDay: false,
+    startDateTime: toLocalDateTimeInput(roundedStart),
+    endDateTime: toLocalDateTimeInput(roundedEnd),
+    startDate: toLocalDateInput(roundedStart),
+    endDate: toLocalDateInput(roundedStart),
+    participantIds: initialParticipantIds,
+    conversationId: defaultConversationId,
+    location: '',
+    note: '',
+  };
+}
+
+function buildManualEventId(now: number, title: string) {
+  const seed = `${title}-${now}-${generateId().slice(0, 8)}`.replace(/[^a-zA-Z0-9_-]+/g, '-').slice(0, 48);
+  return `manual-calendar-${seed}`;
+}
+
+function buildSummary(form: FormState, participantNames: string[], startAt: number, endAt: number, isZh: boolean) {
+  const parts = [
+    form.title.trim(),
+    participantNames.length ? `${isZh ? '角色' : 'Characters'}：${participantNames.join('、')}` : '',
+    form.location.trim() ? `${isZh ? '地点' : 'Location'}：${form.location.trim()}` : '',
+    form.allDay ? (isZh ? '全天' : 'All day') : `${new Date(startAt).toLocaleString()} - ${new Date(endAt).toLocaleString()}`,
+    form.note.trim(),
+  ].filter(Boolean);
+  return parts.join(' · ');
+}
+
+export default function ManualCalendarEventDialog({
+  open,
+  chats,
+  characters,
+  fixedConversationId,
+  initialActorId,
+  isZh,
+  onClose,
+  onCreate,
+}: ManualCalendarEventDialogProps) {
+  const activeChats = useMemo(() => chats.filter((chat) => !chat.deletedAt), [chats]);
+  const activeCharacters = useMemo(() => characters.filter((character) => !character.deletedAt), [characters]);
+  const resolvedFixedConversationId = useMemo(
+    () => activeChats.some((chat) => chat.id === fixedConversationId) ? fixedConversationId : null,
+    [activeChats, fixedConversationId],
+  );
+  const [form, setForm] = useState<FormState>(() => createInitialForm(activeChats, activeCharacters, resolvedFixedConversationId, initialActorId));
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!open) return;
+    setForm(createInitialForm(activeChats, activeCharacters, resolvedFixedConversationId, initialActorId));
+    setSubmitting(false);
+    setError('');
+  }, [activeCharacters, activeChats, initialActorId, open, resolvedFixedConversationId]);
+
+  const selectedCharacterNames = useMemo(() => {
+    const nameById = new Map(activeCharacters.map((character) => [character.id, character.name]));
+    return form.participantIds.map((id) => nameById.get(id)).filter(Boolean) as string[];
+  }, [activeCharacters, form.participantIds]);
+
+  const validation = useMemo(() => {
+    const title = form.title.trim();
+    if (!title) return isZh ? '请填写标题' : 'Enter a title';
+    if (!form.conversationId) return isZh ? '请选择关联会话' : 'Choose a source chat';
+    if (!form.participantIds.length) return isZh ? '请选择至少一个角色' : 'Choose at least one character';
+    if (form.allDay) {
+      const startDate = parseLocalDate(form.startDate);
+      const endDate = parseLocalDate(form.endDate);
+      if (!startDate || !endDate) return isZh ? '请选择日期' : 'Choose dates';
+      if (endDate.getTime() < startDate.getTime()) return isZh ? '结束日期不能早于开始日期' : 'End date cannot be before start date';
+      return '';
+    }
+    const start = parseLocalDateTime(form.startDateTime);
+    const end = parseLocalDateTime(form.endDateTime);
+    if (!start || !end) return isZh ? '请选择开始和结束时间' : 'Choose start and end time';
+    if (end.getTime() <= start.getTime()) return isZh ? '结束时间必须晚于开始时间' : 'End time must be after start time';
+    return '';
+  }, [form, isZh]);
+
+  const updateField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handleParticipantChange = (event: SelectChangeEvent<string[]>) => {
+    const value = event.target.value;
+    updateField('participantIds', typeof value === 'string' ? value.split(',') : value);
+  };
+
+  const handleSubmit = async () => {
+    if (validation || submitting) {
+      setError(validation);
+      return;
+    }
+    const now = Date.now();
+    const title = form.title.trim();
+    const startDate = form.allDay ? parseLocalDate(form.startDate) : parseLocalDateTime(form.startDateTime);
+    const rawEndDate = form.allDay ? parseLocalDate(form.endDate) : parseLocalDateTime(form.endDateTime);
+    if (!startDate || !rawEndDate) {
+      setError(isZh ? '时间无效' : 'Invalid time');
+      return;
+    }
+    const startAt = startDate.getTime();
+    const endAt = form.allDay ? addMinutes(rawEndDate, 24 * 60).getTime() : rawEndDate.getTime();
+    const durationMinutes = Math.max(5, Math.round((endAt - startAt) / 60_000));
+    const calendarItemId = buildManualEventId(now, title);
+    const summary = buildSummary(form, selectedCharacterNames, startAt, endAt, isZh);
+    const participantStates = Object.fromEntries(form.participantIds.map((id) => [id, 'going']));
+    const event: RuntimeEventV2 = {
+      id: `manual-calendar-event-${generateId()}`,
+      conversationId: form.conversationId,
+      kind: 'calendar_item_patch',
+      createdAt: now,
+      actorIds: [],
+      targetIds: form.participantIds,
+      summary,
+      visibility: 'derived_public',
+      payload: {
+        calendarItemId,
+        kind: 'activity',
+        status: 'confirmed',
+        title,
+        activityType: title,
+        participantIds: form.participantIds,
+        participantStates,
+        startAt,
+        endAt,
+        durationMinutes,
+        timeHint: form.allDay ? (isZh ? '全天' : 'All day') : null,
+        locationHint: form.location.trim() || null,
+        summary,
+        note: form.note.trim() || null,
+        allDay: form.allDay,
+        source: 'manual_calendar_entry',
+        idempotencyKey: `manual-calendar:${calendarItemId}`,
+      },
+    };
+    setSubmitting(true);
+    setError('');
+    try {
+      await onCreate(form.conversationId, event);
+      onClose();
+    } catch {
+      setError(isZh ? '保存失败，请稍后重试' : 'Failed to save. Try again later.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onClose={submitting ? undefined : onClose} fullWidth maxWidth="sm">
+      <DialogTitle>{isZh ? '新增日程' : 'New event'}</DialogTitle>
+      <DialogContent sx={{ display: 'grid', gap: 2, pt: 1 }}>
+        {error ? <Alert severity="error">{error}</Alert> : null}
+        <TextField
+          label={isZh ? '标题' : 'Title'}
+          value={form.title}
+          onChange={(event) => updateField('title', event.target.value)}
+          required
+          fullWidth
+          autoFocus
+        />
+        <FormControlLabel
+          control={<Checkbox checked={form.allDay} onChange={(event) => updateField('allDay', event.target.checked)} />}
+          label={isZh ? '全天' : 'All day'}
+        />
+        {form.allDay ? (
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.5 }}>
+            <TextField
+              label={isZh ? '开始日期' : 'Start date'}
+              type="date"
+              value={form.startDate}
+              onChange={(event) => updateField('startDate', event.target.value)}
+              required
+              slotProps={{ inputLabel: { shrink: true } }}
+            />
+            <TextField
+              label={isZh ? '结束日期' : 'End date'}
+              type="date"
+              value={form.endDate}
+              onChange={(event) => updateField('endDate', event.target.value)}
+              required
+              slotProps={{ inputLabel: { shrink: true } }}
+            />
+          </Box>
+        ) : (
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.5 }}>
+            <TextField
+              label={isZh ? '开始时间' : 'Start'}
+              type="datetime-local"
+              value={form.startDateTime}
+              onChange={(event) => updateField('startDateTime', event.target.value)}
+              required
+              slotProps={{ htmlInput: { step: FIVE_MINUTES_SECONDS }, inputLabel: { shrink: true } }}
+            />
+            <TextField
+              label={isZh ? '结束时间' : 'End'}
+              type="datetime-local"
+              value={form.endDateTime}
+              onChange={(event) => updateField('endDateTime', event.target.value)}
+              required
+              slotProps={{ htmlInput: { step: FIVE_MINUTES_SECONDS }, inputLabel: { shrink: true } }}
+            />
+          </Box>
+        )}
+        <FormControl fullWidth required>
+          <InputLabel id="manual-calendar-participants-label">{isZh ? '角色' : 'Characters'}</InputLabel>
+          <Select
+            labelId="manual-calendar-participants-label"
+            multiple
+            value={form.participantIds}
+            onChange={handleParticipantChange}
+            input={<OutlinedInput label={isZh ? '角色' : 'Characters'} />}
+            renderValue={(selected) => (
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                {selected.map((id) => {
+                  const character = activeCharacters.find((item) => item.id === id);
+                  return <Chip key={id} size="small" label={character?.name || id} />;
+                })}
+              </Box>
+            )}
+          >
+            {activeCharacters.map((character) => (
+              <MenuItem key={character.id} value={character.id}>
+                <Checkbox checked={form.participantIds.includes(character.id)} />
+                <Typography noWrap>{character.name}</Typography>
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+        <FormControl fullWidth required disabled={Boolean(resolvedFixedConversationId)}>
+          <InputLabel id="manual-calendar-chat-label">{isZh ? '关联会话' : 'Source chat'}</InputLabel>
+          <Select
+            labelId="manual-calendar-chat-label"
+            value={form.conversationId}
+            label={isZh ? '关联会话' : 'Source chat'}
+            onChange={(event) => updateField('conversationId', event.target.value)}
+          >
+            {activeChats.map((chat) => (
+              <MenuItem key={chat.id} value={chat.id}>{chat.name}</MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+        <TextField
+          label={isZh ? '地点' : 'Location'}
+          value={form.location}
+          onChange={(event) => updateField('location', event.target.value)}
+          fullWidth
+        />
+        <TextField
+          label={isZh ? '备注' : 'Notes'}
+          value={form.note}
+          onChange={(event) => updateField('note', event.target.value)}
+          fullWidth
+          multiline
+          minRows={3}
+        />
+        <Stack spacing={0.5}>
+          <Typography variant="caption" color="text.secondary">
+            {isZh ? '时间精度为 5 分钟；事件会写入关联群聊的运行日历记录。' : 'Time is saved in 5-minute precision; the event is stored in the selected chat runtime calendar.'}
+          </Typography>
+          {!activeChats.length ? (
+            <Alert severity="warning">{isZh ? '当前没有可写入的会话。' : 'No writable chat is available.'}</Alert>
+          ) : null}
+        </Stack>
+      </DialogContent>
+      <DialogActions sx={{ px: 3, pb: 2.5 }}>
+        <Button onClick={onClose} disabled={submitting}>{isZh ? '取消' : 'Cancel'}</Button>
+        <Button variant="contained" onClick={handleSubmit} disabled={submitting || !activeChats.length}>
+          {submitting ? (isZh ? '保存中...' : 'Saving...') : (isZh ? '保存' : 'Save')}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
