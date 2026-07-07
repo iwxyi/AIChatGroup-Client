@@ -65,29 +65,32 @@ function formatClock(date: Date, isZh: boolean) {
 }
 
 function formatCompactDate(date: Date, isZh: boolean) {
-  const currentYear = new Date().getFullYear();
   if (isZh) {
-    return date.getFullYear() === currentYear
-      ? `${date.getMonth() + 1}月${date.getDate()}日`
-      : `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
+    return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
   }
   return date.toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
-    ...(date.getFullYear() === currentYear ? {} : { year: 'numeric' }),
+    year: 'numeric',
   });
 }
 
-function formatCompactDateTime(date: Date, isZh: boolean) {
-  return `${formatCompactDate(date, isZh)} ${formatClock(date, isZh)}`;
+function formatMonthDay(date: Date, isZh: boolean) {
+  if (isZh) return `${date.getMonth() + 1}月${date.getDate()}日`;
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function formatCompactDateTime(date: Date, isZh: boolean, includeYear = true) {
+  return `${includeYear ? formatCompactDate(date, isZh) : formatMonthDay(date, isZh)} ${formatClock(date, isZh)}`;
 }
 
 function formatAllDayRange(start: Date, end: Date, isZh: boolean) {
   const inclusiveEnd = new Date(end.getTime() - 1);
-  if (toLocalDayKey(start) === toLocalDayKey(inclusiveEnd)) return isZh ? '全天' : 'All day';
+  if (toLocalDayKey(start) === toLocalDayKey(inclusiveEnd)) return isZh ? `${formatCompactDate(start, isZh)} 全天` : `${formatCompactDate(start, isZh)} · All day`;
+  const sameYear = start.getFullYear() === inclusiveEnd.getFullYear();
   return isZh
-    ? `${formatCompactDate(start, isZh)} - ${formatCompactDate(inclusiveEnd, isZh)} 全天`
-    : `${formatCompactDate(start, isZh)} - ${formatCompactDate(inclusiveEnd, isZh)} · All day`;
+    ? `${formatCompactDate(start, isZh)} - ${sameYear ? formatMonthDay(inclusiveEnd, isZh) : formatCompactDate(inclusiveEnd, isZh)} 全天`
+    : `${formatCompactDate(start, isZh)} - ${sameYear ? formatMonthDay(inclusiveEnd, isZh) : formatCompactDate(inclusiveEnd, isZh)} · All day`;
 }
 
 function formatDayTitle(timestamp: number, isZh: boolean) {
@@ -121,12 +124,39 @@ function formatScheduleHint(item: { startAt?: number | null; endAt?: number | nu
     const sameDay = toLocalDayKey(start) === toLocalDayKey(end);
     const allDay = isLocalMidnight(start) && isLocalMidnight(end) && end.getTime() > start.getTime() && (end.getTime() - start.getTime()) % 86400000 === 0;
     if (allDay) return formatAllDayRange(start, end, isZh);
-    if (sameDay) return `${formatClock(start, isZh)} - ${formatClock(end, isZh)}`;
-    return `${formatCompactDateTime(start, isZh)} - ${formatCompactDateTime(end, isZh)}`;
+    if (sameDay) return `${formatCompactDateTime(start, isZh)} - ${formatClock(end, isZh)}`;
+    return `${formatCompactDateTime(start, isZh)} - ${formatCompactDateTime(end, isZh, start.getFullYear() !== end.getFullYear())}`;
   }
   if (hasStart && hasDuration) return isZh ? `${formatCompactDateTime(new Date(item.startAt as number), isZh)}（约${item.durationMinutes}分钟）` : `${formatCompactDateTime(new Date(item.startAt as number), isZh)} (~${item.durationMinutes} min)`;
   if (hasStart) return formatCompactDateTime(new Date(item.startAt as number), isZh);
   return item.timeHint || null;
+}
+
+function normalizeDisplayText(value: string) {
+  return value.replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+function buildListSummary(item: WorldCalendarItem, scheduleHint: string | null, isZh: boolean) {
+  const summary = item.summary.trim();
+  if (!summary) return null;
+  const titleKey = normalizeDisplayText(item.title);
+  const scheduleKey = scheduleHint ? normalizeDisplayText(scheduleHint) : '';
+  const locationKey = item.locationHint ? normalizeDisplayText(item.locationHint) : '';
+  const participantKey = item.participantNames.length ? normalizeDisplayText(item.participantNames.join(isZh ? '、' : ', ')) : '';
+  const filteredParts = summary
+    .split(/\s*[·•]\s*/g)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .filter((part) => {
+      const key = normalizeDisplayText(part);
+      if (!key || key === titleKey || key === scheduleKey || key === locationKey || key === participantKey) return false;
+      if (isZh && (/^角色[:：]/.test(part) || /^地点[:：]/.test(part) || part === '全天')) return false;
+      if (!isZh && (/^characters?:/i.test(part) || /^location:/i.test(part) || /^all day$/i.test(part))) return false;
+      return true;
+    });
+  const cleaned = filteredParts.join(' · ').trim();
+  if (!cleaned || normalizeDisplayText(cleaned) === titleKey) return null;
+  return cleaned;
 }
 
 function getCalendarStatusMeta(status: WorldCalendarItem['status'], isZh: boolean) {
@@ -526,6 +556,7 @@ export default function WorldCalendarPanel({
             <Stack spacing={1.1}>
               {groupedItems.flatMap((group) => group.items).map((item) => {
                 const scheduleHint = formatScheduleHint(item, isZh);
+                const listSummary = buildListSummary(item, scheduleHint, isZh);
                 const statusMeta = getCalendarStatusMeta(item.status, isZh);
                 return (
                   <SurfaceCard
@@ -537,7 +568,7 @@ export default function WorldCalendarPanel({
                       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ alignItems: { xs: 'flex-start', sm: 'center' }, justifyContent: 'space-between' }}>
                         <Box sx={{ minWidth: 0 }}>
                           <Typography variant="subtitle1" sx={{ fontWeight: 760, letterSpacing: 0 }}>{item.title}</Typography>
-                          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.2 }}>{item.summary}</Typography>
+                          {listSummary ? <Typography variant="body2" color="text.secondary" sx={{ mt: 0.2 }}>{listSummary}</Typography> : null}
                         </Box>
                         <Chip size="small" color={statusMeta.color} variant="outlined" sx={calendarMetaChipSx} label={statusMeta.label} />
                       </Stack>
@@ -553,7 +584,6 @@ export default function WorldCalendarPanel({
                             label={(isZh ? '参与状态' : 'Participant states') + ' · ' + summarizeParticipantStateCounts(item.participantStates, isZh).slice(0, 2).join(' / ')}
                           />
                         ) : null}
-                        <Chip size="small" variant="outlined" sx={calendarMetaChipSx} label={`${isZh ? '来源' : 'Sources'} ${item.sourceRefs.length}`} />
                       </Stack>
                   </SurfaceCard>
                 );
