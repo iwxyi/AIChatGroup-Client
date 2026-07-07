@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Box, Button, Chip, Dialog, DialogContent, DialogTitle, FormControl, MenuItem, Select, Stack, Typography } from '@mui/material';
+import { Box, Button, Chip, FormControl, MenuItem, Select, Stack, Typography } from '@mui/material';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import PlaceIcon from '@mui/icons-material/Place';
 import ScheduleIcon from '@mui/icons-material/Schedule';
@@ -24,6 +24,8 @@ import {
 } from '../../services/worldCalendarViewModel';
 import { buildInteractiveSurfaceSx, compactPillChipSx } from '../../styles/interaction';
 import BaseCalendar from './BaseCalendar';
+import ManualCalendarEventDialog from './ManualCalendarEventDialog';
+import type { RuntimeEventV2 } from '../../types/runtimeEvent';
 
 const calendarFilterChipSx = {
   ...compactPillChipSx,
@@ -288,7 +290,7 @@ export default function WorldCalendarPanel({
     });
     return map;
   }, [baseFilteredItems]);
-  const detailItem = useMemo(() => filteredItems.find((item) => item.id === detailItemId) || null, [detailItemId, filteredItems]);
+  const detailItem = useMemo(() => calendarItems.find((item) => item.id === detailItemId) || null, [calendarItems, detailItemId]);
 
   useEffect(() => {
     if (!automaticPatchQueue.length || isApplyingPatchQueue) return;
@@ -340,6 +342,23 @@ export default function WorldCalendarPanel({
     } finally {
       setIsApplyingPatchQueue(false);
     }
+  };
+
+  const handleSaveCalendarEdit = async (chatId: string, event: RuntimeEventV2) => {
+    const targetChat = chats.find((chat) => chat.id === chatId && !chat.deletedAt);
+    if (!targetChat) {
+      throw new Error(isZh ? '关联会话不存在或已删除' : 'The selected chat no longer exists.');
+    }
+    const existingEvents = targetChat.runtimeEventsV2 || [];
+    if (existingEvents.some((item) => item.id === event.id)) return;
+    await updateChat(chatId, {
+      runtimeEventsV2: [...existingEvents, event],
+    });
+    setSnackbar({
+      open: true,
+      message: isZh ? '日程已更新' : 'Event updated',
+      severity: 'success',
+    });
   };
 
   return (
@@ -598,21 +617,17 @@ export default function WorldCalendarPanel({
         message={snackbar.message}
         onClose={() => setSnackbar((prev) => ({ ...prev, open: false }))}
       />
-      <Dialog open={Boolean(detailItem)} onClose={() => setDetailItemId(null)} maxWidth="sm" fullWidth>
-        <DialogTitle>{detailItem?.title || (isZh ? '活动详情' : 'Event details')}</DialogTitle>
-        <DialogContent>
-          {detailItem ? (
-            <Stack spacing={1.2} sx={{ pt: 0.5 }}>
-              <Typography variant="body2" color="text.secondary">{detailItem.summary}</Typography>
-              <Typography variant="body2">{isZh ? '时间：' : 'Time: '}{formatScheduleHint(detailItem, isZh) || '-'}</Typography>
-              <Typography variant="body2">{isZh ? '地点：' : 'Location: '}{detailItem.locationHint || '-'}</Typography>
-              <Typography variant="body2">{isZh ? '参与者：' : 'Participants: '}{detailItem.participantNames.join(isZh ? '、' : ', ') || '-'}</Typography>
-              <Typography variant="body2">{isZh ? '来源事件数：' : 'Source events: '}{detailItem.sourceRefs.length}</Typography>
-              <Typography variant="caption" color="text.secondary">{isZh ? '更新时间：' : 'Updated: '}{formatTime(detailItem.updatedAt)}</Typography>
-            </Stack>
-          ) : null}
-        </DialogContent>
-      </Dialog>
+      <ManualCalendarEventDialog
+        open={Boolean(detailItem)}
+        chats={chats}
+        characters={characters}
+        fixedConversationId={conversationId}
+        initialActorId={actorId}
+        editingItem={detailItem}
+        isZh={isZh}
+        onClose={() => setDetailItemId(null)}
+        onCreate={handleSaveCalendarEdit}
+      />
     </Box>
   );
 }

@@ -23,6 +23,7 @@ import LockIcon from '@mui/icons-material/Lock';
 import type { GroupChat } from '../../types/chat';
 import type { AICharacter } from '../../types/character';
 import type { RuntimeEventV2 } from '../../types/runtimeEvent';
+import type { WorldCalendarItem } from '../../services/worldRuntimeProjection';
 import { generateId } from '../../utils/id';
 import MemberSelectionDialog from '../createChat/MemberSelectionDialog';
 import FloatingSegmentedTabs from '../common/FloatingSegmentedTabs';
@@ -35,6 +36,7 @@ interface ManualCalendarEventDialogProps {
   characters: AICharacter[];
   fixedConversationId?: string | null;
   initialActorId?: string | null;
+  editingItem?: WorldCalendarItem | null;
   isZh: boolean;
   onClose: () => void;
   onCreate: (chatId: string, event: RuntimeEventV2) => Promise<void>;
@@ -113,6 +115,83 @@ function createInitialForm(chats: GroupChat[], characters: AICharacter[], fixedC
     conversationId: defaultConversationId,
     location: '',
     note: '',
+  };
+}
+
+function isAllDayRange(startAt?: number | null, endAt?: number | null) {
+  if (typeof startAt !== 'number' || typeof endAt !== 'number' || endAt <= startAt) return false;
+  const start = new Date(startAt);
+  const end = new Date(endAt);
+  return start.getHours() === 0
+    && start.getMinutes() === 0
+    && start.getSeconds() === 0
+    && start.getMilliseconds() === 0
+    && end.getHours() === 0
+    && end.getMinutes() === 0
+    && end.getSeconds() === 0
+    && end.getMilliseconds() === 0
+    && (endAt - startAt) % 86_400_000 === 0;
+}
+
+function normalizeDisplayText(value: string) {
+  return value.replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+function deriveEditableNote(item: WorldCalendarItem, isZh: boolean) {
+  const summary = item.summary.trim();
+  if (!summary) return '';
+  const titleKey = normalizeDisplayText(item.title);
+  const locationKey = item.locationHint ? normalizeDisplayText(item.locationHint) : '';
+  const participantKey = item.participantNames.length ? normalizeDisplayText(item.participantNames.join(isZh ? '、' : ', ')) : '';
+  const filteredParts = summary
+    .split(/\s*[·•]\s*/g)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .filter((part) => {
+      const key = normalizeDisplayText(part);
+      if (!key || key === titleKey || key === locationKey || key === participantKey) return false;
+      if (isZh && (/^角色[:：]/.test(part) || /^地点[:：]/.test(part) || part === '全天')) return false;
+      if (!isZh && (/^characters?:/i.test(part) || /^location:/i.test(part) || /^all day$/i.test(part))) return false;
+      if (/\d{1,2}:\d{2}/.test(part) || /(\d{4}年)?\d{1,2}月\d{1,2}日/.test(part)) return false;
+      return true;
+    });
+  const note = filteredParts.join(' · ').trim();
+  return normalizeDisplayText(note) === titleKey ? '' : note;
+}
+
+function createFormFromCalendarItem(
+  item: WorldCalendarItem,
+  chats: GroupChat[],
+  fixedConversationId?: string | null,
+  fallbackActorId?: string | null,
+  isZh = true,
+): FormState {
+  const fallback = createInitialForm(chats, [], fixedConversationId, fallbackActorId);
+  const start = typeof item.startAt === 'number' ? new Date(item.startAt) : parseLocalDateTime(fallback.startDateTime) || new Date();
+  const resolvedEndAt = typeof item.endAt === 'number'
+    ? item.endAt
+    : typeof item.startAt === 'number' && typeof item.durationMinutes === 'number'
+      ? item.startAt + item.durationMinutes * 60_000
+      : null;
+  const end = typeof resolvedEndAt === 'number' ? new Date(resolvedEndAt) : parseLocalDateTime(fallback.endDateTime) || addMinutes(start, 60);
+  const allDay = isAllDayRange(item.startAt, resolvedEndAt);
+  const inclusiveAllDayEnd = allDay ? new Date(end.getTime() - 1) : end;
+  const sourceConversationId = item.sourceRefs[0]?.conversationId || '';
+  const conversationId = fixedConversationId
+    || (chats.some((chat) => chat.id === sourceConversationId && !chat.deletedAt) ? sourceConversationId : '')
+    || fallback.conversationId;
+
+  return {
+    title: item.title,
+    allDay,
+    startDateTime: toLocalDateTimeInput(start),
+    endDateTime: toLocalDateTimeInput(end),
+    startDate: toLocalDateInput(start),
+    endDate: toLocalDateInput(inclusiveAllDayEnd),
+    participantIds: item.participantIds.length ? item.participantIds : fallback.participantIds,
+    conversationId,
+    location: item.locationHint || '',
+    note: deriveEditableNote(item, isZh),
   };
 }
 
@@ -264,6 +343,7 @@ export default function ManualCalendarEventDialog({
   characters,
   fixedConversationId,
   initialActorId,
+  editingItem,
   isZh,
   onClose,
   onCreate,
@@ -282,10 +362,12 @@ export default function ManualCalendarEventDialog({
 
   useEffect(() => {
     if (!open) return;
-    setForm(createInitialForm(activeChats, activeCharacters, resolvedFixedConversationId, initialActorId));
+    setForm(editingItem
+      ? createFormFromCalendarItem(editingItem, activeChats, resolvedFixedConversationId, initialActorId, isZh)
+      : createInitialForm(activeChats, activeCharacters, resolvedFixedConversationId, initialActorId));
     setSubmitting(false);
     setError('');
-  }, [activeCharacters, activeChats, initialActorId, open, resolvedFixedConversationId]);
+  }, [activeCharacters, activeChats, editingItem, initialActorId, isZh, open, resolvedFixedConversationId]);
 
   const selectedCharacterNames = useMemo(() => {
     const nameById = new Map(activeCharacters.map((character) => [character.id, character.name]));
@@ -347,7 +429,7 @@ export default function ManualCalendarEventDialog({
     const startAt = startDate.getTime();
     const endAt = form.allDay ? addMinutes(rawEndDate, 24 * 60).getTime() : rawEndDate.getTime();
     const durationMinutes = Math.max(5, Math.round((endAt - startAt) / 60_000));
-    const calendarItemId = buildManualEventId(now, title);
+    const calendarItemId = editingItem?.id || buildManualEventId(now, title);
     const summary = buildSummary(form, selectedCharacterNames, startAt, endAt, isZh);
     const participantStates = Object.fromEntries(form.participantIds.map((id) => [id, 'going']));
     const event: RuntimeEventV2 = {
@@ -361,8 +443,8 @@ export default function ManualCalendarEventDialog({
       visibility: 'derived_public',
       payload: {
         calendarItemId,
-        kind: 'activity',
-        status: 'confirmed',
+        kind: editingItem?.kind || 'activity',
+        status: editingItem?.status || 'confirmed',
         title,
         activityType: title,
         participantIds: form.participantIds,
@@ -371,12 +453,14 @@ export default function ManualCalendarEventDialog({
         endAt,
         durationMinutes,
         timeHint: form.allDay ? (isZh ? '全天' : 'All day') : null,
+        clearTimeHint: !form.allDay,
         locationHint: form.location.trim() || null,
+        clearLocationHint: !form.location.trim(),
         summary,
         note: form.note.trim() || null,
         allDay: form.allDay,
         source: 'manual_calendar_entry',
-        idempotencyKey: `manual-calendar:${calendarItemId}`,
+        idempotencyKey: editingItem ? `manual-calendar-edit:${calendarItemId}:${now}` : `manual-calendar:${calendarItemId}`,
       },
     };
     setSubmitting(true);
@@ -393,7 +477,7 @@ export default function ManualCalendarEventDialog({
 
   return (
     <Dialog open={open} onClose={submitting ? undefined : onClose} fullWidth maxWidth="sm">
-      <DialogTitle>{isZh ? '新增日程' : 'New event'}</DialogTitle>
+      <DialogTitle>{editingItem ? (isZh ? '编辑日程' : 'Edit event') : (isZh ? '新增日程' : 'New event')}</DialogTitle>
       <DialogContent sx={{ display: 'grid', gap: 2, pt: '20px !important' }}>
         {error ? <Alert severity="error">{error}</Alert> : null}
         <TextField
@@ -514,7 +598,7 @@ export default function ManualCalendarEventDialog({
       <DialogActions sx={{ px: 3, pb: 2.5 }}>
         <Button onClick={onClose} disabled={submitting}>{isZh ? '取消' : 'Cancel'}</Button>
         <Button variant="contained" onClick={handleSubmit} disabled={submitting || !activeChats.length}>
-          {submitting ? (isZh ? '保存中...' : 'Saving...') : (isZh ? '保存' : 'Save')}
+          {submitting ? (isZh ? '保存中...' : 'Saving...') : (editingItem ? (isZh ? '保存修改' : 'Save changes') : (isZh ? '保存' : 'Save'))}
         </Button>
       </DialogActions>
       <MemberSelectionDialog
