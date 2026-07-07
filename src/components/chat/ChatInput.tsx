@@ -289,17 +289,17 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
           position: 'absolute',
           left: 0,
           right: 0,
-          top: -52,
-          height: 52,
+          top: -30,
+          height: 30,
           pointerEvents: 'none',
           zIndex: 0,
-          backdropFilter: (theme) => theme.palette.mode === 'light' ? 'blur(34px) saturate(0.78) brightness(1.16) contrast(0.70)' : 'blur(24px) saturate(0.88) brightness(0.82)',
-          WebkitBackdropFilter: (theme) => theme.palette.mode === 'light' ? 'blur(34px) saturate(0.78) brightness(1.16) contrast(0.70)' : 'blur(24px) saturate(0.88) brightness(0.82)',
-          maskImage: 'linear-gradient(to top, rgba(0,0,0,0.76), rgba(0,0,0,0.24) 64%, transparent)',
-          WebkitMaskImage: 'linear-gradient(to top, rgba(0,0,0,0.76), rgba(0,0,0,0.24) 64%, transparent)',
+          backdropFilter: (theme) => theme.palette.mode === 'light' ? 'blur(18px) saturate(0.86)' : 'blur(14px) saturate(0.90)',
+          WebkitBackdropFilter: (theme) => theme.palette.mode === 'light' ? 'blur(18px) saturate(0.86)' : 'blur(14px) saturate(0.90)',
+          maskImage: 'linear-gradient(to top, rgba(0,0,0,0.34), transparent)',
+          WebkitMaskImage: 'linear-gradient(to top, rgba(0,0,0,0.34), transparent)',
           background: (theme) => theme.palette.mode === 'light'
-            ? 'linear-gradient(rgba(245,245,247,0), rgba(245,245,247,0.24))'
-            : 'linear-gradient(rgba(10,10,15,0), rgba(10,10,15,0.18))',
+            ? 'linear-gradient(rgba(245,245,247,0), rgba(245,245,247,0.08))'
+            : 'linear-gradient(rgba(10,10,15,0), rgba(10,10,15,0.08))',
         },
         '& > *': {
           position: 'relative',
