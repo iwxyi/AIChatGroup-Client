@@ -48,6 +48,7 @@ const routePreloaders = [
   () => import('./pages/admin/AdminAuditPage'),
   () => import('./pages/admin/AdminNotificationsPage'),
   () => import('./pages/admin/AdminSendRecordsPage'),
+  () => import('./pages/admin/AdminProfilePage'),
 ];
 
 const [
@@ -83,6 +84,7 @@ const [
   loadAdminAuditPage,
   loadAdminNotificationsPage,
   loadAdminSendRecordsPage,
+  loadAdminProfilePage,
 ] = routePreloaders;
 
 const HomePage = lazy(loadHomePage);
@@ -117,6 +119,7 @@ const AdminRiskPage = lazy(loadAdminRiskPage);
 const AdminAuditPage = lazy(loadAdminAuditPage);
 const AdminNotificationsPage = lazy(loadAdminNotificationsPage);
 const AdminSendRecordsPage = lazy(loadAdminSendRecordsPage);
+const AdminProfilePage = lazy(loadAdminProfilePage);
 
 function RouteFallback() {
   return (
@@ -306,6 +309,7 @@ function RoutedApp() {
           <Route path="send-records" element={<RouteElement><AdminPermissionGate permissions={[ADMIN_PERMISSION_CODES.notificationsRead]}><AdminSendRecordsPage /></AdminPermissionGate></RouteElement>} />
           <Route path="risk" element={<RouteElement><AdminPermissionGate permissions={[ADMIN_PERMISSION_CODES.riskRead]}><AdminRiskPage /></AdminPermissionGate></RouteElement>} />
           <Route path="audit" element={<RouteElement><AdminPermissionGate permissions={[ADMIN_PERMISSION_CODES.auditRead]}><AdminAuditPage /></AdminPermissionGate></RouteElement>} />
+          <Route path="me" element={<RouteElement><AdminProfilePage /></RouteElement>} />
         </Route>
       </Route>
       <Route element={

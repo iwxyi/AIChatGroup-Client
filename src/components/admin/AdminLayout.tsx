@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { AppBar, Box, Button, Drawer, IconButton, List, ListItemButton, ListItemText, Toolbar, Typography } from '@mui/material';
+import AccountCircleIcon from '@mui/icons-material/AccountCircle';
 import MenuIcon from '@mui/icons-material/Menu';
+import { AppBar, Box, Button, Divider, Drawer, IconButton, List, ListItemButton, ListItemIcon, ListItemText, Toolbar, Typography } from '@mui/material';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { ADMIN_DASHBOARD_PERMISSIONS, ADMIN_PERMISSION_CODES, adminHasAnyPermission } from '../../constants/adminPermissions';
 import { useAdminAuthStore } from '../../stores/useAdminAuthStore';
@@ -19,6 +20,8 @@ const navItems = [
   { path: '/admin/audit', label: '审计日志', permissions: [ADMIN_PERMISSION_CODES.auditRead] },
 ];
 
+const profileNavItem = { path: '/admin/me', label: '我的' };
+
 export default function AdminLayout() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -26,14 +29,14 @@ export default function AdminLayout() {
   const logout = useAdminAuthStore((s) => s.logout);
   const [mobileOpen, setMobileOpen] = useState(false);
   const visibleNavItems = navItems.filter((item) => adminHasAnyPermission(admin, item.permissions));
-  const currentTitle = navItems.find((item) => (item.path === '/admin' ? location.pathname === '/admin' : location.pathname.startsWith(item.path)))?.label || '后台';
+  const currentTitle = [...navItems, profileNavItem].find((item) => (item.path === '/admin' ? location.pathname === '/admin' : location.pathname.startsWith(item.path)))?.label || '后台';
 
   const navList = (
-    <>
+    <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100%' }}>
       <Toolbar>
         <Typography sx={{ fontWeight: 900 }}>后台模块</Typography>
       </Toolbar>
-      <List sx={{ px: 1.25 }}>
+      <List sx={{ px: 1.25, flex: 1 }}>
         {visibleNavItems.map((item) => {
           const selected = item.path === '/admin' ? location.pathname === '/admin' : location.pathname.startsWith(item.path);
           return (
@@ -51,7 +54,23 @@ export default function AdminLayout() {
           );
         })}
       </List>
-    </>
+      <Divider />
+      <List sx={{ px: 1.25, py: 1.25 }}>
+        <ListItemButton
+          selected={location.pathname.startsWith(profileNavItem.path)}
+          onClick={() => {
+            navigate(profileNavItem.path);
+            setMobileOpen(false);
+          }}
+          sx={{ borderRadius: 2 }}
+        >
+          <ListItemIcon sx={{ minWidth: 36 }}>
+            <AccountCircleIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText primary={profileNavItem.label} secondary={admin?.displayName || admin?.email || undefined} />
+        </ListItemButton>
+      </List>
+    </Box>
   );
 
   return (

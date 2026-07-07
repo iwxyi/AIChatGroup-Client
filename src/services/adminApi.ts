@@ -9,8 +9,22 @@ export type AdminUser = {
   email: string;
   displayName: string;
   status: string;
+  mfaEnabled?: boolean;
+  lastLoginAt?: number | null;
+  lastLoginIp?: string | null;
+  createdAt?: number | null;
+  updatedAt?: number | null;
   roleCodes: string[];
   permissions: string[];
+};
+
+export type AdminLoginRecord = {
+  id: string;
+  result: string;
+  ip: string | null;
+  userAgent: string | null;
+  details?: Record<string, unknown>;
+  createdAt: number;
 };
 
 class AdminApiClient {
@@ -112,6 +126,22 @@ class AdminApiClient {
 
   me() {
     return this.request<AdminUser>('GET', '/auth/me');
+  }
+
+  getAdminProfile() {
+    return this.request<{ admin: AdminUser }>('GET', '/auth/profile');
+  }
+
+  updateAdminProfile(payload: { email: string; displayName: string; currentPassword?: string }) {
+    return this.request<{ admin: AdminUser }>('PUT', '/auth/profile', payload);
+  }
+
+  updateAdminPassword(payload: { currentPassword: string; newPassword: string }) {
+    return this.request<{ ok: boolean; updatedAt: number }>('PUT', '/auth/password', payload);
+  }
+
+  getAdminLoginRecords(params?: { limit?: number }) {
+    return this.request<{ items: AdminLoginRecord[]; limit: number }>('GET', `/auth/login-records${this.buildQuery({ limit: params?.limit })}`);
   }
 
   getDashboardStats() {
