@@ -98,6 +98,7 @@ const calendarControlBaseSx = {
   },
   '&:active': {
     bgcolor: (theme: Theme) => theme.palette.mode === 'light' ? 'rgba(49,90,156,0.10)' : 'rgba(120,156,220,0.14)',
+    transform: 'none',
   },
   '&.Mui-focusVisible': {
     borderColor: 'primary.main',
@@ -120,6 +121,7 @@ const calendarNavButtonSx = {
   },
   '&:active': {
     bgcolor: (theme: Theme) => theme.palette.mode === 'light' ? 'rgba(49,90,156,0.10)' : 'rgba(120,156,220,0.14)',
+    transform: 'none',
   },
   '&.Mui-focusVisible': {
     borderColor: 'primary.main',
@@ -159,6 +161,7 @@ function buildCalendarDayButtonSx({
     },
     '&:active': {
       bgcolor: selected ? (theme: Theme) => theme.palette.mode === 'light' ? 'rgba(59,130,246,0.14)' : 'rgba(96,165,250,0.20)' : (theme: Theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.065)' : 'rgba(226,232,240,0.10)',
+      transform: 'none',
     },
     '&.Mui-focusVisible': {
       borderColor: 'primary.main',
@@ -226,6 +229,7 @@ export default function BaseCalendar({
           alignItems: 'center',
           gap: 0.75,
           minWidth: 0,
+          px: 0.5,
         }}
       >
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 0, justifySelf: 'start' }}>
