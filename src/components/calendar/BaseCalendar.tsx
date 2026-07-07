@@ -36,6 +36,7 @@ interface BaseCalendarProps {
     collapsedAria: string;
   };
   getDayMeta?: (date: Date, inMonth: boolean) => CalendarDayRenderMeta;
+  detailsExpanded?: boolean;
   dayCellMinHeight?: number;
   dayContentMinHeight?: number;
 }
@@ -149,12 +150,13 @@ function buildCalendarDayButtonSx({
     borderRadius: 1,
     display: 'grid',
     placeItems: 'center',
+    overflow: 'hidden',
     color: inMonth ? (selected ? 'primary.main' : 'text.primary') : 'text.disabled',
     bgcolor: selected ? (theme: Theme) => theme.palette.mode === 'light' ? 'rgba(59,130,246,0.08)' : 'rgba(96,165,250,0.14)' : 'transparent',
     border: '1px solid',
     borderColor: selected ? 'primary.main' : warning ? 'warning.main' : today ? 'primary.main' : 'transparent',
     opacity: inMonth ? 1 : 0.42,
-    transition: transition(['background-color', 'border-color', 'color', 'opacity'], motion.durations.base, motion.softOut),
+    transition: transition(['background-color', 'border-color', 'color', 'min-height', 'opacity'], motion.durations.base, motion.softOut),
     '&:hover': {
       bgcolor: selected ? (theme: Theme) => theme.palette.mode === 'light' ? 'rgba(59,130,246,0.12)' : 'rgba(96,165,250,0.18)' : (theme: Theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.045)' : 'rgba(226,232,240,0.08)',
       borderColor: selected ? 'primary.main' : warning ? 'warning.main' : today ? 'primary.main' : (theme: Theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.10)' : 'rgba(226,232,240,0.12)',
@@ -179,6 +181,7 @@ export default function BaseCalendar({
   monthFormat,
   toggle,
   getDayMeta,
+  detailsExpanded: detailsExpandedProp,
   dayCellMinHeight,
   dayContentMinHeight,
 }: BaseCalendarProps) {
@@ -219,6 +222,7 @@ export default function BaseCalendar({
   const showTodayAction = mode === 'month'
     ? toMonthKey(visibleMonth) !== toMonthKey(today)
     : !calendarDays.some((day) => isSameDate(day, today));
+  const detailsExpanded = Boolean(detailsExpandedProp);
 
   return (
     <Box sx={{ display: 'grid', gap: 1 }}>
@@ -354,7 +358,15 @@ export default function BaseCalendar({
         {weekdays.map((weekday, index) => <Typography key={`${weekday}-${index}`} variant="caption" color="text.secondary" sx={{ textAlign: 'center', fontWeight: 700 }}>{weekday}</Typography>)}
       </Box>
 
-      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 0.5 }}>
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(7, 1fr)',
+          gap: 0.5,
+          transition: transition(['grid-template-rows'], motion.durations.slow, motion.softInOut),
+          ...reducedMotionSx,
+        }}
+      >
         {calendarDays.map((day) => {
           const inMonth = toMonthKey(day) === monthKey;
           const meta = getDayMeta?.(day, inMonth) || {};
@@ -365,7 +377,6 @@ export default function BaseCalendar({
           const hiddenTitleCount = Math.max(0, (meta.eventCount ?? meta.titles?.length ?? 0) - visibleTitles.length);
           const dayIsToday = isSameDate(day, today);
           const dotColors = meta.dotColors?.length ? meta.dotColors : ['primary.main'];
-          const hasSupplement = visibleTitles.length > 0 || eventCount > 0;
           return (
             <Button
               key={toDateKey(day)}
@@ -385,9 +396,14 @@ export default function BaseCalendar({
                 spacing={0.15}
                 sx={{
                   alignItems: 'center',
-                  justifyContent: hasSupplement ? 'flex-start' : 'center',
+                  justifyContent: detailsExpanded ? 'flex-start' : 'center',
+                  position: 'relative',
                   width: '100%',
+                  height: '100%',
                   minHeight: dayContentMinHeight ?? (mode === 'month' ? 30 : 22),
+                  pt: detailsExpanded ? 0.35 : 0,
+                  transition: transition(['min-height', 'padding-top'], motion.durations.base, motion.softOut),
+                  ...reducedMotionSx,
                 }}
               >
                 <Typography sx={{ fontSize: 12, lineHeight: 1, fontWeight: selected ? 800 : 600 }}>{day.getDate()}</Typography>
@@ -423,7 +439,11 @@ export default function BaseCalendar({
                       alignItems: 'center',
                       justifyContent: 'center',
                       width: eventCount === 1 ? 5 : eventCount === 2 ? 12 : 19,
-                      mt: 0.15,
+                      mt: detailsExpanded ? 0.25 : 0,
+                      position: detailsExpanded ? 'static' : 'absolute',
+                      left: detailsExpanded ? 'auto' : '50%',
+                      bottom: detailsExpanded ? 'auto' : 2,
+                      transform: detailsExpanded ? 'none' : 'translateX(-50%)',
                     }}
                   >
                     {Array.from({ length: eventCount }, (_, index) => (

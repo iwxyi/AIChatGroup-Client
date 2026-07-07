@@ -310,6 +310,7 @@ export default function WorldCalendarPanel({
               setSelectedDate(date);
             }}
             mode={compact && !isCalendarExpanded ? 'week' : 'month'}
+            detailsExpanded={isCalendarExpanded}
             dayCellMinHeight={compact ? 38 : isCalendarExpanded ? 72 : 38}
             dayContentMinHeight={compact ? 30 : isCalendarExpanded ? 62 : 30}
             toggle={{
