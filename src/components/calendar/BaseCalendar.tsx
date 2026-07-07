@@ -92,6 +92,8 @@ const calendarControlBaseSx = {
   borderColor: (theme: Theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.08)' : 'rgba(226,232,240,0.10)',
   bgcolor: (theme: Theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.56)' : 'rgba(18,20,28,0.54)',
   color: 'text.secondary',
+  fontSize: 13,
+  fontWeight: 560,
   transition: transition(['background-color', 'border-color', 'color'], motion.durations.base, motion.softOut),
   '&:hover': {
     bgcolor: (theme: Theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.86)' : 'rgba(28,31,42,0.76)',
@@ -273,7 +275,7 @@ export default function BaseCalendar({
             size="small"
             disableRipple
             onClick={(event) => setYearMenuAnchor(event.currentTarget)}
-            sx={{ ...calendarControlBaseSx, minWidth: 0, minHeight: 30, px: 0.9, fontWeight: 750, textTransform: 'none', color: 'text.primary' }}
+            sx={{ ...calendarControlBaseSx, minWidth: 0, minHeight: 31, px: 0.95, fontSize: 14, fontWeight: 680, textTransform: 'none', color: 'text.primary' }}
           >
             {yearLabel}
           </Button>
@@ -281,7 +283,7 @@ export default function BaseCalendar({
             size="small"
             disableRipple
             onClick={(event) => setMonthMenuAnchor(event.currentTarget)}
-            sx={{ ...calendarControlBaseSx, minWidth: 0, minHeight: 30, px: 0.9, fontWeight: 750, textTransform: 'none', color: 'text.primary' }}
+            sx={{ ...calendarControlBaseSx, minWidth: 0, minHeight: 31, px: 0.95, fontSize: 14, fontWeight: 680, textTransform: 'none', color: 'text.primary' }}
           >
             {monthLabel}
           </Button>
@@ -357,7 +359,21 @@ export default function BaseCalendar({
       </Menu>
 
       <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 0.5 }}>
-        {weekdays.map((weekday, index) => <Typography key={`${weekday}-${index}`} variant="caption" color="text.secondary" sx={{ textAlign: 'center', fontWeight: 700 }}>{weekday}</Typography>)}
+        {weekdays.map((weekday, index) => (
+          <Typography
+            key={`${weekday}-${index}`}
+            variant="caption"
+            color="text.secondary"
+            sx={{
+              textAlign: 'center',
+              fontSize: 12,
+              lineHeight: 1.4,
+              fontWeight: 520,
+            }}
+          >
+            {weekday}
+          </Typography>
+        ))}
       </Box>
 
       <Box
@@ -408,13 +424,23 @@ export default function BaseCalendar({
                   ...reducedMotionSx,
                 }}
               >
-                <Typography sx={{ fontSize: 12, lineHeight: 1, fontWeight: selected ? 800 : 600 }}>{day.getDate()}</Typography>
+                <Typography
+                  sx={{
+                    fontSize: detailsExpanded ? 13 : 14,
+                    lineHeight: 1.08,
+                    fontWeight: selected ? 720 : 520,
+                    color: selected ? 'primary.main' : 'inherit',
+                  }}
+                >
+                  {day.getDate()}
+                </Typography>
                 {visibleTitles.map((title, idx) => (
                   <Typography
                     key={`${title}-${idx}`}
                     sx={{
-                      fontSize: 9,
-                      lineHeight: 1.1,
+                      fontSize: 10,
+                      lineHeight: 1.18,
+                      fontWeight: 500,
                       maxWidth: '100%',
                       px: 0.3,
                       color: selected ? 'primary.main' : 'text.secondary',
@@ -427,7 +453,7 @@ export default function BaseCalendar({
                   </Typography>
                 ))}
                 {visibleTitles.length && hiddenTitleCount > 0 ? (
-                  <Typography sx={{ fontSize: 9, lineHeight: 1, color: meta.warning ? 'warning.main' : 'text.secondary', fontWeight: 700 }}>
+                  <Typography sx={{ fontSize: 10, lineHeight: 1, color: meta.warning ? 'warning.main' : 'text.secondary', fontWeight: 560 }}>
                     {`+${hiddenTitleCount}`}
                   </Typography>
                 ) : null}
