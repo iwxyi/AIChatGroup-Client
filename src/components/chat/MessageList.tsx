@@ -1541,7 +1541,7 @@ export default function MessageList({
           sx={{
             position: 'fixed',
             right: { xs: 16, sm: 24 },
-            bottom: { xs: 'calc(104px + env(safe-area-inset-bottom, 0px))', sm: 104 },
+            bottom: { xs: 'calc(126px + env(safe-area-inset-bottom, 0px))', sm: 122 },
             zIndex: 6,
             boxShadow: 4,
           }}

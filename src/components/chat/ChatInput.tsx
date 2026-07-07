@@ -273,20 +273,11 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
       sx={{
         display: 'flex',
         flexDirection: 'column',
-        px: { xs: 1.5, sm: 2 },
-        pt: 1.25,
-        pb: onOpenPanel ? 'calc(env(safe-area-inset-bottom, 0px) + 7px)' : 'calc(env(safe-area-inset-bottom, 0px) + 12px)',
-        borderTop: '1px solid',
-        borderColor: (theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.08)' : 'rgba(226,232,240,0.10)',
-        bgcolor: (theme) => {
-          if (isSending) return theme.palette.mode === 'light' ? 'rgba(245,245,247,0.70)' : 'rgba(20,22,30,0.42)';
-          return theme.palette.mode === 'light' ? 'rgba(245,245,247,0.68)' : 'rgba(13,15,22,0.42)';
-        },
-        backdropFilter: (theme) => theme.palette.mode === 'light' ? 'blur(22px) saturate(0.96) brightness(1.015) contrast(0.92)' : 'blur(20px) saturate(0.90) brightness(0.84)',
-        WebkitBackdropFilter: (theme) => theme.palette.mode === 'light' ? 'blur(22px) saturate(0.96) brightness(1.015) contrast(0.92)' : 'blur(20px) saturate(0.90) brightness(0.84)',
-        boxShadow: (theme) => theme.palette.mode === 'light'
-          ? '0 -10px 24px rgba(15,23,42,0.035), 0 1px 0 rgba(255,255,255,0.58) inset'
-          : '0 -12px 30px rgba(0,0,0,0.12), 0 1px 0 rgba(255,255,255,0.09) inset',
+        alignItems: 'center',
+        px: { xs: 1.5, sm: 2.5, md: 3 },
+        pt: 1,
+        pb: onOpenPanel ? 'calc(env(safe-area-inset-bottom, 0px) + 7px)' : 'calc(env(safe-area-inset-bottom, 0px) + 14px)',
+        bgcolor: 'transparent',
         flexShrink: 0,
         opacity: 1,
         pointerEvents: 'auto',
@@ -316,7 +307,27 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
         },
       }}
     >
-      {attachments.length ? (
+      <Box
+        sx={{
+          width: '100%',
+          maxWidth: 760,
+          mx: 'auto',
+          p: attachments.length || inputCapabilityWarning ? { xs: 0.85, sm: 1 } : { xs: 0.65, sm: 0.75 },
+          borderRadius: 3,
+          border: '1px solid',
+          borderColor: (theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.10)' : 'rgba(226,232,240,0.12)',
+          bgcolor: (theme) => {
+            if (isSending) return theme.palette.mode === 'light' ? 'rgba(255,255,255,0.70)' : 'rgba(20,22,30,0.54)';
+            return theme.palette.mode === 'light' ? 'rgba(255,255,255,0.64)' : 'rgba(13,15,22,0.50)';
+          },
+          backdropFilter: (theme) => theme.palette.mode === 'light' ? 'blur(24px) saturate(1.10)' : 'blur(22px) saturate(1.04)',
+          WebkitBackdropFilter: (theme) => theme.palette.mode === 'light' ? 'blur(24px) saturate(1.10)' : 'blur(22px) saturate(1.04)',
+          boxShadow: (theme) => theme.palette.mode === 'light'
+            ? '0 18px 42px rgba(15,23,42,0.12), 0 1px 0 rgba(255,255,255,0.72) inset'
+            : '0 18px 44px rgba(0,0,0,0.30), 0 1px 0 rgba(255,255,255,0.10) inset',
+        }}
+      >
+        {attachments.length ? (
         <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap', mb: 0.75 }}>
           {attachments.map((attachment) => (
             <Chip
@@ -329,13 +340,13 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
             />
           ))}
         </Box>
-      ) : null}
-      {attachments.length > 0 && inputCapabilityWarning ? (
+        ) : null}
+        {attachments.length > 0 && inputCapabilityWarning ? (
         <Alert severity="warning" sx={{ mb: 1, py: 0 }}>
           {inputCapabilityWarning}
         </Alert>
-      ) : null}
-      <Box
+        ) : null}
+        <Box
         onTouchStart={(event) => {
           const touch = event.touches[0];
           if (touch) startPanelHandleDrag(touch.clientY);
@@ -362,7 +373,7 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
           if (event.pointerType === 'touch') return;
           finishPanelHandleDrag();
         }}
-        sx={{ display: 'flex', alignItems: 'flex-end', gap: 1, width: '100%', touchAction: 'pan-y' }}
+        sx={{ display: 'flex', alignItems: 'flex-end', gap: 0.75, width: '100%', touchAction: 'pan-y' }}
       >
         {mode === 'speakAs' && characterName && !hideSpeakAsChip ? (
           <Chip
@@ -421,10 +432,8 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
           inputRef={textInputRef}
           sx={{
             '& .MuiOutlinedInput-root': {
-              borderRadius: 2.5,
-              bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.62)' : 'rgba(255,255,255,0.060)',
-              backdropFilter: 'blur(16px)',
-              WebkitBackdropFilter: 'blur(16px)',
+              borderRadius: 2.25,
+              bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(248,250,252,0.74)' : 'rgba(255,255,255,0.065)',
               '& fieldset': {
                 borderColor: (theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.09)' : 'rgba(226,232,240,0.11)',
               },
@@ -454,8 +463,8 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
             </IconButton>
           </span>
         </Tooltip>
-      </Box>
-      {onOpenPanel ? (
+        </Box>
+        {onOpenPanel ? (
         <Box
           role="button"
           aria-label="打开会话面板"
@@ -510,7 +519,8 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
             }}
           />
         </Box>
-      ) : null}
+        ) : null}
+      </Box>
     </Box>
   );
 }

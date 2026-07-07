@@ -2090,7 +2090,7 @@ export default function ChatDetailPage() {
     ? { xs: '24px', sm: '24px' }
     : hasStoryTailStatusContent
       ? { xs: 'calc(136px + env(safe-area-inset-bottom, 0px))', sm: '124px' }
-      : { xs: 'calc(96px + env(safe-area-inset-bottom, 0px))', sm: '88px' };
+      : { xs: 'calc(112px + env(safe-area-inset-bottom, 0px))', sm: '104px' };
 
   const handleExpressionFeedback = useCallback(async (message: Message, kind: ExpressionFeedbackKind) => {
     if (message.type !== 'ai') return;
