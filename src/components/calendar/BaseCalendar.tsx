@@ -216,19 +216,22 @@ export default function BaseCalendar({
 
   const anchor = toMonthKey(selectedDate) === monthKey ? selectedDate : visibleMonth;
   const calendarDays = useMemo(() => mode === 'month' ? getCalendarDays(visibleMonth) : getWeekDays(anchor), [mode, visibleMonth, anchor]);
+  const showTodayAction = mode === 'month'
+    ? toMonthKey(visibleMonth) !== toMonthKey(today)
+    : !calendarDays.some((day) => isSameDate(day, today));
 
   return (
     <Box sx={{ display: 'grid', gap: 1 }}>
-      <Box sx={{ display: 'grid', gridTemplateColumns: '36px minmax(0, 1fr) 36px auto auto', alignItems: 'center', gap: 0.5 }}>
-        <IconButton
-          size="small"
-          onClick={() => setVisibleMonth((prev) => addMonths(prev, -1))}
-          aria-label={isZh ? '上个月' : 'Previous month'}
-          sx={calendarIconButtonSx}
-        >
-          <ChevronLeftIcon fontSize="small" />
-        </IconButton>
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.75, minWidth: 0 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, minWidth: 0 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 0, flex: '0 1 auto' }}>
+          <IconButton
+            size="small"
+            onClick={() => setVisibleMonth((prev) => addMonths(prev, -1))}
+            aria-label={isZh ? '上个月' : 'Previous month'}
+            sx={calendarIconButtonSx}
+          >
+            <ChevronLeftIcon fontSize="small" />
+          </IconButton>
           <CalendarMonthIcon fontSize="small" color="primary" />
           <Button
             size="small"
@@ -246,15 +249,36 @@ export default function BaseCalendar({
           >
             {monthLabel}
           </Button>
+          <IconButton
+            size="small"
+            onClick={() => setVisibleMonth((prev) => addMonths(prev, 1))}
+            aria-label={isZh ? '下个月' : 'Next month'}
+            sx={calendarIconButtonSx}
+          >
+            <ChevronRightIcon fontSize="small" />
+          </IconButton>
         </Box>
-        <IconButton
-          size="small"
-          onClick={() => setVisibleMonth((prev) => addMonths(prev, 1))}
-          aria-label={isZh ? '下个月' : 'Next month'}
-          sx={calendarIconButtonSx}
-        >
-          <ChevronRightIcon fontSize="small" />
-        </IconButton>
+        <Box sx={{ flex: '1 1 auto', minWidth: 8 }} />
+        {showTodayAction ? (
+          <Button
+            size="small"
+            disableRipple
+            onClick={() => {
+              setVisibleMonth(new Date(today.getFullYear(), today.getMonth(), 1));
+              onSelectDate(today);
+            }}
+            sx={{
+              ...calendarControlBaseSx,
+              minHeight: 30,
+              px: 1.15,
+              whiteSpace: 'nowrap',
+              color: 'text.secondary',
+              flexShrink: 0,
+            }}
+          >
+            {isZh ? '今天' : 'Today'}
+          </Button>
+        ) : null}
         {toggle ? (
           <Button
             size="small"
@@ -262,28 +286,11 @@ export default function BaseCalendar({
             onClick={toggle.onToggle}
             aria-label={toggle.expanded ? toggle.expandedAria : toggle.collapsedAria}
             endIcon={toggle.expanded ? <UnfoldLessIcon fontSize="small" /> : <UnfoldMoreIcon fontSize="small" />}
-            sx={{ ...calendarControlBaseSx, minHeight: 30, px: 1.2, whiteSpace: 'nowrap' }}
+            sx={{ ...calendarControlBaseSx, minHeight: 30, px: 1.2, whiteSpace: 'nowrap', flexShrink: 0 }}
           >
             {toggle.expanded ? toggle.expandedLabel : toggle.collapsedLabel}
           </Button>
-        ) : <Box />}
-        <Button
-          size="small"
-          disableRipple
-          onClick={() => {
-            setVisibleMonth(new Date(today.getFullYear(), today.getMonth(), 1));
-            onSelectDate(today);
-          }}
-          sx={{
-            ...calendarControlBaseSx,
-            minHeight: 30,
-            px: 1.15,
-            whiteSpace: 'nowrap',
-            color: isSameDate(selectedDate, today) ? 'primary.main' : 'text.secondary',
-          }}
-        >
-          {isZh ? '今天' : 'Today'}
-        </Button>
+        ) : null}
       </Box>
       <Menu
         anchorEl={yearMenuAnchor}
