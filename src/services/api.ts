@@ -96,6 +96,78 @@ export interface AiUsageSummaryResponse {
   items: AiUsageSummaryItem[];
 }
 
+export interface BillingPlanItem {
+  id: string;
+  code: string;
+  name: string;
+  description?: string | null;
+  plan_kind?: string | null;
+  billing_type?: string | null;
+  price_amount: number | string;
+  currency: string;
+  duration_days?: number | string | null;
+  grant_points?: number | string | null;
+  ai_enabled?: boolean | number | string;
+  featured?: boolean | number | string;
+  metadata?: Record<string, unknown> | string | null;
+}
+
+export interface BillingOrderItem {
+  id: string;
+  order_no?: string;
+  orderNo?: string;
+  status: string;
+  order_type?: string | null;
+  orderType?: string | null;
+  amount: number | string;
+  currency: string;
+  payment_channel?: string | null;
+  paymentChannel?: string | null;
+  paid_at?: number | string | null;
+  paidAt?: number | string | null;
+  created_at?: number | string;
+  createdAt?: number | string;
+  plan_code?: string | null;
+  planCode?: string | null;
+  plan_name?: string | null;
+  planName?: string | null;
+  plan_kind?: string | null;
+  planKind?: string | null;
+  grant_points?: number | string | null;
+  grantPoints?: number | string | null;
+}
+
+export interface BillingSubscriptionItem {
+  id: string;
+  status: string;
+  planCode?: string | null;
+  planName?: string | null;
+  startedAt?: number;
+  currentPeriodStart?: number;
+  currentPeriodEnd?: number;
+  autoRenew?: boolean;
+  benefits?: string[];
+  features?: string[];
+}
+
+export interface BillingMembershipResponse {
+  vipActive: boolean;
+  activeSubscription: BillingSubscriptionItem | null;
+  latestSubscription: BillingSubscriptionItem | null;
+  recentOrders: BillingOrderItem[];
+}
+
+export interface BillingPaymentResponse {
+  order: BillingOrderItem;
+  status: string;
+  channel: string | null;
+  message?: string;
+  paymentUrl?: string;
+  formHtml?: string;
+  formAction?: string;
+  formFields?: Record<string, string>;
+}
+
 export interface CharacterArtifactSyncEntry {
   id: string;
   kind: 'birth_letter' | 'diary' | 'final_letter';
@@ -335,6 +407,26 @@ class ApiClient {
     if (params.page) query.set('page', String(params.page));
     if (params.limit) query.set('limit', String(params.limit));
     return this.request<AiUsageSummaryResponse>('GET', `/ai/usage/stats?${query.toString()}`);
+  }
+
+  async getBillingPlans() {
+    return this.request<{ items: BillingPlanItem[] }>('GET', '/billing/plans');
+  }
+
+  async getBillingMembership() {
+    return this.request<BillingMembershipResponse>('GET', '/billing/membership');
+  }
+
+  async getBillingOrders() {
+    return this.request<{ items: BillingOrderItem[] }>('GET', '/billing/orders');
+  }
+
+  async createBillingOrder(planCode: string, paymentChannel?: string | null) {
+    return this.request<BillingOrderItem>('POST', '/billing/orders', { planCode, paymentChannel });
+  }
+
+  async initiateBillingPayment(orderId: string, paymentChannel?: string | null) {
+    return this.request<BillingPaymentResponse>('POST', `/billing/orders/${encodeURIComponent(orderId)}/payment`, { paymentChannel });
   }
 
   async assignAiProviderKey(providerCode: string) {

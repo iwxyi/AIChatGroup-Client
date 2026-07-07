@@ -14,6 +14,8 @@ export interface CalendarDayRenderMeta {
   inMonth?: boolean;
   hasDot?: boolean;
   eventCount?: number;
+  dotColors?: string[];
+  warning?: boolean;
   titles?: string[];
 }
 
@@ -76,6 +78,10 @@ function toDateKey(date: Date) {
   return `${date.getFullYear()}-${`${date.getMonth() + 1}`.padStart(2, '0')}-${`${date.getDate()}`.padStart(2, '0')}`;
 }
 
+function isSameDate(left: Date, right: Date) {
+  return toDateKey(left) === toDateKey(right);
+}
+
 export default function BaseCalendar({
   isZh,
   selectedDate,
@@ -106,6 +112,7 @@ export default function BaseCalendar({
   const yearLabel = `${visibleMonth.getFullYear()}${isZh ? '年' : ''}`;
   const monthLabel = visibleMonth.toLocaleDateString(isZh ? 'zh-CN' : 'en-US', monthFormat || { month: 'long' });
   const weekdays = isZh ? ['一', '二', '三', '四', '五', '六', '日'] : ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+  const today = useMemo(() => new Date(), []);
   const yearOptions = useMemo(
     () => Array.from({ length: 121 }, (_, i) => visibleMonth.getFullYear() - 60 + i),
     [visibleMonth],
@@ -123,7 +130,7 @@ export default function BaseCalendar({
 
   return (
     <Box sx={{ display: 'grid', gap: 1 }}>
-      <Box sx={{ display: 'grid', gridTemplateColumns: '36px minmax(0, 1fr) 36px auto', alignItems: 'center', gap: 0.5 }}>
+      <Box sx={{ display: 'grid', gridTemplateColumns: '36px minmax(0, 1fr) 36px auto auto', alignItems: 'center', gap: 0.5 }}>
         <IconButton
           size="small"
           onClick={() => setVisibleMonth((prev) => addMonths(prev, -1))}
@@ -171,6 +178,23 @@ export default function BaseCalendar({
             {toggle.expanded ? toggle.expandedLabel : toggle.collapsedLabel}
           </Button>
         ) : <Box />}
+        <Button
+          size="small"
+          disableRipple
+          onClick={() => {
+            setVisibleMonth(new Date(today.getFullYear(), today.getMonth(), 1));
+            onSelectDate(today);
+          }}
+          sx={{
+            borderRadius: 999,
+            minHeight: 30,
+            px: 1.15,
+            whiteSpace: 'nowrap',
+            color: isSameDate(selectedDate, today) ? 'primary.main' : 'text.secondary',
+          }}
+        >
+          {isZh ? '今天' : 'Today'}
+        </Button>
       </Box>
       <Menu
         anchorEl={yearMenuAnchor}
@@ -231,6 +255,9 @@ export default function BaseCalendar({
           const disabled = meta.disabled ?? false;
           const visibleTitles = meta.titles?.slice(0, 2) || [];
           const eventCount = Math.max(0, Math.min(3, Math.floor(meta.eventCount ?? meta.titles?.length ?? (meta.hasDot ? 1 : 0))));
+          const hiddenTitleCount = Math.max(0, (meta.eventCount ?? meta.titles?.length ?? 0) - visibleTitles.length);
+          const dayIsToday = isSameDate(day, today);
+          const dotColors = meta.dotColors?.length ? meta.dotColors : ['primary.main'];
           return (
             <Button
               key={toDateKey(day)}
@@ -248,12 +275,13 @@ export default function BaseCalendar({
                 color: inMonth ? (selected ? 'primary.main' : 'text.primary') : 'text.disabled',
                 bgcolor: selected ? (theme) => theme.palette.mode === 'light' ? 'rgba(59,130,246,0.08)' : 'rgba(96,165,250,0.14)' : 'transparent',
                 border: '1px solid',
-                borderColor: selected ? 'primary.main' : 'transparent',
+                borderColor: selected ? 'primary.main' : meta.warning ? 'warning.main' : dayIsToday ? 'primary.main' : 'transparent',
                 opacity: inMonth ? 1 : 0.42,
+                boxShadow: dayIsToday && !selected ? '0 0 0 1px rgba(59,130,246,0.08) inset' : 'none',
                 transition: (theme) => theme.transitions.create(['background-color', 'border-color', 'box-shadow'], { duration: theme.transitions.duration.shortest }),
                 '&:hover': {
                   bgcolor: selected ? (theme) => theme.palette.mode === 'light' ? 'rgba(59,130,246,0.12)' : 'rgba(96,165,250,0.18)' : 'action.hover',
-                  borderColor: selected ? 'primary.main' : 'divider',
+                  borderColor: selected ? 'primary.main' : meta.warning ? 'warning.main' : 'divider',
                   boxShadow: selected ? '0 0 0 1px rgba(59,130,246,0.08) inset' : '0 0 0 1px rgba(127,127,127,0.04) inset',
                 },
                 '&.Mui-disabled': { opacity: inMonth ? 0.58 : 0.22 },
@@ -278,6 +306,11 @@ export default function BaseCalendar({
                     {title}
                   </Typography>
                 ))}
+                {visibleTitles.length && hiddenTitleCount > 0 ? (
+                  <Typography sx={{ fontSize: 9, lineHeight: 1, color: meta.warning ? 'warning.main' : 'text.secondary', fontWeight: 700 }}>
+                    {`+${hiddenTitleCount}`}
+                  </Typography>
+                ) : null}
                 {!visibleTitles.length && eventCount > 0 ? (
                   <Box
                     aria-hidden
@@ -298,7 +331,7 @@ export default function BaseCalendar({
                           width: 4.5,
                           height: 4.5,
                           borderRadius: '999px',
-                          bgcolor: selected ? 'primary.main' : 'primary.main',
+                          bgcolor: dotColors[index] || dotColors[dotColors.length - 1] || 'primary.main',
                           opacity: selected ? 0.9 : inMonth ? 0.78 : 0.42,
                         }}
                       />

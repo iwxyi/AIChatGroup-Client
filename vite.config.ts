@@ -40,6 +40,21 @@ function manualDevUpdatePlugin(): Plugin {
   }
 }
 
+function setForwardedHeaders(proxyRequest: { setHeader(name: string, value: string): void }, request: { headers: Record<string, string | string[] | undefined> }) {
+  const hostHeader = request.headers.host;
+  const host = Array.isArray(hostHeader) ? hostHeader[0] : hostHeader;
+  if (!host) return;
+
+  const forwardedProtoHeader = request.headers['x-forwarded-proto'];
+  const forwardedProto = Array.isArray(forwardedProtoHeader) ? forwardedProtoHeader[0] : forwardedProtoHeader;
+  const proto = forwardedProto || 'http';
+
+  proxyRequest.setHeader('x-forwarded-host', host);
+  proxyRequest.setHeader('x-forwarded-proto', proto);
+  const portMatch = host.match(/:(\d+)$/);
+  if (portMatch?.[1]) proxyRequest.setHeader('x-forwarded-port', portMatch[1]);
+}
+
 export default defineConfig({
   server: {
     host: '0.0.0.0',
@@ -51,6 +66,9 @@ export default defineConfig({
         target: 'http://localhost:3001',
         changeOrigin: true,
         configure(proxy) {
+          proxy.on('proxyReq', (proxyRequest, request) => {
+            setForwardedHeaders(proxyRequest, request)
+          })
           proxy.on('proxyRes', (proxyRes) => {
             proxyRes.headers['x-pneumata-vite-proxy'] = 'Pneumata-Client:5173';
           })
@@ -59,6 +77,11 @@ export default defineConfig({
       '/uploads': {
         target: 'http://localhost:3001',
         changeOrigin: true,
+        configure(proxy) {
+          proxy.on('proxyReq', (proxyRequest, request) => {
+            setForwardedHeaders(proxyRequest, request)
+          })
+        },
       },
     },
   },

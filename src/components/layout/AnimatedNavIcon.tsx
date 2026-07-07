@@ -9,6 +9,7 @@ export type AnimatedNavIconKind =
   | 'calendar'
   | 'letters'
   | 'models'
+  | 'membership'
   | 'settings'
   | 'intro';
 
@@ -74,6 +75,14 @@ const iconSx: SxProps<Theme> = {
     '0%, 100%': { transform: 'scale(1)' },
     '50%': { transform: 'scale(1.16)' },
   },
+  '@keyframes navMembershipShine': {
+    '0%, 100%': { transform: 'translateX(-1.4px)', opacity: 0.46 },
+    '50%': { transform: 'translateX(1.4px)', opacity: 1 },
+  },
+  '@keyframes navMembershipLift': {
+    '0%, 100%': { transform: 'translateY(0)' },
+    '50%': { transform: 'translateY(-1.4px)' },
+  },
   '@keyframes navGearTurn': {
     '0%': { transform: 'rotate(0deg)' },
     '100%': { transform: 'rotate(360deg)' },
@@ -112,6 +121,8 @@ const iconSx: SxProps<Theme> = {
   '.PneumataNavButton:hover & .letter-fold, &.is-active .letter-fold': { transform: 'translateY(0.55px)', opacity: 0.84 },
   '.PneumataNavButton:hover & .model-node-core, &.is-active .model-node-core': { animation: 'navModelGather 1.45s ease-in-out infinite' },
   '.PneumataNavButton:hover & .model-link': { animation: 'navModelSignal 1.3s ease-in-out infinite' },
+  '.PneumataNavButton:hover & .membership-crown, &.is-active .membership-crown': { animation: 'navMembershipLift 1.55s ease-in-out infinite' },
+  '.PneumataNavButton:hover & .membership-shine, &.is-active .membership-shine': { animation: 'navMembershipShine 1.25s ease-in-out infinite' },
   '.PneumataNavButton:hover & .settings-gear': { animation: 'navGearTurn 1.9s linear infinite' },
   '.PneumataNavButton:active & .settings-core': { transform: 'scale(0.7)' },
   '.PneumataNavButton:hover & .intro-spark-a': {
@@ -192,6 +203,14 @@ function iconPaths(kind: AnimatedNavIconKind) {
           <circle cx="15.9" cy="8.1" r="2.25" />
           <circle className="model-node-core accent-line" cx="12" cy="17.2" r="2.25" />
           <circle cx="12" cy="12" r="1.35" opacity={0.62} />
+        </>
+      );
+    case 'membership':
+      return (
+        <>
+          <path className="membership-crown" d="M5.6 9.7 8.7 6l3.3 4.1L15.3 6l3.1 3.7-1 7.1H6.6Z" />
+          <path className="membership-shine accent-line" d="M8.2 18.4h7.6M9.9 12.6h4.2" />
+          <path d="M12 4.7v1.2M4.9 6.9l.9.8M19.1 6.9l-.9.8" opacity={0.58} />
         </>
       );
     case 'settings':

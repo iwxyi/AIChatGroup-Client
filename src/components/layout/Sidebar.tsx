@@ -39,6 +39,7 @@ const navItems: NavItem[] = [
   { path: '/calendar', iconKind: 'calendar', labelKey: 'nav.calendar' },
   { path: '/letters', iconKind: 'letters', labelKey: 'nav.letters' },
   { path: '/models', iconKind: 'models', labelKey: 'nav.models' },
+  { path: '/membership', iconKind: 'membership', labelKey: 'nav.membership' },
 ];
 
 const introNavItem: NavItem = { path: '/intro', iconKind: 'intro', labelKey: 'nav.intro' };

@@ -101,6 +101,15 @@ function getCalendarStatusMeta(status: WorldCalendarItem['status'], isZh: boolea
   return { label: isZh ? zh[status] : en[status], color };
 }
 
+function getCalendarKindDotColor(kind: WorldCalendarItem['kind']) {
+  if (kind === 'travel') return 'info.main';
+  if (kind === 'reminder') return 'warning.main';
+  if (kind === 'blocked_time') return 'error.main';
+  if (kind === 'rest') return 'success.main';
+  if (kind === 'preparation') return 'secondary.main';
+  return 'primary.main';
+}
+
 interface WorldCalendarPanelProps {
   chats: GroupChat[];
   characters: AICharacter[];
@@ -181,6 +190,16 @@ export default function WorldCalendarPanel({
       } else {
         map.set(key, [item.title]);
       }
+    });
+    return map;
+  }, [baseFilteredItems]);
+  const dayItemsByStart = useMemo(() => {
+    const map = new Map<number, WorldCalendarItem[]>();
+    baseFilteredItems.forEach((item) => {
+      const key = startOfDay(item.startAt ?? item.updatedAt);
+      const items = map.get(key);
+      if (items) items.push(item);
+      else map.set(key, [item]);
     });
     return map;
   }, [baseFilteredItems]);
@@ -308,10 +327,14 @@ export default function WorldCalendarPanel({
             getDayMeta={(day, inMonth) => {
               const key = startOfDay(day.getTime());
               const titles = dayTitlesByStart.get(key) || [];
+              const dayItems = dayItemsByStart.get(key) || [];
+              const hasConflict = dayItems.some((item) => item.conflict?.hasConflict);
               return {
                 inMonth,
                 hasDot: titles.length > 0,
                 eventCount: titles.length,
+                warning: hasConflict,
+                dotColors: dayItems.slice(0, 3).map((item) => item.conflict?.hasConflict ? 'warning.main' : getCalendarKindDotColor(item.kind)),
                 titles: isCalendarExpanded ? titles.slice(0, 2) : [],
               };
             }}

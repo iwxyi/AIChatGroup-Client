@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import SaveIcon from '@mui/icons-material/Save';
-import { Alert, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, MenuItem, Stack, Tab, Table, TableBody, TableCell, TableHead, TableRow, Tabs, TextField, Switch, Typography } from '@mui/material';
+import { Alert, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, MenuItem, Stack, Tab, Table, TableBody, TableCell, TableHead, TableRow, Tabs, TextField, Switch, Tooltip, Typography } from '@mui/material';
 import { useSearchParams } from 'react-router-dom';
 import AdminResponsiveTable from '../../components/admin/AdminResponsiveTable';
 import AdminRequestState, { getAdminErrorMessage } from '../../components/admin/AdminRequestState';
@@ -17,6 +17,8 @@ type FieldDef = {
   multiline?: boolean;
   type?: 'text' | 'number' | 'boolean';
   required?: boolean;
+  placeholder?: string;
+  defaultTemplate?: string;
 };
 
 const CATEGORY_TABS = [
@@ -55,12 +57,23 @@ const PROVIDER_POPULARITY: Record<string, number> = {
   'email:console': 90,
 };
 
+const DEFAULT_ALIPAY_NOTIFY_URL = '${domain}/api/billing/payments/alipay/notify';
+const DEFAULT_ALIPAY_RETURN_URL = '${domain}/membership';
+
 const FIELD_DEFS: Record<string, FieldDef[]> = {
   'payment:alipay': [
     { key: 'appId', label: 'App ID', required: true },
     { key: 'gatewayUrl', label: '网关地址' },
-    { key: 'notifyUrl', label: '异步通知地址' },
-    { key: 'returnUrl', label: '支付完成返回地址' },
+    {
+      key: 'notifyUrl',
+      label: '异步通知地址',
+      defaultTemplate: DEFAULT_ALIPAY_NOTIFY_URL,
+    },
+    {
+      key: 'returnUrl',
+      label: '支付完成返回地址',
+      defaultTemplate: DEFAULT_ALIPAY_RETURN_URL,
+    },
     { key: 'productCode', label: '产品码' },
     { key: 'signType', label: '签名方式' },
     { key: 'appPrivateKey', label: '应用私钥', secret: true, multiline: true, required: true },
@@ -235,10 +248,31 @@ function normalizeFieldValue(field: FieldDef, value: unknown) {
   return String(value ?? '');
 }
 
+function fieldUsesDomainTemplate(value: unknown) {
+  const text = String(value ?? '');
+  return text.includes('${domain}') || text.includes('{domain}');
+}
+
+function effectiveFieldValue(field: FieldDef, value: unknown) {
+  const text = String(value ?? '').trim();
+  return text || field.defaultTemplate || '';
+}
+
+function resolveDomainTemplate(value: unknown, requestOrigin: string) {
+  const origin = requestOrigin.replace(/\/+$/, '');
+  return String(value ?? '')
+    .trim()
+    .replace(/\$\{domain\}/g, origin)
+    .replace(/\{domain\}/g, origin);
+}
+
 function toEditorState(item: Record<string, unknown>) {
   const state: Record<string, unknown> = {};
   const fields = FIELD_DEFS[integrationKey(item)] || [];
-  for (const field of fields) state[field.key] = valueFrom(item, field) ?? '';
+  for (const field of fields) {
+    const value = valueFrom(item, field);
+    state[field.key] = String(value ?? '').trim() || field.defaultTemplate || '';
+  }
   return state;
 }
 
@@ -277,6 +311,7 @@ export default function AdminPlatformPage() {
     return readPersistentUiValue<PlatformTab>(PLATFORM_TAB_STORAGE_KEY, 'ai', isPlatformTab);
   });
   const [items, setItems] = useState<Array<Record<string, unknown>>>([]);
+  const [requestOrigin, setRequestOrigin] = useState('');
   const [selectedKey, setSelectedKey] = useState('');
   const [editorOpen, setEditorOpen] = useState(false);
   const [editor, setEditor] = useState<Record<string, unknown>>({});
@@ -309,6 +344,7 @@ export default function AdminPlatformPage() {
     try {
       const result = await adminApi.getPlatformIntegrations();
       setItems(result.items || []);
+      setRequestOrigin(String(result.requestOrigin || ''));
     } catch (loadError) {
       setError(getAdminErrorMessage(loadError));
     } finally {
@@ -497,19 +533,46 @@ export default function AdminPlatformPage() {
                     control={<Switch checked={Boolean(editor[field.key])} onChange={(event) => setEditor((prev) => ({ ...prev, [field.key]: event.target.checked }))} />}
                     label={field.label}
                   />
-                ) : (
-                  <TextField
-                    key={field.key}
-                    label={field.label}
-                    required={field.required}
-                    value={String(editor[field.key] ?? '')}
-                    onChange={(event) => setEditor((prev) => ({ ...prev, [field.key]: event.target.value }))}
-                    type={field.type === 'number' ? 'number' : field.secret && !field.multiline ? 'password' : 'text'}
-                    multiline={field.multiline}
-                    minRows={field.multiline ? 4 : undefined}
-                    fullWidth
-                  />
-                )
+                ) : (() => {
+                  const fieldValue = editor[field.key];
+                  const effectiveValue = effectiveFieldValue(field, fieldValue);
+                  const isUsingDefaultTemplate = !String(fieldValue ?? '').trim() && Boolean(field.defaultTemplate);
+                  const usesDomainTemplate = fieldUsesDomainTemplate(effectiveValue);
+                  const resolvedUrl = usesDomainTemplate && requestOrigin ? resolveDomainTemplate(effectiveValue, requestOrigin) : '';
+                  const textField = (
+                    <TextField
+                      key={field.key}
+                      label={field.label}
+                      required={field.required}
+                      placeholder={field.placeholder}
+                      value={String(fieldValue ?? '')}
+                      onChange={(event) => setEditor((prev) => ({ ...prev, [field.key]: event.target.value }))}
+                      type={field.type === 'number' ? 'number' : field.secret && !field.multiline ? 'password' : 'text'}
+                      multiline={field.multiline}
+                      minRows={field.multiline ? 4 : undefined}
+                      helperText={isUsingDefaultTemplate ? '留空时后端会使用默认地址，悬浮查看实际 URL' : usesDomainTemplate ? '悬浮查看后端实际解析后的 URL' : undefined}
+                      fullWidth
+                    />
+                  );
+                  return (
+                    <Tooltip
+                      key={field.key}
+                      title={usesDomainTemplate ? (
+                        <Stack spacing={0.5}>
+                          <Typography variant="caption" sx={{ fontWeight: 800 }}>模板变量解析</Typography>
+                          {isUsingDefaultTemplate ? <Typography variant="caption">当前为空，将使用默认模板：{field.defaultTemplate}</Typography> : null}
+                          <Typography variant="caption">后端识别域名：{requestOrigin || '未获取到'}</Typography>
+                          <Typography variant="caption" sx={{ wordBreak: 'break-all' }}>实际 URL：{resolvedUrl || '无法解析，请检查反向代理 Host/Proto 头'}</Typography>
+                        </Stack>
+                      ) : ''}
+                      placement="top"
+                      arrow
+                      disableHoverListener={!usesDomainTemplate}
+                    >
+                      <span>{textField}</span>
+                    </Tooltip>
+                  );
+                })()
               )) : <Alert severity="info">该服务商暂无额外配置项。</Alert>}
               <Stack spacing={1}>
                 <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>连接测试</Typography>

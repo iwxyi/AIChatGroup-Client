@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Box, Button, CircularProgress, TextField, Typography, LinearProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, IconButton, InputLabel, MenuItem, Select, Tooltip } from '@mui/material';
+import { Alert, Box, Button, Checkbox, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, IconButton, InputLabel, LinearProgress, MenuItem, Select, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Tooltip, Typography } from '@mui/material';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import SettingsIcon from '@mui/icons-material/Settings';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
@@ -9,7 +9,7 @@ import { useTranslation } from 'react-i18next';
 import type { AIModelProfile } from '../types/settings';
 import type { AICharacter, CharacterBehaviorParams, PersonalityParams } from '../types/character';
 import { enqueueAvatarGenerationForCharacters } from '../services/avatarGeneration';
-import { initializeDefaultRelationshipsForCreatedCharacters } from '../services/defaultRelationshipInitializer';
+import { buildDefaultRelationshipSuggestions, initializeDefaultRelationshipsForCreatedCharacters, planDefaultRelationshipPatchesFromSuggestions, type DefaultRelationshipSuggestion, type DefaultRelationshipSuggestionSkipReason } from '../services/defaultRelationshipInitializer';
 import { generateResponse } from '../services/aiClient';
 import { generateCharacterProfilesSafe } from '../services/characterGenerator';
 import AppSnackbar from '../components/common/AppSnackbar';
@@ -27,6 +27,7 @@ import { chooseRandomBubbleStyleId, createCharacterBubbleStyleId } from '../util
 const BATCH_GENERATE_GROUP_SIZE = 10;
 const MOBILE_BOTTOM_NAV_FAB_OFFSET = 'calc(env(safe-area-inset-bottom, 0px) + 104px)';
 const MOBILE_BOTTOM_NAV_CONTENT_PADDING = 'calc(env(safe-area-inset-bottom, 0px) + 176px)';
+const HIGH_RELATIONSHIP_CONFIDENCE = 0.75;
 
 interface ProgressItem {
   name: string;
@@ -690,6 +691,49 @@ function getErrorMessage(error: unknown) {
   return String(error);
 }
 
+function describeRelationshipSuggestion(suggestion: DefaultRelationshipSuggestion, language: string) {
+  const preset = suggestion.preset;
+  const cues: string[] = [];
+  if (preset.warmth >= 35) cues.push(language.startsWith('zh') ? '亲近' : 'warm');
+  if (preset.warmth <= -25) cues.push(language.startsWith('zh') ? '疏离' : 'distant');
+  if (preset.trust >= 30) cues.push(language.startsWith('zh') ? '信任' : 'trusting');
+  if (preset.trust <= -25) cues.push(language.startsWith('zh') ? '戒备' : 'guarded');
+  if (preset.competence >= 30) cues.push(language.startsWith('zh') ? '认可能力' : 'respects ability');
+  if (preset.competence <= -25) cues.push(language.startsWith('zh') ? '轻视能力' : 'doubts ability');
+  if (preset.threat >= 35) cues.push(language.startsWith('zh') ? '高威胁感' : 'high threat');
+  if (preset.threat >= 15 && preset.threat < 35) cues.push(language.startsWith('zh') ? '有威胁感' : 'some threat');
+  const fallback = language.startsWith('zh') ? '中性初始印象' : 'neutral initial impression';
+  return cues.length ? cues.join(language.startsWith('zh') ? '、' : ', ') : fallback;
+}
+
+function formatRelationshipDebug(suggestion: DefaultRelationshipSuggestion, language: string) {
+  const preset = suggestion.preset;
+  const metrics = `warmth ${preset.warmth}, competence ${preset.competence}, trust ${preset.trust}, threat ${preset.threat}, confidence ${suggestion.confidence.toFixed(2)}`;
+  if (!suggestion.reason) return metrics;
+  return language.startsWith('zh') ? `${metrics}；依据：${suggestion.reason}` : `${metrics}; reason: ${suggestion.reason}`;
+}
+
+function formatRelationshipConfidence(suggestion: DefaultRelationshipSuggestion, language: string) {
+  const percentage = `${Math.round(suggestion.confidence * 100)}%`;
+  if (suggestion.confidence >= HIGH_RELATIONSHIP_CONFIDENCE) {
+    return language.startsWith('zh') ? `高 ${percentage}` : `High ${percentage}`;
+  }
+  if (suggestion.confidence >= 0.6) {
+    return language.startsWith('zh') ? `中 ${percentage}` : `Medium ${percentage}`;
+  }
+  return language.startsWith('zh') ? `待确认 ${percentage}` : `Review ${percentage}`;
+}
+
+function formatRelationshipSkipReason(reason: DefaultRelationshipSuggestionSkipReason, language: string) {
+  if (reason === 'protected_existing_relationship') {
+    return language.startsWith('zh') ? '已有关系，已跳过' : 'Existing relationship skipped';
+  }
+  if (reason === 'missing_character') {
+    return language.startsWith('zh') ? '角色不存在，已跳过' : 'Missing character skipped';
+  }
+  return language.startsWith('zh') ? '无效关系，已跳过' : 'Invalid relationship skipped';
+}
+
 export default function BatchGenerateCharactersPage() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
@@ -698,6 +742,7 @@ export default function BatchGenerateCharactersPage() {
   const settings = useSettingsStore(useShallow((state) => ({
     aiProfiles: state.aiProfiles,
     customBubbleStyles: state.customBubbleStyles,
+    developerMode: state.developerMode,
   })));
   const { characters, markCharactersWarm, prefetchCharacters, addCharacters, updateCharacters } = useCharacterStore(useShallow((state) => ({
     characters: state.characters,
@@ -715,8 +760,15 @@ export default function BatchGenerateCharactersPage() {
   const [previewCandidate, setPreviewCandidate] = useState<CandidateCharacter | null>(null);
   const [activeTab, setActiveTab] = useState<BatchGenerateTab>('list');
   const [lastCreatedCharacters, setLastCreatedCharacters] = useState<AICharacter[]>([]);
+  const [showGenerateCharactersFab, setShowGenerateCharactersFab] = useState(true);
+  const [relationshipCompletionPreviewOpen, setRelationshipCompletionPreviewOpen] = useState(false);
+  const [relationshipCompletionSuggestions, setRelationshipCompletionSuggestions] = useState<DefaultRelationshipSuggestion[]>([]);
+  const [selectedRelationshipSuggestionIds, setSelectedRelationshipSuggestionIds] = useState<string[]>([]);
+  const [relationshipSuggestionSkipReasons, setRelationshipSuggestionSkipReasons] = useState<Record<string, DefaultRelationshipSuggestionSkipReason>>({});
+  const [appliedRelationshipSuggestionIds, setAppliedRelationshipSuggestionIds] = useState<string[]>([]);
   const [relationshipCompleting, setRelationshipCompleting] = useState(false);
-  const [relationshipCompletionCount, setRelationshipCompletionCount] = useState<number | null>(null);
+  const [relationshipCompletionApplying, setRelationshipCompletionApplying] = useState(false);
+  const [relationshipCompletionResult, setRelationshipCompletionResult] = useState<{ applied: number; skipped: number } | null>(null);
   const [nameFormat, setNameFormat] = useState<NameFormat>('nameParenRole');
   const [pendingNameFormat, setPendingNameFormat] = useState<NameFormat>('nameParenRole');
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -748,6 +800,11 @@ export default function BatchGenerateCharactersPage() {
 
   const selectedSet = useMemo(() => new Set(selectedCandidateIds), [selectedCandidateIds]);
   const selectedCandidates = useMemo(() => candidateCharacters.filter((candidate) => selectedSet.has(candidate.id)), [candidateCharacters, selectedSet]);
+  const selectedRelationshipSuggestionSet = useMemo(() => new Set(selectedRelationshipSuggestionIds), [selectedRelationshipSuggestionIds]);
+  const appliedRelationshipSuggestionSet = useMemo(() => new Set(appliedRelationshipSuggestionIds), [appliedRelationshipSuggestionIds]);
+  const selectableRelationshipSuggestions = useMemo(() => relationshipCompletionSuggestions.filter((suggestion) => !relationshipSuggestionSkipReasons[suggestion.id] && !appliedRelationshipSuggestionSet.has(suggestion.id)), [appliedRelationshipSuggestionSet, relationshipCompletionSuggestions, relationshipSuggestionSkipReasons]);
+  const allRelationshipSuggestionsSelected = selectableRelationshipSuggestions.length > 0 && selectedRelationshipSuggestionIds.length === selectableRelationshipSuggestions.length;
+  const someRelationshipSuggestionsSelected = selectedRelationshipSuggestionIds.length > 0 && !allRelationshipSuggestionsSelected;
   const relationshipView = useMemo(() => {
     const relationships = candidateRelationships.length ? candidateRelationships : buildFallbackRelationships(candidateCharacters, nameFormat);
     const circles = candidateCircles.length ? candidateCircles : buildFallbackCircles(candidateCharacters, relationships);
@@ -763,6 +820,15 @@ export default function BatchGenerateCharactersPage() {
       prev.includes(candidateId)
         ? prev.filter((item) => item !== candidateId)
         : [...prev, candidateId]
+    );
+  };
+
+  const toggleRelationshipSuggestion = (suggestionId: string) => {
+    if (relationshipSuggestionSkipReasons[suggestionId] || appliedRelationshipSuggestionSet.has(suggestionId)) return;
+    setSelectedRelationshipSuggestionIds((prev) =>
+      prev.includes(suggestionId)
+        ? prev.filter((item) => item !== suggestionId)
+        : [...prev, suggestionId]
     );
   };
 
@@ -793,7 +859,13 @@ export default function BatchGenerateCharactersPage() {
       setCandidateCircles(parsed.circles.length ? parsed.circles : buildFallbackCircles(parsed.candidates, fallbackRelationships));
       setSelectedCandidateIds(parsed.defaultSelectedIds.length ? parsed.defaultSelectedIds : parsed.candidates.slice(0, Math.min(4, parsed.candidates.length)).map((candidate) => candidate.id));
       setLastCreatedCharacters([]);
-      setRelationshipCompletionCount(null);
+      setShowGenerateCharactersFab(true);
+      setRelationshipCompletionPreviewOpen(false);
+      setRelationshipCompletionSuggestions([]);
+      setSelectedRelationshipSuggestionIds([]);
+      setRelationshipSuggestionSkipReasons({});
+      setAppliedRelationshipSuggestionIds([]);
+      setRelationshipCompletionResult(null);
       setActiveTab('list');
     } catch (error) {
       setSnackbar({ open: true, message: error instanceof Error ? error.message : t('common.error'), severity: 'error' });
@@ -847,7 +919,15 @@ export default function BatchGenerateCharactersPage() {
       }
 
       setLastCreatedCharacters(createdCharacters);
-      setRelationshipCompletionCount(null);
+      if (!cancelGenerationRef.current && createdCharacters.length) {
+        setShowGenerateCharactersFab(false);
+      }
+      setRelationshipCompletionPreviewOpen(false);
+      setRelationshipCompletionSuggestions([]);
+      setSelectedRelationshipSuggestionIds([]);
+      setRelationshipSuggestionSkipReasons({});
+      setAppliedRelationshipSuggestionIds([]);
+      setRelationshipCompletionResult(null);
       if (!cancelGenerationRef.current && createdCharacters.length) {
         setActiveTab('completion');
       }
@@ -871,7 +951,7 @@ export default function BatchGenerateCharactersPage() {
     }
   };
 
-  const handleCompleteRelationships = async () => {
+  const handlePrepareRelationshipCompletion = async () => {
     const profile = getPreferredAIProfile(useSettingsStore.getState().aiProfiles, 'text');
     if (!isAIProfileUsable(profile)) {
       setSnackbar({ open: true, message: i18n.language.startsWith('zh') ? '请先配置AI模型' : 'Configure AI model first', severity: 'error' });
@@ -883,28 +963,76 @@ export default function BatchGenerateCharactersPage() {
     }
 
     setRelationshipCompleting(true);
-    setRelationshipCompletionCount(null);
+    setRelationshipCompletionResult(null);
+    setRelationshipSuggestionSkipReasons({});
+    setAppliedRelationshipSuggestionIds([]);
     try {
-      const patches = await initializeDefaultRelationshipsForCreatedCharacters({
+      const createdIds = new Set(lastCreatedCharacters.map((character) => character.id));
+      const suggestions = (await buildDefaultRelationshipSuggestions({
         config: profile,
         createdCharacters: lastCreatedCharacters,
         allCharacters: useCharacterStore.getState().characters,
         language: i18n.language.startsWith('zh') ? 'zh' : 'en',
-        updateCharacters,
         scope: 'created_and_existing',
+      })).filter((suggestion) => {
+        const fromCreated = createdIds.has(suggestion.fromId);
+        const toCreated = createdIds.has(suggestion.toId);
+        return fromCreated !== toCreated;
       });
-      setRelationshipCompletionCount(patches.length);
+      setRelationshipCompletionSuggestions(suggestions);
+      setSelectedRelationshipSuggestionIds(suggestions.filter((suggestion) => suggestion.confidence >= HIGH_RELATIONSHIP_CONFIDENCE).map((suggestion) => suggestion.id));
+      setRelationshipCompletionPreviewOpen(true);
+      if (!suggestions.length) {
+        setSnackbar({
+          open: true,
+          message: i18n.language.startsWith('zh') ? '没有识别到需要补全的默认关系' : 'No default relationships need completion',
+          severity: 'success',
+        });
+      }
+    } catch (error) {
+      setSnackbar({ open: true, message: error instanceof Error ? error.message : t('common.error'), severity: 'error' });
+    } finally {
+      setRelationshipCompleting(false);
+    }
+  };
+
+  const handleApplyRelationshipCompletion = async () => {
+    const selectedSet = new Set(selectedRelationshipSuggestionIds);
+    const selectedSuggestions = relationshipCompletionSuggestions.filter((suggestion) => selectedSet.has(suggestion.id));
+    if (!selectedSuggestions.length) {
+      setSnackbar({ open: true, message: i18n.language.startsWith('zh') ? '请选择至少一条关系' : 'Select at least one relationship', severity: 'error' });
+      return;
+    }
+
+    setRelationshipCompletionApplying(true);
+    setRelationshipCompletionResult(null);
+    try {
+      const plan = planDefaultRelationshipPatchesFromSuggestions({
+        suggestions: selectedSuggestions,
+        allCharacters: useCharacterStore.getState().characters,
+        language: i18n.language.startsWith('zh') ? 'zh' : 'en',
+      });
+      if (plan.patches.length) await updateCharacters(plan.patches);
+      const appliedIds = plan.results.filter((result) => result.status === 'applied').map((result) => result.suggestionId);
+      const skippedReasons = plan.results.reduce<Record<string, DefaultRelationshipSuggestionSkipReason>>((acc, result) => {
+        if (result.status === 'skipped' && result.reason) acc[result.suggestionId] = result.reason;
+        return acc;
+      }, {});
+      setAppliedRelationshipSuggestionIds((prev) => Array.from(new Set([...prev, ...appliedIds])));
+      setRelationshipSuggestionSkipReasons((prev) => ({ ...prev, ...skippedReasons }));
+      setSelectedRelationshipSuggestionIds((prev) => prev.filter((id) => !appliedIds.includes(id) && !skippedReasons[id]));
+      setRelationshipCompletionResult({ applied: appliedIds.length, skipped: plan.results.length - appliedIds.length });
       markCharactersWarm();
       void prefetchCharacters();
       setSnackbar({
         open: true,
-        message: i18n.language.startsWith('zh') ? `已补全 ${patches.length} 个角色的默认关系` : `Completed default relationships for ${patches.length} character(s)`,
+        message: i18n.language.startsWith('zh') ? `已写入 ${appliedIds.length} 条默认关系，跳过 ${plan.results.length - appliedIds.length} 条` : `Applied ${appliedIds.length} default relationship(s), skipped ${plan.results.length - appliedIds.length}`,
         severity: 'success',
       });
     } catch (error) {
       setSnackbar({ open: true, message: error instanceof Error ? error.message : t('common.error'), severity: 'error' });
     } finally {
-      setRelationshipCompleting(false);
+      setRelationshipCompletionApplying(false);
     }
   };
 
@@ -977,8 +1105,11 @@ export default function BatchGenerateCharactersPage() {
 
           {activeTab === 'list' ? (
             <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 2, bgcolor: 'background.paper', p: { xs: 1.25, sm: 1.5 }, display: 'flex', flexDirection: 'column', gap: 1.25 }}>
-              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
-                <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
+              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end' }}>
+                <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
+                  {selectedCandidateIds.length}/{candidateCharacters.length}
+                </Typography>
+                <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end' }}>
                   <Button size="small" variant="outlined" onClick={() => setSelectedCandidateIds(candidateCharacters.map((candidate) => candidate.id))}>
                     {i18n.language.startsWith('zh') ? '全选' : 'Select all'}
                   </Button>
@@ -986,9 +1117,6 @@ export default function BatchGenerateCharactersPage() {
                     {i18n.language.startsWith('zh') ? '反选' : 'Invert'}
                   </Button>
                 </Box>
-                <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
-                  {selectedCandidateIds.length} · {candidateCharacters.length}
-                </Typography>
               </Box>
               <Box
                 sx={{
@@ -1086,27 +1214,160 @@ export default function BatchGenerateCharactersPage() {
           ) : null}
 
           {activeTab === 'completion' && lastCreatedCharacters.length ? (
-            <Box sx={{ minHeight: 240, border: 1, borderColor: 'divider', borderRadius: 2, bgcolor: 'background.paper', display: 'grid', placeItems: 'center', p: 3 }}>
-              <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1.5, maxWidth: 520, textAlign: 'center' }}>
-                {relationshipCompletionCount !== null ? (
-                  <Alert severity="success" sx={{ width: '100%' }}>
-                    {i18n.language.startsWith('zh') ? `已更新 ${relationshipCompletionCount} 个角色的默认关系` : `Updated default relationships for ${relationshipCompletionCount} character(s)`}
-                  </Alert>
-                ) : null}
-                <Button
-                  variant="contained"
-                  startIcon={relationshipCompleting ? <CircularProgress size={18} color="inherit" /> : <AutoAwesomeIcon />}
-                  onClick={handleCompleteRelationships}
-                  disabled={relationshipCompleting}
-                  sx={{ minHeight: 46, borderRadius: 999, px: 2.5 }}
-                >
-                  {i18n.language.startsWith('zh') ? '补全与已有角色的关系' : 'Complete relationships with existing characters'}
-                </Button>
-              </Box>
+            <Box sx={{ minHeight: 240, border: 1, borderColor: 'divider', borderRadius: 2, bgcolor: 'background.paper', p: { xs: 1.5, sm: 2 }, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+              {!relationshipCompletionPreviewOpen ? (
+                <Box sx={{ minHeight: 208, display: 'grid', placeItems: 'center' }}>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1.5, maxWidth: 520, textAlign: 'center' }}>
+                    {relationshipCompletionResult ? (
+                      <Alert severity="success" sx={{ width: '100%' }}>
+                        {i18n.language.startsWith('zh')
+                          ? `已写入 ${relationshipCompletionResult.applied} 条默认关系，跳过 ${relationshipCompletionResult.skipped} 条`
+                          : `Applied ${relationshipCompletionResult.applied} default relationship(s), skipped ${relationshipCompletionResult.skipped}`}
+                      </Alert>
+                    ) : null}
+                    <Button
+                      variant="contained"
+                      startIcon={relationshipCompleting ? <CircularProgress size={18} color="inherit" /> : <AutoAwesomeIcon />}
+                      onClick={handlePrepareRelationshipCompletion}
+                      disabled={relationshipCompleting}
+                      sx={{ minHeight: 46, borderRadius: 999, px: 2.5 }}
+                    >
+                      {i18n.language.startsWith('zh') ? '补全与已有角色的关系' : 'Complete relationships with existing characters'}
+                    </Button>
+                  </Box>
+                </Box>
+              ) : (
+                <>
+                  <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <Box>
+                      <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                        {i18n.language.startsWith('zh') ? '待补全关系' : 'Relationships to complete'}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {i18n.language.startsWith('zh')
+                          ? `默认只选中高置信度关系：${selectedRelationshipSuggestionIds.length}/${relationshipCompletionSuggestions.length}`
+                          : `High-confidence relationships selected by default: ${selectedRelationshipSuggestionIds.length}/${relationshipCompletionSuggestions.length}`}
+                      </Typography>
+                    </Box>
+                    <Button
+                      variant="contained"
+                      startIcon={relationshipCompletionApplying ? <CircularProgress size={18} color="inherit" /> : <AutoAwesomeIcon />}
+                      onClick={handleApplyRelationshipCompletion}
+                      disabled={relationshipCompletionApplying || selectedRelationshipSuggestionIds.length === 0 || selectableRelationshipSuggestions.length === 0}
+                      sx={{ borderRadius: 999, px: 2.5 }}
+                    >
+                      {i18n.language.startsWith('zh') ? '补全' : 'Complete'}
+                    </Button>
+                  </Box>
+                  {relationshipCompletionResult ? (
+                    <Alert severity="success">
+                      {i18n.language.startsWith('zh')
+                        ? `已写入 ${relationshipCompletionResult.applied} 条默认关系，跳过 ${relationshipCompletionResult.skipped} 条`
+                        : `Applied ${relationshipCompletionResult.applied} default relationship(s), skipped ${relationshipCompletionResult.skipped}`}
+                    </Alert>
+                  ) : null}
+                  {relationshipCompletionSuggestions.length ? (
+                    <TableContainer sx={{ border: 1, borderColor: 'divider', borderRadius: 1.5, maxHeight: 460 }}>
+                      <Table size="small" stickyHeader>
+                        <TableHead>
+                          <TableRow>
+                            <TableCell padding="checkbox">
+                              <Checkbox
+                                size="small"
+                                checked={allRelationshipSuggestionsSelected}
+                                indeterminate={someRelationshipSuggestionsSelected}
+                                disabled={!selectableRelationshipSuggestions.length}
+                                onChange={(event) => setSelectedRelationshipSuggestionIds(event.target.checked ? selectableRelationshipSuggestions.map((suggestion) => suggestion.id) : [])}
+                              />
+                            </TableCell>
+                            <TableCell>{i18n.language.startsWith('zh') ? '方向' : 'Direction'}</TableCell>
+                            <TableCell>{i18n.language.startsWith('zh') ? '状态' : 'Status'}</TableCell>
+                            <TableCell>{i18n.language.startsWith('zh') ? '置信度' : 'Confidence'}</TableCell>
+                            <TableCell>{i18n.language.startsWith('zh') ? '关系描述' : 'Relationship'}</TableCell>
+                            {settings.developerMode ? <TableCell>{i18n.language.startsWith('zh') ? '默认值' : 'Defaults'}</TableCell> : null}
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {relationshipCompletionSuggestions.map((suggestion) => {
+                            const selected = selectedRelationshipSuggestionSet.has(suggestion.id);
+                            const skipReason = relationshipSuggestionSkipReasons[suggestion.id];
+                            const applied = appliedRelationshipSuggestionSet.has(suggestion.id);
+                            const disabled = Boolean(skipReason || applied);
+                            return (
+                              <TableRow
+                                key={suggestion.id}
+                                hover={!disabled}
+                                selected={selected}
+                                sx={{ cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.72 : 1 }}
+                                onClick={() => toggleRelationshipSuggestion(suggestion.id)}
+                              >
+                                <TableCell padding="checkbox">
+                                  <Checkbox
+                                    size="small"
+                                    checked={selected}
+                                    disabled={disabled}
+                                    onChange={() => toggleRelationshipSuggestion(suggestion.id)}
+                                    onClick={(event) => event.stopPropagation()}
+                                  />
+                                </TableCell>
+                                <TableCell sx={{ minWidth: 150 }}>
+                                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                                    {suggestion.fromName} → {suggestion.toName}
+                                  </Typography>
+                                </TableCell>
+                                <TableCell sx={{ minWidth: 118 }}>
+                                  <Typography variant="body2" color={applied ? 'success.main' : skipReason ? 'text.secondary' : 'primary.main'} sx={{ fontWeight: applied ? 700 : 500, whiteSpace: 'nowrap' }}>
+                                    {applied
+                                      ? (i18n.language.startsWith('zh') ? '已补全' : 'Applied')
+                                      : skipReason
+                                        ? formatRelationshipSkipReason(skipReason, i18n.language)
+                                        : (i18n.language.startsWith('zh') ? '可补全' : 'Ready')}
+                                  </Typography>
+                                </TableCell>
+                                <TableCell sx={{ minWidth: 96 }}>
+                                  <Typography
+                                    variant="body2"
+                                    sx={{
+                                      fontWeight: suggestion.confidence >= HIGH_RELATIONSHIP_CONFIDENCE ? 700 : 500,
+                                      color: suggestion.confidence >= HIGH_RELATIONSHIP_CONFIDENCE ? 'success.main' : 'text.secondary',
+                                      whiteSpace: 'nowrap',
+                                    }}
+                                  >
+                                    {formatRelationshipConfidence(suggestion, i18n.language)}
+                                  </Typography>
+                                </TableCell>
+                                <TableCell>
+                                  <Typography variant="body2">
+                                    {suggestion.preset.note || describeRelationshipSuggestion(suggestion, i18n.language)}
+                                  </Typography>
+                                  <Typography variant="caption" color="text.secondary">
+                                    {describeRelationshipSuggestion(suggestion, i18n.language)}
+                                  </Typography>
+                                </TableCell>
+                                {settings.developerMode ? (
+                                  <TableCell sx={{ minWidth: 260 }}>
+                                    <Typography variant="caption" color="text.secondary">
+                                      {formatRelationshipDebug(suggestion, i18n.language)}
+                                    </Typography>
+                                  </TableCell>
+                                ) : null}
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </TableContainer>
+                  ) : (
+                    <Alert severity="info">
+                      {i18n.language.startsWith('zh') ? '没有识别到需要补全的默认关系。' : 'No default relationships need completion.'}
+                    </Alert>
+                  )}
+                </>
+              )}
             </Box>
           ) : null}
 
-          {activeTab !== 'completion' ? (
+          {activeTab !== 'completion' && showGenerateCharactersFab ? (
             <Button
               variant="contained"
               startIcon={<AutoAwesomeIcon />}

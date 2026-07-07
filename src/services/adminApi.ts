@@ -139,7 +139,7 @@ class AdminApiClient {
   }
 
   getPlatformIntegrations() {
-    return this.request<{ items: Array<Record<string, unknown>> }>('GET', '/platform/integrations');
+    return this.request<{ items: Array<Record<string, unknown>>; requestOrigin?: string }>('GET', '/platform/integrations');
   }
 
   updatePlatformIntegration(category: string, providerCode: string, payload: Record<string, unknown>) {
@@ -375,7 +375,7 @@ class AdminApiClient {
   }
 
   getOrders(params?: { status?: string; userId?: string }) {
-    return this.request<{ items: Array<Record<string, unknown>> }>('GET', `/billing/orders${this.buildQuery({ status: params?.status, userId: params?.userId })}`);
+    return this.request<{ items: Array<Record<string, unknown>>; summary?: Record<string, number> }>('GET', `/billing/orders${this.buildQuery({ status: params?.status, userId: params?.userId })}`);
   }
 
   getBillingPlans() {
@@ -396,6 +396,14 @@ class AdminApiClient {
 
   markOrderPaid(orderId: string, payload?: Record<string, unknown>) {
     return this.request<Record<string, unknown>>('POST', `/billing/orders/${encodeURIComponent(orderId)}/pay`, payload || {});
+  }
+
+  cancelOrder(orderId: string, payload?: Record<string, unknown>) {
+    return this.request<Record<string, unknown>>('POST', `/billing/orders/${encodeURIComponent(orderId)}/cancel`, payload || {});
+  }
+
+  deleteOrder(orderId: string) {
+    return this.request<Record<string, unknown>>('DELETE', `/billing/orders/${encodeURIComponent(orderId)}`);
   }
 
   getShareReviewCases(params?: { status?: string; ownerUserId?: string }) {

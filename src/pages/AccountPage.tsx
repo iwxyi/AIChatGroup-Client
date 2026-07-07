@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Avatar, Box, Button, Card, CardContent, Alert, TextField, Typography, Dialog, DialogTitle, DialogContent, DialogActions, Switch, FormControlLabel } from '@mui/material';
+import { Avatar, Box, Button, Card, CardContent, Alert, TextField, Typography, Dialog, DialogTitle, DialogContent, DialogActions, Switch, FormControlLabel, Chip, CircularProgress } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useLayoutHeaderActions } from '../components/layout/AppLayoutContext';
@@ -13,10 +13,11 @@ import { ensureCharacterArtifactStoreHydrated, useCharacterArtifactStore } from 
 import { scheduleSyncWorkersByPriority } from '../stores/storeSyncScheduler';
 import AppSnackbar from '../components/common/AppSnackbar';
 import LogoutIcon from '@mui/icons-material/Logout';
+import WorkspacePremiumIcon from '@mui/icons-material/WorkspacePremium';
 import { isCloudSyncEnabled, setCloudSyncEnabled } from '../services/cloudSyncPreference';
 import { bootstrapLocalDataToCloud, captureLocalCloudBootstrapSnapshot } from '../services/localToCloudBootstrap';
 import { runWithCloudSyncBootstrapLock } from '../services/cloudSyncBootstrapLock';
-import { api } from '../services/api';
+import { api, type BillingMembershipResponse } from '../services/api';
 import { formatAiBalanceAmount } from '../utils/aiPoints';
 import AiUsageDialog from '../components/account/AiUsageDialog';
 
@@ -35,6 +36,11 @@ function formatAiPoints(balance: Record<string, unknown> | null, loading: boolea
   const raw = balance?.availableBalance ?? balance?.available_balance;
   if (typeof raw === 'number' && Number.isFinite(raw)) return zh ? `AI点数：${formatAiBalanceAmount(balance)}` : `AI points: ${formatAiBalanceAmount(balance)}`;
   return zh ? 'AI点数：未分配点数' : 'AI points: not assigned';
+}
+
+function formatMembershipDate(value?: number | string | null) {
+  const parsed = Number(value);
+  return parsed > 0 ? new Date(parsed).toLocaleDateString() : '-';
 }
 
 function loadImage(file: File) {
@@ -131,6 +137,8 @@ export default function AccountPage() {
   const [aiBalance, setAiBalance] = useState<Record<string, unknown> | null>(null);
   const [aiBalanceLoading, setAiBalanceLoading] = useState(false);
   const [aiUsageDialogOpen, setAiUsageDialogOpen] = useState(false);
+  const [membership, setMembership] = useState<BillingMembershipResponse | null>(null);
+  const [membershipLoading, setMembershipLoading] = useState(false);
   const cloudSyncAvailable = authMode !== 'local' && user?.cloudSyncEntitled !== false;
 
   useEffect(() => {
@@ -161,6 +169,29 @@ export default function AccountPage() {
       })
       .finally(() => {
         if (!cancelled) setAiBalanceLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [authMode, user?.id]);
+
+  useEffect(() => {
+    if (authMode === 'local') {
+      setMembership(null);
+      setMembershipLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setMembershipLoading(true);
+    api.getBillingMembership()
+      .then((value) => {
+        if (!cancelled) setMembership(value);
+      })
+      .catch(() => {
+        if (!cancelled) setMembership(null);
+      })
+      .finally(() => {
+        if (!cancelled) setMembershipLoading(false);
       });
     return () => {
       cancelled = true;
@@ -418,7 +449,16 @@ export default function AccountPage() {
   };
 
   const isImageAvatar = isImageAvatarValue(avatar);
-  const phoneLabel = i18n.language.startsWith('zh') ? '手机号' : 'Phone';
+  const zh = i18n.language.startsWith('zh');
+  const phoneLabel = zh ? '手机号' : 'Phone';
+  const activeMembership = Boolean(membership?.vipActive && membership.activeSubscription);
+  const visibleSubscription = membership?.activeSubscription || membership?.latestSubscription || null;
+  const membershipStatusLabel = activeMembership
+    ? (zh ? '会员生效中' : 'Active')
+    : visibleSubscription
+      ? (zh ? '会员已到期' : 'Expired')
+      : (zh ? '未开通会员' : 'No membership');
+  const membershipStatusColor: 'success' | 'warning' | 'default' = activeMembership ? 'success' : visibleSubscription ? 'warning' : 'default';
   const handleCloudSyncToggle = async (enabled: boolean) => {
     if (authMode === 'local') {
       navigate('/login');
@@ -470,13 +510,15 @@ export default function AccountPage() {
   };
 
   return (
-    <Box sx={{ p: 3, pt: { xs: 1, sm: 1, md: 3 }, pb: { xs: 12, sm: 8 }, maxWidth: 860, mx: 'auto' }}>
+    <Box sx={{ p: 3, pt: { xs: 1, sm: 1, md: 3 }, pb: { xs: 12, sm: 8 }, maxWidth: 980, mx: 'auto' }}>
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1.15fr) minmax(280px, 0.85fr)' }, gap: 3, alignItems: 'stretch' }}>
         <Card
           variant="outlined"
           sx={{
             overflow: 'hidden',
             borderRadius: 2,
+            height: '100%',
             bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(18,18,18,0.96)' : 'rgba(255,255,255,0.92)',
           }}
         >
@@ -537,6 +579,77 @@ export default function AccountPage() {
             )}
           </CardContent>
         </Card>
+
+        <Card
+          variant="outlined"
+          sx={{
+            overflow: 'hidden',
+            borderRadius: 2,
+            height: '100%',
+            bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(18,18,18,0.96)' : 'rgba(255,255,255,0.92)',
+          }}
+        >
+          <CardContent sx={{ height: '100%', display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Box sx={{ width: 36, height: 36, borderRadius: 1.25, display: 'grid', placeItems: 'center', bgcolor: 'primary.main', color: 'primary.contrastText' }}>
+                  <WorkspacePremiumIcon fontSize="small" />
+                </Box>
+                <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
+                  {zh ? '会员权益' : 'Membership'}
+                </Typography>
+              </Box>
+              {membershipLoading ? (
+                <CircularProgress size={18} />
+              ) : (
+                <Chip size="small" color={membershipStatusColor} label={authMode === 'local' ? (zh ? '未登录' : 'Local') : membershipStatusLabel} />
+              )}
+            </Box>
+
+            <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1.15, py: 0.5 }}>
+              <Box>
+                <Typography variant="body2" color="text.secondary">
+                  {zh ? '当前套餐' : 'Current plan'}
+                </Typography>
+                <Typography sx={{ mt: 0.25, fontSize: 20, fontWeight: 900 }} noWrap>
+                  {authMode === 'local'
+                    ? (zh ? '登录后查看' : 'Sign in to view')
+                    : (visibleSubscription?.planName || membershipStatusLabel)}
+                </Typography>
+              </Box>
+              <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.25 }}>
+                <Box>
+                  <Typography variant="caption" color="text.secondary">
+                    {zh ? '状态' : 'Status'}
+                  </Typography>
+                  <Typography sx={{ fontWeight: 800 }}>
+                    {authMode === 'local' ? (zh ? '未登录' : 'Local') : membershipStatusLabel}
+                  </Typography>
+                </Box>
+                <Box>
+                  <Typography variant="caption" color="text.secondary">
+                    {zh ? '有效期至' : 'Valid until'}
+                  </Typography>
+                  <Typography sx={{ fontWeight: 800 }}>
+                    {activeMembership ? formatMembershipDate(visibleSubscription?.currentPeriodEnd) : '-'}
+                  </Typography>
+                </Box>
+              </Box>
+              <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.7 }}>
+                {zh ? '购买 VIP 或 AI 点数套餐，支付完成后权益和点数会自动到账。' : 'Buy VIP or AI point packs. Benefits and points are fulfilled automatically after payment.'}
+              </Typography>
+            </Box>
+
+            <Button
+              variant={activeMembership ? 'outlined' : 'contained'}
+              onClick={() => navigate('/membership')}
+              sx={{ alignSelf: 'flex-start' }}
+            >
+              {activeMembership ? (zh ? '查看会员' : 'View membership') : (zh ? '开通会员' : 'Subscribe')}
+            </Button>
+          </CardContent>
+        </Card>
+        </Box>
 
         <Card variant="outlined">
           <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>

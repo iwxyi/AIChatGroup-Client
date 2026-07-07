@@ -26,6 +26,30 @@ export interface DefaultRelationshipPatch {
   updates: Partial<AICharacter>;
 }
 
+export interface DefaultRelationshipSuggestion {
+  id: string;
+  fromId: string;
+  toId: string;
+  fromName: string;
+  toName: string;
+  preset: CharacterRelationshipPreset;
+  confidence: number;
+  reason: string;
+}
+
+export type DefaultRelationshipSuggestionSkipReason = 'missing_character' | 'self_relationship' | 'protected_existing_relationship';
+
+export interface DefaultRelationshipSuggestionResult {
+  suggestionId: string;
+  status: 'applied' | 'skipped';
+  reason?: DefaultRelationshipSuggestionSkipReason;
+}
+
+export interface DefaultRelationshipPatchPlan {
+  patches: DefaultRelationshipPatch[];
+  results: DefaultRelationshipSuggestionResult[];
+}
+
 function clampNumber(value: unknown, min: number, max: number, fallback = 0) {
   const numeric = typeof value === 'number' && Number.isFinite(value) ? value : fallback;
   return Math.max(min, Math.min(max, Math.round(numeric)));
@@ -156,6 +180,24 @@ export async function buildDefaultRelationshipPatches(params: {
   now?: number;
 }): Promise<DefaultRelationshipPatch[]> {
   const now = resolveNow(params.now);
+  const suggestions = await buildDefaultRelationshipSuggestions({ ...params, now });
+  return buildDefaultRelationshipPatchesFromSuggestions({
+    suggestions,
+    allCharacters: params.allCharacters,
+    language: params.language,
+    now,
+  });
+}
+
+export async function buildDefaultRelationshipSuggestions(params: {
+  config: AIModelProfile;
+  createdCharacters: AICharacter[];
+  allCharacters: AICharacter[];
+  language: 'zh' | 'en';
+  scope?: DefaultRelationshipScope;
+  now?: number;
+}): Promise<DefaultRelationshipSuggestion[]> {
+  const now = resolveNow(params.now);
   const scope = params.scope || 'created_and_existing';
   const created = params.createdCharacters.filter((character) => !character.deletedAt && !character.isPreset);
   const all = params.allCharacters.filter((character) => !character.deletedAt);
@@ -171,24 +213,83 @@ export async function buildDefaultRelationshipPatches(params: {
 
   const nameMap = buildUniqueNameMap(all);
   const createdIds = new Set(created.map((character) => character.id));
-  const patchesById = new Map<string, DefaultRelationshipPatch>();
+  const suggestions: DefaultRelationshipSuggestion[] = [];
+  const suggestionIdCounts = new Map<string, number>();
 
   parseRelationshipInference(response).forEach((raw) => {
-    if (normalizeConfidence(raw.confidence) < 0.55) return;
+    const confidence = normalizeConfidence(raw.confidence);
+    if (confidence < 0.55) return;
     const from = nameMap.get(normalizeName(raw.fromName).toLowerCase());
     const to = nameMap.get(normalizeName(raw.toName).toLowerCase());
     if (!from || !to || from.id === to.id) return;
     if (!createdIds.has(from.id) && !createdIds.has(to.id)) return;
     if (scope === 'created_only' && (!createdIds.has(from.id) || !createdIds.has(to.id))) return;
 
+    const existing = from.relationships.find((relation) => relation.characterId === to.id);
+    if (shouldProtectExistingRelationship(existing)) return;
+
+    const preset = { ...buildRelationshipPreset(to.id, raw), updatedAt: now };
+    const baseId = `${from.id}->${to.id}`;
+    const duplicateIndex = suggestionIdCounts.get(baseId) || 0;
+    suggestionIdCounts.set(baseId, duplicateIndex + 1);
+    suggestions.push({
+      id: duplicateIndex ? `${baseId}:${duplicateIndex}` : baseId,
+      fromId: from.id,
+      toId: to.id,
+      fromName: from.name,
+      toName: to.name,
+      preset,
+      confidence,
+      reason: normalizeName(raw.reason),
+    });
+  });
+
+  return suggestions;
+}
+
+export function buildDefaultRelationshipPatchesFromSuggestions(params: {
+  suggestions: DefaultRelationshipSuggestion[];
+  allCharacters: AICharacter[];
+  language: 'zh' | 'en';
+  now?: number;
+}): DefaultRelationshipPatch[] {
+  return planDefaultRelationshipPatchesFromSuggestions(params).patches;
+}
+
+export function planDefaultRelationshipPatchesFromSuggestions(params: {
+  suggestions: DefaultRelationshipSuggestion[];
+  allCharacters: AICharacter[];
+  language: 'zh' | 'en';
+  now?: number;
+}): DefaultRelationshipPatchPlan {
+  const now = resolveNow(params.now);
+  const characterById = new Map(params.allCharacters.map((character) => [character.id, character]));
+  const patchesById = new Map<string, DefaultRelationshipPatch>();
+  const results: DefaultRelationshipSuggestionResult[] = [];
+
+  params.suggestions.forEach((suggestion) => {
+    const from = characterById.get(suggestion.fromId);
+    const to = characterById.get(suggestion.toId);
+    if (!from || !to) {
+      results.push({ suggestionId: suggestion.id, status: 'skipped', reason: 'missing_character' });
+      return;
+    }
+    if (from.id === to.id) {
+      results.push({ suggestionId: suggestion.id, status: 'skipped', reason: 'self_relationship' });
+      return;
+    }
+
     const currentPatch = patchesById.get(from.id);
     const source = currentPatch
       ? { ...from, ...currentPatch.updates, relationships: currentPatch.updates.relationships || from.relationships }
       : from;
     const existing = source.relationships.find((relation) => relation.characterId === to.id);
-    if (shouldProtectExistingRelationship(existing)) return;
+    if (shouldProtectExistingRelationship(existing)) {
+      results.push({ suggestionId: suggestion.id, status: 'skipped', reason: 'protected_existing_relationship' });
+      return;
+    }
 
-    const nextPreset = { ...buildRelationshipPreset(to.id, raw), updatedAt: now };
+    const nextPreset = { ...suggestion.preset, characterId: to.id, updatedAt: now };
     const relationships = existing
       ? source.relationships.map((relation) => relation.characterId === to.id ? { ...relation, ...nextPreset } : relation)
       : [...source.relationships, nextPreset];
@@ -203,9 +304,10 @@ export async function buildDefaultRelationshipPatches(params: {
         runtimeTimeline: [...(source.runtimeTimeline || []), timelineEntry].slice(-80),
       },
     });
+    results.push({ suggestionId: suggestion.id, status: 'applied' });
   });
 
-  return Array.from(patchesById.values());
+  return { patches: Array.from(patchesById.values()), results };
 }
 
 export async function initializeDefaultRelationshipsForCreatedCharacters(params: {

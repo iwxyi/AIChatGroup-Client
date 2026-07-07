@@ -26,6 +26,7 @@ const routePreloaders = [
   () => import('./pages/SettingsPage'),
   () => import('./pages/RecycleBinPage'),
   () => import('./pages/AIModelsPage'),
+  () => import('./pages/MembershipPage'),
   () => import('./pages/AccountPage'),
   () => import('./pages/SyncStatusPage'),
   () => import('./pages/BatchGenerateCharactersPage'),
@@ -60,6 +61,7 @@ const [
   loadSettingsPage,
   loadRecycleBinPage,
   loadAIModelsPage,
+  loadMembershipPage,
   loadAccountPage,
   loadSyncStatusPage,
   loadBatchGenerateCharactersPage,
@@ -93,6 +95,7 @@ const CharacterEditorPage = lazy(loadCharacterEditorPage);
 const SettingsPage = lazy(loadSettingsPage);
 const RecycleBinPage = lazy(loadRecycleBinPage);
 const AIModelsPage = lazy(loadAIModelsPage);
+const MembershipPage = lazy(loadMembershipPage);
 const AccountPage = lazy(loadAccountPage);
 const SyncStatusPage = lazy(loadSyncStatusPage);
 const BatchGenerateCharactersPage = lazy(loadBatchGenerateCharactersPage);
@@ -324,6 +327,7 @@ function RoutedApp() {
         <Route path="/calendar" element={<RouteElement><CalendarPage /></RouteElement>} />
         <Route path="/moments" element={<RouteElement><MomentsPage /></RouteElement>} />
         <Route path="/models" element={<RouteElement><AIModelsPage /></RouteElement>} />
+        <Route path="/membership" element={<RouteElement><MembershipPage /></RouteElement>} />
         <Route path="/account" element={<RouteElement><AccountPage /></RouteElement>} />
         <Route path="/account/sync-status" element={<RouteElement><SyncStatusPage /></RouteElement>} />
         <Route path="/settings" element={<RouteElement><SettingsPage /></RouteElement>} />
