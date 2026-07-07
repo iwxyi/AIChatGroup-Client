@@ -90,34 +90,41 @@ const calendarControlBaseSx = {
   borderColor: (theme: Theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.08)' : 'rgba(226,232,240,0.10)',
   bgcolor: (theme: Theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.56)' : 'rgba(18,20,28,0.54)',
   color: 'text.secondary',
-  boxShadow: 'none',
-  transition: transition(['background-color', 'border-color', 'box-shadow', 'color', 'transform'], motion.durations.base, motion.softOut),
+  transition: transition(['background-color', 'border-color', 'color'], motion.durations.base, motion.softOut),
   '&:hover': {
     bgcolor: (theme: Theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.86)' : 'rgba(28,31,42,0.76)',
     borderColor: (theme: Theme) => theme.palette.mode === 'light' ? 'rgba(49,90,156,0.24)' : 'rgba(120,156,220,0.26)',
     color: 'primary.main',
-    boxShadow: (theme: Theme) => theme.palette.mode === 'light'
-      ? '0 8px 22px rgba(15,23,42,0.08)'
-      : '0 10px 26px rgba(0,0,0,0.24)',
   },
   '&:active': {
-    transform: 'scale(0.985)',
-    transitionTimingFunction: motion.press,
-    transitionDuration: `${motion.durations.instant}ms`,
+    bgcolor: (theme: Theme) => theme.palette.mode === 'light' ? 'rgba(49,90,156,0.10)' : 'rgba(120,156,220,0.14)',
   },
   '&.Mui-focusVisible': {
     borderColor: 'primary.main',
-    boxShadow: (theme: Theme) => theme.palette.mode === 'light'
-      ? '0 0 0 3px rgba(49,90,156,0.14)'
-      : '0 0 0 3px rgba(120,156,220,0.18)',
   },
   ...reducedMotionSx,
 };
 
-const calendarIconButtonSx = {
-  ...calendarControlBaseSx,
+const calendarNavButtonSx = {
   width: 32,
   height: 32,
+  borderRadius: 999,
+  border: '1px solid transparent',
+  bgcolor: 'transparent',
+  color: 'text.secondary',
+  transition: transition(['background-color', 'border-color', 'color'], motion.durations.base, motion.softOut),
+  '&:hover': {
+    bgcolor: (theme: Theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.055)' : 'rgba(226,232,240,0.08)',
+    borderColor: (theme: Theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.08)' : 'rgba(226,232,240,0.10)',
+    color: 'primary.main',
+  },
+  '&:active': {
+    bgcolor: (theme: Theme) => theme.palette.mode === 'light' ? 'rgba(49,90,156,0.10)' : 'rgba(120,156,220,0.14)',
+  },
+  '&.Mui-focusVisible': {
+    borderColor: 'primary.main',
+  },
+  ...reducedMotionSx,
 };
 
 function buildCalendarDayButtonSx({
@@ -145,26 +152,16 @@ function buildCalendarDayButtonSx({
     border: '1px solid',
     borderColor: selected ? 'primary.main' : warning ? 'warning.main' : today ? 'primary.main' : 'transparent',
     opacity: inMonth ? 1 : 0.42,
-    boxShadow: today && !selected ? '0 0 0 1px rgba(59,130,246,0.08) inset' : 'none',
-    transition: transition(['background-color', 'border-color', 'box-shadow', 'color', 'opacity', 'transform'], motion.durations.base, motion.softOut),
+    transition: transition(['background-color', 'border-color', 'color', 'opacity'], motion.durations.base, motion.softOut),
     '&:hover': {
       bgcolor: selected ? (theme: Theme) => theme.palette.mode === 'light' ? 'rgba(59,130,246,0.12)' : 'rgba(96,165,250,0.18)' : (theme: Theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.045)' : 'rgba(226,232,240,0.08)',
       borderColor: selected ? 'primary.main' : warning ? 'warning.main' : today ? 'primary.main' : (theme: Theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.10)' : 'rgba(226,232,240,0.12)',
-      boxShadow: selected
-        ? '0 0 0 1px rgba(59,130,246,0.08) inset'
-        : (theme: Theme) => theme.palette.mode === 'light' ? '0 8px 18px rgba(15,23,42,0.06)' : '0 10px 24px rgba(0,0,0,0.18)',
-      transform: 'translateY(-1px)',
     },
     '&:active': {
-      transform: 'scale(0.985)',
-      transitionTimingFunction: motion.press,
-      transitionDuration: `${motion.durations.instant}ms`,
+      bgcolor: selected ? (theme: Theme) => theme.palette.mode === 'light' ? 'rgba(59,130,246,0.14)' : 'rgba(96,165,250,0.20)' : (theme: Theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.065)' : 'rgba(226,232,240,0.10)',
     },
     '&.Mui-focusVisible': {
       borderColor: 'primary.main',
-      boxShadow: (theme: Theme) => theme.palette.mode === 'light'
-        ? '0 0 0 3px rgba(49,90,156,0.12)'
-        : '0 0 0 3px rgba(120,156,220,0.16)',
     },
     '&.Mui-disabled': { opacity: inMonth ? 0.58 : 0.22 },
     ...reducedMotionSx,
@@ -222,17 +219,46 @@ export default function BaseCalendar({
 
   return (
     <Box sx={{ display: 'grid', gap: 1 }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, minWidth: 0 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 0, flex: '0 1 auto' }}>
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)',
+          alignItems: 'center',
+          gap: 0.75,
+          minWidth: 0,
+        }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 0, justifySelf: 'start' }}>
+          <CalendarMonthIcon fontSize="small" color="primary" />
+          {showTodayAction ? (
+            <Button
+              size="small"
+              disableRipple
+              onClick={() => {
+                setVisibleMonth(new Date(today.getFullYear(), today.getMonth(), 1));
+                onSelectDate(today);
+              }}
+              sx={{
+                ...calendarControlBaseSx,
+                minHeight: 30,
+                px: 1.15,
+                whiteSpace: 'nowrap',
+                color: 'text.secondary',
+              }}
+            >
+              {isZh ? '今天' : 'Today'}
+            </Button>
+          ) : null}
+        </Box>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 0, justifySelf: 'center' }}>
           <IconButton
             size="small"
             onClick={() => setVisibleMonth((prev) => addMonths(prev, -1))}
             aria-label={isZh ? '上个月' : 'Previous month'}
-            sx={calendarIconButtonSx}
+            sx={calendarNavButtonSx}
           >
             <ChevronLeftIcon fontSize="small" />
           </IconButton>
-          <CalendarMonthIcon fontSize="small" color="primary" />
           <Button
             size="small"
             disableRipple
@@ -253,44 +279,25 @@ export default function BaseCalendar({
             size="small"
             onClick={() => setVisibleMonth((prev) => addMonths(prev, 1))}
             aria-label={isZh ? '下个月' : 'Next month'}
-            sx={calendarIconButtonSx}
+            sx={calendarNavButtonSx}
           >
             <ChevronRightIcon fontSize="small" />
           </IconButton>
         </Box>
-        <Box sx={{ flex: '1 1 auto', minWidth: 8 }} />
-        {showTodayAction ? (
-          <Button
-            size="small"
-            disableRipple
-            onClick={() => {
-              setVisibleMonth(new Date(today.getFullYear(), today.getMonth(), 1));
-              onSelectDate(today);
-            }}
-            sx={{
-              ...calendarControlBaseSx,
-              minHeight: 30,
-              px: 1.15,
-              whiteSpace: 'nowrap',
-              color: 'text.secondary',
-              flexShrink: 0,
-            }}
-          >
-            {isZh ? '今天' : 'Today'}
-          </Button>
-        ) : null}
-        {toggle ? (
-          <Button
-            size="small"
-            disableRipple
-            onClick={toggle.onToggle}
-            aria-label={toggle.expanded ? toggle.expandedAria : toggle.collapsedAria}
-            endIcon={toggle.expanded ? <UnfoldLessIcon fontSize="small" /> : <UnfoldMoreIcon fontSize="small" />}
-            sx={{ ...calendarControlBaseSx, minHeight: 30, px: 1.2, whiteSpace: 'nowrap', flexShrink: 0 }}
-          >
-            {toggle.expanded ? toggle.expandedLabel : toggle.collapsedLabel}
-          </Button>
-        ) : null}
+        <Box sx={{ display: 'flex', justifyContent: 'flex-end', minWidth: 0 }}>
+          {toggle ? (
+            <Button
+              size="small"
+              disableRipple
+              onClick={toggle.onToggle}
+              aria-label={toggle.expanded ? toggle.expandedAria : toggle.collapsedAria}
+              endIcon={toggle.expanded ? <UnfoldLessIcon fontSize="small" /> : <UnfoldMoreIcon fontSize="small" />}
+              sx={{ ...calendarControlBaseSx, minHeight: 30, px: 1.2, whiteSpace: 'nowrap' }}
+            >
+              {toggle.expanded ? toggle.expandedLabel : toggle.collapsedLabel}
+            </Button>
+          ) : null}
+        </Box>
       </Box>
       <Menu
         anchorEl={yearMenuAnchor}
