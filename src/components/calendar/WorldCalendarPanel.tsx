@@ -310,7 +310,8 @@ export default function WorldCalendarPanel({
               const titles = dayTitlesByStart.get(key) || [];
               return {
                 inMonth,
-                hasDot: !isCalendarExpanded && titles.length > 0,
+                hasDot: titles.length > 0,
+                eventCount: titles.length,
                 titles: isCalendarExpanded ? titles.slice(0, 2) : [],
               };
             }}

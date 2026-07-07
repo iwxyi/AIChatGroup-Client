@@ -13,6 +13,7 @@ export interface CalendarDayRenderMeta {
   selected?: boolean;
   inMonth?: boolean;
   hasDot?: boolean;
+  eventCount?: number;
   titles?: string[];
 }
 
@@ -228,6 +229,8 @@ export default function BaseCalendar({
           const meta = getDayMeta?.(day, inMonth) || {};
           const selected = meta.selected ?? (toDateKey(day) === toDateKey(selectedDate));
           const disabled = meta.disabled ?? false;
+          const visibleTitles = meta.titles?.slice(0, 2) || [];
+          const eventCount = Math.max(0, Math.min(3, Math.floor(meta.eventCount ?? meta.titles?.length ?? (meta.hasDot ? 1 : 0))));
           return (
             <Button
               key={toDateKey(day)}
@@ -242,32 +245,65 @@ export default function BaseCalendar({
                 borderRadius: 1,
                 display: 'grid',
                 placeItems: 'center',
-                color: selected ? 'primary.contrastText' : inMonth ? 'text.primary' : 'text.disabled',
-                bgcolor: selected ? 'primary.main' : 'transparent',
+                color: inMonth ? (selected ? 'primary.main' : 'text.primary') : 'text.disabled',
+                bgcolor: selected ? (theme) => theme.palette.mode === 'light' ? 'rgba(59,130,246,0.08)' : 'rgba(96,165,250,0.14)' : 'transparent',
                 border: '1px solid',
                 borderColor: selected ? 'primary.main' : 'transparent',
                 opacity: inMonth ? 1 : 0.42,
                 transition: (theme) => theme.transitions.create(['background-color', 'border-color', 'box-shadow'], { duration: theme.transitions.duration.shortest }),
                 '&:hover': {
-                  bgcolor: selected ? 'primary.dark' : 'action.hover',
-                  borderColor: selected ? 'primary.dark' : 'divider',
-                  boxShadow: selected ? 'none' : '0 0 0 1px rgba(127,127,127,0.04) inset',
+                  bgcolor: selected ? (theme) => theme.palette.mode === 'light' ? 'rgba(59,130,246,0.12)' : 'rgba(96,165,250,0.18)' : 'action.hover',
+                  borderColor: selected ? 'primary.main' : 'divider',
+                  boxShadow: selected ? '0 0 0 1px rgba(59,130,246,0.08) inset' : '0 0 0 1px rgba(127,127,127,0.04) inset',
                 },
                 '&.Mui-disabled': { opacity: inMonth ? 0.58 : 0.22 },
               }}
             >
               <Stack spacing={0.15} sx={{ alignItems: 'center', width: '100%', minHeight: dayContentMinHeight ?? (mode === 'month' ? 30 : 22) }}>
-                <Typography sx={{ fontSize: 12, lineHeight: 1 }}>{day.getDate()}</Typography>
-                {meta.titles?.slice(0, 2).map((title, idx) => (
+                <Typography sx={{ fontSize: 12, lineHeight: 1, fontWeight: selected ? 800 : 600 }}>{day.getDate()}</Typography>
+                {visibleTitles.map((title, idx) => (
                   <Typography
                     key={`${title}-${idx}`}
-                    sx={{ fontSize: 9, lineHeight: 1.1, maxWidth: '100%', px: 0.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                    sx={{
+                      fontSize: 9,
+                      lineHeight: 1.1,
+                      maxWidth: '100%',
+                      px: 0.3,
+                      color: selected ? 'primary.main' : 'text.secondary',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}
                   >
                     {title}
                   </Typography>
                 ))}
-                {!meta.titles?.length && meta.hasDot ? (
-                  <Box sx={{ width: 5, height: 5, borderRadius: '999px', bgcolor: selected ? 'primary.contrastText' : 'primary.main' }} />
+                {!visibleTitles.length && eventCount > 0 ? (
+                  <Box
+                    aria-hidden
+                    sx={{
+                      display: 'grid',
+                      gridTemplateColumns: eventCount === 1 ? '1fr' : eventCount === 2 ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)',
+                      gap: 0.3,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      width: eventCount === 1 ? 5 : eventCount === 2 ? 12 : 19,
+                      mt: 0.15,
+                    }}
+                  >
+                    {Array.from({ length: eventCount }, (_, index) => (
+                      <Box
+                        key={index}
+                        sx={{
+                          width: 4.5,
+                          height: 4.5,
+                          borderRadius: '999px',
+                          bgcolor: selected ? 'primary.main' : 'primary.main',
+                          opacity: selected ? 0.9 : inMonth ? 0.78 : 0.42,
+                        }}
+                      />
+                    ))}
+                  </Box>
                 ) : null}
               </Stack>
             </Button>

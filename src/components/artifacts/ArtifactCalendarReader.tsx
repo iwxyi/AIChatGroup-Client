@@ -247,6 +247,7 @@ export default function ArtifactCalendarReader({
                     selected,
                     inMonth,
                     hasDot: Boolean(item) && !selected,
+                    eventCount: item ? 1 : 0,
                   };
                 }}
               />
