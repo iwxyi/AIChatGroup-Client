@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
+  Avatar,
   Box,
   Button,
   Checkbox,
@@ -9,21 +10,24 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  FormControl,
   FormControlLabel,
-  InputLabel,
-  MenuItem,
-  OutlinedInput,
-  Select,
+  InputAdornment,
   Stack,
   TextField,
   Typography,
 } from '@mui/material';
-import type { SelectChangeEvent } from '@mui/material/Select';
+import SearchIcon from '@mui/icons-material/Search';
+import ForumIcon from '@mui/icons-material/Forum';
+import PersonIcon from '@mui/icons-material/Person';
+import LockIcon from '@mui/icons-material/Lock';
 import type { GroupChat } from '../../types/chat';
 import type { AICharacter } from '../../types/character';
 import type { RuntimeEventV2 } from '../../types/runtimeEvent';
 import { generateId } from '../../utils/id';
+import MemberSelectionDialog from '../createChat/MemberSelectionDialog';
+import FloatingSegmentedTabs from '../common/FloatingSegmentedTabs';
+import { isImageAvatar } from '../../utils/avatar';
+import { buildInteractiveSurfaceSx } from '../../styles/interaction';
 
 interface ManualCalendarEventDialogProps {
   open: boolean;
@@ -51,6 +55,11 @@ interface FormState {
 
 const FIVE_MINUTES_SECONDS = 300;
 const FIVE_MINUTES_MS = FIVE_MINUTES_SECONDS * 1000;
+const CHAT_TYPE_TABS = [
+  { value: 0, type: 'group' as const, zh: '群聊', en: 'Groups' },
+  { value: 1, type: 'direct' as const, zh: '单聊', en: 'Direct' },
+  { value: 2, type: 'ai_direct' as const, zh: 'AI私聊', en: 'AI private' },
+];
 
 function pad2(value: number) {
   return `${value}`.padStart(2, '0');
@@ -123,6 +132,132 @@ function buildSummary(form: FormState, participantNames: string[], startAt: numb
   return parts.join(' · ');
 }
 
+function getChatTypeLabel(chat: GroupChat, isZh: boolean) {
+  if (chat.type === 'direct') return isZh ? '单聊' : 'Direct';
+  if (chat.type === 'ai_direct') return isZh ? 'AI私聊' : 'AI private';
+  return isZh ? '群聊' : 'Group';
+}
+
+function getChatTypeIcon(chat: GroupChat) {
+  if (chat.type === 'direct') return <PersonIcon fontSize="small" />;
+  if (chat.type === 'ai_direct') return <LockIcon fontSize="small" />;
+  return <ForumIcon fontSize="small" />;
+}
+
+function ConversationSelectionDialog({
+  open,
+  chats,
+  selectedChatId,
+  isZh,
+  onClose,
+  onSelect,
+}: {
+  open: boolean;
+  chats: GroupChat[];
+  selectedChatId: string;
+  isZh: boolean;
+  onClose: () => void;
+  onSelect: (chatId: string) => void;
+}) {
+  const [search, setSearch] = useState('');
+  const [tab, setTab] = useState(0);
+  useEffect(() => {
+    if (!open) return;
+    setSearch('');
+    const selectedChat = chats.find((chat) => chat.id === selectedChatId);
+    const selectedTab = CHAT_TYPE_TABS.find((item) => item.type === selectedChat?.type)?.value;
+    setTab(selectedTab ?? 0);
+  }, [chats, open, selectedChatId]);
+  const query = search.trim().toLowerCase();
+  const filteredChats = useMemo(() => chats.filter((chat) => {
+    if (chat.type !== CHAT_TYPE_TABS[tab]?.type) return false;
+    if (!query) return true;
+    return [chat.name, chat.topic, chat.worldState?.recentEvent || ''].some((value) => value.toLowerCase().includes(query));
+  }), [chats, query, tab]);
+  const counts = useMemo(() => CHAT_TYPE_TABS.map((item) => chats.filter((chat) => chat.type === item.type).length), [chats]);
+
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+      <DialogTitle>{isZh ? '选择关联会话' : 'Choose source chat'}</DialogTitle>
+      <DialogContent sx={{ pt: '12px !important' }}>
+        <Stack spacing={1.5}>
+          <TextField
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder={isZh ? '搜索名称、主题或最近事件' : 'Search name, topic, or recent event'}
+            size="small"
+            fullWidth
+            slotProps={{
+              input: {
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon fontSize="small" />
+                  </InputAdornment>
+                ),
+              },
+            }}
+          />
+          <FloatingSegmentedTabs
+            value={tab}
+            onChange={setTab}
+            items={CHAT_TYPE_TABS.map((item, index) => ({
+              value: item.value,
+              label: `${isZh ? item.zh : item.en} ${counts[index]}`,
+            }))}
+          />
+          {filteredChats.length ? (
+            <Box sx={{ display: 'grid', gap: 1 }}>
+              {filteredChats.map((chat) => {
+                const selected = chat.id === selectedChatId;
+                return (
+                  <Box
+                    key={chat.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => {
+                      onSelect(chat.id);
+                      onClose();
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        onSelect(chat.id);
+                        onClose();
+                      }
+                    }}
+                    sx={{
+                      ...buildInteractiveSurfaceSx({ selected }),
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 1.25,
+                      p: 1.25,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <Avatar sx={{ width: 36, height: 36, bgcolor: 'primary.light' }}>{getChatTypeIcon(chat)}</Avatar>
+                    <Box sx={{ minWidth: 0, flex: 1 }}>
+                      <Typography variant="body2" sx={{ fontWeight: 700 }} noWrap>{chat.name}</Typography>
+                      <Typography variant="caption" color="text.secondary" noWrap>{chat.topic || getChatTypeLabel(chat, isZh)}</Typography>
+                    </Box>
+                    <Chip size="small" variant="outlined" label={getChatTypeLabel(chat, isZh)} />
+                  </Box>
+                );
+              })}
+            </Box>
+          ) : (
+            <Box sx={{ py: 5, textAlign: 'center', color: 'text.secondary' }}>
+              <Typography variant="body2">{isZh ? '没有匹配的会话' : 'No matching chats'}</Typography>
+            </Box>
+          )}
+        </Stack>
+      </DialogContent>
+      <DialogActions sx={{ px: 3, pb: 2 }}>
+        <Button onClick={onClose}>{isZh ? '取消' : 'Cancel'}</Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
 export default function ManualCalendarEventDialog({
   open,
   chats,
@@ -142,6 +277,8 @@ export default function ManualCalendarEventDialog({
   const [form, setForm] = useState<FormState>(() => createInitialForm(activeChats, activeCharacters, resolvedFixedConversationId, initialActorId));
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [memberDialogOpen, setMemberDialogOpen] = useState(false);
+  const [conversationDialogOpen, setConversationDialogOpen] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -154,6 +291,13 @@ export default function ManualCalendarEventDialog({
     const nameById = new Map(activeCharacters.map((character) => [character.id, character.name]));
     return form.participantIds.map((id) => nameById.get(id)).filter(Boolean) as string[];
   }, [activeCharacters, form.participantIds]);
+  const selectedCharacters = useMemo(
+    () => form.participantIds.map((id) => activeCharacters.find((character) => character.id === id)).filter(Boolean) as AICharacter[],
+    [activeCharacters, form.participantIds],
+  );
+  const customCharacters = useMemo(() => activeCharacters.filter((character) => !character.isPreset), [activeCharacters]);
+  const presetCharacters = useMemo(() => activeCharacters.filter((character) => character.isPreset), [activeCharacters]);
+  const selectedChat = useMemo(() => activeChats.find((chat) => chat.id === form.conversationId) || null, [activeChats, form.conversationId]);
 
   const validation = useMemo(() => {
     const title = form.title.trim();
@@ -178,9 +322,13 @@ export default function ManualCalendarEventDialog({
     setForm((prev) => ({ ...prev, [key]: value }));
   };
 
-  const handleParticipantChange = (event: SelectChangeEvent<string[]>) => {
-    const value = event.target.value;
-    updateField('participantIds', typeof value === 'string' ? value.split(',') : value);
+  const handleToggleParticipant = (memberId: string) => {
+    setForm((prev) => ({
+      ...prev,
+      participantIds: prev.participantIds.includes(memberId)
+        ? prev.participantIds.filter((id) => id !== memberId)
+        : [...prev.participantIds, memberId],
+    }));
   };
 
   const handleSubmit = async () => {
@@ -246,7 +394,7 @@ export default function ManualCalendarEventDialog({
   return (
     <Dialog open={open} onClose={submitting ? undefined : onClose} fullWidth maxWidth="sm">
       <DialogTitle>{isZh ? '新增日程' : 'New event'}</DialogTitle>
-      <DialogContent sx={{ display: 'grid', gap: 2, pt: 1 }}>
+      <DialogContent sx={{ display: 'grid', gap: 2, pt: '20px !important' }}>
         {error ? <Alert severity="error">{error}</Alert> : null}
         <TextField
           label={isZh ? '标题' : 'Title'}
@@ -299,44 +447,47 @@ export default function ManualCalendarEventDialog({
             />
           </Box>
         )}
-        <FormControl fullWidth required>
-          <InputLabel id="manual-calendar-participants-label">{isZh ? '角色' : 'Characters'}</InputLabel>
-          <Select
-            labelId="manual-calendar-participants-label"
-            multiple
-            value={form.participantIds}
-            onChange={handleParticipantChange}
-            input={<OutlinedInput label={isZh ? '角色' : 'Characters'} />}
-            renderValue={(selected) => (
+        <Stack spacing={0.75}>
+          <Typography variant="caption" color="text.secondary">{isZh ? '角色' : 'Characters'} *</Typography>
+          <Button
+            variant="outlined"
+            onClick={() => setMemberDialogOpen(true)}
+            sx={{ justifyContent: 'flex-start', minHeight: 52, textTransform: 'none' }}
+          >
+            {selectedCharacters.length ? (
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                {selected.map((id) => {
-                  const character = activeCharacters.find((item) => item.id === id);
-                  return <Chip key={id} size="small" label={character?.name || id} />;
-                })}
+                {selectedCharacters.map((character) => (
+                  <Chip
+                    key={character.id}
+                    size="small"
+                    avatar={isImageAvatar(character.avatar) ? <Avatar src={character.avatar} /> : undefined}
+                    label={character.name}
+                  />
+                ))}
               </Box>
+            ) : (
+              <Typography variant="body2" color="text.secondary">{isZh ? '选择参与角色' : 'Choose characters'}</Typography>
             )}
+          </Button>
+        </Stack>
+        <Stack spacing={0.75}>
+          <Typography variant="caption" color="text.secondary">{isZh ? '关联会话' : 'Source chat'} *</Typography>
+          <Button
+            variant="outlined"
+            disabled={Boolean(resolvedFixedConversationId)}
+            onClick={() => setConversationDialogOpen(true)}
+            sx={{ justifyContent: 'flex-start', minHeight: 52, textTransform: 'none' }}
           >
-            {activeCharacters.map((character) => (
-              <MenuItem key={character.id} value={character.id}>
-                <Checkbox checked={form.participantIds.includes(character.id)} />
-                <Typography noWrap>{character.name}</Typography>
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
-        <FormControl fullWidth required disabled={Boolean(resolvedFixedConversationId)}>
-          <InputLabel id="manual-calendar-chat-label">{isZh ? '关联会话' : 'Source chat'}</InputLabel>
-          <Select
-            labelId="manual-calendar-chat-label"
-            value={form.conversationId}
-            label={isZh ? '关联会话' : 'Source chat'}
-            onChange={(event) => updateField('conversationId', event.target.value)}
-          >
-            {activeChats.map((chat) => (
-              <MenuItem key={chat.id} value={chat.id}>{chat.name}</MenuItem>
-            ))}
-          </Select>
-        </FormControl>
+            {selectedChat ? (
+              <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minWidth: 0, width: '100%' }}>
+                <Chip size="small" variant="outlined" label={getChatTypeLabel(selectedChat, isZh)} />
+                <Typography variant="body2" noWrap>{selectedChat.name}</Typography>
+              </Stack>
+            ) : (
+              <Typography variant="body2" color="text.secondary">{isZh ? '选择关联会话' : 'Choose source chat'}</Typography>
+            )}
+          </Button>
+        </Stack>
         <TextField
           label={isZh ? '地点' : 'Location'}
           value={form.location}
@@ -366,6 +517,35 @@ export default function ManualCalendarEventDialog({
           {submitting ? (isZh ? '保存中...' : 'Saving...') : (isZh ? '保存' : 'Save')}
         </Button>
       </DialogActions>
+      <MemberSelectionDialog
+        open={memberDialogOpen}
+        onClose={() => setMemberDialogOpen(false)}
+        customCharacters={customCharacters}
+        presetCharacters={presetCharacters}
+        selectedMembers={form.participantIds}
+        hasCustomCharacters={customCharacters.length > 0}
+        hasPresetCharacters={presetCharacters.length > 0}
+        title={isZh ? '选择角色' : 'Choose characters'}
+        presetLabel={isZh ? '预设' : 'Preset'}
+        confirmLabel={isZh ? '完成' : 'Done'}
+        cancelLabel={isZh ? '取消' : 'Cancel'}
+        searchPlaceholder={isZh ? '搜索角色、分组或设定' : 'Search roles, groups, or profile'}
+        allGroupsLabel={isZh ? '全部分组' : 'All groups'}
+        customSectionLabel={isZh ? '自定义角色' : 'Custom roles'}
+        presetSectionLabel={isZh ? '预设角色' : 'Preset roles'}
+        selectedCountLabel={(count) => isZh ? `已选 ${count}` : `${count} selected`}
+        emptyLabel={isZh ? '没有匹配的角色' : 'No matching roles'}
+        onConfirm={() => setMemberDialogOpen(false)}
+        onToggleMember={handleToggleParticipant}
+      />
+      <ConversationSelectionDialog
+        open={conversationDialogOpen}
+        chats={activeChats}
+        selectedChatId={form.conversationId}
+        isZh={isZh}
+        onClose={() => setConversationDialogOpen(false)}
+        onSelect={(chatId) => updateField('conversationId', chatId)}
+      />
     </Dialog>
   );
 }

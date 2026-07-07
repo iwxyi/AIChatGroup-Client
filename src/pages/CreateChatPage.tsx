@@ -47,7 +47,6 @@ import FloatingSegmentedTabs, { buildFloatingTabContainerSx } from '../component
 import AppSnackbar from '../components/common/AppSnackbar';
 import ExpandableFab from '../components/common/ExpandableFab';
 import SurfaceCard from '../components/common/SurfaceCard';
-import { buildInteractiveSurfaceSx } from '../styles/interaction';
 
 const HotTopicDialogContainer = lazy(() => import('../components/createChat/HotTopicDialogContainer'));
 const CHAT_DRAFT_KEY = storageKey('create-chat-draft');
@@ -850,21 +849,6 @@ export default function CreateChatPage() {
     navigate(-1);
   };
 
-  const selectedMemberGridSx = {
-    display: 'grid',
-    gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', lg: 'repeat(3, minmax(0, 1fr))' },
-    gap: 1.5,
-  } as const;
-
-  const memberOptionSx = (checked: boolean) => ({
-    ...buildInteractiveSurfaceSx({ selected: checked }),
-    display: 'flex',
-    alignItems: 'center',
-    gap: 1.25,
-    p: 1.5,
-    cursor: 'pointer',
-  });
-
   const memberSummaryEmptyLabel = isZh ? '未选择AI角色' : 'No AI roles selected';
   const memberDialogConfirmLabel = t('common.confirm');
   const startChatLabel = editingChat ? t('common.save') : '开始群聊';
@@ -1406,11 +1390,16 @@ export default function CreateChatPage() {
         selectedMembers={selectedMembers}
         hasCustomCharacters={hasCustomCharacters}
         hasPresetCharacters={hasPresetCharacters}
-        selectedMemberGridSx={selectedMemberGridSx}
-        memberOptionSx={memberOptionSx}
         title={t('chat.selectMembers')}
         presetLabel="Preset"
         confirmLabel={memberDialogConfirmLabel}
+        cancelLabel={cancelLabel}
+        searchPlaceholder={isZh ? '搜索角色、分组或设定' : 'Search roles, groups, or profile'}
+        allGroupsLabel={isZh ? '全部分组' : 'All groups'}
+        customSectionLabel={isZh ? '自定义角色' : 'Custom roles'}
+        presetSectionLabel={isZh ? '预设角色' : 'Preset roles'}
+        selectedCountLabel={(count) => isZh ? `已选 ${count}` : `${count} selected`}
+        emptyLabel={isZh ? '没有匹配的角色' : 'No matching roles'}
         onConfirm={confirmMemberDialog}
         onToggleMember={toggleMember}
         onStartLongPress={startMemberLongPress}
