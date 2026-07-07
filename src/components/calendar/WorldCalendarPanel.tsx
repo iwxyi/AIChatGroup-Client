@@ -48,6 +48,48 @@ function formatTime(timestamp: number) {
   return new Date(timestamp).toLocaleString();
 }
 
+function toLocalDayKey(date: Date) {
+  return `${date.getFullYear()}-${`${date.getMonth() + 1}`.padStart(2, '0')}-${`${date.getDate()}`.padStart(2, '0')}`;
+}
+
+function isLocalMidnight(date: Date) {
+  return date.getHours() === 0 && date.getMinutes() === 0 && date.getSeconds() === 0 && date.getMilliseconds() === 0;
+}
+
+function formatClock(date: Date, isZh: boolean) {
+  return date.toLocaleTimeString(isZh ? 'zh-CN' : 'en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: !isZh,
+  });
+}
+
+function formatCompactDate(date: Date, isZh: boolean) {
+  const currentYear = new Date().getFullYear();
+  if (isZh) {
+    return date.getFullYear() === currentYear
+      ? `${date.getMonth() + 1}月${date.getDate()}日`
+      : `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
+  }
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    ...(date.getFullYear() === currentYear ? {} : { year: 'numeric' }),
+  });
+}
+
+function formatCompactDateTime(date: Date, isZh: boolean) {
+  return `${formatCompactDate(date, isZh)} ${formatClock(date, isZh)}`;
+}
+
+function formatAllDayRange(start: Date, end: Date, isZh: boolean) {
+  const inclusiveEnd = new Date(end.getTime() - 1);
+  if (toLocalDayKey(start) === toLocalDayKey(inclusiveEnd)) return isZh ? '全天' : 'All day';
+  return isZh
+    ? `${formatCompactDate(start, isZh)} - ${formatCompactDate(inclusiveEnd, isZh)} 全天`
+    : `${formatCompactDate(start, isZh)} - ${formatCompactDate(inclusiveEnd, isZh)} · All day`;
+}
+
 function formatDayTitle(timestamp: number, isZh: boolean) {
   const day = new Date(startOfDay(timestamp));
   const today = startOfDay(Date.now());
@@ -66,11 +108,24 @@ function formatDayTitle(timestamp: number, isZh: boolean) {
 
 function formatScheduleHint(item: { startAt?: number | null; endAt?: number | null; durationMinutes?: number | null; timeHint?: string | null }, isZh: boolean) {
   const hasStart = typeof item.startAt === 'number';
-  const hasEnd = typeof item.endAt === 'number';
+  const resolvedEndAt = typeof item.endAt === 'number'
+    ? item.endAt
+    : hasStart && typeof item.durationMinutes === 'number' && item.durationMinutes > 0
+      ? (item.startAt as number) + item.durationMinutes * 60_000
+      : null;
+  const hasEnd = typeof resolvedEndAt === 'number';
   const hasDuration = typeof item.durationMinutes === 'number' && item.durationMinutes > 0;
-  if (hasStart && hasEnd) return `${new Date(item.startAt as number).toLocaleString()} - ${new Date(item.endAt as number).toLocaleString()}`;
-  if (hasStart && hasDuration) return isZh ? `${new Date(item.startAt as number).toLocaleString()}（约${item.durationMinutes}分钟）` : `${new Date(item.startAt as number).toLocaleString()} (~${item.durationMinutes} min)`;
-  if (hasStart) return new Date(item.startAt as number).toLocaleString();
+  if (hasStart && hasEnd) {
+    const start = new Date(item.startAt as number);
+    const end = new Date(resolvedEndAt as number);
+    const sameDay = toLocalDayKey(start) === toLocalDayKey(end);
+    const allDay = isLocalMidnight(start) && isLocalMidnight(end) && end.getTime() > start.getTime() && (end.getTime() - start.getTime()) % 86400000 === 0;
+    if (allDay) return formatAllDayRange(start, end, isZh);
+    if (sameDay) return `${formatClock(start, isZh)} - ${formatClock(end, isZh)}`;
+    return `${formatCompactDateTime(start, isZh)} - ${formatCompactDateTime(end, isZh)}`;
+  }
+  if (hasStart && hasDuration) return isZh ? `${formatCompactDateTime(new Date(item.startAt as number), isZh)}（约${item.durationMinutes}分钟）` : `${formatCompactDateTime(new Date(item.startAt as number), isZh)} (~${item.durationMinutes} min)`;
+  if (hasStart) return formatCompactDateTime(new Date(item.startAt as number), isZh);
   return item.timeHint || null;
 }
 
