@@ -18,6 +18,21 @@ function parsePayload(value: unknown) {
   }
 }
 
+function formatTime(value: unknown) {
+  const timestamp = Number(value || 0);
+  return timestamp > 0 ? new Date(timestamp).toLocaleString() : '-';
+}
+
+function payloadMessage(value: unknown) {
+  if (!value) return '';
+  if (typeof value === 'string') return value;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
 function NotificationDetail({ item }: { item: Record<string, unknown> | null }) {
   const payload = item ? parsePayload(item.payload) : {};
   return (
@@ -29,8 +44,11 @@ function NotificationDetail({ item }: { item: Record<string, unknown> | null }) 
           <Typography variant="body2">模板：{String(item.template_code || '')}</Typography>
           <Typography variant="body2">状态：{String(item.status || '')}</Typography>
           <Typography variant="body2">次数：{String(item.attempt_count || 0)}</Typography>
+          <Typography variant="body2">计划投递：{formatTime(item.scheduled_at)}</Typography>
+          <Typography variant="body2">更新时间：{formatTime(item.updated_at)}</Typography>
           <Typography variant="body2">用户：{String(item.user_nickname || item.user_phone || '')}</Typography>
-          {payload.lastError ? <Alert severity="error">{String(payload.lastError)}</Alert> : null}
+          {payload.lastError ? <Alert severity="error">{payloadMessage(payload.lastError)}</Alert> : null}
+          {payload.nextRetryAt ? <Alert severity="warning">下次自动重试：{formatTime(payload.nextRetryAt)}</Alert> : null}
           {payload.lastResult ? <Alert severity="success">最近一次投递成功</Alert> : null}
         </Stack>
       ) : <Alert severity="info">点击任务行查看详情</Alert>}
@@ -41,29 +59,37 @@ function NotificationDetail({ item }: { item: Record<string, unknown> | null }) 
 export default function AdminNotificationsPage() {
   const [items, setItems] = useState<Array<Record<string, unknown>>>([]);
   const [templates, setTemplates] = useState<Array<Record<string, unknown>>>([]);
+  const [queueSummary, setQueueSummary] = useState<Record<string, unknown> | null>(null);
   const [selectedItem, setSelectedItem] = useState<Record<string, unknown> | null>(null);
   const [status, setStatus] = useState('');
   const [channel, setChannel] = useState('');
   const [loading, setLoading] = useState(false);
   const [delivering, setDelivering] = useState(false);
   const [deliveringId, setDeliveringId] = useState('');
+  const [requeueingId, setRequeueingId] = useState('');
   const [error, setError] = useState<string | null>(null);
   const stats = useMemo(() => ({
-    queued: items.filter((item) => String(item.status || '') === 'queued').length,
-    sent: items.filter((item) => String(item.status || '') === 'sent').length,
-    failed: items.filter((item) => String(item.status || '') === 'failed').length,
-  }), [items]);
+    queued: Number(queueSummary?.queued || 0),
+    due: Number(queueSummary?.due || 0),
+    processing: Number(queueSummary?.processing || 0),
+    staleProcessing: Number(queueSummary?.staleProcessing || 0),
+    sent: Number(queueSummary?.sent || 0),
+    failed: Number(queueSummary?.failed || 0),
+    maxAttempts: Number(queueSummary?.maxAttempts || 0),
+  }), [queueSummary]);
 
   const load = async () => {
     setLoading(true);
     setError(null);
     try {
-      const [jobsResult, templatesResult] = await Promise.all([
+      const [jobsResult, templatesResult, summaryResult] = await Promise.all([
         adminApi.getNotificationJobs({ status: status || undefined, channel: channel || undefined }),
         adminApi.getNotificationTemplates(),
+        adminApi.getNotificationJobSummary(),
       ]);
       setItems(jobsResult.items);
       setTemplates(templatesResult.items);
+      setQueueSummary(summaryResult);
       if (selectedItem) {
         const next = jobsResult.items.find((item) => String(item.id) === String(selectedItem.id));
         setSelectedItem(next || null);
@@ -107,12 +133,30 @@ export default function AdminNotificationsPage() {
     }
   };
 
+  const requeueOne = async (item: Record<string, unknown>) => {
+    const id = String(item.id || '');
+    if (!id) return;
+    setRequeueingId(id);
+    setError(null);
+    try {
+      await adminApi.requeueNotificationJob(id);
+      await load();
+    } catch (requeueError) {
+      setError(getAdminErrorMessage(requeueError));
+    } finally {
+      setRequeueingId('');
+    }
+  };
+
   return (
     <Stack spacing={2}>
       <AdminInlineGroup gap={1.25}>
         <Alert severity="info">排队：{stats.queued}</Alert>
+        <Alert severity="warning">到期可投递：{stats.due}</Alert>
+        <Alert severity={stats.staleProcessing > 0 ? 'warning' : 'info'}>处理中：{stats.processing}</Alert>
         <Alert severity="success">已发送：{stats.sent}</Alert>
         <Alert severity="error">失败：{stats.failed}</Alert>
+        <Alert severity="info">最大重试：{stats.maxAttempts || '-'}</Alert>
       </AdminInlineGroup>
       <AdminInlineGroup gap={1.25}>
         <Button variant={status === '' ? 'contained' : 'outlined'} onClick={() => setStatus('')}>全部状态</Button>
@@ -133,7 +177,7 @@ export default function AdminNotificationsPage() {
           ))}
         </Stack>
       </Paper>
-      <AdminResponsiveTable minWidth={760}>
+      <AdminResponsiveTable minWidth={900}>
         <Table>
           <TableHead>
             <TableRow>
@@ -142,6 +186,7 @@ export default function AdminNotificationsPage() {
               <TableCell>模板</TableCell>
               <TableCell>状态</TableCell>
               <TableCell>次数</TableCell>
+              <TableCell>计划投递</TableCell>
               <TableCell>创建时间</TableCell>
               <TableCell align="right">操作</TableCell>
             </TableRow>
@@ -154,18 +199,33 @@ export default function AdminNotificationsPage() {
                 <TableCell>{String(item.template_code || '')}</TableCell>
                 <TableCell>{String(item.status || '')}</TableCell>
                 <TableCell>{String(item.attempt_count || 0)}</TableCell>
-                <TableCell>{new Date(Number(item.created_at || 0)).toLocaleString()}</TableCell>
+                <TableCell>{formatTime(item.scheduled_at)}</TableCell>
+                <TableCell>{formatTime(item.created_at)}</TableCell>
                 <TableCell align="right">
-                  <Button
-                    size="small"
-                    disabled={deliveringId === String(item.id || '') || String(item.status || '') === 'sent'}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      void deliverOne(item);
-                    }}
-                  >
-                    {String(item.status || '') === 'failed' ? '重试' : '投递'}
-                  </Button>
+                  <Stack direction="row" spacing={0.5} sx={{ justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                    {String(item.status || '') === 'failed' ? (
+                      <Button
+                        size="small"
+                        disabled={requeueingId === String(item.id || '')}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void requeueOne(item);
+                        }}
+                      >
+                        重新排队
+                      </Button>
+                    ) : null}
+                    <Button
+                      size="small"
+                      disabled={deliveringId === String(item.id || '') || String(item.status || '') === 'sent'}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void deliverOne(item);
+                      }}
+                    >
+                      {String(item.status || '') === 'failed' ? '立即投递' : '投递'}
+                    </Button>
+                  </Stack>
                 </TableCell>
               </TableRow>
             ))}

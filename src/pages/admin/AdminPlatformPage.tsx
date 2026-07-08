@@ -232,6 +232,25 @@ function integrationKey(item: Record<string, unknown>) {
   return `${String(item.category || '')}:${String(item.providerCode || '')}`;
 }
 
+function integrationCapabilities(item: Record<string, unknown> | null) {
+  const capabilities = item?.capabilities;
+  if (capabilities && typeof capabilities === 'object' && !Array.isArray(capabilities)) {
+    const record = capabilities as Record<string, unknown>;
+    return {
+      runtimeSupported: Boolean(record.runtimeSupported),
+      testSupported: Boolean(record.testSupported),
+      configurationOnly: Boolean(record.configurationOnly),
+      note: String(record.note || ''),
+    };
+  }
+  return {
+    runtimeSupported: true,
+    testSupported: true,
+    configurationOnly: false,
+    note: '',
+  };
+}
+
 function valueFrom(item: Record<string, unknown>, field: FieldDef) {
   const source = field.secret ? item.secrets : item.config;
   return source && typeof source === 'object' && !Array.isArray(source)
@@ -336,6 +355,7 @@ export default function AdminPlatformPage() {
     [items, category],
   );
   const selected = useMemo(() => items.find((item) => integrationKey(item) === selectedKey) || null, [items, selectedKey]);
+  const selectedCapabilities = useMemo(() => integrationCapabilities(selected), [selected]);
   const fields = selected ? FIELD_DEFS[integrationKey(selected)] || [] : [];
 
   const load = async () => {
@@ -376,9 +396,10 @@ export default function AdminPlatformPage() {
   }, [category, searchParams, setSearchParams, visibleTabs]);
 
   const openEditor = (item: Record<string, unknown>) => {
+    const capabilities = integrationCapabilities(item);
     setSelectedKey(integrationKey(item));
-    setStatus(String(item.status || 'inactive'));
-    setIsDefault(Boolean(item.isDefault));
+    setStatus(capabilities.runtimeSupported ? String(item.status || 'inactive') : 'inactive');
+    setIsDefault(capabilities.runtimeSupported ? Boolean(item.isDefault) : false);
     setEditor(toEditorState(item));
     setTestResult(null);
     setEditorOpen(true);
@@ -494,12 +515,20 @@ export default function AdminPlatformPage() {
                       </Stack>
                     </TableCell>
                     <TableCell>
-                      <Chip size="small" label={statusLabel(item.status)} color={String(item.status || '') === 'active' ? 'success' : 'default'} />
+                      <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+                        <Chip size="small" label={statusLabel(item.status)} color={String(item.status || '') === 'active' ? 'success' : 'default'} />
+                        <Chip
+                          size="small"
+                          variant="outlined"
+                          label={integrationCapabilities(item).runtimeSupported ? '已接入' : '仅保存配置'}
+                          color={integrationCapabilities(item).runtimeSupported ? 'primary' : 'warning'}
+                        />
+                      </Stack>
                     </TableCell>
                     <TableCell>{item.isDefault ? '是' : '-'}</TableCell>
                     <TableCell>
                       <Typography variant="caption" color="text.secondary">
-                        {Object.keys((item.config as Record<string, unknown>) || {}).slice(0, 4).join(' / ') || '-'}
+                        {integrationCapabilities(item).note || Object.keys((item.config as Record<string, unknown>) || {}).slice(0, 4).join(' / ') || '-'}
                       </Typography>
                     </TableCell>
                   </TableRow>
@@ -515,13 +544,22 @@ export default function AdminPlatformPage() {
         <DialogContent>
           {selected ? (
             <Stack spacing={1.25} sx={{ pt: 1 }}>
+              {selectedCapabilities.configurationOnly ? (
+                <Alert severity="warning">
+                  {selectedCapabilities.note || '该服务商当前仅保存配置，后端尚未接入真实调用链，不能启用、设为默认或测试。'}
+                </Alert>
+              ) : (
+                <Alert severity="success">
+                  {selectedCapabilities.note || '该服务商已接入真实调用链。'}
+                </Alert>
+              )}
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25}>
                 <TextField select label="状态" value={status} onChange={(event) => setStatus(event.target.value)} fullWidth>
-                  <MenuItem value="active">启用</MenuItem>
+                  <MenuItem value="active" disabled={!selectedCapabilities.runtimeSupported}>启用</MenuItem>
                   <MenuItem value="inactive">停用</MenuItem>
                 </TextField>
                 <FormControlLabel
-                  control={<Switch checked={isDefault} onChange={(event) => setIsDefault(event.target.checked)} />}
+                  control={<Switch checked={isDefault} disabled={!selectedCapabilities.runtimeSupported} onChange={(event) => setIsDefault(event.target.checked)} />}
                   label="设为默认"
                   sx={{ minWidth: 120 }}
                 />
@@ -611,7 +649,7 @@ export default function AdminPlatformPage() {
           ) : <Alert severity="info">暂无服务商配置。</Alert>}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => void runTest()} disabled={saving || testing || !selected}>{testing ? '测试中' : '保存并测试'}</Button>
+          <Button onClick={() => void runTest()} disabled={saving || testing || !selected || !selectedCapabilities.testSupported}>{testing ? '测试中' : '保存并测试'}</Button>
           <Button onClick={() => setEditorOpen(false)} disabled={saving}>取消</Button>
           <Button variant="contained" startIcon={<SaveIcon />} disabled={saving || !selected} onClick={() => void save()}>保存配置</Button>
         </DialogActions>

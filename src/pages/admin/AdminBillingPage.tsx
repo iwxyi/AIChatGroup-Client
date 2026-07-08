@@ -79,7 +79,7 @@ const EMPTY_PLAN_FORM: PlanForm = {
   featuresText: '',
 };
 const BILLING_TAB_STORAGE_KEY = 'admin.billing.tab';
-const EMPTY_ORDER_SUMMARY = { total: 0, pending: 0, paid: 0, cancelled: 0, refunded: 0, failed: 0 };
+const EMPTY_ORDER_SUMMARY = { total: 0, pending: 0, paid: 0, cancelled: 0, partiallyRefunded: 0, refunded: 0, failed: 0 };
 
 function isBillingTab(value: unknown): value is number {
   return value === 0 || value === 1;
@@ -114,6 +114,33 @@ function formatPoints(value: unknown) {
   return `${Number.isInteger(parsed) ? parsed : Number(parsed.toFixed(2))}P`;
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function asArray(value: unknown): Array<Record<string, unknown>> {
+  return Array.isArray(value) ? value.filter((item) => item && typeof item === 'object' && !Array.isArray(item)) as Array<Record<string, unknown>> : [];
+}
+
+function formatPercent(value: unknown) {
+  const parsed = Number(value || 0);
+  return Number.isFinite(parsed) ? `${(parsed * 100).toFixed(1)}%` : '-';
+}
+
+function jsonText(value: unknown) {
+  if (!value || (typeof value === 'object' && Object.keys(asRecord(value)).length === 0)) return '';
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+function nonEmptyText(value: unknown) {
+  if (value === null || value === undefined || value === '') return '-';
+  return String(value);
+}
+
 function planBenefitsLabel(planKind: unknown, grantPoints: unknown) {
   const benefits = [];
   if (String(planKind || '') === 'vip') benefits.push('VIP');
@@ -130,16 +157,22 @@ function statusLabel(value: unknown) {
   if (status === 'pending') return '待支付';
   if (status === 'cancelled' || status === 'canceled') return '已关闭';
   if (status === 'failed') return '失败';
+  if (status === 'partially_refunded') return '部分退款';
   if (status === 'refunded') return '已退款';
+  if (status === 'processing') return '处理中';
+  if (status === 'requested') return '已申请';
+  if (status === 'succeeded') return '成功';
   return status || '-';
 }
 
 function orderStatusColor(value: unknown): 'default' | 'error' | 'info' | 'success' | 'warning' {
   const status = String(value || '');
   if (status === 'paid') return 'success';
+  if (status === 'succeeded') return 'success';
   if (status === 'pending') return 'warning';
+  if (status === 'processing' || status === 'requested') return 'warning';
   if (status === 'cancelled' || status === 'canceled' || status === 'failed') return 'error';
-  if (status === 'refunded') return 'info';
+  if (status === 'partially_refunded' || status === 'refunded') return 'info';
   return 'default';
 }
 
@@ -158,13 +191,13 @@ function OrderStatusChip({ status }: { status: unknown }) {
 function canDeleteOrder(order: Record<string, unknown> | null) {
   if (!order) return false;
   const status = String(order.status || '');
-  return status !== 'paid' && status !== 'refunded';
+  return status !== 'paid' && status !== 'partially_refunded' && status !== 'refunded';
 }
 
 function canCancelOrder(order: Record<string, unknown> | null) {
   if (!order) return false;
   const status = String(order.status || '');
-  return status !== 'paid' && status !== 'refunded' && status !== 'cancelled' && status !== 'canceled';
+  return status !== 'paid' && status !== 'partially_refunded' && status !== 'refunded' && status !== 'cancelled' && status !== 'canceled';
 }
 
 function parseMetadataFeatures(value: unknown) {
@@ -329,32 +362,243 @@ function OrderStatusFilterButton({
   );
 }
 
+function JsonDetails({ title, payload }: { title: string; payload: unknown }) {
+  const text = jsonText(payload);
+  if (!text) return null;
+  return (
+    <Box
+      component="details"
+      sx={{
+        mt: 1,
+        '& summary': { cursor: 'pointer', color: 'text.secondary', fontSize: 13, fontWeight: 800 },
+      }}
+    >
+      <Box component="summary">{title}</Box>
+      <Box
+        component="pre"
+        sx={{
+          mt: 0.75,
+          p: 1,
+          borderRadius: 1,
+          bgcolor: 'background.default',
+          border: 1,
+          borderColor: 'divider',
+          overflow: 'auto',
+          maxHeight: 240,
+          fontSize: 12,
+          lineHeight: 1.55,
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-all',
+        }}
+      >
+        {text}
+      </Box>
+    </Box>
+  );
+}
+
+function PaymentAttemptCard({ item }: { item: Record<string, unknown> }) {
+  const info = asRecord(item.paymentInfo);
+  const fundBills = asArray(info.fundBillList);
+  const fields: Array<[string, unknown]> = [
+    ['外部交易号', info.tradeNo || item.provider_transaction_id],
+    ['商户订单号', info.outTradeNo],
+    ['交易状态', info.tradeStatus],
+    ['买家账号', info.buyerLogonId],
+    ['买家 ID', info.buyerUserId],
+    ['订单总额', info.totalAmount],
+    ['实收金额', info.receiptAmount],
+    ['买家付款', info.buyerPayAmount],
+    ['开票金额', info.invoiceAmount],
+    ['集分宝金额', info.pointAmount],
+    ['支付时间', info.gmtPayment],
+  ];
+  return (
+    <Paper variant="outlined" sx={{ p: 1.25, borderRadius: 2, bgcolor: 'background.default' }}>
+      <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
+        <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+          <Chip size="small" label={String(item.channel || 'unknown')} color={String(item.channel || '') === 'alipay' ? 'primary' : 'default'} />
+          <Chip size="small" label={statusLabel(item.status)} color={orderStatusColor(item.status)} variant="outlined" />
+        </Stack>
+        <Typography variant="caption" color="text.secondary">{formatOrderTime(item.created_at)}</Typography>
+      </Stack>
+      <Stack divider={<Divider flexItem />} sx={{ mt: 1 }}>
+        {fields.filter(([, value]) => value !== null && value !== undefined && value !== '').map(([label, value]) => (
+          <DetailLine key={label} label={label} value={nonEmptyText(value)} />
+        ))}
+      </Stack>
+      {fundBills.length ? (
+        <Box sx={{ mt: 1 }}>
+          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 800 }}>资金渠道</Typography>
+          <Table size="small" sx={{ mt: 0.5 }}>
+            <TableHead>
+              <TableRow>
+                <TableCell>渠道</TableCell>
+                <TableCell>金额</TableCell>
+                <TableCell>实际金额</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {fundBills.map((row, index) => (
+                <TableRow key={`${String(row.fund_channel || '')}-${index}`}>
+                  <TableCell>{String(row.fund_channel || row.fundChannel || '-')}</TableCell>
+                  <TableCell>{String(row.amount || '-')}</TableCell>
+                  <TableCell>{String(row.real_amount || row.realAmount || '-')}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </Box>
+      ) : null}
+      <JsonDetails title="完整支付返回" payload={item.responsePayload} />
+    </Paper>
+  );
+}
+
+function RefundRecordCard({
+  item,
+  syncing,
+  onSync,
+}: {
+  item: Record<string, unknown>;
+  syncing?: boolean;
+  onSync?: (refundId: string) => void;
+}) {
+  const info = asRecord(item.refundInfo);
+  const refundDetails = asArray(info.refundDetailItemList);
+  const canSync = String(item.channel || '') === 'alipay';
+  return (
+    <Paper variant="outlined" sx={{ p: 1.25, borderRadius: 2, bgcolor: 'background.default' }}>
+      <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
+        <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+          <Chip size="small" label={String(item.refund_no || '')} />
+          <Chip size="small" label={statusLabel(item.status)} color={orderStatusColor(item.status)} variant={String(item.status || '') === 'failed' ? 'filled' : 'outlined'} />
+          <Chip size="small" label={String(item.channel || 'manual')} color={String(item.channel || '') === 'alipay' ? 'primary' : 'default'} />
+        </Stack>
+        <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+          <Typography variant="body2" sx={{ fontWeight: 900 }}>{formatMoney(item.amount, item.currency)}</Typography>
+          {canSync && onSync ? (
+            <Button size="small" variant="outlined" disabled={syncing} onClick={() => onSync(String(item.id || ''))}>
+              同步退款
+            </Button>
+          ) : null}
+        </Stack>
+      </Stack>
+      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25} sx={{ mt: 1 }}>
+        <DetailMetric label="扣回点数" value={formatPoints(item.point_reversal_amount)} tone="warning" />
+        <DetailMetric label="点数退款金额" value={formatMoney(item.point_refund_amount, item.currency)} tone="primary" />
+        <DetailMetric label="VIP 退款金额" value={formatMoney(item.vip_refund_amount, item.currency)} tone="success" />
+      </Stack>
+      <DetailSection title="退款进度">
+        <OrderTimelineItem label="申请退款" time={item.requested_at} active />
+        <OrderTimelineItem label="处理完成" time={item.processed_at} active={String(item.status || '') === 'succeeded'} />
+        <OrderTimelineItem label="处理失败" time={item.failed_at} active={String(item.status || '') === 'failed'} />
+      </DetailSection>
+      <Stack divider={<Divider flexItem />} sx={{ mt: 1 }}>
+        <DetailLine label="退款原因" value={nonEmptyText(item.reason)} />
+        <DetailLine label="外部交易号" value={nonEmptyText(info.tradeNo || item.provider_transaction_id)} />
+        <DetailLine label="外部退款号" value={nonEmptyText(info.outRequestNo || item.provider_refund_id)} />
+        <DetailLine label="退款流水金额" value={nonEmptyText(info.refundFee)} />
+        <DetailLine label="资金变动" value={nonEmptyText(info.fundChange)} />
+        <DetailLine label="退款到账时间" value={nonEmptyText(info.gmtRefundPay)} />
+      </Stack>
+      {refundDetails.length ? (
+        <Box sx={{ mt: 1 }}>
+          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 800 }}>退款资金渠道</Typography>
+          <Table size="small" sx={{ mt: 0.5 }}>
+            <TableHead>
+              <TableRow>
+                <TableCell>渠道</TableCell>
+                <TableCell>金额</TableCell>
+                <TableCell>类型</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {refundDetails.map((row, index) => (
+                <TableRow key={`${String(row.fund_channel || '')}-${index}`}>
+                  <TableCell>{String(row.fund_channel || row.fundChannel || '-')}</TableCell>
+                  <TableCell>{String(row.amount || '-')}</TableCell>
+                  <TableCell>{String(row.bank_code || row.bankCode || row.fund_type || '-')}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </Box>
+      ) : null}
+      <JsonDetails title="完整退款返回" payload={item.responsePayload} />
+    </Paper>
+  );
+}
+
 function OrderDetailDialog({
   order,
+  detail,
+  detailLoading,
+  detailError,
   markingPaid,
   cancelling,
   deleting,
+  refunding,
+  syncingPayment,
+  syncingRefundId,
   onClose,
+  onReload,
   onMarkPaid,
+  onRefund,
+  onSyncPayment,
+  onSyncRefund,
   onRequestCancel,
   onRequestDelete,
 }: {
   order: Record<string, unknown> | null;
+  detail: Record<string, unknown> | null;
+  detailLoading: boolean;
+  detailError: string | null;
   markingPaid: boolean;
   cancelling: boolean;
   deleting: boolean;
+  refunding: boolean;
+  syncingPayment: boolean;
+  syncingRefundId: string | null;
   onClose: () => void;
+  onReload: () => void;
   onMarkPaid: (orderId: string) => void;
+  onRefund: (payload: Record<string, unknown>) => void;
+  onSyncPayment: (orderId: string) => void;
+  onSyncRefund: (refundId: string) => void;
   onRequestCancel: (order: Record<string, unknown>) => void;
   onRequestDelete: (order: Record<string, unknown>) => void;
 }) {
   const open = Boolean(order);
-  const orderId = String(order?.id || '');
-  const isPaid = String(order?.status || '') === 'paid';
-  const isPending = String(order?.status || '') === 'pending';
-  const cancellable = canCancelOrder(order);
-  const deletable = canDeleteOrder(order);
-  const busy = markingPaid || cancelling || deleting;
+  const detailOrder = asRecord(detail?.order);
+  const displayOrder = Object.keys(detailOrder).length ? detailOrder : order;
+  const orderId = String(displayOrder?.id || order?.id || '');
+  const status = String(displayOrder?.status || order?.status || '');
+  const isPaid = status === 'paid' || status === 'partially_refunded';
+  const isPending = status === 'pending';
+  const canSyncPayment = String(displayOrder?.payment_channel || order?.payment_channel || '') === 'alipay';
+  const cancellable = canCancelOrder(displayOrder || order);
+  const deletable = canDeleteOrder(displayOrder || order);
+  const busy = markingPaid || cancelling || deleting || refunding || syncingPayment || Boolean(syncingRefundId);
+  const detailRecord = asRecord(detail);
+  const paymentAttempts = asArray(detailRecord.paymentAttempts);
+  const refunds = asArray(detailRecord.refunds);
+  const subscriptions = asArray(detailRecord.subscriptions);
+  const pointLedgers = asArray(detailRecord.pointLedgers);
+  const preview = asRecord(detailRecord.refundPreview);
+  const previewPoints = asRecord(preview.points);
+  const previewVip = asRecord(preview.vip);
+  const maxRefundAmount = Number(preview.maxRefundAmount || 0);
+  const [refundAmount, setRefundAmount] = useState('');
+  const [refundReason, setRefundReason] = useState('管理员退款');
+  const refundAmountNumber = Number(refundAmount);
+  const canRefund = isPaid && maxRefundAmount > 0 && Number.isFinite(refundAmountNumber) && refundAmountNumber > 0 && refundAmountNumber <= maxRefundAmount + 0.005 && !busy;
+
+  useEffect(() => {
+    if (!open) return;
+    setRefundAmount(maxRefundAmount > 0 ? maxRefundAmount.toFixed(2) : '');
+    setRefundReason('管理员退款');
+  }, [open, orderId, maxRefundAmount]);
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
@@ -365,7 +609,7 @@ function OrderDetailDialog({
             <Box sx={{ minWidth: 0 }}>
               <Typography variant="h6" sx={{ fontWeight: 900 }}>订单详情</Typography>
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', wordBreak: 'break-all' }}>
-                {String(order?.order_no || '')}
+                {String(displayOrder?.order_no || order?.order_no || '')}
               </Typography>
             </Box>
           </Stack>
@@ -375,7 +619,7 @@ function OrderDetailDialog({
         </Stack>
       </DialogTitle>
       <DialogContent sx={{ pt: 1 }}>
-        {order ? (
+        {displayOrder ? (
           <Stack spacing={1.5}>
             <Paper
               variant="outlined"
@@ -388,34 +632,137 @@ function OrderDetailDialog({
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25} sx={{ alignItems: { xs: 'flex-start', sm: 'center' }, justifyContent: 'space-between', gap: 1 }}>
                 <Stack spacing={0.35} sx={{ minWidth: 0 }}>
                   <Typography variant="subtitle1" sx={{ fontWeight: 900, wordBreak: 'break-all' }}>
-                    {String(order.plan_name || '未命名套餐')}
+                    {String(displayOrder.plan_name || '未命名套餐')}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
-                    {String(order.user_nickname || order.user_phone || '未知用户')}
+                    {String(displayOrder.user_nickname || displayOrder.user_phone || '未知用户')}
                   </Typography>
                 </Stack>
-                <OrderStatusChip status={order.status} />
+                <OrderStatusChip status={displayOrder.status} />
               </Stack>
             </Paper>
 
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25}>
-              <DetailMetric label="订单金额" value={formatMoney(order.amount, order.currency)} tone="primary" />
-              <DetailMetric label="套餐权益" value={planBenefitsLabel(order.order_type || order.plan_kind, order.grant_points)} tone="success" />
-              <DetailMetric label="支付渠道" value={String(order.payment_channel || '未选择')} tone="warning" />
+              <DetailMetric label="订单金额" value={formatMoney(displayOrder.amount, displayOrder.currency)} tone="primary" />
+              <DetailMetric label="已退金额" value={formatMoney(displayOrder.refunded_amount, displayOrder.currency)} tone="warning" />
+              <DetailMetric label="套餐权益" value={planBenefitsLabel(displayOrder.order_type || displayOrder.plan_kind, displayOrder.grant_points)} tone="success" />
             </Stack>
 
             <DetailSection title="基础信息">
-              <DetailLine label="订单号" value={String(order.order_no || '-')} />
+              <DetailLine label="订单号" value={String(displayOrder.order_no || '-')} />
               <DetailLine label="订单 ID" value={orderId || '-'} />
-              <DetailLine label="用户" value={String(order.user_nickname || order.user_phone || '-')} />
-              <DetailLine label="套餐编码" value={String(order.plan_code || '-')} />
+              <DetailLine label="用户" value={String(displayOrder.user_nickname || displayOrder.user_phone || '-')} />
+              <DetailLine label="套餐编码" value={String(displayOrder.plan_code || '-')} />
+              <DetailLine label="支付渠道" value={String(displayOrder.payment_channel || '未选择')} />
             </DetailSection>
 
             <DetailSection title="订单时间">
-              <OrderTimelineItem label="创建订单" time={order.created_at} active />
-              <OrderTimelineItem label="支付完成" time={order.paid_at} active={isPaid} />
-              <OrderTimelineItem label="关闭订单" time={order.cancelled_at} active={String(order.status || '') === 'cancelled' || String(order.status || '') === 'canceled'} />
+              <OrderTimelineItem label="创建订单" time={displayOrder.created_at} active />
+              <OrderTimelineItem label="支付完成" time={displayOrder.paid_at} active={isPaid} />
+              <OrderTimelineItem label="退款处理" time={displayOrder.refunded_at} active={status === 'partially_refunded' || status === 'refunded'} />
+              <OrderTimelineItem label="关闭订单" time={displayOrder.cancelled_at} active={status === 'cancelled' || status === 'canceled'} />
             </DetailSection>
+
+            <AdminRequestState loading={detailLoading} error={detailError} onRetry={onReload} />
+
+            {detail && !detailLoading ? (
+              <>
+                <DetailSection title="支付信息">
+                  {paymentAttempts.length ? (
+                    <Stack spacing={1}>
+                      {paymentAttempts.map((item) => <PaymentAttemptCard key={String(item.id)} item={item} />)}
+                    </Stack>
+                  ) : (
+                    <Typography variant="body2" color="text.secondary" sx={{ py: 1 }}>暂无支付尝试记录。</Typography>
+                  )}
+                </DetailSection>
+
+                {preview && Object.keys(preview).length ? (
+                  <DetailSection title="退款测算">
+                    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25} sx={{ py: 1 }}>
+                      <DetailMetric label="当前可退" value={formatMoney(preview.maxRefundAmount, displayOrder.currency)} tone="primary" />
+                      <DetailMetric label="可扣回点数" value={formatPoints(previewPoints.reversiblePoints)} tone="warning" />
+                      <DetailMetric label="当前点数余额" value={formatPoints(previewPoints.currentBalance)} tone="success" />
+                    </Stack>
+                    <DetailLine label="订单金额" value={formatMoney(preview.orderAmount, displayOrder.currency)} />
+                    <DetailLine label="已退金额" value={formatMoney(preview.alreadyRefundedAmount, displayOrder.currency)} />
+                    <DetailLine label="点数可退比例" value={formatPercent(previewPoints.refundRatio)} />
+                    <DetailLine label="VIP 可退比例" value={formatPercent(previewVip.refundRatio)} />
+                    <DetailLine label="VIP 剩余" value={Number(previewVip.remainingMs || 0) > 0 ? `${Math.ceil(Number(previewVip.remainingMs) / 86400000)} 天` : '-'} />
+                  </DetailSection>
+                ) : null}
+
+                <DetailSection title="退款记录">
+                  {refunds.length ? (
+                    <Stack spacing={1}>
+                      {refunds.map((item) => (
+                        <RefundRecordCard
+                          key={String(item.id)}
+                          item={item}
+                          syncing={syncingRefundId === String(item.id || '')}
+                          onSync={onSyncRefund}
+                        />
+                      ))}
+                    </Stack>
+                  ) : (
+                    <Typography variant="body2" color="text.secondary" sx={{ py: 1 }}>暂无退款记录。</Typography>
+                  )}
+                </DetailSection>
+
+                <DetailSection title="权益与点数流水">
+                  {subscriptions.length ? (
+                    <Table size="small">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>VIP 状态</TableCell>
+                          <TableCell>开始</TableCell>
+                          <TableCell>结束</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {subscriptions.map((item) => (
+                          <TableRow key={String(item.id)}>
+                            <TableCell>{statusLabel(item.status)}</TableCell>
+                            <TableCell>{formatOrderTime(item.current_period_start || item.started_at)}</TableCell>
+                            <TableCell>{formatOrderTime(item.current_period_end)}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  ) : (
+                    <Typography variant="body2" color="text.secondary" sx={{ py: 1 }}>暂无 VIP 权益记录。</Typography>
+                  )}
+                  {pointLedgers.length ? (
+                    <Table size="small">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>时间</TableCell>
+                          <TableCell>来源</TableCell>
+                          <TableCell>变动</TableCell>
+                          <TableCell>余额</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {pointLedgers.map((item) => (
+                          <TableRow key={String(item.id)}>
+                            <TableCell>{formatOrderTime(item.created_at)}</TableCell>
+                            <TableCell>{String(item.source_type || '-')}</TableCell>
+                            <TableCell>
+                              <Typography variant="body2" color={Number(item.amount || 0) < 0 ? 'error.main' : 'success.main'} sx={{ fontWeight: 900 }}>
+                                {formatPoints(item.amount)}
+                              </Typography>
+                            </TableCell>
+                            <TableCell>{formatPoints(item.balance_after)}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  ) : (
+                    <Typography variant="body2" color="text.secondary" sx={{ py: 1 }}>暂无点数流水。</Typography>
+                  )}
+                </DetailSection>
+              </>
+            ) : null}
 
             {deletable ? null : (
               <Alert severity="info" sx={{ mt: 0.5 }}>
@@ -426,7 +773,7 @@ function OrderDetailDialog({
         ) : null}
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2, justifyContent: 'space-between', alignItems: 'center', gap: 1.25, flexWrap: 'wrap' }}>
-        <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+        <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', flexWrap: 'wrap', maxWidth: { xs: '100%', md: 'calc(100% - 96px)' } }}>
           {order && isPending ? (
             <Button
               variant="outlined"
@@ -435,6 +782,16 @@ function OrderDetailDialog({
               onClick={() => onMarkPaid(orderId)}
             >
               确认支付
+            </Button>
+          ) : null}
+          {order && canSyncPayment ? (
+            <Button
+              variant="outlined"
+              startIcon={<RefreshIcon />}
+              disabled={busy}
+              onClick={() => onSyncPayment(orderId)}
+            >
+              同步支付
             </Button>
           ) : null}
           {order && cancellable ? (
@@ -459,6 +816,34 @@ function OrderDetailDialog({
               删除订单
             </Button>
           ) : null}
+          {displayOrder && isPaid && maxRefundAmount > 0 ? (
+            <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+              <Chip size="small" color={String(displayOrder.payment_channel || '') === 'alipay' ? 'primary' : 'default'} label={String(displayOrder.payment_channel || '') === 'alipay' ? '支付宝自动退款' : '人工退款记录'} />
+              <TextField
+                size="small"
+                label="退款金额"
+                value={refundAmount}
+                error={refundAmount !== '' && !canRefund}
+                onChange={(event) => setRefundAmount(event.target.value)}
+                sx={{ width: 128 }}
+              />
+              <TextField
+                size="small"
+                label="退款原因"
+                value={refundReason}
+                onChange={(event) => setRefundReason(event.target.value)}
+                sx={{ width: { xs: '100%', sm: 180 } }}
+              />
+              <Button
+                variant="contained"
+                color="info"
+                disabled={!canRefund}
+                onClick={() => onRefund({ amount: refundAmountNumber, reason: refundReason.trim() || '管理员退款' })}
+              >
+                执行退款
+              </Button>
+            </Stack>
+          ) : null}
         </Stack>
         <Button onClick={onClose} disabled={busy} sx={{ ml: 'auto' }}>返回</Button>
       </DialogActions>
@@ -472,6 +857,7 @@ export default function AdminBillingPage() {
   const [orders, setOrders] = useState<Array<Record<string, unknown>>>([]);
   const [orderStatusSummary, setOrderStatusSummary] = useState<Record<string, number>>(EMPTY_ORDER_SUMMARY);
   const [selectedOrder, setSelectedOrder] = useState<Record<string, unknown> | null>(null);
+  const [selectedOrderDetail, setSelectedOrderDetail] = useState<Record<string, unknown> | null>(null);
   const [planForm, setPlanForm] = useState<PlanForm>(EMPTY_PLAN_FORM);
   const [planDialogOpen, setPlanDialogOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Record<string, unknown> | null>(null);
@@ -484,8 +870,14 @@ export default function AdminBillingPage() {
   const [cancellingOrderId, setCancellingOrderId] = useState<string | null>(null);
   const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+  const [refundingOrderId, setRefundingOrderId] = useState<string | null>(null);
+  const [syncingPaymentOrderId, setSyncingPaymentOrderId] = useState<string | null>(null);
+  const [syncingRefundId, setSyncingRefundId] = useState<string | null>(null);
+  const [closingExpiredOrders, setClosingExpiredOrders] = useState(false);
   const [plansError, setPlansError] = useState<string | null>(null);
   const [ordersError, setOrdersError] = useState<string | null>(null);
+  const [orderDetailLoading, setOrderDetailLoading] = useState(false);
+  const [orderDetailError, setOrderDetailError] = useState<string | null>(null);
   const [status, setStatus] = useState('');
   const selectedPlanId = planForm.id;
 
@@ -526,12 +918,28 @@ export default function AdminBillingPage() {
       setOrderStatusSummary({ ...EMPTY_ORDER_SUMMARY, ...(result.summary || {}) });
       if (selectedOrder) {
         const next = result.items.find((item) => String(item.id) === String(selectedOrder.id));
-        setSelectedOrder(next || null);
+        if (next) setSelectedOrder(next);
       }
     } catch (loadError) {
       setOrdersError(getAdminErrorMessage(loadError));
     } finally {
       setOrdersLoading(false);
+    }
+  };
+
+  const loadOrderDetail = async (orderId: string) => {
+    if (!orderId) return;
+    setOrderDetailLoading(true);
+    setOrderDetailError(null);
+    try {
+      const detail = await adminApi.getOrderDetail(orderId);
+      setSelectedOrderDetail(detail);
+      const detailOrder = asRecord(detail.order);
+      if (detailOrder.id) setSelectedOrder(detailOrder);
+    } catch (loadError) {
+      setOrderDetailError(getAdminErrorMessage(loadError));
+    } finally {
+      setOrderDetailLoading(false);
     }
   };
 
@@ -579,10 +987,92 @@ export default function AdminBillingPage() {
     try {
       await adminApi.markOrderPaid(orderId, { paymentChannel: 'admin_manual' });
       await loadOrders();
+      await loadOrderDetail(orderId);
     } catch (actionError) {
       setOrdersError(getAdminErrorMessage(actionError));
     } finally {
       setActionLoadingId(null);
+    }
+  };
+
+  const syncPayment = async (orderId: string) => {
+    if (!orderId || syncingPaymentOrderId) return;
+    setSyncingPaymentOrderId(orderId);
+    setOrdersError(null);
+    setOrderDetailError(null);
+    try {
+      const result = await adminApi.syncOrderPayment(orderId);
+      const detail = asRecord(result.detail);
+      if (Object.keys(detail).length) {
+        setSelectedOrderDetail(detail);
+        const detailOrder = asRecord(detail.order);
+        if (detailOrder.id) setSelectedOrder(detailOrder);
+      } else {
+        await loadOrderDetail(orderId);
+      }
+      await loadOrders();
+    } catch (syncError) {
+      setOrderDetailError(getAdminErrorMessage(syncError));
+    } finally {
+      setSyncingPaymentOrderId(null);
+    }
+  };
+
+  const syncRefund = async (refundId: string) => {
+    const orderId = String(asRecord(selectedOrderDetail?.order).id || selectedOrder?.id || '');
+    if (!orderId || !refundId || syncingRefundId) return;
+    setSyncingRefundId(refundId);
+    setOrdersError(null);
+    setOrderDetailError(null);
+    try {
+      const result = await adminApi.syncOrderRefund(orderId, refundId);
+      const detail = asRecord(result.detail);
+      if (Object.keys(detail).length) {
+        setSelectedOrderDetail(detail);
+        const detailOrder = asRecord(detail.order);
+        if (detailOrder.id) setSelectedOrder(detailOrder);
+      } else {
+        await loadOrderDetail(orderId);
+      }
+      await loadOrders();
+    } catch (syncError) {
+      setOrderDetailError(getAdminErrorMessage(syncError));
+    } finally {
+      setSyncingRefundId(null);
+    }
+  };
+
+  const closeExpiredOrders = async () => {
+    if (closingExpiredOrders) return;
+    setClosingExpiredOrders(true);
+    setOrdersError(null);
+    try {
+      await adminApi.closeExpiredOrders({ olderThanMinutes: 120, limit: 100 });
+      await loadOrders();
+      if (selectedOrder) await loadOrderDetail(String(selectedOrder.id || ''));
+    } catch (closeError) {
+      setOrdersError(getAdminErrorMessage(closeError));
+    } finally {
+      setClosingExpiredOrders(false);
+    }
+  };
+
+  const refundOrder = async (payload: Record<string, unknown>) => {
+    const orderId = String(asRecord(selectedOrderDetail?.order).id || selectedOrder?.id || '');
+    if (!orderId || refundingOrderId) return;
+    setRefundingOrderId(orderId);
+    setOrdersError(null);
+    setOrderDetailError(null);
+    try {
+      const detail = await adminApi.refundOrder(orderId, payload);
+      setSelectedOrderDetail(detail);
+      const detailOrder = asRecord(detail.order);
+      if (detailOrder.id) setSelectedOrder(detailOrder);
+      await loadOrders();
+    } catch (refundError) {
+      setOrderDetailError(getAdminErrorMessage(refundError));
+    } finally {
+      setRefundingOrderId(null);
     }
   };
 
@@ -596,6 +1086,7 @@ export default function AdminBillingPage() {
       await adminApi.cancelOrder(orderId, { reason: 'admin_cancelled' });
       setCancelOrderTarget(null);
       await loadOrders();
+      await loadOrderDetail(orderId);
     } catch (cancelError) {
       setOrdersError(getAdminErrorMessage(cancelError));
     } finally {
@@ -611,7 +1102,10 @@ export default function AdminBillingPage() {
     setOrdersError(null);
     try {
       await adminApi.deleteOrder(orderId);
-      if (String(selectedOrder?.id || '') === orderId) setSelectedOrder(null);
+      if (String(selectedOrder?.id || '') === orderId) {
+        setSelectedOrder(null);
+        setSelectedOrderDetail(null);
+      }
       setDeleteOrderTarget(null);
       await loadOrders();
     } catch (deleteError) {
@@ -819,8 +1313,19 @@ export default function AdminBillingPage() {
               <OrderStatusFilterButton active={status === ''} label="全部" count={Number(orderStatusSummary.total || 0)} onClick={() => setStatus('')} />
               <OrderStatusFilterButton active={status === 'pending'} label="待支付" count={Number(orderStatusSummary.pending || 0)} color="warning" onClick={() => setStatus('pending')} />
               <OrderStatusFilterButton active={status === 'paid'} label="已支付" count={Number(orderStatusSummary.paid || 0)} color="success" onClick={() => setStatus('paid')} />
+              <OrderStatusFilterButton active={status === 'partially_refunded'} label="部分退款" count={Number(orderStatusSummary.partiallyRefunded || 0)} color="info" onClick={() => setStatus('partially_refunded')} />
+              <OrderStatusFilterButton active={status === 'refunded'} label="已退款" count={Number(orderStatusSummary.refunded || 0)} color="info" onClick={() => setStatus('refunded')} />
               <OrderStatusFilterButton active={status === 'cancelled'} label="已关闭" count={Number(orderStatusSummary.cancelled || 0)} color="error" onClick={() => setStatus('cancelled')} />
               <Button startIcon={<RefreshIcon />} onClick={() => void loadOrders()}>刷新</Button>
+              <Button
+                color="warning"
+                variant="outlined"
+                startIcon={<EventBusyIcon />}
+                disabled={closingExpiredOrders}
+                onClick={() => void closeExpiredOrders()}
+              >
+                关闭超时待支付
+              </Button>
             </AdminInlineGroup>
             <Chip
               size="small"
@@ -848,7 +1353,11 @@ export default function AdminBillingPage() {
                     key={String(item.id)}
                     hover
                     selected={String(selectedOrder?.id || '') === String(item.id)}
-                    onClick={() => setSelectedOrder(item)}
+                    onClick={() => {
+                      setSelectedOrder(item);
+                      setSelectedOrderDetail(null);
+                      void loadOrderDetail(String(item.id || ''));
+                    }}
                     sx={{ cursor: 'pointer' }}
                   >
                     <TableCell>{String(item.order_no || '')}</TableCell>
@@ -864,13 +1373,27 @@ export default function AdminBillingPage() {
           </AdminResponsiveTable>
           <OrderDetailDialog
             order={selectedOrder}
+            detail={selectedOrderDetail}
+            detailLoading={orderDetailLoading}
+            detailError={orderDetailError}
             markingPaid={actionLoadingId === String(selectedOrder?.id || '')}
             cancelling={cancellingOrderId === String(selectedOrder?.id || '')}
             deleting={deletingOrderId === String(selectedOrder?.id || '')}
+            refunding={refundingOrderId === String(selectedOrder?.id || '')}
+            syncingPayment={syncingPaymentOrderId === String(selectedOrder?.id || '')}
+            syncingRefundId={syncingRefundId}
             onClose={() => {
-              if (!actionLoadingId && !cancellingOrderId && !deletingOrderId) setSelectedOrder(null);
+              if (!actionLoadingId && !cancellingOrderId && !deletingOrderId && !refundingOrderId && !syncingPaymentOrderId && !syncingRefundId) {
+                setSelectedOrder(null);
+                setSelectedOrderDetail(null);
+                setOrderDetailError(null);
+              }
             }}
+            onReload={() => void loadOrderDetail(String(selectedOrder?.id || ''))}
             onMarkPaid={(orderId) => void markPaid(orderId)}
+            onRefund={(payload) => void refundOrder(payload)}
+            onSyncPayment={(orderId) => void syncPayment(orderId)}
+            onSyncRefund={(refundId) => void syncRefund(refundId)}
             onRequestCancel={setCancelOrderTarget}
             onRequestDelete={setDeleteOrderTarget}
           />

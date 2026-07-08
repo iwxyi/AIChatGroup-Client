@@ -199,7 +199,7 @@ function buildInternalLedgerTokenPricing(providerCode: string, form: DeepSeekPri
   };
   return {
     unit: 'point',
-    costUnit: 'CNY',
+    costUnit: providerCode === 'moacode' ? 'USD' : 'CNY',
     perTokens: 1000000,
     pointValueCny: toPositiveNumber(form.pointValueCny, Number(DEFAULT_DEEPSEEK_PRICING_FORM.pointValueCny)),
     billingMultiplier: toPositiveNumber(form.billingMultiplier, Number(DEFAULT_DEEPSEEK_PRICING_FORM.billingMultiplier)),
@@ -213,16 +213,37 @@ function buildInternalLedgerTokenPricing(providerCode: string, form: DeepSeekPri
   };
 }
 
+function formatCurrencyAmount(value: unknown, symbol: string, maximumFractionDigits = 2) {
+  if (value == null || value === '') return '-';
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return '-';
+  const rounded = Number(parsed.toFixed(maximumFractionDigits));
+  const displayValue = Object.is(rounded, -0) ? 0 : rounded;
+  return `${symbol}${new Intl.NumberFormat('zh-CN', {
+    maximumFractionDigits,
+    minimumFractionDigits: 0,
+    useGrouping: true,
+  }).format(displayValue)}`;
+}
+
+function formatDollarAmount(value: unknown, maximumFractionDigits = 2) {
+  return formatCurrencyAmount(value, '$', maximumFractionDigits);
+}
+
 function formatBalance(balance: Record<string, unknown> | null, providerCode: string) {
   const raw = balance?.availableBalance ?? balance?.available_balance;
   const currencyUnit = String(balance?.currencyUnit ?? balance?.currency_unit ?? '').toLowerCase();
-  if (currencyUnit === 'moacode_balance') {
-    return typeof raw === 'number' && Number.isFinite(raw) ? `余额 ${formatPlainNumber(raw, 2)}` : '已获取';
+  const normalizedProviderCode = providerCode.trim().toLowerCase();
+  if (normalizedProviderCode === 'moacode' || currencyUnit === 'moacode_balance') {
+    return typeof raw === 'number' && Number.isFinite(raw) ? `余额 ${formatDollarAmount(raw, 2)}` : '已获取';
   }
   if (currencyUnit === 'moacode_usage' && (balance?.raw || Object.keys(balance || {}).length > 0)) {
-    return typeof raw === 'number' && Number.isFinite(raw) ? `成本 ${formatPlainNumber(raw, 2)}` : '已获取';
+    return typeof raw === 'number' && Number.isFinite(raw) ? `成本 ${formatDollarAmount(raw, 2)}` : '已获取';
   }
   if (typeof raw !== 'number' || !Number.isFinite(raw)) return '未获取';
+  if (normalizedProviderCode === 'deepseek' || currencyUnit === 'cny' || currencyUnit === 'rmb') {
+    return formatCurrencyAmount(raw, '￥', 2);
+  }
   return formatAiBalanceAmount(balance, providerCode);
 }
 
@@ -985,11 +1006,11 @@ export default function AdminAIProviderPage() {
                     }}
                   >
                     {[
-                      { label: '总余额', value: formatOptionalPlainNumber(getFirstDefinedValue(moacodeBalanceSummary, ['totalBalance', 'total_balance', 'balance']), 2) },
-                      { label: '订阅余额', value: formatOptionalPlainNumber(getFirstDefinedValue(moacodeBalanceSummary, ['subscriptionBalance', 'subscription_balance']), 2) },
-                      { label: 'PAYG 余额', value: formatOptionalPlainNumber(getFirstDefinedValue(moacodeBalanceSummary, ['payAsYouGoBalance', 'pay_as_you_go_balance']), 2) },
-                      { label: '本周限额', value: formatOptionalPlainNumber(getFirstDefinedValue(moacodeBalanceSummary, ['weeklyLimit', 'weekly_limit']), 2) },
-                      { label: '本周已用', value: formatOptionalPlainNumber(getFirstDefinedValue(moacodeBalanceSummary, ['weeklySpentBalance', 'weekly_spent_balance']), 2) },
+                      { label: '总余额', value: formatDollarAmount(getFirstDefinedValue(moacodeBalanceSummary, ['totalBalance', 'total_balance', 'balance']), 2) },
+                      { label: '订阅余额', value: formatDollarAmount(getFirstDefinedValue(moacodeBalanceSummary, ['subscriptionBalance', 'subscription_balance']), 2) },
+                      { label: 'PAYG 余额', value: formatDollarAmount(getFirstDefinedValue(moacodeBalanceSummary, ['payAsYouGoBalance', 'pay_as_you_go_balance']), 2) },
+                      { label: '本周限额', value: formatDollarAmount(getFirstDefinedValue(moacodeBalanceSummary, ['weeklyLimit', 'weekly_limit']), 2) },
+                      { label: '本周已用', value: formatDollarAmount(getFirstDefinedValue(moacodeBalanceSummary, ['weeklySpentBalance', 'weekly_spent_balance']), 2) },
                       { label: '扣费偏好', value: String(getFirstDefinedValue(moacodeBalanceSummary, ['balancePreference', 'balance_preference']) ?? '-') },
                       { label: '自动 PAYG', value: formatOptionalBoolean(getFirstDefinedValue(moacodeBalanceSummary, ['autoSwitchToPaygEnabled', 'auto_switch_to_payg_enabled'])) },
                     ].map((item) => (
@@ -1011,7 +1032,7 @@ export default function AdminAIProviderPage() {
                       { label: '输入 tokens', value: formatOptionalPlainNumber(moacodeUsageSummary.totalInputTokens ?? moacodeUsageSummary.total_input_tokens, 0) },
                       { label: '输出 tokens', value: formatOptionalPlainNumber(moacodeUsageSummary.totalOutputTokens ?? moacodeUsageSummary.total_output_tokens, 0) },
                       { label: '缓存读取 tokens', value: formatOptionalPlainNumber(moacodeUsageSummary.totalCacheReadTokens ?? moacodeUsageSummary.total_cache_read_tokens, 0) },
-                      { label: '总成本', value: formatOptionalPlainNumber(moacodeUsageSummary.totalCost ?? moacodeUsageSummary.total_cost, 4) },
+                      { label: '总成本', value: formatDollarAmount(moacodeUsageSummary.totalCost ?? moacodeUsageSummary.total_cost, 4) },
                     ].map((item) => (
                       <Box key={item.label} sx={{ border: 1, borderColor: 'divider', borderRadius: 1, p: 1 }}>
                         <Typography variant="caption" color="text.secondary">{item.label}</Typography>
@@ -1033,7 +1054,7 @@ export default function AdminAIProviderPage() {
                             <TableCell>输出</TableCell>
                             <TableCell>缓存创建</TableCell>
                             <TableCell>缓存读取</TableCell>
-                            <TableCell>成本</TableCell>
+                            <TableCell>成本($)</TableCell>
                           </TableRow>
                         </TableHead>
                         <TableBody>
@@ -1045,7 +1066,7 @@ export default function AdminAIProviderPage() {
                               <TableCell>{formatPlainNumber(row.outputTokens ?? row.output_tokens)}</TableCell>
                               <TableCell>{formatPlainNumber(row.cacheCreationTokens ?? row.cache_creation_tokens)}</TableCell>
                               <TableCell>{formatPlainNumber(row.cacheReadTokens ?? row.cache_read_tokens)}</TableCell>
-                              <TableCell>{formatPlainNumber(row.cost, 4)}</TableCell>
+                              <TableCell>{formatDollarAmount(row.cost, 4)}</TableCell>
                             </TableRow>
                           ))}
                         </TableBody>
@@ -1061,11 +1082,13 @@ export default function AdminAIProviderPage() {
             <AdminDetailCard title={`${providerDisplayName} 扣费配置`}>
               <Stack spacing={1.25}>
                 <Alert severity="info">
-                  扣费按上游成本价计算，再换算为用户 P。默认 1P=0.01元，计费倍率 1.5 表示成本价加 50%。
+                  {isMoacode
+                    ? '扣费按上游美元成本价计算，再换算为用户 P。默认 1P=$0.01，计费倍率 1.5 表示成本价加 50%。'
+                    : '扣费按上游成本价计算，再换算为用户 P。默认 1P=0.01元，计费倍率 1.5 表示成本价加 50%。'}
                 </Alert>
                 <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.25}>
                   <TextField
-                    label="1P 等于多少元"
+                    label={isMoacode ? '1P 等于多少美元' : '1P 等于多少元'}
                     value={form.deepseekPricing.pointValueCny}
                     onChange={(e) => updateDeepSeekPricing('pointValueCny', e.target.value)}
                     fullWidth
@@ -1080,13 +1103,13 @@ export default function AdminAIProviderPage() {
                 </Stack>
                 <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.25}>
                   <TextField
-                    label="输入成本价（元/百万 tokens）"
+                    label={isMoacode ? '输入成本价（美元/百万 tokens）' : '输入成本价（元/百万 tokens）'}
                     value={form.deepseekPricing.prompt}
                     onChange={(e) => updateDeepSeekPricing('prompt', e.target.value)}
                     fullWidth
                   />
                   <TextField
-                    label="输出成本价（元/百万 tokens）"
+                    label={isMoacode ? '输出成本价（美元/百万 tokens）' : '输出成本价（元/百万 tokens）'}
                     value={form.deepseekPricing.completion}
                     onChange={(e) => updateDeepSeekPricing('completion', e.target.value)}
                     fullWidth
@@ -1094,13 +1117,13 @@ export default function AdminAIProviderPage() {
                 </Stack>
                 <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.25}>
                   <TextField
-                    label="缓存命中价格（元/百万 tokens）"
+                    label={isMoacode ? '缓存命中价格（美元/百万 tokens）' : '缓存命中价格（元/百万 tokens）'}
                     value={form.deepseekPricing.cacheHit}
                     onChange={(e) => updateDeepSeekPricing('cacheHit', e.target.value)}
                     fullWidth
                   />
                   <TextField
-                    label="缓存未命中价格（元/百万 tokens）"
+                    label={isMoacode ? '缓存未命中价格（美元/百万 tokens）' : '缓存未命中价格（元/百万 tokens）'}
                     value={form.deepseekPricing.cacheMiss}
                     onChange={(e) => updateDeepSeekPricing('cacheMiss', e.target.value)}
                     fullWidth
@@ -1209,11 +1232,11 @@ export default function AdminAIProviderPage() {
                         <TableCell sx={{ width: 260 }}>模型</TableCell>
                         <TableCell>供应商</TableCell>
                         <TableCell>倍率</TableCell>
-                        <TableCell>输入/百万</TableCell>
-                        <TableCell>输出/百万</TableCell>
-                        <TableCell>缓存写入/百万</TableCell>
-                        <TableCell>缓存读取/百万</TableCell>
-                        <TableCell>请求价</TableCell>
+                        <TableCell>输入($/百万)</TableCell>
+                        <TableCell>输出($/百万)</TableCell>
+                        <TableCell>缓存写入($/百万)</TableCell>
+                        <TableCell>缓存读取($/百万)</TableCell>
+                        <TableCell>请求价($)</TableCell>
                       </TableRow>
                     </TableHead>
                     <TableBody>
@@ -1249,11 +1272,11 @@ export default function AdminAIProviderPage() {
                             <Typography variant="caption" color="text.secondary">{getPublicModelRowProviderCode(row)}</Typography>
                           </TableCell>
                           <TableCell>{formatOptionalPlainNumber(row.rateMultiplier ?? row.rate_multiplier, 4)}</TableCell>
-                          <TableCell>{formatOptionalPlainNumber(row.inputTokenPrice ?? row.input_token_price, 6)}</TableCell>
-                          <TableCell>{formatOptionalPlainNumber(row.outputTokenPrice ?? row.output_token_price, 6)}</TableCell>
-                          <TableCell>{formatOptionalPlainNumber(row.cacheCreationTokenPrice ?? row.cache_creation_token_price, 6)}</TableCell>
-                          <TableCell>{formatOptionalPlainNumber(row.cacheReadTokenPrice ?? row.cache_read_token_price, 6)}</TableCell>
-                          <TableCell>{formatOptionalPlainNumber(row.requestPrice ?? row.request_price, 6)}</TableCell>
+                          <TableCell>{formatDollarAmount(row.inputTokenPrice ?? row.input_token_price, 6)}</TableCell>
+                          <TableCell>{formatDollarAmount(row.outputTokenPrice ?? row.output_token_price, 6)}</TableCell>
+                          <TableCell>{formatDollarAmount(row.cacheCreationTokenPrice ?? row.cache_creation_token_price, 6)}</TableCell>
+                          <TableCell>{formatDollarAmount(row.cacheReadTokenPrice ?? row.cache_read_token_price, 6)}</TableCell>
+                          <TableCell>{formatDollarAmount(row.requestPrice ?? row.request_price, 6)}</TableCell>
                         </TableRow>
                       )))}
                     </TableBody>
@@ -1539,8 +1562,8 @@ export default function AdminAIProviderPage() {
         user={selectedBalanceUser}
         providerCode={providerCode}
         onClose={() => setSelectedBalanceUser(null)}
-        onTransferPoints={async (userId, amount) => {
-          const result = await adminApi.transferAiProviderUserPoints(providerCode, userId, { amount });
+        onTransferPoints={async (userId, amount, reason) => {
+          const result = await adminApi.transferAiProviderUserPoints(providerCode, userId, { amount, reason });
           const balanceAfter = Number(result.balanceAfter);
           if (Number.isFinite(balanceAfter)) {
             setSelectedBalanceUser((prev) => prev ? { ...prev, balanceAmount: balanceAfter, balance_amount: balanceAfter } : prev);

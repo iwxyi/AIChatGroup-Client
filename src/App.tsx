@@ -40,6 +40,7 @@ const routePreloaders = [
   () => import('./pages/admin/AdminLoginPage'),
   () => import('./pages/admin/AdminDashboardPage'),
   () => import('./pages/admin/AdminUsersPage'),
+  () => import('./pages/admin/AdminAdminsPage'),
   () => import('./pages/admin/AdminAIProviderPage'),
   () => import('./pages/admin/AdminPlatformPage'),
   () => import('./pages/admin/AdminBillingPage'),
@@ -76,6 +77,7 @@ const [
   loadAdminLoginPage,
   loadAdminDashboardPage,
   loadAdminUsersPage,
+  loadAdminAdminsPage,
   loadAdminAIProviderPage,
   loadAdminPlatformPage,
   loadAdminBillingPage,
@@ -111,6 +113,7 @@ const AdminLayout = lazy(loadAdminLayout);
 const AdminLoginPage = lazy(loadAdminLoginPage);
 const AdminDashboardPage = lazy(loadAdminDashboardPage);
 const AdminUsersPage = lazy(loadAdminUsersPage);
+const AdminAdminsPage = lazy(loadAdminAdminsPage);
 const AdminAIProviderPage = lazy(loadAdminAIProviderPage);
 const AdminPlatformPage = lazy(loadAdminPlatformPage);
 const AdminBillingPage = lazy(loadAdminBillingPage);
@@ -299,6 +302,7 @@ function RoutedApp() {
         <Route path="/admin" element={<RouteElement><AdminLayout /></RouteElement>}>
           <Route index element={<RouteElement><AdminPermissionGate permissions={ADMIN_DASHBOARD_PERMISSIONS}><AdminDashboardPage /></AdminPermissionGate></RouteElement>} />
           <Route path="users" element={<RouteElement><AdminPermissionGate permissions={[ADMIN_PERMISSION_CODES.usersRead]}><AdminUsersPage /></AdminPermissionGate></RouteElement>} />
+          <Route path="admins" element={<RouteElement><AdminPermissionGate permissions={[ADMIN_PERMISSION_CODES.adminAll]}><AdminAdminsPage /></AdminPermissionGate></RouteElement>} />
           <Route path="ai" element={<Navigate to="/admin/platform?tab=ai" replace />} />
           <Route path="ai/providers/:providerCode" element={<LegacyAdminAIProviderRedirect />} />
           <Route path="platform/ai/providers/:providerCode" element={<RouteElement><AdminPermissionGate permissions={[ADMIN_PERMISSION_CODES.aiRead]}><AdminAIProviderPage /></AdminPermissionGate></RouteElement>} />

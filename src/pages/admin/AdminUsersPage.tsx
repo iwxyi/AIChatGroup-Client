@@ -11,6 +11,7 @@ type KeyDraft = {
   apiKey: string;
   externalKeyId: string;
   transferAmount: string;
+  transferReason: string;
   dailyQuota: string;
   monthlyQuota: string;
   minuteTimes: string;
@@ -121,6 +122,7 @@ export default function AdminUsersPage() {
   const [selectedUser, setSelectedUser] = useState<Record<string, unknown> | null>(null);
   const [usageDialogOpen, setUsageDialogOpen] = useState(false);
   const [aiPointDraft, setAiPointDraft] = useState('');
+  const [aiPointReasonDraft, setAiPointReasonDraft] = useState('');
   const [selectedRestrictions, setSelectedRestrictions] = useState<Array<Record<string, unknown>>>([]);
   const [restrictionReason, setRestrictionReason] = useState('');
   const [keyDrafts, setKeyDrafts] = useState<Record<string, KeyDraft>>({});
@@ -229,6 +231,7 @@ export default function AdminUsersPage() {
       apiKey: String(key.api_key || ''),
       externalKeyId: String(key.external_key_id || ''),
       transferAmount: '',
+      transferReason: '',
       dailyQuota: providerLimits.dailyQuota == null ? '' : String(providerLimits.dailyQuota),
       monthlyQuota: providerLimits.monthlyQuota == null ? '' : String(providerLimits.monthlyQuota),
       minuteTimes: providerLimits.minuteTimes == null ? '' : String(providerLimits.minuteTimes),
@@ -244,6 +247,7 @@ export default function AdminUsersPage() {
       apiKey: String(key.api_key || ''),
       externalKeyId: String(key.external_key_id || ''),
       transferAmount: '',
+      transferReason: '',
       dailyQuota: providerLimits.dailyQuota == null ? '' : String(providerLimits.dailyQuota),
       monthlyQuota: providerLimits.monthlyQuota == null ? '' : String(providerLimits.monthlyQuota),
       minuteTimes: providerLimits.minuteTimes == null ? '' : String(providerLimits.minuteTimes),
@@ -296,15 +300,21 @@ export default function AdminUsersPage() {
   const transferKeyPoints = async (key: Record<string, unknown>) => {
     if (!selectedUserId) return;
     const keyId = String(key.id || '');
-    const amount = Number(getKeyDraft(key).transferAmount);
+    const draft = getKeyDraft(key);
+    const amount = Number(draft.transferAmount);
     if (!Number.isFinite(amount) || amount === 0) {
       setDetailError('请输入非 0 的转入额度，负数表示扣除');
+      return;
+    }
+    const reason = draft.transferReason.trim();
+    if (!reason) {
+      setDetailError('请输入转入/扣除原因');
       return;
     }
     setActionLoading(true);
     setDetailError(null);
     try {
-      const result = await adminApi.transferAiUserKeyPoints(selectedUserId, keyId, { amount });
+      const result = await adminApi.transferAiUserKeyPoints(selectedUserId, keyId, { amount, reason });
       const customKey = extractTransferredCustomKey(result);
       if (customKey) {
         setKeyBalance((prev) => ({
@@ -317,7 +327,7 @@ export default function AdminUsersPage() {
           fetchedAt: Date.now(),
         }));
       }
-      updateKeyDraft(key, { transferAmount: '' });
+      updateKeyDraft(key, { transferAmount: '', transferReason: '' });
       await Promise.all([
         loadSelectedUser(selectedUserId),
         loadKeyBalance(selectedUserId),
@@ -329,15 +339,16 @@ export default function AdminUsersPage() {
     }
   };
 
-  const transferSelectedUserAiPoints = async (userId: string, amount: number) => {
+  const transferSelectedUserAiPoints = async (userId: string, amount: number, reason: string) => {
     if (!userId) throw new Error('用户不存在');
     if (!Number.isFinite(amount) || amount === 0) {
       throw new Error('请输入非 0 的额度，负数表示扣除');
     }
+    if (!reason.trim()) throw new Error('请输入增减点数原因');
     setActionLoading(true);
     setDetailError(null);
     try {
-      const result = await adminApi.transferAiUserPoints(userId, { amount });
+      const result = await adminApi.transferAiUserPoints(userId, { amount, reason: reason.trim() });
       const balanceAfter = Number(result.balanceAfter);
       if (Number.isFinite(balanceAfter)) {
         setSelectedUser((prev) => prev && String(prev.id || '') === userId ? { ...prev, aiBalanceAmount: balanceAfter } : prev);
@@ -363,9 +374,15 @@ export default function AdminUsersPage() {
       setDetailError('请输入非 0 的额度，负数表示扣除');
       return;
     }
+    const reason = aiPointReasonDraft.trim();
+    if (!reason) {
+      setDetailError('请输入增减点数原因');
+      return;
+    }
     try {
-      await transferSelectedUserAiPoints(selectedUserId, amount);
+      await transferSelectedUserAiPoints(selectedUserId, amount, reason);
       setAiPointDraft('');
+      setAiPointReasonDraft('');
     } catch (transferError) {
       setDetailError(getAdminErrorMessage(transferError));
     }
@@ -549,9 +566,17 @@ export default function AdminUsersPage() {
                       placeholder="负数扣除"
                       sx={{ width: { xs: '100%', sm: 180 } }}
                     />
+                    <TextField
+                      size="small"
+                      label="原因"
+                      value={aiPointReasonDraft}
+                      onChange={(event) => setAiPointReasonDraft(event.target.value)}
+                      placeholder="例如补偿、退款扣回"
+                      sx={{ flex: '1 1 220px', minWidth: 180 }}
+                    />
                     <Button
                       variant="contained"
-                      disabled={actionLoading || !aiPointDraft.trim()}
+                      disabled={actionLoading || !aiPointDraft.trim() || !aiPointReasonDraft.trim()}
                       onClick={() => void transferSelectedUserAiPointsFromCard()}
                       sx={{ height: 40, alignSelf: { xs: 'stretch', sm: 'center' } }}
                     >
@@ -627,7 +652,15 @@ export default function AdminUsersPage() {
                                 placeholder="负数扣除"
                                 sx={{ width: 120 }}
                               />
-                              <Button size="small" variant="outlined" disabled={actionLoading} onClick={() => void transferKeyPoints(key)} sx={{ minHeight: 30 }}>转入/扣除</Button>
+                              <TextField
+                                size="small"
+                                label="原因"
+                                value={draft.transferReason}
+                                onChange={(event) => updateKeyDraft(key, { transferReason: event.target.value })}
+                                placeholder="例如补偿、退款扣回"
+                                sx={{ width: 180 }}
+                              />
+                              <Button size="small" variant="outlined" disabled={actionLoading || !draft.transferReason.trim()} onClick={() => void transferKeyPoints(key)} sx={{ minHeight: 30 }}>转入/扣除</Button>
                               <Button size="small" variant="outlined" onClick={() => setExpandedLimits((prev) => ({ ...prev, [keyId]: !prev[keyId] }))} sx={{ minHeight: 30 }}>更新 Key</Button>
                               <Button size="small" variant="outlined" disabled={actionLoading} onClick={() => void loadKeyUsage(key)} sx={{ minHeight: 30 }}>
                                 {expandedUsage[keyId] ? '收起消耗' : '查询消耗'}
@@ -669,7 +702,7 @@ export default function AdminUsersPage() {
                                         {usage.quotaLedger.map((row) => (
                                           <TableRow key={String(row.id)}>
                                             <TableCell>{String(row.entry_type || '-')}</TableCell>
-                                            <TableCell>{String(row.source_type || '-')}</TableCell>
+                                            <TableCell>{String(parseMetadata(row.metadata).reason || row.source_type || '-')}</TableCell>
                                             <TableCell>{String(row.amount ?? '-')}</TableCell>
                                             <TableCell>{String(row.status || '-')}</TableCell>
                                             <TableCell>{formatTime(row.created_at)}</TableCell>
@@ -763,7 +796,7 @@ export default function AdminUsersPage() {
         user={selectedUserWithAiQuota}
         providerCode="all"
         onClose={() => setUsageDialogOpen(false)}
-        onTransferPoints={(userId, amount) => transferSelectedUserAiPoints(userId, amount)}
+        onTransferPoints={(userId, amount, reason) => transferSelectedUserAiPoints(userId, amount, reason)}
       />
     </Stack>
   );

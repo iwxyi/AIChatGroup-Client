@@ -27,6 +27,19 @@ export type AdminLoginRecord = {
   createdAt: number;
 };
 
+export type AdminRole = {
+  id: string;
+  code: string;
+  name: string;
+  description?: string;
+  isSystem?: boolean;
+  permissions?: Array<Record<string, unknown>>;
+};
+
+export type AdminManagedUser = AdminUser & {
+  roles?: AdminRole[];
+};
+
 class AdminApiClient {
   getToken() {
     return localStorage.getItem(ADMIN_TOKEN_KEY);
@@ -144,8 +157,38 @@ class AdminApiClient {
     return this.request<{ items: AdminLoginRecord[]; limit: number }>('GET', `/auth/login-records${this.buildQuery({ limit: params?.limit })}`);
   }
 
+  getAdminRoles() {
+    return this.request<{ items: AdminRole[] }>('GET', '/admins/roles');
+  }
+
+  getAdminUsers(params?: { search?: string; limit?: number }) {
+    return this.request<{ items: AdminManagedUser[]; roles: AdminRole[] }>('GET', `/admins${this.buildQuery({ search: params?.search, limit: params?.limit })}`);
+  }
+
+  getManagedAdminUser(adminUserId: string) {
+    return this.request<{ admin: AdminManagedUser; loginRecords: AdminLoginRecord[]; roles: AdminRole[] }>('GET', `/admins/${encodeURIComponent(adminUserId)}`);
+  }
+
+  createManagedAdminUser(payload: { email: string; displayName: string; password: string; status: string; roleCodes: string[] }) {
+    return this.request<{ admin: AdminManagedUser }>('POST', '/admins', payload);
+  }
+
+  updateManagedAdminUser(adminUserId: string, payload: { email: string; displayName: string; status: string; roleCodes: string[] }) {
+    return this.request<{ admin: AdminManagedUser }>('PUT', `/admins/${encodeURIComponent(adminUserId)}`, payload);
+  }
+
+  resetManagedAdminPassword(adminUserId: string, payload: { password: string }) {
+    return this.request<{ ok: boolean; updatedAt: number }>('POST', `/admins/${encodeURIComponent(adminUserId)}/password`, payload);
+  }
+
   getDashboardStats() {
-    return this.request<{ metrics: Record<string, number>; recentOrders: Array<Record<string, unknown>>; recentReviews: Array<Record<string, unknown>>; recentAudits: Array<Record<string, unknown>> }>('GET', '/dashboard/stats');
+    return this.request<{
+      metrics: Record<string, number>;
+      operations?: Record<string, unknown>;
+      recentOrders: Array<Record<string, unknown>>;
+      recentReviews: Array<Record<string, unknown>>;
+      recentAudits: Array<Record<string, unknown>>;
+    }>('GET', '/dashboard/stats');
   }
 
   getUsers(search = '') {
@@ -158,6 +201,10 @@ class AdminApiClient {
 
   getAiProviders() {
     return this.request<{ items: Array<Record<string, unknown>>; runtime: Array<Record<string, unknown>> }>('GET', '/ai/providers');
+  }
+
+  getAiOpsSummary() {
+    return this.request<Record<string, unknown>>('GET', '/ai/ops-summary');
   }
 
   getPlatformGlobalConfig() {
@@ -316,11 +363,11 @@ class AdminApiClient {
     })}`);
   }
 
-  transferAiProviderUserPoints(providerCode: string, userId: string, payload: { amount: number }) {
+  transferAiProviderUserPoints(providerCode: string, userId: string, payload: { amount: number; reason?: string }) {
     return this.request<Record<string, unknown>>('POST', `/ai/providers/${encodeURIComponent(providerCode)}/users/${encodeURIComponent(userId)}/points`, payload);
   }
 
-  transferAiUserPoints(userId: string, payload: { amount: number }) {
+  transferAiUserPoints(userId: string, payload: { amount: number; reason?: string }) {
     return this.request<Record<string, unknown>>('POST', `/ai/users/${encodeURIComponent(userId)}/points`, payload);
   }
 
@@ -356,7 +403,7 @@ class AdminApiClient {
     return this.request<Record<string, unknown>>('PUT', `/ai/entitlements/${encodeURIComponent(userId)}/keys/${encodeURIComponent(providerKeyId)}/limits`, payload);
   }
 
-  transferAiUserKeyPoints(userId: string, providerKeyId: string, payload: { amount: number }) {
+  transferAiUserKeyPoints(userId: string, providerKeyId: string, payload: { amount: number; reason?: string }) {
     return this.request<Record<string, unknown>>('POST', `/ai/entitlements/${encodeURIComponent(userId)}/keys/${encodeURIComponent(providerKeyId)}/points`, payload);
   }
 
@@ -376,12 +423,20 @@ class AdminApiClient {
     return this.request<{ items: Array<Record<string, unknown>> }>('GET', `/notifications/jobs${this.buildQuery({ status: params?.status, channel: params?.channel })}`);
   }
 
+  getNotificationJobSummary() {
+    return this.request<Record<string, unknown>>('GET', '/notifications/jobs/summary');
+  }
+
   deliverNotificationJobs(payload?: { limit?: number }) {
     return this.request<Record<string, unknown>>('POST', '/notifications/jobs/deliver', payload || {});
   }
 
   deliverNotificationJob(jobId: string) {
     return this.request<Record<string, unknown>>('POST', `/notifications/jobs/${encodeURIComponent(jobId)}/deliver`, {});
+  }
+
+  requeueNotificationJob(jobId: string) {
+    return this.request<Record<string, unknown>>('POST', `/notifications/jobs/${encodeURIComponent(jobId)}/requeue`, {});
   }
 
   getSmsSendRecords(params?: { status?: string; providerCode?: string; search?: string; page?: number; limit?: number }) {
@@ -408,6 +463,10 @@ class AdminApiClient {
     return this.request<{ items: Array<Record<string, unknown>>; summary?: Record<string, number> }>('GET', `/billing/orders${this.buildQuery({ status: params?.status, userId: params?.userId })}`);
   }
 
+  getOrderDetail(orderId: string) {
+    return this.request<Record<string, unknown>>('GET', `/billing/orders/${encodeURIComponent(orderId)}`);
+  }
+
   getBillingPlans() {
     return this.request<{ items: Array<Record<string, unknown>> }>('GET', '/billing/plans');
   }
@@ -428,12 +487,28 @@ class AdminApiClient {
     return this.request<Record<string, unknown>>('POST', `/billing/orders/${encodeURIComponent(orderId)}/pay`, payload || {});
   }
 
+  syncOrderPayment(orderId: string) {
+    return this.request<Record<string, unknown>>('POST', `/billing/orders/${encodeURIComponent(orderId)}/sync-payment`, {});
+  }
+
   cancelOrder(orderId: string, payload?: Record<string, unknown>) {
     return this.request<Record<string, unknown>>('POST', `/billing/orders/${encodeURIComponent(orderId)}/cancel`, payload || {});
   }
 
   deleteOrder(orderId: string) {
     return this.request<Record<string, unknown>>('DELETE', `/billing/orders/${encodeURIComponent(orderId)}`);
+  }
+
+  refundOrder(orderId: string, payload: Record<string, unknown>) {
+    return this.request<Record<string, unknown>>('POST', `/billing/orders/${encodeURIComponent(orderId)}/refund`, payload);
+  }
+
+  syncOrderRefund(orderId: string, refundId: string) {
+    return this.request<Record<string, unknown>>('POST', `/billing/orders/${encodeURIComponent(orderId)}/refunds/${encodeURIComponent(refundId)}/sync`, {});
+  }
+
+  closeExpiredOrders(payload?: { olderThanMinutes?: number; limit?: number }) {
+    return this.request<Record<string, unknown>>('POST', '/billing/orders/close-expired', payload || {});
   }
 
   getShareReviewCases(params?: { status?: string; ownerUserId?: string }) {

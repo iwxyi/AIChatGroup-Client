@@ -42,7 +42,7 @@ type AdminAiUserUsageDialogProps = {
   user: Record<string, unknown> | null;
   providerCode?: string;
   onClose: () => void;
-  onTransferPoints?: (userId: string, amount: number) => Promise<Record<string, unknown>>;
+  onTransferPoints?: (userId: string, amount: number, reason: string) => Promise<Record<string, unknown>>;
   onChanged?: () => void | Promise<void>;
 };
 
@@ -207,10 +207,11 @@ function getLedgerSourcePresentation(row: Record<string, unknown>) {
       sx: { fontWeight: 800 },
     };
   }
+  const reason = String(metadata.reason || '').trim();
   const label = formatLedgerSourceType(sourceType);
   return {
-    label,
-    secondary: '',
+    label: reason || label,
+    secondary: reason && label !== reason ? label : '',
     sx: amount > 0 ? { color: '#1b5e20', fontWeight: 800 } : { fontWeight: 800 },
   };
 }
@@ -232,6 +233,7 @@ export default function AdminAiUserUsageDialog({
   const [statsGroupBy, setStatsGroupBy] = useState<UserStatsGroupBy>(() => readStoredUserStatsGroupBy(providerCode));
   const [statsPage, setStatsPage] = useState(0);
   const [pointDraft, setPointDraft] = useState('');
+  const [pointReasonDraft, setPointReasonDraft] = useState('');
   const [loading, setLoading] = useState(false);
   const [statsLoading, setStatsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -307,11 +309,17 @@ export default function AdminAiUserUsageDialog({
       setError('请输入非 0 的额度，负数表示扣除');
       return;
     }
+    const reason = pointReasonDraft.trim();
+    if (!reason) {
+      setError('请输入增减额度原因');
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
-      await onTransferPoints(userId, amount);
+      await onTransferPoints(userId, amount, reason);
       setPointDraft('');
+      setPointReasonDraft('');
       setLedgerPage(0);
       await Promise.all([
         loadUsage(invocationPage, 0),
@@ -373,7 +381,8 @@ export default function AdminAiUserUsageDialog({
             {onTransferPoints ? (
               <>
                 <TextField size="small" label="增减额度" value={pointDraft} onChange={(event) => setPointDraft(event.target.value)} placeholder="负数扣除" sx={{ flex: '0 1 180px', minWidth: 140 }} />
-                <Button variant="contained" disabled={loading || !pointDraft.trim()} onClick={() => void transferPoints()} sx={{ height: 40 }}>增减额度</Button>
+                <TextField size="small" label="原因" value={pointReasonDraft} onChange={(event) => setPointReasonDraft(event.target.value)} placeholder="例如补偿、退款扣回" sx={{ flex: '1 1 220px', minWidth: 180 }} />
+                <Button variant="contained" disabled={loading || !pointDraft.trim() || !pointReasonDraft.trim()} onClick={() => void transferPoints()} sx={{ height: 40 }}>增减额度</Button>
               </>
             ) : null}
             <Button variant="outlined" disabled={loading || !userId} onClick={() => void loadUsage()} sx={{ height: 40 }}>刷新明细</Button>
