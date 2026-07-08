@@ -35,6 +35,9 @@ const MAX_BOTTOM_PREFETCH_PAGES = 3;
 const SCROLL_INTENT_SETTLE_MS = 160;
 const INITIAL_REVEAL_MAX_FRAMES = 12;
 const INITIAL_REVEAL_STABLE_FRAMES = 2;
+const PREPEND_STABILIZE_MAX_FRAMES = 36;
+const PREPEND_STABILIZE_STABLE_FRAMES = 6;
+const PREPEND_STABILIZE_OVERSCAN = 18;
 const INITIAL_TAIL_REVEAL_THRESHOLD = 4;
 const storyNodeFadeIn = keyframes`
   from { opacity: 0; transform: translateY(10px); }
@@ -679,7 +682,11 @@ export default function MessageList({
   const pendingInitialRestoreRef = useRef<MessageListScrollPosition | null>(initialScrollPosition?.pinned ? null : initialScrollPosition);
   const appliedInitialRestoreKeyRef = useRef<string | null>(null);
   const prependRestoreRef = useRef<ScrollAnchorSnapshot | null>(null);
-  const prependRestoreBoundaryRef = useRef<{ firstKey: string | null; itemCount: number } | null>(null);
+  const prependRestoreBoundaryRef = useRef<{
+    firstKey: string | null;
+    itemCount: number;
+    scrollHeight: number;
+  } | null>(null);
   const bottomRestoreDistanceRef = useRef<number | null>(null);
   const latestScrollAnchorRef = useRef<ScrollAnchorSnapshot | null>(null);
   const lastScrollTopRef = useRef(0);
@@ -697,6 +704,7 @@ export default function MessageList({
   const appliedScrollRequestKeyRef = useRef<string | null>(null);
   const hasInitialRestorePosition = Boolean(initialScrollPosition && !initialScrollPosition.pinned);
   const [initialViewportReady, setInitialViewportReady] = useState(() => !autoStickToBottom && !hasInitialRestorePosition);
+  const [prependStabilizing, setPrependStabilizing] = useState(false);
   const previousRenderMetricsRef = useRef({
     itemCount: renderItems.length,
     lastItemKey: renderItems.at(-1)?.key ?? null,
@@ -711,7 +719,7 @@ export default function MessageList({
     getScrollElement: () => containerRef.current,
     getItemKey: (index) => renderItems[index]?.key || index,
     estimateSize: () => 108,
-    overscan: 2,
+    overscan: prependStabilizing ? PREPEND_STABILIZE_OVERSCAN : 2,
   });
   messageVirtualizer.shouldAdjustScrollPositionOnItemSizeChange = () => (
     autoStickToBottom
@@ -908,6 +916,11 @@ export default function MessageList({
     return performance.now() - current.at <= USER_SCROLL_INERTIA_GRACE_MS;
   }, []);
 
+  const isRecentScrollWriteIntent = useCallback((intent: MessageScrollIntentKind) => {
+    const active = scrollWriteIntentRef.current;
+    return Boolean(active && active.kind === intent && performance.now() - active.startedAt <= SCROLL_INTENT_SETTLE_MS);
+  }, []);
+
   const runScrollWrite = useCallback((
     intent: MessageScrollIntentKind,
     write: (container: HTMLDivElement) => void,
@@ -1021,10 +1034,13 @@ export default function MessageList({
 
   const rememberPrependRestoreAnchor = useCallback((snapshot: ScrollAnchorSnapshot | null) => {
     if (!snapshot) return;
+    const container = containerRef.current;
+    setPrependStabilizing(true);
     prependRestoreRef.current = snapshot;
     prependRestoreBoundaryRef.current = {
       firstKey: renderItems[0]?.key ?? null,
       itemCount: renderItems.length,
+      scrollHeight: Math.round(container?.scrollHeight ?? 0),
     };
   }, [renderItems]);
 
@@ -1205,11 +1221,11 @@ export default function MessageList({
         scrollTop: Math.round(containerRef.current?.scrollTop ?? 0),
       }, 'debug', 'chat-scroll');
     }
-    if (isLoadingOlder && snapshot && !prependRestoreRef.current) {
-      rememberPrependRestoreAnchor(snapshot);
+    if (isLoadingOlder && snapshot) {
+      rememberPrependRestoreAnchor(captureTopVisibleScrollAnchor() || snapshot);
     }
     return snapshot;
-  }, [captureScrollAnchor, isLoadingOlder, onScrollPositionChange, rememberPrependRestoreAnchor]);
+  }, [captureScrollAnchor, captureTopVisibleScrollAnchor, isLoadingOlder, onScrollPositionChange, rememberPrependRestoreAnchor]);
 
   const scheduleRememberScrollAnchor = useCallback((options?: { persist?: boolean; reason?: string }) => {
     if (scrollAnchorFrameRef.current != null) return;
@@ -1618,32 +1634,36 @@ export default function MessageList({
     }, 'info');
   }, [getInitialRestoreKey, hasMore, hasMoreNewer, onBottomPinnedChange, renderItems, restoreScrollAnchor, scheduleInitialAnchorReveal, scrollVirtualizerToAnchor, updatePinnedState]);
 
-  const schedulePrependAnchorRestore = useCallback((snapshot: ScrollAnchorSnapshot) => {
+  const schedulePrependAnchorRestore = useCallback((
+    snapshot: ScrollAnchorSnapshot,
+    boundary: typeof prependRestoreBoundaryRef.current,
+  ) => {
     cancelProgrammaticScroll();
+    setPrependStabilizing(true);
+    let lastMeasuredScrollHeight = boundary?.scrollHeight ?? containerRef.current?.scrollHeight ?? 0;
     const runFrame = (frameCount: number, stableCount: number) => {
-      const restored = restoreScrollAnchor(snapshot, { intent: 'prependPreserve', allowDuringUserScroll: true });
-      const nextStableCount = restored ? stableCount + 1 : 0;
-      if (nextStableCount >= INITIAL_REVEAL_STABLE_FRAMES || frameCount >= INITIAL_REVEAL_MAX_FRAMES) {
-        const container = containerRef.current;
-        logDeveloperDiagnostic('chat-scroll:prepend-restore', {
-          messageId: snapshot.messageId,
-          offsetTop: Math.round(snapshot.offsetTop),
-          sourceTimestamp: snapshot.sourceTimestamp,
-          frameCount,
-          restored,
-          stableCount: nextStableCount,
-          scrollTop: Math.round(container?.scrollTop ?? 0),
-          scrollHeight: Math.round(container?.scrollHeight ?? 0),
-          clientHeight: Math.round(container?.clientHeight ?? 0),
-          renderItemCount: renderItems.length,
-        }, restored ? 'debug' : 'warn', 'chat-scroll');
+      const containerBefore = containerRef.current;
+      const heightDelta = containerBefore ? containerBefore.scrollHeight - lastMeasuredScrollHeight : 0;
+      if (containerBefore && Math.abs(heightDelta) >= 1) {
+        runScrollWrite('prependPreserve', (scrollContainer) => {
+          scrollContainer.scrollTop += heightDelta;
+        }, { allowDuringUserScroll: true });
+      }
+      if (frameCount === 1) {
+        restoreScrollAnchor(snapshot, { intent: 'prependPreserve', allowDuringUserScroll: true });
+      }
+      lastMeasuredScrollHeight = containerRef.current?.scrollHeight ?? lastMeasuredScrollHeight;
+      const heightStable = Math.abs(heightDelta) < 1;
+      const nextStableCount = heightStable ? stableCount + 1 : 0;
+      if (nextStableCount >= PREPEND_STABILIZE_STABLE_FRAMES || frameCount >= PREPEND_STABILIZE_MAX_FRAMES) {
+        setPrependStabilizing(false);
         if (!isUserScrollMomentumActive('up')) updatePinnedState();
         return;
       }
       window.requestAnimationFrame(() => runFrame(frameCount + 1, nextStableCount));
     };
-    window.requestAnimationFrame(() => runFrame(1, 0));
-  }, [cancelProgrammaticScroll, isUserScrollMomentumActive, renderItems.length, restoreScrollAnchor, updatePinnedState]);
+    runFrame(1, 0);
+  }, [cancelProgrammaticScroll, isUserScrollMomentumActive, restoreScrollAnchor, runScrollWrite, updatePinnedState]);
 
   useLayoutEffect(() => {
     const snapshot = prependRestoreRef.current;
@@ -1655,7 +1675,7 @@ export default function MessageList({
     }
     prependRestoreRef.current = null;
     prependRestoreBoundaryRef.current = null;
-    schedulePrependAnchorRestore(snapshot);
+    schedulePrependAnchorRestore(snapshot, boundary);
   }, [renderItems, schedulePrependAnchorRestore]);
 
   useLayoutEffect(() => {
@@ -1745,6 +1765,7 @@ export default function MessageList({
       if (boundary && boundary.firstKey === (renderItems[0]?.key ?? null) && boundary.itemCount === renderItems.length) {
         prependRestoreRef.current = null;
         prependRestoreBoundaryRef.current = null;
+        setPrependStabilizing(false);
       }
     }
   }, [isLoadingOlder, renderItems]);
@@ -1828,6 +1849,9 @@ export default function MessageList({
           if (hasUserScrollIntentRef.current) reportNearBottomState(container);
         }
         scheduleRememberScrollAnchor({ reason: 'scroll' });
+        if (isLoadingOlder && hasUserScrollIntentRef.current && !isRecentScrollWriteIntent('prependPreserve')) {
+          rememberPrependRestoreAnchor(captureTopVisibleScrollAnchor() || captureScrollAnchor() || latestScrollAnchorRef.current);
+        }
 
         const distanceFromBottom = getDistanceFromBottom(container);
         if (autoStickToBottom && distanceFromBottom < getAdaptiveBottomThreshold(container)) {
