@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
+import RefreshIcon from '@mui/icons-material/Refresh';
 import SaveIcon from '@mui/icons-material/Save';
 import { Alert, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, MenuItem, Stack, Tab, Table, TableBody, TableCell, TableHead, TableRow, Tabs, TextField, Switch, Tooltip, Typography } from '@mui/material';
 import { useSearchParams } from 'react-router-dom';
-import AdminResponsiveTable from '../../components/admin/AdminResponsiveTable';
 import AdminRequestState, { getAdminErrorMessage } from '../../components/admin/AdminRequestState';
+import { AdminMetricGrid, AdminSection, AdminTableFrame, type AdminMetricItem } from '../../components/admin/AdminSurface';
 import { ADMIN_PERMISSION_CODES, adminHasPermission } from '../../constants/adminPermissions';
 import { adminApi } from '../../services/adminApi';
 import { useAdminAuthStore } from '../../stores/useAdminAuthStore';
@@ -354,6 +355,18 @@ export default function AdminPlatformPage() {
       .sort(comparePlatformIntegration),
     [items, category],
   );
+  const categoryLabel = useMemo(() => CATEGORY_TABS.find((item) => item.value === category)?.label || '平台', [category]);
+  const integrationMetrics = useMemo<AdminMetricItem[]>(() => {
+    const activeCount = visibleItems.filter((item) => String(item.status || '') === 'active').length;
+    const defaultCount = visibleItems.filter((item) => Boolean(item.isDefault)).length;
+    const configurationOnlyCount = visibleItems.filter((item) => integrationCapabilities(item).configurationOnly).length;
+    return [
+      { key: 'total', label: '服务商', value: visibleItems.length, tone: 'primary' },
+      { key: 'active', label: '启用中', value: activeCount, tone: 'success' },
+      { key: 'default', label: '默认通道', value: defaultCount, tone: defaultCount ? 'info' : 'default' },
+      { key: 'configuration-only', label: '仅配置', value: configurationOnlyCount, tone: configurationOnlyCount ? 'warning' : 'default' },
+    ];
+  }, [visibleItems]);
   const selected = useMemo(() => items.find((item) => integrationKey(item) === selectedKey) || null, [items, selectedKey]);
   const selectedCapabilities = useMemo(() => integrationCapabilities(selected), [selected]);
   const fields = selected ? FIELD_DEFS[integrationKey(selected)] || [] : [];
@@ -468,75 +481,100 @@ export default function AdminPlatformPage() {
 
   return (
     <Stack spacing={2}>
-      <Tabs
-        value={category}
-        onChange={(_event, value) => {
-          setCategory(value);
-          writePersistentUiValue(PLATFORM_TAB_STORAGE_KEY, value);
-          setEditorOpen(false);
-          setSelectedKey('');
-          const nextSearchParams = new URLSearchParams(searchParams);
-          nextSearchParams.set('tab', value);
-          setSearchParams(nextSearchParams, { replace: true });
-        }}
-        variant="scrollable"
-        allowScrollButtonsMobile
+      <AdminSection
+        title="平台配置"
+        subtitle="集中管理 AI、支付、短信和邮箱服务商配置。"
+        action={category !== 'ai' && canReadPlatform ? (
+          <Button variant="outlined" startIcon={<RefreshIcon />} disabled={loading} onClick={() => void load()}>
+            刷新
+          </Button>
+        ) : undefined}
+        bodySx={{ py: 0.75 }}
       >
-        {visibleTabs.map((item) => <Tab key={item.value} value={item.value} label={item.label} />)}
-      </Tabs>
+        <Tabs
+          value={category}
+          onChange={(_event, value) => {
+            setCategory(value);
+            writePersistentUiValue(PLATFORM_TAB_STORAGE_KEY, value);
+            setEditorOpen(false);
+            setSelectedKey('');
+            const nextSearchParams = new URLSearchParams(searchParams);
+            nextSearchParams.set('tab', value);
+            setSearchParams(nextSearchParams, { replace: true });
+          }}
+          variant="scrollable"
+          allowScrollButtonsMobile
+        >
+          {visibleTabs.map((item) => <Tab key={item.value} value={item.value} label={item.label} />)}
+        </Tabs>
+      </AdminSection>
       {category === 'ai' ? (
         canReadAi ? <AdminAIPage /> : <Alert severity="warning">当前管理员没有访问 AI 平台配置的权限。</Alert>
       ) : (
-        <>
+        <Stack spacing={2}>
           <AdminRequestState loading={loading} error={error} onRetry={() => void load()} />
-          <AdminResponsiveTable minWidth={760}>
-            <Table>
-              <TableHead>
-                <TableRow>
-                  <TableCell>服务商</TableCell>
-                  <TableCell>状态</TableCell>
-                  <TableCell>默认</TableCell>
-                  <TableCell>配置概览</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {visibleItems.map((item) => (
-                  <TableRow
-                    key={integrationKey(item)}
-                    hover
-                    selected={editorOpen && integrationKey(item) === selectedKey}
-                    onClick={() => openEditor(item)}
-                    sx={{ cursor: 'pointer' }}
-                  >
-                    <TableCell>
-                      <Stack spacing={0.25}>
-                        <Typography variant="body2" sx={{ fontWeight: 800 }}>{String(item.displayName || '')}</Typography>
-                        <Typography variant="caption" color="text.secondary">{integrationKey(item)}</Typography>
-                      </Stack>
-                    </TableCell>
-                    <TableCell>
-                      <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
-                        <Chip size="small" label={statusLabel(item.status)} color={String(item.status || '') === 'active' ? 'success' : 'default'} />
-                        <Chip
-                          size="small"
-                          variant="outlined"
-                          label={integrationCapabilities(item).runtimeSupported ? '已接入' : '仅保存配置'}
-                          color={integrationCapabilities(item).runtimeSupported ? 'primary' : 'warning'}
-                        />
-                      </Stack>
-                    </TableCell>
-                    <TableCell>{item.isDefault ? '是' : '-'}</TableCell>
-                    <TableCell>
-                      <Typography variant="caption" color="text.secondary">
-                        {integrationCapabilities(item).note || Object.keys((item.config as Record<string, unknown>) || {}).slice(0, 4).join(' / ') || '-'}
-                      </Typography>
-                    </TableCell>
+          <AdminSection title={`${categoryLabel}概览`}>
+            <AdminMetricGrid items={integrationMetrics} compact minWidth={132} />
+          </AdminSection>
+          <AdminSection title={`${categoryLabel}服务商`} subtitle="点击服务商行可以编辑配置、保存并测试。" bodySx={{ p: 0 }}>
+            <AdminTableFrame minWidth={760}>
+              <Table>
+                <TableHead>
+                  <TableRow>
+                    <TableCell>服务商</TableCell>
+                    <TableCell>状态</TableCell>
+                    <TableCell>默认</TableCell>
+                    <TableCell>配置概览</TableCell>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </AdminResponsiveTable>
-        </>
+                </TableHead>
+                <TableBody>
+                  {visibleItems.map((item) => (
+                    <TableRow
+                      key={integrationKey(item)}
+                      hover
+                      selected={editorOpen && integrationKey(item) === selectedKey}
+                      onClick={() => openEditor(item)}
+                      sx={{ cursor: 'pointer' }}
+                    >
+                      <TableCell>
+                        <Stack spacing={0.25}>
+                          <Typography variant="body2" sx={{ fontWeight: 800 }}>{String(item.displayName || '')}</Typography>
+                          <Typography variant="caption" color="text.secondary">{integrationKey(item)}</Typography>
+                        </Stack>
+                      </TableCell>
+                      <TableCell>
+                        <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+                          <Chip size="small" label={statusLabel(item.status)} color={String(item.status || '') === 'active' ? 'success' : 'default'} />
+                          <Chip
+                            size="small"
+                            variant="outlined"
+                            label={integrationCapabilities(item).runtimeSupported ? '已接入' : '仅保存配置'}
+                            color={integrationCapabilities(item).runtimeSupported ? 'primary' : 'warning'}
+                          />
+                        </Stack>
+                      </TableCell>
+                      <TableCell>{item.isDefault ? '是' : '-'}</TableCell>
+                      <TableCell>
+                        <Typography variant="caption" color="text.secondary">
+                          {integrationCapabilities(item).note || Object.keys((item.config as Record<string, unknown>) || {}).slice(0, 4).join(' / ') || '-'}
+                        </Typography>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {!visibleItems.length ? (
+                    <TableRow>
+                      <TableCell colSpan={4}>
+                        <Typography variant="body2" color="text.secondary" sx={{ py: 2, textAlign: 'center' }}>
+                          暂无可配置服务商。
+                        </Typography>
+                      </TableCell>
+                    </TableRow>
+                  ) : null}
+                </TableBody>
+              </Table>
+            </AdminTableFrame>
+          </AdminSection>
+        </Stack>
       )}
 
       <Dialog open={editorOpen} onClose={() => setEditorOpen(false)} maxWidth="sm" fullWidth>

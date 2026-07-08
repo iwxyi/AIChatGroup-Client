@@ -7,10 +7,7 @@ describe('memoryEngine', () => {
     expect(extractMemoryCandidate('那这个计划是不是也要你批准呀')).toBeNull();
   });
 
-  it('extracts explicit artifact records only when they look like records', () => {
-    expect(extractMemoryCandidate('计划：明天先核对线索，再整理公开时间线')).toMatchObject({
-      kind: 'artifact',
-      text: '计划：明天先核对线索，再整理公开时间线',
-    });
+  it('does not extract explicit artifact records without model-authored memory data', () => {
+    expect(extractMemoryCandidate('计划：明天先核对线索，再整理公开时间线')).toBeNull();
   });
 });

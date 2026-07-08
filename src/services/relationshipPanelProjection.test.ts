@@ -345,7 +345,7 @@ describe('relationshipPanelProjection', () => {
     }
   });
 
-  it('filters draft fallback relations and reports unresolved fallback targets as diagnostics', () => {
+  it('filters draft fallback relations and ignores fallback targets outside the current group', () => {
     const chat = normalizeConversation({
       ...buildChat(),
       relationshipLedger: [{
@@ -368,12 +368,39 @@ describe('relationshipPanelProjection', () => {
     const projection = projectRelationshipPanelData(chat, members, false);
     expect(projection.ledgerSections).toHaveLength(0);
     expect(projection.fallbackSections).toHaveLength(0);
-    expect(projection.diagnostics).toHaveLength(1);
-    expect(projection.diagnostics[0]).toMatchObject({
-      kind: 'unresolved-fallback-target',
-      targetId: 'x',
-      note: '未知对象应降级命名',
+    expect(projection.diagnostics).toHaveLength(0);
+  });
+
+  it('filters relationship ledger entries outside the current group instead of creating unresolved members', () => {
+    const chat = normalizeConversation({
+      ...buildChat(),
+      relationshipLedger: [{
+        pairKey: 'a->x',
+        actorId: 'a',
+        targetId: 'x',
+        current: { warmth: 20, trust: 10, competence: 4, threat: 0 },
+        trend: 'up',
+        recentEvents: [],
+        lastUpdatedAt: 20,
+      }, {
+        pairKey: 'a->b',
+        actorId: 'a',
+        targetId: 'b',
+        current: { warmth: 8, trust: 5, competence: 3, threat: 0 },
+        trend: 'up',
+        recentEvents: [],
+        lastUpdatedAt: 21,
+      }],
     });
+    const members = [member('a', '甲'), member('b', '乙')];
+
+    const projection = projectRelationshipPanelData(chat, members, false);
+
+    expect(projection.ledgerSections).toHaveLength(1);
+    expect(projection.ledgerSections[0]?.member.name).toBe('甲');
+    expect(projection.ledgerSections[0]?.items.map((item) => item.pairKey)).toEqual(['a->b']);
+    expect(projection.ledgerSections.map((section) => section.member.name)).not.toContain('未解析成员(x)');
+    expect(projection.diagnostics).toHaveLength(0);
   });
 
   it('does not project character preset relationships as direct chat relationship data', () => {
@@ -411,13 +438,13 @@ describe('relationshipPanelProjection', () => {
     const members = [
       member('a', '甲', [
         { characterId: 'b', warmth: 9, trust: 9, competence: 9, threat: 0, note: '同一对关系不应走 fallback' },
-        { characterId: 'x', warmth: 12, trust: 0, competence: 0, threat: 0, note: '其它异常关系应继续暴露' },
+        { characterId: 'x', warmth: 12, trust: 0, competence: 0, threat: 0, note: '外部关系不属于当前群聊面板' },
       ]),
       member('b', '乙'),
     ];
     const projection = projectRelationshipPanelData(chat, members, false);
     expect(projection.ledgerSections.some((section) => section.member.id === 'a')).toBe(true);
     expect(projection.fallbackSections.find((section) => section.member.id === 'a')).toBeUndefined();
-    expect(projection.diagnostics.map((item) => item.targetId)).toEqual(['x']);
+    expect(projection.diagnostics).toHaveLength(0);
   });
 });

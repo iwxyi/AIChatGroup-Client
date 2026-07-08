@@ -270,7 +270,7 @@ describe('directCompanionshipAssessment', () => {
     expect(events.at(-3)?.evidenceMessageIds).toEqual(['msg-1']);
   });
 
-  it('falls back to local shared phrase and intimate conflict detection when the model assessment fails', async () => {
+  it('skips local shared phrase and intimate conflict writes when the model assessment fails', async () => {
     generateJsonResponseMock.mockRejectedValueOnce(new Error('model unavailable'));
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
@@ -280,26 +280,8 @@ describe('directCompanionshipAssessment', () => {
       message: message('以后我们之间的暗号就叫“慢慢来，我在”。刚才那句话让我很受伤，我们先别聊了。'),
       textApiConfig: { provider: 'openai', apiKey: 'key', baseUrl: 'https://example.test', model: 'model' },
     });
-    const phrase = events.find((event) => (event.payload as { eventType?: string }).eventType === 'companionship_shared_phrase');
-    const conflict = events.find((event) => (event.payload as { eventType?: string }).eventType === 'companionship_intimate_conflict');
-
-    expect(phrase?.payload).toMatchObject({
-      eventType: 'companionship_shared_phrase',
-      action: 'upsert',
-      text: '慢慢来，我在',
-      kind: 'inside_joke',
-      sourceMessageIds: ['msg-1'],
-      decisionSource: 'local_fallback',
-    });
-    expect(conflict?.payload).toMatchObject({
-      eventType: 'companionship_intimate_conflict',
-      action: 'opened',
-      kind: 'vulnerability_burst',
-      sourceMessageIds: ['msg-1'],
-      decisionSource: 'local_fallback',
-    });
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('[recoverable-warning] companionship:direct-assessment-model-fallback'), expect.objectContaining({
-      fallback: 'local_fallback',
+    expect(events).toEqual([]);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('[recoverable-warning] companionship:direct-assessment-model'), expect.objectContaining({
       messagePreview: '以后我们之间的暗号就叫“慢慢来，我在”。刚才那句话让我很受伤，我们先别聊了。',
     }));
     warnSpy.mockRestore();

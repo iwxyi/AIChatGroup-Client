@@ -4,11 +4,10 @@ import type { Message } from '../types/message';
 import type { APIConfig } from '../types/settings';
 import type { InteractionEventPayload } from '../types/runtimeEvent';
 import { generateResponse } from './aiClient';
-import { extractInteractionEvent } from './interactionExtractor';
 
 interface InteractionJudgementResult {
   interaction: InteractionEventPayload | null;
-  source: 'ai' | 'heuristic';
+  source: 'ai' | 'none';
 }
 
 function buildCharacterReference(characters: AICharacter[]) {
@@ -87,11 +86,14 @@ export async function judgeInteractionEvent(params: {
     const interaction = parseJudgeResult(raw, params.message.senderId, params.message.content);
     if (interaction) return { interaction, source: 'ai' };
   } catch {
-    // fall through to heuristic fallback
+    return {
+      interaction: null,
+      source: 'none',
+    };
   }
 
   return {
-    interaction: extractInteractionEvent({ message: params.message, characters: params.characters }),
-    source: 'heuristic',
+    interaction: null,
+    source: 'none',
   };
 }

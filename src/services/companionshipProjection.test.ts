@@ -10,7 +10,6 @@ import type { Message } from '../types/message';
 import type { RelationshipLedgerEntry, RuntimeEventV2 } from '../types/runtimeEvent';
 import { DEFAULT_COMPANIONSHIP_SETTINGS } from '../types/settings';
 import { buildCharacterCompanionshipStates, buildCompanionshipArtifactSeeds, buildCompanionshipCarePolicyForCharacter, buildCompanionshipRuntimeTrace, buildCompanionshipStatusSignature, buildHomeCompanionshipSnapshot, buildRitualRegistry, buildSharedMemoryAnchors, buildSharedPhrases, buildSharedSecrets, buildUserCompanionshipProjection, shouldBlockUserProactiveContactByCompanionshipPolicy } from './companionshipProjection';
-import { buildCompanionshipCareTopicEventsFromDirectUserMessage } from './directCompanionshipCare';
 import { setCompanionshipRuntimeConfig } from './companionshipRuntimeConfig';
 
 function character(overrides: Partial<AICharacter> = {}): AICharacter {
@@ -1699,11 +1698,31 @@ describe('companionshipProjection', () => {
   });
 
   it('reads runtime care topic events into pending care projection and removes them after closure', () => {
-    const opened = buildCompanionshipCareTopicEventsFromDirectUserMessage({
-      chat: chat('direct'),
-      character: character(),
-      message: message({ id: 'msg-open', content: '明天面试有点紧张。', timestamp: 200 }),
-    });
+    const opened: RuntimeEventV2[] = [{
+      id: 'evt-care-open',
+      conversationId: 'chat-1',
+      kind: 'artifact',
+      createdAt: 200,
+      actorIds: ['user'],
+      targetIds: ['char-a'],
+      evidenceMessageIds: ['msg-open'],
+      summary: '角色记录了一个需要后续关心的用户事项',
+      visibility: 'pair_private',
+      payload: {
+        eventType: 'companionship_care_topic',
+        characterId: 'char-a',
+        userId: 'user',
+        topicId: 'care-char-a-interview',
+        topicText: '明天面试有点紧张。',
+        action: 'opened',
+        urgency: 'high',
+        reason: '模型判断用户明确提到自己的面试压力。',
+        evidence: '明天面试有点紧张。',
+        sourceMessageIds: ['msg-open'],
+        confidence: 0.88,
+        decisionSource: 'model',
+      },
+    }];
     const openProjection = buildUserCompanionshipProjection({
       chat: chat('direct', [relationship({ warmth: 68, trust: 64, competence: 10, threat: 4 })], opened),
       character: character(),
@@ -1730,11 +1749,31 @@ describe('companionshipProjection', () => {
       sourceMessageIds: ['msg-open'],
     });
 
-    const closed = buildCompanionshipCareTopicEventsFromDirectUserMessage({
-      chat: chat('direct', [], opened),
-      character: character(),
-      message: message({ id: 'msg-close', content: '面试结束了，已经搞定了。', timestamp: 400 }),
-    });
+    const closed: RuntimeEventV2[] = [{
+      id: 'evt-care-close',
+      conversationId: 'chat-1',
+      kind: 'artifact',
+      createdAt: 400,
+      actorIds: ['user'],
+      targetIds: ['char-a'],
+      evidenceMessageIds: ['msg-close'],
+      summary: '角色记录用户完成了一个关心事项',
+      visibility: 'pair_private',
+      payload: {
+        eventType: 'companionship_care_topic',
+        characterId: 'char-a',
+        userId: 'user',
+        topicId: 'care-char-a-interview',
+        topicText: '明天面试有点紧张。',
+        action: 'closed',
+        urgency: 'high',
+        reason: '模型判断用户明确说面试已经结束。',
+        evidence: '面试结束了，已经搞定了。',
+        sourceMessageIds: ['msg-close'],
+        confidence: 0.86,
+        decisionSource: 'model',
+      },
+    }];
     const closedProjection = buildUserCompanionshipProjection({
       chat: chat('direct', [relationship({ warmth: 68, trust: 64, competence: 10, threat: 4 })], [...opened, ...closed]),
       character: character(),
@@ -4897,6 +4936,10 @@ describe('companionshipProjection', () => {
     });
 
     expect(signature?.onlineReturn).toContain('小夏');
+    expect(signature?.onlineReturn).not.toContain('它像是');
+    expect(signature?.onlineReturn).not.toContain('自然开口');
+    expect(signature?.onlineReturnIntent).toContain('用户长时间离开后回到会话');
+    expect(signature?.onlineReturnIntent).not.toBe(signature?.onlineReturn);
     expect(signature?.debugLines.join('\n')).toContain('onlineReturn=');
     expect(snapshot?.text).toBe(signature?.onlineReturn);
     expect(snapshot?.characterName).toBe('苏苏');

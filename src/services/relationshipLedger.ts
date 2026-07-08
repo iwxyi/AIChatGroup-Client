@@ -38,16 +38,6 @@ function scoreDirection(delta: RelationshipDeltaPayload['delta']) {
   return (delta.warmth || 0) + (delta.competence || 0) + (delta.trust || 0) - (delta.threat || 0);
 }
 
-function isSelfAssertiveSpeech(text: string) {
-  return /我[^，。！？!?]{0,24}(什么时候|何时|才没有|从来不|怎么会|怎么可能|怕过|输过|退过)/.test(text);
-}
-
-function inferChallengeTarget(interaction: InteractionEventPayload) {
-  if (!interaction.targetId) return interaction.targetId;
-  if (isSelfAssertiveSpeech(interaction.evidenceText)) return interaction.actorId;
-  return interaction.targetId;
-}
-
 export function normalizeCurrent(current?: Partial<RelationshipLedgerEntry['current']> | null) {
   const baseline = buildBaselineCurrent();
   return {
@@ -258,17 +248,15 @@ export function inferRelationshipDelta(interaction: InteractionEventPayload): Re
     };
   }
   if (interaction.kind === 'challenge' || interaction.kind === 'probe') {
-    const targetId = inferChallengeTarget(interaction) || interaction.targetId;
-    const selfAssertive = isSelfAssertiveSpeech(interaction.evidenceText);
     const delta = {
       warmth: interaction.kind === 'probe' ? 0 : (interaction.tone === 'annoyed' ? -1 : 0),
       threat: interaction.intensity + (interaction.tone === 'cold' ? 1 : 0),
-      competence: interaction.kind === 'probe' ? 0 : (selfAssertive ? -1 : (interaction.tone === 'excited' ? 2 : 1)),
-      trust: interaction.kind === 'probe' ? -(1 + (interaction.confidence >= 0.92 ? 1 : 0)) : (selfAssertive ? -2 : -1),
+      competence: interaction.kind === 'probe' ? 0 : (interaction.tone === 'excited' ? 2 : 1),
+      trust: interaction.kind === 'probe' ? -(1 + (interaction.confidence >= 0.92 ? 1 : 0)) : -1,
     };
     return {
       actorId: interaction.actorId,
-      targetId,
+      targetId: interaction.targetId,
       delta,
       reason: interaction.kind,
       axisReasons: buildAxisReasons(interaction, delta),

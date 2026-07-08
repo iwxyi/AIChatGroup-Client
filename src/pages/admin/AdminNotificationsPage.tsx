@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Paper, Stack, Table, TableBody, TableCell, TableHead, TableRow, Typography } from '@mui/material';
-import AdminDetailCard from '../../components/admin/AdminDetailCard';
+import { Alert, Button, Stack, Table, TableBody, TableCell, TableHead, TableRow, Typography } from '@mui/material';
 import AdminInlineGroup from '../../components/admin/AdminInlineGroup';
-import AdminResponsiveTable from '../../components/admin/AdminResponsiveTable';
 import AdminRequestState, { getAdminErrorMessage } from '../../components/admin/AdminRequestState';
+import { AdminMetricGrid, AdminSection, AdminTableFrame, type AdminMetricItem } from '../../components/admin/AdminSurface';
 import { adminApi } from '../../services/adminApi';
 
 function parsePayload(value: unknown) {
@@ -36,7 +35,7 @@ function payloadMessage(value: unknown) {
 function NotificationDetail({ item }: { item: Record<string, unknown> | null }) {
   const payload = item ? parsePayload(item.payload) : {};
   return (
-    <AdminDetailCard title="通知任务详情">
+    <AdminSection title="通知任务详情">
       {item ? (
         <Stack spacing={0.5}>
           <Typography variant="body2">渠道：{String(item.channel || '')}</Typography>
@@ -52,8 +51,25 @@ function NotificationDetail({ item }: { item: Record<string, unknown> | null }) 
           {payload.lastResult ? <Alert severity="success">最近一次投递成功</Alert> : null}
         </Stack>
       ) : <Alert severity="info">点击任务行查看详情</Alert>}
-    </AdminDetailCard>
+    </AdminSection>
   );
+}
+
+function buildMetricItems(stats: {
+  queued: number;
+  due: number;
+  processing: number;
+  staleProcessing: number;
+  sent: number;
+  failed: number;
+  maxAttempts: number;
+}): AdminMetricItem[] {
+  return [
+    { key: 'queued', label: '排队中', value: stats.queued, helper: `${stats.due} 条到期可投递`, tone: stats.due > 0 ? 'warning' : 'default' },
+    { key: 'processing', label: '处理中', value: stats.processing, helper: `${stats.staleProcessing} 条卡住`, tone: stats.staleProcessing > 0 ? 'warning' : 'default' },
+    { key: 'sent', label: '已发送', value: stats.sent, helper: '累计成功', tone: 'success' },
+    { key: 'failed', label: '失败', value: stats.failed, helper: `最多重试 ${stats.maxAttempts || '-'}`, tone: stats.failed > 0 ? 'error' : 'default' },
+  ];
 }
 
 export default function AdminNotificationsPage() {
@@ -149,89 +165,95 @@ export default function AdminNotificationsPage() {
   };
 
   return (
-    <Stack spacing={2}>
-      <AdminInlineGroup gap={1.25}>
-        <Alert severity="info">排队：{stats.queued}</Alert>
-        <Alert severity="warning">到期可投递：{stats.due}</Alert>
-        <Alert severity={stats.staleProcessing > 0 ? 'warning' : 'info'}>处理中：{stats.processing}</Alert>
-        <Alert severity="success">已发送：{stats.sent}</Alert>
-        <Alert severity="error">失败：{stats.failed}</Alert>
-        <Alert severity="info">最大重试：{stats.maxAttempts || '-'}</Alert>
-      </AdminInlineGroup>
-      <AdminInlineGroup gap={1.25}>
-        <Button variant={status === '' ? 'contained' : 'outlined'} onClick={() => setStatus('')}>全部状态</Button>
-        <Button variant={status === 'queued' ? 'contained' : 'outlined'} onClick={() => setStatus('queued')}>排队</Button>
-        <Button variant={status === 'sent' ? 'contained' : 'outlined'} onClick={() => setStatus('sent')}>已发送</Button>
-        <Button variant={status === 'failed' ? 'contained' : 'outlined'} onClick={() => setStatus('failed')}>失败</Button>
-        <Button variant={channel === '' ? 'contained' : 'outlined'} onClick={() => setChannel('')}>全部渠道</Button>
-        <Button variant={channel === 'email' ? 'contained' : 'outlined'} onClick={() => setChannel('email')}>邮件</Button>
-        <Button variant={channel === 'sms' ? 'contained' : 'outlined'} onClick={() => setChannel('sms')}>短信</Button>
-        <Button variant="outlined" disabled={delivering} onClick={() => void deliverQueued()} sx={{ ml: 'auto' }}>{delivering ? '投递中' : '投递队列'}</Button>
-      </AdminInlineGroup>
+    <Stack spacing={1.5}>
+      <AdminSection
+        title="通知队列"
+        subtitle="短信和邮件任务的自动投递、重试与失败处理"
+        action={<Button variant="outlined" size="small" disabled={delivering} onClick={() => void deliverQueued()}>{delivering ? '投递中' : '投递队列'}</Button>}
+      >
+        <AdminMetricGrid items={buildMetricItems(stats)} minWidth={132} compact />
+      </AdminSection>
+
+      <AdminSection title="筛选">
+        <AdminInlineGroup gap={1}>
+          <Button size="small" variant={status === '' ? 'contained' : 'outlined'} onClick={() => setStatus('')}>全部状态</Button>
+          <Button size="small" variant={status === 'queued' ? 'contained' : 'outlined'} onClick={() => setStatus('queued')}>排队</Button>
+          <Button size="small" variant={status === 'sent' ? 'contained' : 'outlined'} onClick={() => setStatus('sent')}>已发送</Button>
+          <Button size="small" variant={status === 'failed' ? 'contained' : 'outlined'} onClick={() => setStatus('failed')}>失败</Button>
+          <Button size="small" variant={channel === '' ? 'contained' : 'outlined'} onClick={() => setChannel('')}>全部渠道</Button>
+          <Button size="small" variant={channel === 'email' ? 'contained' : 'outlined'} onClick={() => setChannel('email')}>邮件</Button>
+          <Button size="small" variant={channel === 'sms' ? 'contained' : 'outlined'} onClick={() => setChannel('sms')}>短信</Button>
+        </AdminInlineGroup>
+      </AdminSection>
+
       <AdminRequestState loading={loading} error={error} onRetry={() => void load()} />
-      <Paper sx={{ p: 2, borderRadius: 3 }}>
-        <Typography variant="subtitle2" sx={{ fontWeight: 800, mb: 1.25 }}>模板数量：{templates.length}</Typography>
+
+      <AdminSection title={`模板数量：${templates.length}`}>
         <Stack spacing={0.75}>
           {templates.map((item) => (
             <Typography key={String(item.id)} variant="body2">{String(item.channel || '')} · {String(item.code || '')} · {String(item.status || '')}</Typography>
           ))}
+          {!templates.length ? <Alert severity="info">暂无通知模板</Alert> : null}
         </Stack>
-      </Paper>
-      <AdminResponsiveTable minWidth={900}>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell>渠道</TableCell>
-              <TableCell>接收方</TableCell>
-              <TableCell>模板</TableCell>
-              <TableCell>状态</TableCell>
-              <TableCell>次数</TableCell>
-              <TableCell>计划投递</TableCell>
-              <TableCell>创建时间</TableCell>
-              <TableCell align="right">操作</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {items.map((item) => (
-              <TableRow key={String(item.id)} hover selected={String(selectedItem?.id || '') === String(item.id)} onClick={() => setSelectedItem(item)}>
-                <TableCell>{String(item.channel || '')}</TableCell>
-                <TableCell>{String(item.recipient || '')}</TableCell>
-                <TableCell>{String(item.template_code || '')}</TableCell>
-                <TableCell>{String(item.status || '')}</TableCell>
-                <TableCell>{String(item.attempt_count || 0)}</TableCell>
-                <TableCell>{formatTime(item.scheduled_at)}</TableCell>
-                <TableCell>{formatTime(item.created_at)}</TableCell>
-                <TableCell align="right">
-                  <Stack direction="row" spacing={0.5} sx={{ justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-                    {String(item.status || '') === 'failed' ? (
+      </AdminSection>
+
+      <AdminSection title="通知任务" subtitle="点击任务行查看详情" bodySx={{ p: 0 }}>
+        <AdminTableFrame minWidth={900}>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableCell>渠道</TableCell>
+                <TableCell>接收方</TableCell>
+                <TableCell>模板</TableCell>
+                <TableCell>状态</TableCell>
+                <TableCell>次数</TableCell>
+                <TableCell>计划投递</TableCell>
+                <TableCell>创建时间</TableCell>
+                <TableCell align="right">操作</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {items.map((item) => (
+                <TableRow key={String(item.id)} hover selected={String(selectedItem?.id || '') === String(item.id)} onClick={() => setSelectedItem(item)}>
+                  <TableCell>{String(item.channel || '')}</TableCell>
+                  <TableCell>{String(item.recipient || '')}</TableCell>
+                  <TableCell>{String(item.template_code || '')}</TableCell>
+                  <TableCell>{String(item.status || '')}</TableCell>
+                  <TableCell>{String(item.attempt_count || 0)}</TableCell>
+                  <TableCell>{formatTime(item.scheduled_at)}</TableCell>
+                  <TableCell>{formatTime(item.created_at)}</TableCell>
+                  <TableCell align="right">
+                    <Stack direction="row" spacing={0.5} sx={{ justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                      {String(item.status || '') === 'failed' ? (
+                        <Button
+                          size="small"
+                          disabled={requeueingId === String(item.id || '')}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void requeueOne(item);
+                          }}
+                        >
+                          重新排队
+                        </Button>
+                      ) : null}
                       <Button
                         size="small"
-                        disabled={requeueingId === String(item.id || '')}
+                        disabled={deliveringId === String(item.id || '') || String(item.status || '') === 'sent'}
                         onClick={(event) => {
                           event.stopPropagation();
-                          void requeueOne(item);
+                          void deliverOne(item);
                         }}
                       >
-                        重新排队
+                        {String(item.status || '') === 'failed' ? '立即投递' : '投递'}
                       </Button>
-                    ) : null}
-                    <Button
-                      size="small"
-                      disabled={deliveringId === String(item.id || '') || String(item.status || '') === 'sent'}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        void deliverOne(item);
-                      }}
-                    >
-                      {String(item.status || '') === 'failed' ? '立即投递' : '投递'}
-                    </Button>
-                  </Stack>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </AdminResponsiveTable>
+                    </Stack>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </AdminTableFrame>
+      </AdminSection>
       <NotificationDetail item={selectedItem} />
     </Stack>
   );

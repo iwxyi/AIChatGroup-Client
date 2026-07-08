@@ -172,6 +172,7 @@ export function projectMessageRuntimeClues(message: Pick<Message, 'metadata'> | 
     expressionPlan?: { surface?: string; texture?: string; rhythm?: string };
     trace?: {
       policyHits?: string[];
+      guidanceValidation?: string | null;
       scenarioChecks?: string[];
       duplicateDecision?: string | null;
       humanAppraisal?: {
@@ -208,6 +209,7 @@ export function projectMessageRuntimeClues(message: Pick<Message, 'metadata'> | 
       generationRuntime.expressionPlan?.rhythm ? `节奏：${generationRuntime.expressionPlan.rhythm}` : '',
       humanAppraisalLabel ? `人性评估：${humanAppraisalLabel}` : '',
       generationRuntime.trace?.policyHits?.length ? `策略：${generationRuntime.trace.policyHits.join(' / ')}` : '',
+      generationRuntime.trace?.guidanceValidation ? `协议：${generationRuntime.trace.guidanceValidation}` : '',
       generationRuntime.trace?.scenarioChecks?.length ? `场景：${generationRuntime.trace.scenarioChecks.join(' / ')}` : '',
       generationRuntime.trace?.duplicateDecision ? `校验：${generationRuntime.trace.duplicateDecision}` : '',
     ] : [],

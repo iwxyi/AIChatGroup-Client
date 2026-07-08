@@ -79,7 +79,7 @@ describe('worldCalendarAutoPatchRuntime', () => {
       {
         id: 'evt-1',
         conversationId: 'chat-1',
-        kind: 'artifact',
+        kind: 'event_candidate',
         createdAt: 100,
         actorIds: ['a'],
         targetIds: ['b'],
@@ -97,7 +97,7 @@ describe('worldCalendarAutoPatchRuntime', () => {
       {
         id: 'evt-2',
         conversationId: 'chat-1',
-        kind: 'artifact',
+        kind: 'event_candidate',
         createdAt: 110,
         actorIds: ['a'],
         targetIds: ['b'],

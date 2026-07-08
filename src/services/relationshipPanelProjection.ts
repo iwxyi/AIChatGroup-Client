@@ -30,7 +30,7 @@ export interface RelationshipPanelFallbackSection {
 }
 
 export interface RelationshipPanelDiagnosticItem {
-  kind: 'unresolved-fallback-target';
+  kind: 'unresolved-fallback-target' | 'unresolved-ledger-member';
   member: RelationshipDisplayMember;
   targetId: string;
   note?: string;
@@ -53,6 +53,12 @@ function shouldIncludeUserInRelationshipPanel(chat: GroupChat) {
   return chat.type === 'direct' || chat.memberIds.includes('user');
 }
 
+function buildCurrentRelationshipIdSet(chat: GroupChat) {
+  const ids = new Set((chat.memberIds || []).filter((id) => typeof id === 'string' && id));
+  if (shouldIncludeUserInRelationshipPanel(chat)) ids.add('user');
+  return ids;
+}
+
 function isDirectUserRelationshipEntry(chat: GroupChat, entry: RelationshipLedgerEntry) {
   if (chat.type !== 'direct') return true;
   const memberIds = new Set(chat.memberIds || []);
@@ -66,7 +72,12 @@ function isAiDirectPairRelationshipEntry(chat: GroupChat, entry: RelationshipLed
 }
 
 function isRelationshipEntryRelevantToPanel(chat: GroupChat, entry: RelationshipLedgerEntry) {
-  return isDirectUserRelationshipEntry(chat, entry) && isAiDirectPairRelationshipEntry(chat, entry);
+  if (!isDirectUserRelationshipEntry(chat, entry) || !isAiDirectPairRelationshipEntry(chat, entry)) return false;
+  if (chat.type === 'group') {
+    const currentIds = buildCurrentRelationshipIdSet(chat);
+    return currentIds.has(entry.actorId) && currentIds.has(entry.targetId) && entry.actorId !== entry.targetId;
+  }
+  return true;
 }
 
 function isFallbackRelationRelevantToPanel(chat: GroupChat, memberId: string, targetId: string) {
@@ -75,7 +86,8 @@ function isFallbackRelationRelevantToPanel(chat: GroupChat, memberId: string, ta
     const memberIds = new Set(chat.memberIds || []);
     return memberIds.has(memberId) && memberIds.has(targetId) && memberId !== targetId;
   }
-  return true;
+  const memberIds = buildCurrentRelationshipIdSet(chat);
+  return memberIds.has(memberId) && memberIds.has(targetId) && memberId !== targetId;
 }
 
 function isDraftRelationshipId(id: string) {
@@ -87,28 +99,14 @@ function buildUnresolvedMemberName(id: string) {
 }
 
 function buildRelationshipMembers(chat: GroupChat, members: AICharacter[]) {
-  const list: RelationshipDisplayMember[] = members.map((member) => ({ id: member.id, name: member.name }));
+  const currentIds = buildCurrentRelationshipIdSet(chat);
+  const list: RelationshipDisplayMember[] = members
+    .filter((member) => currentIds.has(member.id))
+    .map((member) => ({ id: member.id, name: member.name }));
   const shouldIncludeUser = shouldIncludeUserInRelationshipPanel(chat);
   if (shouldIncludeUser && !list.some((member) => member.id === 'user')) {
     list.push({ id: 'user', name: '我' });
   }
-  const extraIds = new Set<string>();
-  (chat.relationshipLedger || [])
-    .filter((entry) => isRelationshipEntryRelevantToPanel(chat, entry))
-    .forEach((entry) => {
-    if (!isDraftRelationshipId(entry.actorId)) extraIds.add(entry.actorId);
-    if (!isDraftRelationshipId(entry.targetId)) extraIds.add(entry.targetId);
-  });
-  extraIds.forEach((id) => {
-    if (list.some((member) => member.id === id)) return;
-    list.push({ id, name: buildUnresolvedMemberName(id) });
-    reportUnresolvedDisplayEntity({
-      id,
-      kind: 'relationship-target',
-      location: 'relationshipPanelProjection.buildRelationshipMembers',
-      fallback: buildUnresolvedMemberName(id),
-    });
-  });
   return list;
 }
 
@@ -129,9 +127,36 @@ export function projectRelationshipPanelData(chat: GroupChat, members: AICharact
   const prefix = reverseLedger ? 'reverse' : 'forward';
   const relationshipMembers = buildRelationshipMembers(chat, members);
   const memberById = new Map(relationshipMembers.map((member) => [member.id, member] as const));
+  const diagnostics: RelationshipPanelDiagnosticItem[] = [];
   const ledgerEntries = (chat.relationshipLedger || [])
     .filter((entry) => !isDraftRelationshipId(entry.actorId) && !isDraftRelationshipId(entry.targetId))
     .filter((entry) => isRelationshipEntryRelevantToPanel(chat, entry))
+    .filter((entry) => {
+      const actor = memberById.get(entry.actorId);
+      const target = memberById.get(entry.targetId);
+      if (actor && target) return true;
+      const unresolvedId = actor ? entry.targetId : entry.actorId;
+      reportUnresolvedDisplayEntity({
+        id: unresolvedId,
+        kind: 'relationship-target',
+        location: 'relationshipPanelProjection.ledgerMember',
+        fallback: buildUnresolvedMemberName(unresolvedId),
+        extra: { pairKey: entry.pairKey },
+      });
+      diagnostics.push({
+        kind: 'unresolved-ledger-member',
+        member: actor || target || { id: entry.actorId, name: buildUnresolvedMemberName(entry.actorId) },
+        targetId: unresolvedId,
+        note: entry.derived?.semantic?.summary || entry.recentEvents?.at(-1)?.summary,
+        relation: {
+          warmth: entry.current.warmth,
+          competence: entry.current.competence,
+          trust: entry.current.trust,
+          threat: entry.current.threat,
+        },
+      });
+      return false;
+    })
     .filter(isMeaningfulRelationshipLedgerEntry)
     .slice()
     .sort((a, b) => {
@@ -148,7 +173,6 @@ export function projectRelationshipPanelData(chat: GroupChat, members: AICharact
     }))
     .filter((section) => section.items.length > 0);
   const coveredFallbackPairs = new Set(ledgerEntries.map((entry) => `${entry.actorId}->${entry.targetId}`));
-  const diagnostics: RelationshipPanelDiagnosticItem[] = [];
 
   if (chat.type === 'direct') {
     return {

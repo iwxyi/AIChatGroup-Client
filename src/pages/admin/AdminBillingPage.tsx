@@ -34,9 +34,8 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import AdminInlineGroup from '../../components/admin/AdminInlineGroup';
-import AdminResponsiveTable from '../../components/admin/AdminResponsiveTable';
 import AdminRequestState, { getAdminErrorMessage } from '../../components/admin/AdminRequestState';
+import { AdminMetricGrid, AdminSection, AdminTableFrame, type AdminMetricItem } from '../../components/admin/AdminSurface';
 import ConfirmDialog from '../../components/common/ConfirmDialog';
 import { adminApi } from '../../services/adminApi';
 import { readPersistentUiValue, writePersistentUiValue } from '../../utils/persistentUiState';
@@ -888,6 +887,19 @@ export default function AdminBillingPage() {
     points: plans.filter((item) => Number(item.grant_points || 0) > 0).length,
     active: plans.filter((item) => String(item.status || '') === 'active').length,
   }), [plans]);
+  const planMetrics = useMemo<AdminMetricItem[]>(() => [
+    { key: 'vip', label: 'VIP 套餐', value: planSummary.vip, tone: 'primary' },
+    { key: 'points', label: '含点数套餐', value: planSummary.points, tone: 'success' },
+    { key: 'active', label: '启用中', value: planSummary.active, tone: 'warning' },
+  ], [planSummary]);
+  const orderMetrics = useMemo<AdminMetricItem[]>(() => [
+    { key: 'total', label: '全部订单', value: Number(orderStatusSummary.total || 0), tone: 'primary' },
+    { key: 'pending', label: '待支付', value: Number(orderStatusSummary.pending || 0), tone: 'warning' },
+    { key: 'paid', label: '已支付', value: Number(orderStatusSummary.paid || 0), tone: 'success' },
+    { key: 'refunded', label: '退款订单', value: Number(orderStatusSummary.refunded || 0) + Number(orderStatusSummary.partiallyRefunded || 0), tone: 'info' },
+    { key: 'cancelled', label: '已关闭', value: Number(orderStatusSummary.cancelled || 0), tone: 'error' },
+    { key: 'amount', label: '当前列表金额', value: orderListAmount.toFixed(2), helper: '按当前筛选汇总' },
+  ], [orderListAmount, orderStatusSummary]);
   const planHasBenefit = planForm.vipEnabled || planForm.pointsEnabled;
   const planPointsValid = !planForm.pointsEnabled || toNumber(planForm.grantPoints, 0) > 0;
   const canSavePlan = planHasBenefit && planPointsValid && !savingPlan;
@@ -1147,32 +1159,39 @@ export default function AdminBillingPage() {
 
   return (
     <Stack spacing={2}>
-      <Stack direction="row" spacing={1.25} sx={{ alignItems: 'center', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap' }}>
+      <AdminSection
+        title="套餐订单"
+        subtitle="管理用户可购买的权益套餐、点数套餐和支付订单。"
+        bodySx={{ py: 0.75 }}
+      >
         <Tabs value={tab} onChange={changeTab} variant="scrollable" allowScrollButtonsMobile sx={{ minWidth: 0, flex: '1 1 auto' }}>
           <Tab label="套餐" />
           <Tab label="订单" />
         </Tabs>
-        <Button
-          variant="outlined"
-          startIcon={<AddIcon />}
-          onClick={openCreatePlanDialog}
-          sx={{ flex: '0 0 auto' }}
-        >
-          新建套餐
-        </Button>
-      </Stack>
+      </AdminSection>
 
       {tab === 0 ? (
         <Stack spacing={2}>
           <AdminRequestState loading={plansLoading} error={plansError} onRetry={() => void loadPlans()} />
-          <AdminInlineGroup gap={1.25}>
-            <Alert severity="info">VIP 套餐：{planSummary.vip}</Alert>
-            <Alert severity="success">含点数套餐：{planSummary.points}</Alert>
-            <Alert severity="warning">启用中：{planSummary.active}</Alert>
-          </AdminInlineGroup>
+          <AdminSection
+            title="套餐概览"
+            subtitle="套餐可以单独售卖 VIP、点数，也可以同时包含多种权益。"
+            action={(
+              <Button
+                variant="contained"
+                startIcon={<AddIcon />}
+                onClick={openCreatePlanDialog}
+                sx={{ flex: '0 0 auto' }}
+              >
+                新建套餐
+              </Button>
+            )}
+          >
+            <AdminMetricGrid items={planMetrics} compact minWidth={132} />
+          </AdminSection>
 
-          <Stack spacing={1.25}>
-            <AdminResponsiveTable minWidth={900}>
+          <AdminSection title="套餐列表" subtitle="点击套餐行可以进入编辑。" bodySx={{ p: 0 }}>
+            <AdminTableFrame minWidth={900}>
               <Table>
                 <TableHead>
                   <TableRow>
@@ -1234,8 +1253,8 @@ export default function AdminBillingPage() {
                   ))}
                 </TableBody>
               </Table>
-            </AdminResponsiveTable>
-          </Stack>
+            </AdminTableFrame>
+          </AdminSection>
 
           <Dialog open={planDialogOpen} onClose={() => setPlanDialogOpen(false)} maxWidth="md" fullWidth>
             <DialogTitle>{planForm.id ? '编辑套餐' : '新增套餐'}</DialogTitle>
@@ -1308,15 +1327,23 @@ export default function AdminBillingPage() {
         </Stack>
       ) : (
         <Stack spacing={2}>
-          <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap' }}>
-            <AdminInlineGroup gap={0.75}>
+          <AdminSection title="订单概览">
+            <AdminMetricGrid items={orderMetrics} compact minWidth={128} />
+          </AdminSection>
+          <AdminSection
+            title="订单筛选"
+            subtitle="筛选订单状态，或批量关闭超时待支付订单。"
+            action={(
               <OrderStatusFilterButton active={status === ''} label="全部" count={Number(orderStatusSummary.total || 0)} onClick={() => setStatus('')} />
+            )}
+          >
+            <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
               <OrderStatusFilterButton active={status === 'pending'} label="待支付" count={Number(orderStatusSummary.pending || 0)} color="warning" onClick={() => setStatus('pending')} />
               <OrderStatusFilterButton active={status === 'paid'} label="已支付" count={Number(orderStatusSummary.paid || 0)} color="success" onClick={() => setStatus('paid')} />
               <OrderStatusFilterButton active={status === 'partially_refunded'} label="部分退款" count={Number(orderStatusSummary.partiallyRefunded || 0)} color="info" onClick={() => setStatus('partially_refunded')} />
               <OrderStatusFilterButton active={status === 'refunded'} label="已退款" count={Number(orderStatusSummary.refunded || 0)} color="info" onClick={() => setStatus('refunded')} />
               <OrderStatusFilterButton active={status === 'cancelled'} label="已关闭" count={Number(orderStatusSummary.cancelled || 0)} color="error" onClick={() => setStatus('cancelled')} />
-              <Button startIcon={<RefreshIcon />} onClick={() => void loadOrders()}>刷新</Button>
+              <Button variant="outlined" startIcon={<RefreshIcon />} onClick={() => void loadOrders()}>刷新</Button>
               <Button
                 color="warning"
                 variant="outlined"
@@ -1326,16 +1353,11 @@ export default function AdminBillingPage() {
               >
                 关闭超时待支付
               </Button>
-            </AdminInlineGroup>
-            <Chip
-              size="small"
-              variant="outlined"
-              label={`当前列表金额 ${orderListAmount.toFixed(2)}`}
-              sx={{ flex: '0 0 auto', fontWeight: 800 }}
-            />
-          </Stack>
+            </Stack>
+          </AdminSection>
           <AdminRequestState loading={ordersLoading} error={ordersError} onRetry={() => void loadOrders()} />
-          <AdminResponsiveTable minWidth={820}>
+          <AdminSection title="订单列表" subtitle="点击订单行可以查看支付、退款和权益详情。" bodySx={{ p: 0 }}>
+            <AdminTableFrame minWidth={820}>
             <Table>
               <TableHead>
                 <TableRow>
@@ -1370,7 +1392,8 @@ export default function AdminBillingPage() {
                 ))}
               </TableBody>
             </Table>
-          </AdminResponsiveTable>
+            </AdminTableFrame>
+          </AdminSection>
           <OrderDetailDialog
             order={selectedOrder}
             detail={selectedOrderDetail}

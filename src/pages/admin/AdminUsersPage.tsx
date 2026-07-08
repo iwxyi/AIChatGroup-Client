@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, Box, Button, Chip, Dialog, DialogContent, DialogTitle, Divider, Grid, Paper, Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography, useMediaQuery, useTheme } from '@mui/material';
 import AdminAiUserUsageDialog from '../../components/admin/AdminAiUserUsageDialog';
-import AdminDetailCard from '../../components/admin/AdminDetailCard';
-import AdminResponsiveTable from '../../components/admin/AdminResponsiveTable';
 import AdminRequestState, { getAdminErrorMessage } from '../../components/admin/AdminRequestState';
+import { AdminMetricGrid, AdminSection, AdminTableFrame, type AdminMetricItem } from '../../components/admin/AdminSurface';
 import { adminApi } from '../../services/adminApi';
 import { formatAiAmount, formatAiBalanceAmount } from '../../utils/aiPoints';
 
@@ -87,10 +86,10 @@ function extractTransferredCustomKey(result: Record<string, unknown>) {
 
 function WorkspaceTable({ title, rows, columns }: { title: string; rows: Array<Record<string, unknown>>; columns: Array<{ key: string; label: string }> }) {
   return (
-    <AdminDetailCard title={title}>
+    <AdminSection title={title} bodySx={{ p: rows.length ? 0 : undefined }}>
       {!rows.length ? <Alert severity="info">暂无数据</Alert> : null}
       {rows.length ? (
-        <AdminResponsiveTable minWidth={520}>
+        <AdminTableFrame minWidth={520}>
           <Table size="small">
             <TableHead>
               <TableRow>
@@ -107,9 +106,9 @@ function WorkspaceTable({ title, rows, columns }: { title: string; rows: Array<R
               ))}
             </TableBody>
           </Table>
-        </AdminResponsiveTable>
+        </AdminTableFrame>
       ) : null}
-    </AdminDetailCard>
+    </AdminSection>
   );
 }
 
@@ -138,11 +137,11 @@ export default function AdminUsersPage() {
   const [error, setError] = useState<string | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
 
-  const statCards = useMemo(() => [
-    { label: '聊天数', value: selectedUser?.chatCount },
-    { label: '角色数', value: selectedUser?.characterCount },
-    { label: '订单数', value: selectedUser?.orderCount },
-    { label: '生效限制', value: selectedUser?.activeRestrictionCount },
+  const statCards = useMemo<AdminMetricItem[]>(() => [
+    { key: 'chats', label: '聊天数', value: String(selectedUser?.chatCount || 0), tone: 'primary' },
+    { key: 'characters', label: '角色数', value: String(selectedUser?.characterCount || 0), tone: 'info' },
+    { key: 'orders', label: '订单数', value: String(selectedUser?.orderCount || 0), tone: 'success' },
+    { key: 'restrictions', label: '生效限制', value: String(selectedUser?.activeRestrictionCount || 0), tone: Number(selectedUser?.activeRestrictionCount || 0) > 0 ? 'warning' : 'default' },
   ], [selectedUser]);
 
   const loadUsers = async () => {
@@ -467,49 +466,53 @@ export default function AdminUsersPage() {
 
   return (
     <Stack spacing={2}>
-      <TextField value={search} onChange={(e) => setSearch(e.target.value)} label="搜索手机号或昵称" />
+      <AdminSection title="用户管理" subtitle="查询用户、查看工作区数据、AI 点数和限制项。">
+        <TextField value={search} onChange={(e) => setSearch(e.target.value)} label="搜索手机号或昵称" fullWidth />
+      </AdminSection>
       <AdminRequestState loading={loading} error={error} onRetry={() => void loadUsers()} />
-      <AdminResponsiveTable minWidth={760}>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell>昵称</TableCell>
-              <TableCell>手机号</TableCell>
-              <TableCell>用户额度</TableCell>
-              <TableCell>创建时间</TableCell>
-              <TableCell align="right">详情</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {!items.length && !loading ? (
+      <AdminSection title="用户列表" subtitle="点击用户行打开详情。" bodySx={{ p: 0 }}>
+        <AdminTableFrame minWidth={760}>
+          <Table>
+            <TableHead>
               <TableRow>
-                <TableCell colSpan={5}>
-                  <Alert severity="info">暂无用户</Alert>
-                </TableCell>
+                <TableCell>昵称</TableCell>
+                <TableCell>手机号</TableCell>
+                <TableCell>用户额度</TableCell>
+                <TableCell>创建时间</TableCell>
+                <TableCell align="right">详情</TableCell>
               </TableRow>
-            ) : null}
-            {items.map((item) => {
-              const aiQuota = formatUserAiQuota(item);
-              return (
-                <TableRow key={item.id} hover onClick={() => setSelectedUserId(item.id)} sx={{ cursor: 'pointer' }}>
-                  <TableCell>{item.nickname}</TableCell>
-                  <TableCell>{item.phone}</TableCell>
-                  <TableCell>
-                    <Stack spacing={0.25}>
-                      <Typography variant="body2" sx={{ fontWeight: 700 }}>剩余 {aiQuota.balance}</Typography>
-                      <Typography variant="caption" color="text.secondary">已用 {aiQuota.used}</Typography>
-                    </Stack>
-                  </TableCell>
-                  <TableCell>{new Date(item.created_at).toLocaleString()}</TableCell>
-                  <TableCell align="right">
-                    <Typography variant="body2" color="primary">查看</Typography>
+            </TableHead>
+            <TableBody>
+              {!items.length && !loading ? (
+                <TableRow>
+                  <TableCell colSpan={5}>
+                    <Alert severity="info">暂无用户</Alert>
                   </TableCell>
                 </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
-      </AdminResponsiveTable>
+              ) : null}
+              {items.map((item) => {
+                const aiQuota = formatUserAiQuota(item);
+                return (
+                  <TableRow key={item.id} hover onClick={() => setSelectedUserId(item.id)} sx={{ cursor: 'pointer' }}>
+                    <TableCell>{item.nickname}</TableCell>
+                    <TableCell>{item.phone}</TableCell>
+                    <TableCell>
+                      <Stack spacing={0.25}>
+                        <Typography variant="body2" sx={{ fontWeight: 700 }}>剩余 {aiQuota.balance}</Typography>
+                        <Typography variant="caption" color="text.secondary">已用 {aiQuota.used}</Typography>
+                      </Stack>
+                    </TableCell>
+                    <TableCell>{new Date(item.created_at).toLocaleString()}</TableCell>
+                    <TableCell align="right">
+                      <Typography variant="body2" color="primary">查看</Typography>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </AdminTableFrame>
+      </AdminSection>
 
       <Dialog open={Boolean(selectedUserId)} onClose={() => setSelectedUserId(null)} fullWidth maxWidth="lg" fullScreen={fullScreen}>
         <DialogTitle>用户详情</DialogTitle>
@@ -518,7 +521,7 @@ export default function AdminUsersPage() {
             <AdminRequestState loading={detailLoading || actionLoading} error={detailError} onRetry={selectedUserId ? () => void loadSelectedUser(selectedUserId) : undefined} />
             {selectedUser ? (
               <Stack spacing={2}>
-                <AdminDetailCard title="基础信息">
+                <AdminSection title="基础信息">
                   <Stack spacing={1}>
                     <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>{String(selectedUser.nickname || '')}</Typography>
                     <Typography variant="body2" color="text.secondary">{String(selectedUser.phone || '')}</Typography>
@@ -526,20 +529,11 @@ export default function AdminUsersPage() {
                       <Typography variant="body2" color="text.secondary">当前订阅：{String((selectedUser.latestSubscription as Record<string, unknown>).plan_name || (selectedUser.latestSubscription as Record<string, unknown>).plan_code || '')} · {String((selectedUser.latestSubscription as Record<string, unknown>).status || '')}</Typography>
                     ) : null}
                   </Stack>
-                </AdminDetailCard>
+                </AdminSection>
 
-                <Grid container spacing={1.25}>
-                  {statCards.map((card) => (
-                    <Grid key={card.label} size={{ xs: 6, md: 3 }}>
-                      <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2 }}>
-                        <Typography variant="caption" color="text.secondary">{card.label}</Typography>
-                        <Typography variant="h6" sx={{ fontWeight: 900 }}>{String(card.value || 0)}</Typography>
-                      </Paper>
-                    </Grid>
-                  ))}
-                </Grid>
+                <AdminMetricGrid items={statCards} compact minWidth={132} />
 
-                <AdminDetailCard
+                <AdminSection
                   title={(
                     <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
                       <span>AI点数</span>
@@ -584,10 +578,10 @@ export default function AdminUsersPage() {
                     </Button>
                     <Typography variant="caption" color="text.secondary">正数转入，负数扣除</Typography>
                   </Stack>
-                </AdminDetailCard>
+                </AdminSection>
 
                 {aiKey ? (
-                  <AdminDetailCard title="绑定 Key">
+                  <AdminSection title="绑定 Key" subtitle="兼容旧 API2D 用户 Key 管理。">
                     {manualKeyDraft.visible ? (
                       <Stack direction="row" spacing={0.75} sx={{ mb: 1.25, alignItems: 'center', flexWrap: 'wrap' }}>
                       <TextField
@@ -687,7 +681,7 @@ export default function AdminUsersPage() {
                                 <Typography variant="subtitle2">额度流水</Typography>
                                 {!usage?.quotaLedger?.length ? <Alert severity="info">暂无额度流水</Alert> : null}
                                 {usage?.quotaLedger?.length ? (
-                                  <AdminResponsiveTable minWidth={640}>
+                                  <AdminTableFrame minWidth={640}>
                                     <Table size="small">
                                       <TableHead>
                                         <TableRow>
@@ -710,12 +704,12 @@ export default function AdminUsersPage() {
                                         ))}
                                       </TableBody>
                                     </Table>
-                                  </AdminResponsiveTable>
+                                  </AdminTableFrame>
                                 ) : null}
                                 <Typography variant="subtitle2">调用消耗</Typography>
                                 {!usage?.invocations?.length ? <Alert severity="info">暂无调用记录</Alert> : null}
                                 {usage?.invocations?.length ? (
-                                  <AdminResponsiveTable minWidth={760}>
+                                  <AdminTableFrame minWidth={760}>
                                     <Table size="small">
                                       <TableHead>
                                         <TableRow>
@@ -742,7 +736,7 @@ export default function AdminUsersPage() {
                                         ))}
                                       </TableBody>
                                     </Table>
-                                  </AdminResponsiveTable>
+                                  </AdminTableFrame>
                                 ) : null}
                               </Stack>
                             ) : null}
@@ -751,7 +745,7 @@ export default function AdminUsersPage() {
                       );
                       })}
                     </Stack>
-                  </AdminDetailCard>
+                  </AdminSection>
                 ) : null}
 
                 <Grid container spacing={2}>
@@ -768,7 +762,7 @@ export default function AdminUsersPage() {
               </Stack>
             ) : null}
 
-            <AdminDetailCard title="限制项">
+            <AdminSection title="限制项">
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
                 {selectedRestrictions.map((item) => (
                   <Chip
@@ -787,7 +781,7 @@ export default function AdminUsersPage() {
                 <Button variant="outlined" disabled={actionLoading} onClick={() => void saveRestriction('ai_disabled')}>禁AI</Button>
                 <Button variant="outlined" disabled={actionLoading} onClick={() => void saveRestriction('sync_disabled')}>禁同步</Button>
               </Stack>
-            </AdminDetailCard>
+            </AdminSection>
           </Stack>
         </DialogContent>
       </Dialog>

@@ -8,6 +8,7 @@ import ChatIcon from '@mui/icons-material/Chat';
 import CloudDownloadIcon from '@mui/icons-material/CloudDownload';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import DeveloperModeIcon from '@mui/icons-material/DeveloperMode';
+import EventAvailableIcon from '@mui/icons-material/EventAvailable';
 import MenuBookIcon from '@mui/icons-material/MenuBook';
 import PersonIcon from '@mui/icons-material/Person';
 import SettingsSuggestIcon from '@mui/icons-material/SettingsSuggest';
@@ -34,6 +35,7 @@ import { isCloudSyncEnabled } from '../services/cloudSyncPreference';
 import { buildHomeSyncOverview } from '../services/homeSyncOverview';
 import { buildLocalOutboxProjection, type LocalOutboxArtifactJobLike } from '../services/localOutboxProjection';
 import { mirrorLocalOutboxQueues } from '../services/localOutboxMirror';
+import { projectWorldCalendar, type WorldCalendarItem } from '../services/worldRuntimeProjection';
 import { api } from '../services/api';
 import { getRegisteredSyncWorkerEntries } from '../stores/storeSyncScheduler';
 import { motion, transition } from '../styles/motion';
@@ -116,6 +118,53 @@ function buildStatCellSx() {
     display: 'flex',
     justifyContent: 'stretch',
     overflow: 'visible',
+  };
+}
+
+function formatHomeCalendarTime(timestamp: number | null | undefined) {
+  if (typeof timestamp !== 'number') return '';
+  return new Date(timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false });
+}
+
+function formatOngoingActivityWindow(item: WorldCalendarItem) {
+  const start = formatHomeCalendarTime(item.startAt);
+  const end = formatHomeCalendarTime(item.endAt);
+  if (start && end) return `${start} - ${end}`;
+  if (start && typeof item.durationMinutes === 'number') return `${start} · 约${item.durationMinutes}分钟`;
+  if (start) return start;
+  return item.timeHint || '时间未定';
+}
+
+function formatOngoingActivityProgress(item: WorldCalendarItem, now: number) {
+  if (typeof item.endAt === 'number') {
+    const remainingMinutes = Math.max(0, Math.ceil((item.endAt - now) / 60_000));
+    if (remainingMinutes > 0) return `预计还剩 ${remainingMinutes} 分钟`;
+    return '即将结束';
+  }
+  if (typeof item.startAt === 'number') {
+    const elapsedMinutes = Math.max(0, Math.floor((now - item.startAt) / 60_000));
+    return elapsedMinutes > 0 ? `已进行 ${elapsedMinutes} 分钟` : '刚刚开始';
+  }
+  return '进行中';
+}
+
+function buildOngoingActivityRowSx() {
+  return {
+    display: 'grid',
+    gridTemplateColumns: { xs: '1fr', sm: 'minmax(0, 1fr) auto' },
+    gap: { xs: 1, sm: 1.5 },
+    alignItems: { xs: 'stretch', sm: 'center' },
+    p: { xs: 1.25, sm: 1.5 },
+    borderRadius: 1.5,
+    border: '1px solid',
+    borderColor: 'divider',
+    bgcolor: (theme: Theme) => theme.palette.mode === 'light' ? 'rgba(49,90,156,0.045)' : 'rgba(120,156,220,0.075)',
+    cursor: 'pointer',
+    transition: transition(['border-color', 'background-color'], motion.durations.base, motion.gentleSpring),
+    '&:hover': {
+      borderColor: 'primary.main',
+      bgcolor: (theme: Theme) => theme.palette.mode === 'light' ? 'rgba(49,90,156,0.075)' : 'rgba(120,156,220,0.11)',
+    },
   };
 }
 
@@ -412,6 +461,7 @@ export default function HomePage() {
   const [workerEntries, setWorkerEntries] = useState(() => getRegisteredSyncWorkerEntries());
   const [aiBalances, setAiBalances] = useState<Partial<Record<OfficialBalanceProvider, number | null>>>({});
   const [companionshipSnapshot, setCompanionshipSnapshot] = useState<HomeCompanionshipSnapshot | null>(null);
+  const [calendarNow, setCalendarNow] = useState(() => Date.now());
   const recentChats = useMemo(() => chats.slice(0, 10), [chats]);
   const recentChatIds = useMemo(() => new Set(recentChats.map((chat) => chat.id)), [recentChats]);
   const recentActiveMessages = useMessageStore(useShallow((state) => (
@@ -429,6 +479,11 @@ export default function HomePage() {
   }, [markCharactersWarm, markChatsWarm, prefetchCharacters, prefetchChats]);
 
   useEffect(() => avatarGenerationQueue.subscribeSummary(setAvatarQueueSummary), []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setCalendarNow(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     void mirrorLocalOutboxQueues({
@@ -559,6 +614,10 @@ export default function HomePage() {
   const syncUploadingCount = syncOverview.uploading + syncOverview.pendingUpload;
   const syncDownloadingCount = syncOverview.checkingDownloads + syncOverview.pendingDownload;
   const syncExceptionCount = syncOverview.failedUpload + syncOverview.failedScopes + syncOverview.backoffScopes;
+  const ongoingActivities = useMemo(() => projectWorldCalendar(chats, characters, { now: calendarNow }).items
+    .filter((item) => item.status === 'in_progress')
+    .sort((left, right) => (left.endAt || Number.MAX_SAFE_INTEGER) - (right.endAt || Number.MAX_SAFE_INTEGER))
+    .slice(0, 4), [calendarNow, characters, chats]);
   useEffect(() => {
     if (!canQueryAiPoints) {
       setAiBalances({});
@@ -768,6 +827,64 @@ export default function HomePage() {
             ))}
           </Box>
         </SurfaceCard>
+
+        {ongoingActivities.length ? (
+          <SurfaceCard>
+            <SectionHeader
+              title="正在进行的活动"
+              action={<Button size="small" variant="outlined" onClick={() => navigate('/calendar')}>打开日历</Button>}
+            />
+            <Box sx={{ display: 'grid', gap: 1.25, mt: 1 }}>
+              {ongoingActivities.map((item) => {
+                const sourceRef = item.sourceRefs[0];
+                return (
+                  <Box
+                    key={item.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => navigate('/calendar')}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') navigate('/calendar');
+                    }}
+                    sx={buildOngoingActivityRowSx()}
+                  >
+                    <Box sx={{ minWidth: 0 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0, mb: 0.75 }}>
+                        <Box sx={buildStatIconSx('primary.main')}>
+                          <EventAvailableIcon fontSize="small" />
+                        </Box>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 780, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {item.title}
+                        </Typography>
+                        <Chip size="small" color="primary" label="进行中" sx={{ height: 22, borderRadius: 999, flexShrink: 0 }} />
+                      </Box>
+                      <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.55 }}>
+                        {[
+                          formatOngoingActivityWindow(item),
+                          item.locationHint ? `地点 ${item.locationHint}` : '',
+                          sourceRef?.conversationName ? `来自 ${sourceRef.conversationName}` : '',
+                        ].filter(Boolean).join(' · ')}
+                      </Typography>
+                      {item.participantNames.length ? (
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {item.participantNames.join('、')}
+                        </Typography>
+                      ) : null}
+                    </Box>
+                    <Box sx={{ display: 'flex', justifyContent: { xs: 'flex-start', sm: 'flex-end' }, alignItems: 'center' }}>
+                      <Chip
+                        size="small"
+                        variant="outlined"
+                        label={formatOngoingActivityProgress(item, calendarNow)}
+                        sx={{ height: 26, borderRadius: 999, maxWidth: '100%' }}
+                      />
+                    </Box>
+                  </Box>
+                );
+              })}
+            </Box>
+          </SurfaceCard>
+        ) : null}
 
         <Divider />
 

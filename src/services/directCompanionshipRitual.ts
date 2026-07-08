@@ -29,10 +29,6 @@ function isDirectUserMessage(chat: GroupChat, message: Message) {
   return chat.type === 'direct' && !message.isDeleted && (message.senderId === USER_ACTOR_ID || message.type === 'user' || message.type === 'god');
 }
 
-function isGreetingRitualText(text: string) {
-  return /(^|[，。！？\s])(早安|早上好|早呀|晚安|睡啦|睡了|去睡了|我要睡了)([，。！？\s]|$)/.test(text);
-}
-
 function cleanJsonCandidate(raw: string) {
   const text = raw.trim();
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
@@ -41,7 +37,7 @@ function cleanJsonCandidate(raw: string) {
   return object?.[0] || text;
 }
 
-type RitualDecisionSource = 'model' | 'local_fallback';
+type RitualDecisionSource = 'model';
 type CompanionshipRitualDecision = {
   shouldCreate: boolean;
   confidence: number;
@@ -49,17 +45,6 @@ type CompanionshipRitualDecision = {
   evidence: string;
   decisionSource: RitualDecisionSource;
 };
-
-function buildLocalGreetingRitualDecision(text: string): CompanionshipRitualDecision | null {
-  if (!isGreetingRitualText(text)) return null;
-  return {
-    shouldCreate: true,
-    confidence: 0.72,
-    reason: '本地兜底判断用户明确开启早安/晚安关系仪式。',
-    evidence: compactText(text, 140),
-    decisionSource: 'local_fallback',
-  };
-}
 
 function normalizeModelRitualDecision(raw: unknown, userContent: string): CompanionshipRitualDecision | null {
   if (!raw || typeof raw !== 'object') return null;
@@ -266,9 +251,8 @@ export function buildCompanionshipRitualEventsFromDirectUserMessage(params: {
   message: Message;
   recentMessages?: Message[];
 }): RuntimeEventV2[] {
-  const text = compactText(params.message.content, 240);
-  const decision = buildLocalGreetingRitualDecision(text);
-  return decision ? buildCompanionshipRitualEventsFromDecision({ ...params, decision }) : [];
+  void params;
+  return [];
 }
 
 export async function resolveCompanionshipRitualEventsFromDirectUserMessage(params: {
@@ -292,18 +276,17 @@ export async function resolveCompanionshipRitualEventsFromDirectUserMessage(para
       return decision ? buildCompanionshipRitualEventsFromDecision({ ...params, decision }) : [];
     } catch (error) {
       reportRecoverableWarning({
-        location: 'companionship:ritual-model-fallback',
+        location: 'companionship:ritual-model',
         error,
-        message: '关系仪式模型裁决失败，已退回本地保守判断。',
+        message: '关系仪式模型裁决失败，已跳过本轮关系仪式写入。',
         extra: {
           chatId: params.chat.id,
           characterId: params.character.id,
           messageId: params.message.id,
           messagePreview: compactText(params.message.content, 80),
-          fallback: 'local_fallback',
         },
       });
     }
   }
-  return buildCompanionshipRitualEventsFromDirectUserMessage(params);
+  return [];
 }

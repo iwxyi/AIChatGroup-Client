@@ -67,23 +67,6 @@ function isDirectUserMessage(chat: GroupChat, message: Message) {
   return chat.type === 'direct' && !message.isDeleted && (message.senderId === USER_ACTOR_ID || message.type === 'user' || message.type === 'god');
 }
 
-function isCareClosureText(text: string) {
-  return /(结束了|已经好了|搞定了|解决了|不用问|不用提醒|别提醒|别问|过了|没事了|结束啦|完成了|好多了|不难受了|考完|聊完)/.test(text);
-}
-
-function isCareBlockText(text: string) {
-  return /(不用|不要|别|不想).{0,8}(提醒|追问|问|关心)/.test(text);
-}
-
-function isLikelyNonUserCareCue(text: string) {
-  return /(压力锅|紧张刺激|剧情.*(压力|紧张)|游戏.*(压力|紧张)|电影.*(压力|紧张)|角色.*(不舒服|难受|焦虑|低落)|别人.*(不舒服|难受|焦虑|低落)|他说.*(不舒服|难受|焦虑|低落)|她说.*(不舒服|难受|焦虑|低落))/.test(text);
-}
-
-function hasExplicitUserCareCue(text: string) {
-  if (/(明天|今晚|后天|周末|要去|打算|计划|约定|准备|面试|考试|加班|ddl|截止|生日|纪念日)/.test(text)) return true;
-  return /(我|自己|最近|这几天|今天|今晚|昨晚|明天|上班|工作|学校|考试|面试|睡|身体|胃|头).{0,18}(生病|不舒服|难受|失眠|压力|焦虑|紧张|委屈|低落)|(生病|不舒服|难受|失眠|压力|焦虑|紧张|委屈|低落).{0,18}(我|自己|最近|这几天|今天|今晚|昨晚|明天|上班|工作|学校|考试|面试|睡|身体|胃|头)/.test(text);
-}
-
 function detectCareDomain(text: string) {
   if (/面试/.test(text)) return 'interview';
   if (/考试|考完/.test(text)) return 'exam';
@@ -120,13 +103,6 @@ function dueAtFor(text: string, createdAt: number) {
   return createdAt + 14 * 24 * 60 * 60_000;
 }
 
-function isCareOpeningText(text: string) {
-  if (isCareClosureText(text)) return false;
-  if (isLikelyNonUserCareCue(text)) return false;
-  if (!hasExplicitUserCareCue(text)) return false;
-  return /(明天|今晚|最近|考试|面试|加班|难受|不舒服|压力|焦虑|紧张|生日|纪念日|周末|要去|打算|计划|约定|准备|ddl|截止)/.test(text);
-}
-
 function carePayloadOf(event: RuntimeEventV2): CompanionshipCareTopicEventPayload | null {
   const payload = event.payload as Partial<CompanionshipCareTopicEventPayload> | undefined;
   if (!payload || payload.eventType !== 'companionship_care_topic' || !payload.topicId || !payload.topicText || !payload.action) return null;
@@ -140,7 +116,7 @@ function isSameCareDomain(topicText: string, closureText: string) {
   return topicDomain === closureDomain || topicDomain === 'general';
 }
 
-type CareTopicDecisionSource = 'model' | 'local_fallback';
+type CareTopicDecisionSource = 'model';
 export type CompanionshipCareTopicDecision = {
   action: 'opened' | 'closed' | 'blocked';
   topicText: string;
@@ -173,13 +149,11 @@ function normalizeModelCareDecision(raw: unknown, userContent: string, createdAt
     action,
     topicText,
     topicId: typeof value.existingTopicId === 'string' && value.existingTopicId.trim() ? value.existingTopicId.trim() : undefined,
-    urgency: isCareUrgency(value.urgency) ? value.urgency : urgencyFor(topicText),
+    urgency: isCareUrgency(value.urgency) ? value.urgency : 'low',
     reason: compactText(typeof value.reason === 'string' ? value.reason : '模型判断用户消息形成了关心事项事件。', 160),
     evidence: compactText(typeof value.evidence === 'string' ? value.evidence : userContent, 160),
     confidence,
-    dueAt: action === 'opened'
-      ? (dueInHours ? createdAt + dueInHours * 60 * 60_000 : dueAtFor(topicText, createdAt))
-      : undefined,
+    dueAt: action === 'opened' && dueInHours ? createdAt + dueInHours * 60 * 60_000 : undefined,
     decisionSource: 'model',
   };
 }
@@ -218,7 +192,7 @@ export function buildCompanionshipCareTopicEventsFromDecision(params: {
         reason: params.decision.reason,
         evidence: params.decision.evidence,
         sourceMessageIds: params.message.id ? [params.message.id] : [],
-        dueAt: params.decision.dueAt || dueAtFor(params.decision.topicText, params.message.timestamp || Date.now()),
+        dueAt: params.decision.dueAt,
         confidence: params.decision.confidence,
         decisionSource: params.decision.decisionSource,
       },
@@ -406,68 +380,8 @@ export function buildCompanionshipCareTopicEventsFromDirectUserMessage(params: {
   message: Message;
   now?: number;
 }): RuntimeEventV2[] {
-  if (!isDirectUserMessage(params.chat, params.message)) return [];
-  const text = compactText(params.message.content, 240);
-  if (!text) return [];
-  const now = params.now || params.message.timestamp || Date.now();
-  const activeTopics = readActiveCompanionshipCareTopicsFromEvents(params.chat, params.character.id, now);
-  const events: RuntimeEventV2[] = [];
-
-  if (isCareClosureText(text) && activeTopics.length) {
-    const matched = activeTopics.filter((topic) => isCareBlockText(text) || isSameCareDomain(topic.text, text)).slice(0, 2);
-    matched.forEach((topic) => {
-      const blocked = isCareBlockText(text);
-      events.push(createCareTopicRuntimeEvent({
-        chat: params.chat,
-        character: params.character,
-        message: params.message,
-        summary: blocked
-          ? `${params.character.name} 记录用户关闭了一个关心事项提醒`
-          : `${params.character.name} 记录用户完成了一个关心事项`,
-        payload: {
-          eventType: 'companionship_care_topic',
-          characterId: params.character.id,
-          userId: USER_ACTOR_ID,
-          topicId: topic.id,
-          topicText: topic.text,
-          action: blocked ? 'blocked' : 'closed',
-          urgency: topic.urgency,
-          reason: blocked ? 'user rejected reminders or follow-up questions' : 'user closed or answered the pending care topic',
-          evidence: text,
-          sourceMessageIds: params.message.id ? [params.message.id] : [],
-          confidence: 0.62,
-          decisionSource: 'local_fallback',
-        },
-      }));
-    });
-    return events;
-  }
-
-  if (!isCareOpeningText(text)) return events;
-  const topicId = topicIdFor(params.character.id, text);
-  if (activeTopics.some((topic) => topic.id === topicId)) return events;
-  events.push(createCareTopicRuntimeEvent({
-    chat: params.chat,
-    character: params.character,
-    message: params.message,
-    summary: `${params.character.name} 记录了一个需要后续关心的用户事项`,
-    payload: {
-      eventType: 'companionship_care_topic',
-      characterId: params.character.id,
-      userId: USER_ACTOR_ID,
-      topicId,
-      topicText: text,
-      action: 'opened',
-      urgency: urgencyFor(text),
-      reason: 'user mentioned a plan, pressure source, health state, date, or unfinished promise',
-      evidence: text,
-      sourceMessageIds: params.message.id ? [params.message.id] : [],
-      dueAt: dueAtFor(text, params.message.timestamp || now),
-      confidence: 0.62,
-      decisionSource: 'local_fallback',
-    },
-  }));
-  return events;
+  void params;
+  return [];
 }
 
 export async function resolveCompanionshipCareTopicEventsFromDirectUserMessage(params: {
@@ -501,19 +415,18 @@ export async function resolveCompanionshipCareTopicEventsFromDirectUserMessage(p
       });
     } catch (error) {
       reportRecoverableWarning({
-        location: 'companionship:care-topic-model-fallback',
+        location: 'companionship:care-topic-model',
         error,
-        message: '关心事项模型裁决失败，已退回本地保守判断。',
+        message: '关心事项模型裁决失败，已跳过本轮关心事项写入。',
         extra: {
           chatId: params.chat.id,
           characterId: params.character.id,
           messageId: params.message.id,
           messagePreview: compactText(params.message.content, 80),
-          fallback: 'local_fallback',
         },
       });
-      return buildCompanionshipCareTopicEventsFromDirectUserMessage(params);
+      return [];
     }
   }
-  return buildCompanionshipCareTopicEventsFromDirectUserMessage(params);
+  return [];
 }

@@ -358,7 +358,7 @@ function RelationshipLedgerCard({ entry, members, hideSpeakerName = false, rever
 }
 
 function RelationshipFallbackCard({ memberName, targetName, note, relation, updatedAt }: { memberName: string; targetName: string; note?: string; relation: { warmth: number; competence: number; trust: number; threat: number }; updatedAt: number }) {
-  const fallbackEvidence = note?.trim() ? `预设备注：${note.trim()}` : '暂无结构化证据';
+  const fallbackEvidence = note?.trim() ? `预设备注：${note.trim()}` : '';
   const hasMeaningfulFallback = Math.abs(relation.warmth) >= 8 || Math.abs(relation.competence) >= 8 || Math.abs(relation.trust) >= 8 || Math.abs(relation.threat) >= 8 || Boolean(note?.trim());
   const [activeAxis, setActiveAxis] = useState<AxisKey | null>(null);
   const activeMeta = useMemo(() => METRIC_META.find((item) => item.key === activeAxis) || null, [activeAxis]);
@@ -401,7 +401,7 @@ function RelationshipFallbackCard({ memberName, targetName, note, relation, upda
             ))}
           </Stack>
         ) : null}
-        <RelationshipEvidenceCard evidence={fallbackEvidence} label={evidenceLabel} />
+        {fallbackEvidence ? <RelationshipEvidenceCard evidence={fallbackEvidence} label={evidenceLabel} /> : null}
         <RelationshipRadar entry={normalizedFallbackEntry} onOpenAxis={setActiveAxis} />
       </Stack>
       <AxisReasonDialog open={Boolean(activeAxis)} onClose={() => setActiveAxis(null)} axisLabel={activeMeta?.label || '关系轴'} reasons={[]} />

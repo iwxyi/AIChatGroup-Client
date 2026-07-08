@@ -7,7 +7,7 @@ import type { SessionEngineDefinition, SessionGenerationPromptContext, SessionGe
 import type { MemoryItem } from './memoryTypes';
 import { getPreferredAIProfile } from '../types/settings';
 import type { ConflictFocusPayload, InteractionEventPayload, SocialEventHintEnvelope } from '../types/runtimeEvent';
-import { normalizeInteractionHintCollection } from '../types/runtimeEvent';
+import { normalizeInteractionHintCollection, normalizeSocialEventHints } from '../types/runtimeEvent';
 import { generateResponse } from './aiClient';
 import { buildSystemPromptWithContext, buildChatMessages, buildPromptMemoryTrace, type PromptMemoryTrace } from './promptBuilder';
 import { buildEngineAwarePrompt } from './promptContextAssembler';
@@ -101,6 +101,7 @@ type GenerationWithGuidanceTrace = {
   parsedEnvelope: ReturnType<typeof parseInlineInteractionEnvelope>;
   finalResponse: string;
   fullResponse: string;
+  rawResponse?: string;
   narrativeText?: string | null;
   narrativeBlocks?: NarrativeBlock[] | null;
   storyChoices?: MessageMetadata['storyChoices'] | null;
@@ -2492,6 +2493,77 @@ function appendRuntimeTraceDiagnostics(
   };
 }
 
+function parseRawInlineEnvelopeObject(raw: string): Record<string, unknown> | null {
+  try {
+    const jsonMatch = raw.trim().replace(/^```(?:json)?/i, '').replace(/```$/i, '').trim().match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return null;
+    const parsed = JSON.parse(jsonMatch[0]) as unknown;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null;
+  } catch {
+    return null;
+  }
+}
+
+function countRawHintItems(value: unknown) {
+  if (Array.isArray(value)) return value.length;
+  return value && typeof value === 'object' ? 1 : 0;
+}
+
+function buildStructuredOutputProtocolTrace(params: {
+  parsedEnvelope: ReturnType<typeof parseInlineInteractionEnvelope>;
+  rawResponse: string;
+  userGuidance?: UserGuidanceIntent | null;
+}) {
+  const rawObject = parseRawInlineEnvelopeObject(params.rawResponse);
+  const socialHints = normalizeSocialEventHints(params.parsedEnvelope?.socialEventHints || null);
+  const interactionHints = normalizeInteractionHintCollection(params.parsedEnvelope?.interactionHints || null, 'protocol-check', params.rawResponse);
+  const rawSocialHintCount = countRawHintItems(rawObject?.socialEventHints);
+  const rawInteractionHintCount = params.parsedEnvelope?.interactionHints
+    ? countRawHintItems(params.parsedEnvelope.interactionHints.primary) + countRawHintItems(params.parsedEnvelope.interactionHints.secondary)
+    : countRawHintItems(rawObject?.interactionHints);
+  const hasSocialOuting = socialHints.some((hint) => hint.eventKind === 'social_outing');
+  const policyHits = [
+    params.parsedEnvelope ? 'structured_output:json_envelope_parsed' : 'structured_output:no_json_envelope',
+    `structured_output:social_event_hints:${socialHints.length}`,
+    `structured_output:interaction_hints:${interactionHints.length}`,
+    rawSocialHintCount > socialHints.length ? `structured_output:social_event_hints_dropped:${rawSocialHintCount - socialHints.length}` : '',
+    rawInteractionHintCount > interactionHints.length ? `structured_output:interaction_hints_dropped:${rawInteractionHintCount - interactionHints.length}` : '',
+    params.userGuidance?.beatType === 'invite' && !hasSocialOuting ? 'structured_output:invite_guidance_without_social_outing' : '',
+  ].filter(Boolean) as string[];
+  const guidanceValidation = [
+    `jsonEnvelope=${params.parsedEnvelope ? 'parsed' : rawObject ? 'invalid_visible_contract' : 'missing'}`,
+    `socialEventHints=${socialHints.length}`,
+    `interactionHints=${interactionHints.length}`,
+    rawSocialHintCount > socialHints.length ? `droppedSocialEventHints=${rawSocialHintCount - socialHints.length}` : '',
+    rawInteractionHintCount > interactionHints.length ? `droppedInteractionHints=${rawInteractionHintCount - interactionHints.length}` : '',
+    params.userGuidance?.beatType === 'invite' && !hasSocialOuting ? 'inviteGuidanceSocialOuting=missing' : '',
+  ].filter(Boolean).join(';');
+  return {
+    policyHits,
+    guidanceValidation,
+  };
+}
+
+function appendStructuredOutputProtocolTrace(
+  runtimeBundle: SessionGenerationRuntimeBundle,
+  trace: ReturnType<typeof buildStructuredOutputProtocolTrace>,
+): SessionGenerationRuntimeBundle {
+  return {
+    ...runtimeBundle,
+    trace: {
+      ...(runtimeBundle.trace || {}),
+      policyHits: [
+        ...(runtimeBundle.trace?.policyHits || []),
+        ...trace.policyHits,
+      ],
+      guidanceValidation: [
+        runtimeBundle.trace?.guidanceValidation || '',
+        trace.guidanceValidation,
+      ].filter(Boolean).join(' | ') || null,
+    },
+  };
+}
+
 function inferExpressionFeedbackLabel(item: MemoryItem) {
   const signal = summarizeExpressionFeedbackInfluence([item])[0];
   if (signal) return getExpressionFeedbackCategoryLabel(signal.category);
@@ -2722,6 +2794,7 @@ async function generateNonDuplicateResponse(params: {
   let lastParsedEnvelope: ReturnType<typeof parseInlineInteractionEnvelope> = null;
   let lastFinalResponse = '';
   let lastFullResponse = '';
+  let lastRawResponse = '';
   let lastNarrativeText = '';
   let lastNarrativeBlocks: NarrativeBlock[] = [];
   let lastFullNarrativeResponse = '';
@@ -2738,6 +2811,7 @@ async function generateNonDuplicateResponse(params: {
     lastParsedEnvelope = generated.parsedEnvelope;
     lastFinalResponse = generated.finalResponse;
     lastFullResponse = generated.fullResponse;
+    lastRawResponse = generated.rawContent;
     lastNarrativeText = generated.narrativeText;
     lastNarrativeBlocks = generated.narrativeBlocks;
     lastFullNarrativeResponse = generated.fullNarrativeResponse;
@@ -2989,6 +3063,7 @@ async function generateNonDuplicateResponse(params: {
     narrativeBlocks: lastNarrativeBlocks,
     storyChoices: lastStoryChoices,
     fullResponse: lastFullResponse || lastFinalResponse,
+    rawResponse: lastRawResponse || lastFullResponse || lastFinalResponse,
     fullNarrativeResponse: lastFullNarrativeResponse || lastNarrativeText || lastFullResponse || lastFinalResponse,
     extraMessages: lastExtraMessages,
     storyEvents: lastStoryEvents,
@@ -3449,7 +3524,27 @@ export async function generateSpeakerMessage(params: {
     parsedEnvelope: generated.parsedEnvelope,
     conversationMovePlan,
   });
-  const runtimeBundleWithDiagnostics = appendRuntimeTraceDiagnostics(runtimeBundleWithMovePlan, deliberationArtifactTrace);
+  const structuredOutputTrace = buildStructuredOutputProtocolTrace({
+    parsedEnvelope: generated.parsedEnvelope,
+    rawResponse: generated.rawResponse || generated.fullResponse || generated.finalResponse || '',
+    userGuidance,
+  });
+  const runtimeBundleWithDiagnostics = appendStructuredOutputProtocolTrace(
+    appendRuntimeTraceDiagnostics(runtimeBundleWithMovePlan, deliberationArtifactTrace),
+    structuredOutputTrace,
+  );
+  if (structuredOutputTrace.policyHits.includes('structured_output:no_json_envelope')
+    || structuredOutputTrace.policyHits.some((item) => item.includes('_dropped:'))
+    || structuredOutputTrace.policyHits.includes('structured_output:invite_guidance_without_social_outing')) {
+    logDeveloperDiagnostic('chat-run:structured-output-protocol', {
+      chatId: params.chat.id,
+      speakerId: params.speaker.id,
+      speakerName: params.speaker.name,
+      policyHits: structuredOutputTrace.policyHits,
+      guidanceValidation: structuredOutputTrace.guidanceValidation,
+      responseLength: generatedStoryResponse.length,
+    }, 'warn', 'chat-run');
+  }
   if (deliberationArtifactTrace && !deliberationArtifactTrace.present && deliberationArtifactTrace.expectedByMove) {
     logDeveloperDiagnostic('chat-run:deliberation-artifacts-missing', {
       chatId: params.chat.id,

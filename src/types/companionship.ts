@@ -766,5 +766,6 @@ export interface CompanionshipStatusSignature {
   offlineTrace?: string;
   unsentDraft?: string;
   onlineReturn?: string;
+  onlineReturnIntent?: string;
   updatedAt: number;
 }

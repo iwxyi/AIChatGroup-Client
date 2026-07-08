@@ -20,7 +20,7 @@ describe('interactionExtractor', () => {
     expect(event).toBeNull();
   });
 
-  it('keeps explicit person-directed backing as relationship support', () => {
+  it('does not infer explicit person-directed backing without model-authored interaction data', () => {
     const event = extractInteractionEvent({
       message: {
         senderId: 'a',
@@ -29,11 +29,6 @@ describe('interactionExtractor', () => {
       characters,
     });
 
-    expect(event).toMatchObject({
-      actorId: 'a',
-      targetId: 'b',
-      kind: 'support',
-      tone: 'warm',
-    });
+    expect(event).toBeNull();
   });
 });

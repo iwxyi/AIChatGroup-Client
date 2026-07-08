@@ -362,7 +362,7 @@ describe('runSessionCommitPipeline', () => {
             {
               id: 'evt-1',
               conversationId: chat.id,
-              kind: 'artifact',
+              kind: 'event_candidate',
               createdAt: 100,
               actorIds: ['char-a'],
               targetIds: ['char-b'],
@@ -380,7 +380,7 @@ describe('runSessionCommitPipeline', () => {
             {
               id: 'evt-2',
               conversationId: chat.id,
-              kind: 'artifact',
+              kind: 'event_candidate',
               createdAt: 110,
               actorIds: ['char-a'],
               targetIds: ['char-b'],
@@ -466,7 +466,7 @@ describe('runSessionCommitPipeline', () => {
             {
               id: 'evt-1',
               conversationId: chat.id,
-              kind: 'artifact',
+              kind: 'event_candidate',
               createdAt: 100,
               actorIds: ['char-a'],
               targetIds: ['char-b'],
@@ -484,7 +484,7 @@ describe('runSessionCommitPipeline', () => {
             {
               id: 'evt-2',
               conversationId: chat.id,
-              kind: 'artifact',
+              kind: 'event_candidate',
               createdAt: 110,
               actorIds: ['char-a'],
               targetIds: ['char-b'],

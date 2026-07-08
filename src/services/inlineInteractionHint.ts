@@ -251,6 +251,15 @@ function buildCharacterReference(characters: AICharacter[]) {
   return characters.map((character) => `- id=${character.id}; name=${character.name}; aliases=${[character.name, character.group || ''].filter(Boolean).join(', ')}`).join('\n');
 }
 
+function buildMemberReference(params: { chat: GroupChat; characters: AICharacter[]; speakerId?: string }) {
+  const memberIds = new Set(params.chat.memberIds);
+  const characterLines = params.characters
+    .filter((character) => memberIds.has(character.id) && character.id !== params.speakerId)
+    .map((character) => `- id=${character.id}; name=${character.name}; aliases=${[character.name, character.group || ''].filter(Boolean).join(', ')}`);
+  const userLine = params.chat.memberIds.includes('user') ? ['- id=user; name=用户/我; aliases=用户,我'] : [];
+  return [...characterLines, ...userLine].join('\n') || '- No valid targets.';
+}
+
 function buildRecentSocialEventContext(chat: GroupChat, limit = 4): RecentSocialEventSummary[] {
   return (chat.runtimeEventsV2 || [])
     .filter((event) => event.kind === 'event_candidate' || event.kind === 'artifact')
@@ -397,6 +406,11 @@ Story-reader visible body rule:
 3. Every normal story turn needs at least one storyEvents narration or speech event, even if it also contains a chapter_update or choice_point.
 4. interactionHints, conflictFocus, and socialEventHints are optional diagnostics; keep them null unless the current story event itself provides specific evidence.
 
+social_outing diagnostics:
+socialEventHints is the only model-authored source for activity creation and updates; the runtime will not invent or patch a social_outing from local keyword matching. When the visible storyEvents clearly propose, arrange, update, or commit to a shared concrete activity, socialEventHints must include one social_outing object with participantIds/targetIds as member ids, confidence 0-1, urgency, seedIntent, visibilityPlan, expectedArtifacts, title, activityType, timeHint, locationHint, dedupeKey, and optional participantStates. Use participantStates values mentioned/invited/interested/maybe/going/declined/withdrawn. Include "user" when the user is invited or participating.
+Valid member ids:
+${buildMemberReference({ chat: params.chat, characters: params.characters })}
+
 Recent transcript scope:
 ${transcriptScope}${recentSocialEvents ? `\n\nRecent social events to avoid duplicating:\n${recentSocialEvents}` : ''}`;
   }
@@ -425,12 +439,23 @@ extraMessages: use null when there are no later sends. Use an array only for opt
 presenceUpdate: null unless the speaker explicitly says they are leaving/away/sleeping/busy/offline or explicitly back. Away shape: {"status":"away","activity":"睡觉/忙工作/洗澡等","reason":"visible reason","durationMinutes":30}; pick realistic duration. Do not mark away for ordinary goodnight/farewell jokes.
 
 interactionHints: null unless the turn has a clear directed social effect. Shape: {"primary":{"targetId":"member-id-or-null","kind":"support|challenge|mock|dismiss|defend|probe|side_comment","tone":"warm|annoyed|defensive|excited|sarcastic|cold","intensity":3,"confidence":0.86,"reason":"evidence"},"secondary":[]}. targetId must be from:
-${buildCharacterReference(params.characters.filter((character) => character.id !== params.speaker.id))}
+${buildMemberReference({ chat: params.chat, characters: params.characters, speakerId: params.speaker.id })}
 No duplicate targetId+kind in secondary. Omit uncertain items.${aiDirectInteractionRules}
 
 conflictFocus: null unless this turn meaningfully sharpens/reframes/exposes/escalates/redirects/cools a real contradiction. If present, use type one of identity_ownership/authority_challenge/status_competition/alliance_boundary/care_jealousy/value_conflict/goal_conflict/resource_conflict/fairness_conflict/contradiction_exposure/tone_escalation/misrecognition; nextPressure one of escalate/spread/stabilize/divert/cool; developmentHooks from invite_target_response/force_side_taking/expose_contradiction/raise_stakes/shift_public_private/cool_down_with_residue/redirect_topic/trigger_memory_recall. Write fresh summary and why from this turn; never copy placeholder wording.${mediaRules}
 
-socialEventHints: this is the only per-turn semantic source for world/social events. Include only when the visible full turn strongly suggests an event beyond the message itself; otherwise null or []. eventKind can be pair_private_thread/social_outing/post_moment/status_update/gift_exchange/conflict_expression/check_in/react_to_moment/custom; urgency immediate/soon/defer; visibilityPlan public/conversation_private/user_private/mixed. Include reason/seedIntent/confidence when useful, and do not duplicate recent events.
+socialEventHints: this is the only model-authored per-turn semantic source for world/social events. The runtime will not invent or patch a social_outing from local keyword matching. Include one when your visible full turn strongly suggests an event beyond the message itself; otherwise null or []. eventKind can be pair_private_thread/social_outing/post_moment/status_update/gift_exchange/conflict_expression/check_in/react_to_moment/custom; urgency immediate/soon/defer; visibilityPlan public/conversation_private/user_private/mixed. Include reasonType/seedIntent/confidence when useful, and do not duplicate recent events.
+
+social_outing rules:
+1. You must emit one social_outing when your visible turn proposes, arranges, or strongly commits to a concrete shared activity such as meeting, meal, tea, movie, walk, travel, celebration, cafe, KTV, exhibition, board game, or similar. Do not emit it for vague friendliness.
+2. Recommended shape: {"eventKind":"social_outing","participantIds":["speaker-or-member-id"],"targetIds":["other-member-id"],"reasonType":"chat_activity_invite|celebration|follow_up_hangout","confidence":0.86,"urgency":"soon","seedIntent":"why this should become a tentative calendar activity","visibilityPlan":"public","expectedArtifacts":["outing_summary"],"title":"short activity title","activityType":"meal/movie/etc","timeHint":"tonight/weekend/etc or null","locationHint":"place or null","dedupeKey":"stable short key if obvious","participantStates":{"speaker-id":"interested","other-id":"invited"}}.
+3. If the user/director explicitly asks this speaker to arrange an activity and your visible reply accepts with concrete time/place/invitees, socialEventHints must contain social_outing in the same JSON response. Example visible meaning: "tonight 9:30, old tea house with the blue curtain, everyone can come" => social_outing with title/activityType for the tea meetup, timeHint "今晚九点半", locationHint "后巷蓝布门帘旧茶馆", participantIds including the speaker and invited members.
+4. participantIds/targetIds must use member ids from the reference list below, not display names. Include "user" when the user is an invited or participating member.
+Valid member ids:
+${buildMemberReference({ chat: params.chat, characters: params.characters })}
+participantStates values may be mentioned/invited/interested/maybe/going/declined/withdrawn.
+5. If the turn updates an existing tentative activity, such as agreeing, declining, changing time/place, or cancelling, emit social_outing with the same dedupeKey when known and include the updated participantStates/timeHint/locationHint/title fields. Do not rely on visible wording alone; the runtime will not extract those updates from keywords.
+6. If a recent social_outing already covers the same activity and this turn adds no new activity detail, prefer null. If it adds a materially different title, time, place, or participant set, emit social_outing with those changed fields.
 
 Recent transcript scope:
 ${transcriptScope}${recentSocialEvents ? `\n\nRecent social events to avoid duplicating:\n${recentSocialEvents}` : ''}`;

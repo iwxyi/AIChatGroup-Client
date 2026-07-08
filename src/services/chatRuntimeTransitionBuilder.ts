@@ -1,7 +1,7 @@
 import type { AICharacter } from '../types/character';
 import type { ConversationConflictAxis, DriverCharacterPatch, DriverEventPayload, GroupChat } from '../types/chat';
 import type { Message } from '../types/message';
-import { deriveFallbackRelationshipDelta, updateCharacterRelationshipFromDelta } from './relationshipEngine';
+import { updateCharacterRelationshipFromDelta } from './relationshipEngine';
 import {
   canApplyRelationshipInteraction,
   createBaselineRelationshipCurrent,
@@ -404,7 +404,7 @@ export function buildRelationshipTransition(params: {
   const baseTimestamp = resolveMessageTimestamp(params.message, params.conversation.updatedAt || Date.now());
   let eventOffset = 0;
   const nextEventTimestamp = () => baseTimestamp + eventOffset++;
-  const previousAiMessage = params.previousAiMessage;
+  void params.previousAiMessage;
   const config = params.config || resolveRuntimeEvolutionConfig(params.conversation.runtimeEvolutionIntensity);
   const distillationParticipants = params.characters.map((item) => ({ id: item.id, name: item.name }));
   const speaker = params.characters.find((item) => item.id === params.message.senderId);
@@ -420,14 +420,7 @@ export function buildRelationshipTransition(params: {
   const hintedTargets = uniqueHints
     .map((hint) => ({ hint, target: params.characters.find((item) => item.id === hint.targetId) }))
     .filter((item): item is { hint: NonNullable<typeof uniqueHints[number]>; target: AICharacter } => Boolean(item.target));
-  const fallbackTarget = !hintedTargets.length
-    ? [...params.characters].find((item) => item.id !== params.message.senderId && (params.message.content.includes(item.name) || previousAiMessage?.senderId === item.id))
-    : null;
-  const targetEntries = hintedTargets.length
-    ? hintedTargets
-    : (fallbackTarget && params.message.interactionHint?.targetId === fallbackTarget.id
-      ? [{ hint: params.message.interactionHint, target: fallbackTarget }]
-      : []);
+  const targetEntries = hintedTargets;
 
   if (isCharacterAuthoredMessage && speaker && targetEntries.length) {
     const summary = truncateWithEllipsis(params.message.content, 48);
@@ -438,7 +431,8 @@ export function buildRelationshipTransition(params: {
     const driftEntries = localizedDriftSummary ? [{ type: 'drift' as const, text: localizedDriftSummary, createdAt: nextEventTimestamp() }] : [];
 
     const updatedSpeakerRelationships = targetEntries.reduce((relationships, { target, hint }) => {
-      const explicitDelta = inferRelationshipDelta(hint)?.delta || deriveFallbackRelationshipDelta(params.message.content);
+      const explicitDelta = inferRelationshipDelta(hint)?.delta;
+      if (!explicitDelta) return relationships;
       return updateCharacterRelationshipFromDelta({ ...speaker, relationships }, target.id, explicitDelta, config.relationshipMultiplier).relationships;
     }, speaker.relationships);
     const projectedSpeakerSoul = projectInnerLife({
@@ -487,7 +481,8 @@ export function buildRelationshipTransition(params: {
     const relationshipLines: string[] = [];
 
     for (const { target, hint } of targetEntries) {
-      const reciprocalDelta = inferRelationshipDelta(hint)?.delta || deriveFallbackRelationshipDelta(params.message.content);
+      const reciprocalDelta = inferRelationshipDelta(hint)?.delta;
+      if (!reciprocalDelta) continue;
       const updatedTarget = updateCharacterRelationshipFromDelta(target, speaker.id, reciprocalDelta, config.reciprocalRelationshipMultiplier);
       const targetEmotion = deriveEmotionalState(target, params.message.content, config.emotionMultiplier * 0.85, config.emotionDecayBias);
       const targetCoreProfile = evolveCharacterCoreProfile({ character: target, content: params.message.content, emotionalState: targetEmotion });

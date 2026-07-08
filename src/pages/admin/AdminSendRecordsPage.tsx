@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState, type SyntheticEvent } from 'react';
 import { Alert, Button, Chip, Stack, Tab, Table, TableBody, TableCell, TableHead, TablePagination, TableRow, Tabs, TextField, Tooltip, Typography } from '@mui/material';
-import AdminInlineGroup from '../../components/admin/AdminInlineGroup';
-import AdminResponsiveTable from '../../components/admin/AdminResponsiveTable';
 import AdminRequestState, { getAdminErrorMessage } from '../../components/admin/AdminRequestState';
+import { AdminMetricGrid, AdminSection, AdminTableFrame, type AdminMetricItem } from '../../components/admin/AdminSurface';
 import { adminApi } from '../../services/adminApi';
 import { readPersistentUiValue, writePersistentUiValue } from '../../utils/persistentUiState';
 
@@ -84,6 +83,11 @@ export default function AdminSendRecordsPage() {
     failed: items.filter((item) => String(item.status || '') === 'failed').length,
     sent: items.filter((item) => String(item.status || '') === 'sent').length,
   }), [items]);
+  const metricItems = useMemo<AdminMetricItem[]>(() => [
+    { key: 'sent', label: '本页成功', value: stats.sent, tone: 'success' },
+    { key: 'failed', label: '本页失败', value: stats.failed, tone: 'error' },
+    { key: 'total', label: '总记录', value: total, helper: '按当前筛选统计', tone: 'primary' },
+  ], [stats.failed, stats.sent, total]);
 
   const load = async () => {
     setLoading(true);
@@ -129,83 +133,90 @@ export default function AdminSendRecordsPage() {
 
   return (
     <Stack spacing={2}>
-      <Tabs value={tab} onChange={changeTab} variant="scrollable" allowScrollButtonsMobile>
-        <Tab value="sms" label="短信发送记录" />
-        <Tab value="email" label="邮件发送记录" />
-      </Tabs>
+      <AdminSection title="发送记录" subtitle="查询短信和邮件发送结果，失败记录可悬浮查看错误详情。" bodySx={{ py: 0.75 }}>
+        <Tabs value={tab} onChange={changeTab} variant="scrollable" allowScrollButtonsMobile>
+          <Tab value="sms" label="短信发送记录" />
+          <Tab value="email" label="邮件发送记录" />
+        </Tabs>
+      </AdminSection>
 
-      <AdminInlineGroup gap={1.25}>
-        <Alert severity="success">本页成功：{stats.sent}</Alert>
-        <Alert severity="error">本页失败：{stats.failed}</Alert>
-        <Button variant={status === '' ? 'contained' : 'outlined'} onClick={() => changeStatus('')}>全部状态</Button>
-        <Button variant={status === 'sent' ? 'contained' : 'outlined'} onClick={() => changeStatus('sent')}>已发送</Button>
-        <Button variant={status === 'failed' ? 'contained' : 'outlined'} onClick={() => changeStatus('failed')}>失败</Button>
-        <TextField
-          size="small"
-          value={searchDraft}
-          onChange={(event) => setSearchDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') submitSearch();
-          }}
-          placeholder={tab === 'sms' ? '搜索手机号、用途、用户' : '搜索邮箱、主题、用户'}
-          sx={{ minWidth: { xs: '100%', sm: 260 }, ml: { sm: 'auto' } }}
-        />
-        <Button variant="outlined" onClick={submitSearch}>搜索</Button>
-        {search ? <Button onClick={() => { setSearchDraft(''); setSearch(''); setPage(0); }}>清空</Button> : null}
-      </AdminInlineGroup>
+      <AdminSection title="发送概览">
+        <AdminMetricGrid items={metricItems} compact minWidth={132} />
+      </AdminSection>
+
+      <AdminSection title="筛选">
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+          <Button variant={status === '' ? 'contained' : 'outlined'} onClick={() => changeStatus('')}>全部状态</Button>
+          <Button variant={status === 'sent' ? 'contained' : 'outlined'} onClick={() => changeStatus('sent')}>已发送</Button>
+          <Button variant={status === 'failed' ? 'contained' : 'outlined'} onClick={() => changeStatus('failed')}>失败</Button>
+          <TextField
+            size="small"
+            value={searchDraft}
+            onChange={(event) => setSearchDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') submitSearch();
+            }}
+            placeholder={tab === 'sms' ? '搜索手机号、用途、用户' : '搜索邮箱、主题、用户'}
+            sx={{ minWidth: { xs: '100%', sm: 260 }, ml: { sm: 'auto' } }}
+          />
+          <Button variant="outlined" onClick={submitSearch}>搜索</Button>
+          {search ? <Button onClick={() => { setSearchDraft(''); setSearch(''); setPage(0); }}>清空</Button> : null}
+        </Stack>
+      </AdminSection>
 
       <AdminRequestState loading={loading} error={error} onRetry={() => void load()} />
 
-      <AdminResponsiveTable minWidth={tab === 'sms' ? 960 : 900}>
-        <Table size="small">
-          <TableHead>
-            <TableRow>
-              <TableCell>时间</TableCell>
-              <TableCell>状态</TableCell>
-              <TableCell>服务商</TableCell>
-              <TableCell>{tab === 'sms' ? '手机号' : '收件人'}</TableCell>
-              {tab === 'sms' ? <TableCell>验证码</TableCell> : null}
-              <TableCell>{tab === 'sms' ? '用途' : '主题'}</TableCell>
-              <TableCell>用户</TableCell>
-              <TableCell>模板</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {items.map((item) => (
-              <TableRow key={String(item.id)} hover>
-                <TableCell>{formatTime(item.created_at)}</TableCell>
-                <TableCell><StatusChip row={item} /></TableCell>
-                <TableCell>{String(item.provider_code || '-')}</TableCell>
-                <TableCell>{String(tab === 'sms' ? item.phone || '-' : item.recipient || '-')}</TableCell>
-                {tab === 'sms' ? <TableCell>{String(item.verification_code || '-')}</TableCell> : null}
-                <TableCell>{tab === 'sms' ? sourceLabel(item) : String(item.subject || sourceLabel(item))}</TableCell>
-                <TableCell><UserCell row={item} /></TableCell>
-                <TableCell>{String(item.template_code || '-')}</TableCell>
-              </TableRow>
-            ))}
-            {!items.length && !loading ? (
+      <AdminSection title="记录列表" bodySx={{ p: 0 }}>
+        <AdminTableFrame minWidth={tab === 'sms' ? 960 : 900}>
+          <Table size="small">
+            <TableHead>
               <TableRow>
-                <TableCell colSpan={tab === 'sms' ? 8 : 7}>
-                  <Typography variant="body2" color="text.secondary">暂无发送记录</Typography>
-                </TableCell>
+                <TableCell>时间</TableCell>
+                <TableCell>状态</TableCell>
+                <TableCell>服务商</TableCell>
+                <TableCell>{tab === 'sms' ? '手机号' : '收件人'}</TableCell>
+                {tab === 'sms' ? <TableCell>验证码</TableCell> : null}
+                <TableCell>{tab === 'sms' ? '用途' : '主题'}</TableCell>
+                <TableCell>用户</TableCell>
+                <TableCell>模板</TableCell>
               </TableRow>
-            ) : null}
-          </TableBody>
-        </Table>
-      </AdminResponsiveTable>
-
-      <TablePagination
-        component="div"
-        count={total}
-        page={page}
-        rowsPerPage={limit}
-        rowsPerPageOptions={[20, 50, 100]}
-        onPageChange={(_event, nextPage) => setPage(nextPage)}
-        onRowsPerPageChange={(event) => {
-          setLimit(Number(event.target.value));
-          setPage(0);
-        }}
-      />
+            </TableHead>
+            <TableBody>
+              {items.map((item) => (
+                <TableRow key={String(item.id)} hover>
+                  <TableCell>{formatTime(item.created_at)}</TableCell>
+                  <TableCell><StatusChip row={item} /></TableCell>
+                  <TableCell>{String(item.provider_code || '-')}</TableCell>
+                  <TableCell>{String(tab === 'sms' ? item.phone || '-' : item.recipient || '-')}</TableCell>
+                  {tab === 'sms' ? <TableCell>{String(item.verification_code || '-')}</TableCell> : null}
+                  <TableCell>{tab === 'sms' ? sourceLabel(item) : String(item.subject || sourceLabel(item))}</TableCell>
+                  <TableCell><UserCell row={item} /></TableCell>
+                  <TableCell>{String(item.template_code || '-')}</TableCell>
+                </TableRow>
+              ))}
+              {!items.length && !loading ? (
+                <TableRow>
+                  <TableCell colSpan={tab === 'sms' ? 8 : 7}>
+                    <Typography variant="body2" color="text.secondary" sx={{ py: 2, textAlign: 'center' }}>暂无发送记录</Typography>
+                  </TableCell>
+                </TableRow>
+              ) : null}
+            </TableBody>
+          </Table>
+        </AdminTableFrame>
+        <TablePagination
+          component="div"
+          count={total}
+          page={page}
+          rowsPerPage={limit}
+          rowsPerPageOptions={[20, 50, 100]}
+          onPageChange={(_event, nextPage) => setPage(nextPage)}
+          onRowsPerPageChange={(event) => {
+            setLimit(Number(event.target.value));
+            setPage(0);
+          }}
+        />
+      </AdminSection>
     </Stack>
   );
 }

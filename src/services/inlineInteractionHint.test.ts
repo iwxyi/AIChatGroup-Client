@@ -4,6 +4,35 @@ import type { GroupChat } from '../types/chat';
 import { buildInlineInteractionContract, parseInlineInteractionEnvelope } from './inlineInteractionHint';
 
 describe('parseInlineInteractionEnvelope story events', () => {
+  it('keeps social outing participant states from inline diagnostics', () => {
+    const parsed = parseInlineInteractionEnvelope(JSON.stringify({
+      content: '周末一起去吃火锅吧。',
+      extraMessages: null,
+      intentionalRepeat: false,
+      conflictFocus: null,
+      interactionHints: null,
+      socialEventHints: [{
+        eventKind: 'social_outing',
+        participantIds: ['speaker', 'friend'],
+        targetIds: ['friend'],
+        reasonType: 'chat_activity_invite',
+        confidence: 0.88,
+        urgency: 'soon',
+        seedIntent: '把聊天里的邀约作为候选活动。',
+        visibilityPlan: 'public',
+        expectedArtifacts: ['outing_summary'],
+        title: '吃火锅',
+        activityType: '聚餐',
+        timeHint: '周末',
+        locationHint: null,
+        dedupeKey: 'outing-hotpot',
+        participantStates: { speaker: 'interested', friend: 'invited', invalid: 'unknown' },
+      }],
+    }));
+
+    expect(parsed?.socialEventHints?.[0]?.participantStates).toEqual({ speaker: 'interested', friend: 'invited' });
+  });
+
   it('accepts story-reader output with empty content when storyEvents have visible narration', () => {
     const parsed = parseInlineInteractionEnvelope(JSON.stringify({
       content: '',
@@ -113,5 +142,31 @@ describe('buildInlineInteractionContract analysis room detection', () => {
 
     expect(contract).toContain('one bubble is the default');
     expect(contract).toContain('content may still contain paragraph breaks');
+  });
+
+  it('documents social outing fields and model-authored follow-up updates', () => {
+    const contract = buildInlineInteractionContract({
+      chat: {
+        id: 'chat-1',
+        type: 'group',
+        memberIds: ['speaker', 'friend'],
+        runtimeEventsV2: [],
+      } as unknown as GroupChat,
+      speaker: { id: 'speaker', name: '说话人' } as AICharacter,
+      characters: [
+        { id: 'speaker', name: '说话人' } as AICharacter,
+        { id: 'friend', name: '朋友' } as AICharacter,
+      ],
+      recentMessages: [],
+    });
+
+    expect(contract).toContain('social_outing rules');
+    expect(contract).toContain('runtime will not invent or patch a social_outing from local keyword matching');
+    expect(contract).toContain('You must emit one social_outing');
+    expect(contract).toContain('old tea house with the blue curtain');
+    expect(contract).toContain('"participantStates":{"speaker-id":"interested","other-id":"invited"}');
+    expect(contract).toContain('emit social_outing with the same dedupeKey');
+    expect(contract).toContain('the runtime will not extract those updates from keywords');
+    expect(contract).toContain('participantIds/targetIds must use member ids');
   });
 });

@@ -56,14 +56,6 @@ function normalizeConfidence(value: unknown) {
   return Math.max(0, Math.min(1, value > 1 ? value / 100 : value));
 }
 
-function isLikelyNonUserSensitiveCue(text: string) {
-  return /(压力锅|紧张刺激|剧情.*(压力|紧张)|游戏.*(压力|紧张)|电影.*(压力|紧张)|角色.*(不舒服|难受|焦虑|低落)|别人.*(不舒服|难受|焦虑|低落)|他说.*(不舒服|难受|焦虑|低落)|她说.*(不舒服|难受|焦虑|低落))/.test(text);
-}
-
-function hasExplicitUserSensitiveCue(text: string) {
-  return /(我|自己|最近|这几天|今天|今晚|昨晚|明天|上班|工作|学校|考试|面试|睡|身体|胃|头).{0,18}(生病|不舒服|难受|失眠|压力|焦虑|紧张|委屈|低落)|(生病|不舒服|难受|失眠|压力|焦虑|紧张|委屈|低落).{0,18}(我|自己|最近|这几天|今天|今晚|昨晚|明天|上班|工作|学校|考试|面试|睡|身体|胃|头)/.test(text);
-}
-
 function normalizeModelItems(raw: unknown, userContent: string): UserProfileMemoryEventItem[] {
   if (!raw || typeof raw !== 'object') return [];
   const value = raw as Record<string, unknown>;
@@ -98,47 +90,6 @@ function dedupeItems(items: UserProfileMemoryEventItem[]) {
     seen.add(key);
     return true;
   });
-}
-
-function buildLocalFallbackItems(text: string): UserProfileMemoryEventItem[] {
-  const items: UserProfileMemoryEventItem[] = [];
-  const address = text.match(/(?:叫我|称呼我|喊我|昵称是|我的名字是|我叫)[:：]?\s*([^，。；;、\s]{1,12})/)?.[1];
-  if (address) {
-    items.push({
-      kind: 'address_preference',
-      text: `用户希望被称呼为${address}`,
-      evidence: text,
-      confidence: 0.62,
-    });
-  }
-  if (/(不要|不想|别).{0,12}(主动|打扰|私聊|提醒|早安|晚安|恋爱|暧昧|情侣|对象|占有|吃醋|追问|关心)/.test(text)) {
-    items.push({
-      kind: 'boundary',
-      text,
-      evidence: text,
-      confidence: 0.62,
-      sensitive: true,
-    });
-  }
-  if (/(明天|后天|今晚|周末|要去|打算|计划|准备|面试|考试|ddl|截止|纪念日|生日)/.test(text)) {
-    items.push({
-      kind: /(生日|纪念日|考试|面试|ddl|截止)/.test(text) ? 'important_date' : 'recent_plan',
-      text,
-      evidence: text,
-      confidence: 0.62,
-      sensitive: /(生日|纪念日|面试|考试)/.test(text),
-    });
-  }
-  if (!isLikelyNonUserSensitiveCue(text) && hasExplicitUserSensitiveCue(text)) {
-    items.push({
-      kind: /(生病|不舒服|难受|失眠)/.test(text) ? 'pressure_source' : 'emotional_pattern',
-      text,
-      evidence: text,
-      confidence: 0.62,
-      sensitive: true,
-    });
-  }
-  return dedupeItems(items).slice(0, 4);
 }
 
 export function createUserProfileMemoryEvent(params: {
@@ -232,17 +183,8 @@ export function buildUserProfileMemoryEventFromDirectUserMessage(params: {
   character: AICharacter;
   message: Message;
 }): RuntimeEventV2 | null {
-  if (!isDirectUserMessage(params.chat, params.message)) return null;
-  const text = compactText(params.message.content, 240);
-  if (!text) return null;
-  return createUserProfileMemoryEvent({
-    chat: params.chat,
-    character: params.character,
-    message: params.message,
-    items: buildLocalFallbackItems(text),
-    decisionSource: 'local_fallback',
-    reason: 'local fallback extracted explicit user profile cues',
-  });
+  void params;
+  return null;
 }
 
 export async function resolveUserProfileMemoryEventFromDirectUserMessage(params: {
@@ -272,19 +214,18 @@ export async function resolveUserProfileMemoryEventFromDirectUserMessage(params:
       });
     } catch (error) {
       reportRecoverableWarning({
-        location: 'companionship:user-profile-model-fallback',
+        location: 'companionship:user-profile-model',
         error,
-        message: '用户画像模型裁决失败，已退回本地保守判断。',
+        message: '用户画像模型裁决失败，已跳过本轮用户画像写入。',
         extra: {
           chatId: params.chat.id,
           characterId: params.character.id,
           messageId: params.message.id,
           messagePreview: compactText(params.message.content, 80),
-          fallback: 'local_fallback',
         },
       });
-      return buildUserProfileMemoryEventFromDirectUserMessage(params);
+      return null;
     }
   }
-  return buildUserProfileMemoryEventFromDirectUserMessage(params);
+  return null;
 }

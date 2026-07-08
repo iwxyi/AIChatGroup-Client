@@ -1,9 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Button, Stack, Table, TableBody, TableCell, TableHead, TableRow, Typography } from '@mui/material';
-import AdminDetailCard from '../../components/admin/AdminDetailCard';
-import AdminInlineGroup from '../../components/admin/AdminInlineGroup';
-import AdminResponsiveTable from '../../components/admin/AdminResponsiveTable';
 import AdminRequestState, { getAdminErrorMessage } from '../../components/admin/AdminRequestState';
+import { AdminSection, AdminTableFrame } from '../../components/admin/AdminSurface';
 import { adminApi } from '../../services/adminApi';
 
 export default function AdminAuditPage() {
@@ -32,37 +30,41 @@ export default function AdminAuditPage() {
 
   return (
     <Stack spacing={2}>
-      <AdminInlineGroup gap={1.25}>
-        <Button variant={result === '' ? 'contained' : 'outlined'} onClick={() => setResult('')}>全部</Button>
-        <Button variant={result === 'success' ? 'contained' : 'outlined'} onClick={() => setResult('success')}>成功</Button>
-        <Button variant={result === 'failed' ? 'contained' : 'outlined'} onClick={() => setResult('failed')}>失败</Button>
-      </AdminInlineGroup>
+      <AdminSection title="审计日志" subtitle="查看管理员操作记录和结果。">
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+          <Button variant={result === '' ? 'contained' : 'outlined'} onClick={() => setResult('')}>全部</Button>
+          <Button variant={result === 'success' ? 'contained' : 'outlined'} onClick={() => setResult('success')}>成功</Button>
+          <Button variant={result === 'failed' ? 'contained' : 'outlined'} onClick={() => setResult('failed')}>失败</Button>
+        </Stack>
+      </AdminSection>
       <AdminRequestState loading={loading} error={error} onRetry={() => void load()} />
-      <AdminResponsiveTable minWidth={760}>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell>时间</TableCell>
-              <TableCell>管理员</TableCell>
-              <TableCell>动作</TableCell>
-              <TableCell>资源</TableCell>
-              <TableCell>结果</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {items.map((item) => (
-              <TableRow key={String(item.id)} hover selected={String(selectedItem?.id || '') === String(item.id)} onClick={() => setSelectedItem(item)}>
-                <TableCell>{new Date(Number(item.created_at || 0)).toLocaleString()}</TableCell>
-                <TableCell>{String(item.admin_display_name || item.admin_email || '')}</TableCell>
-                <TableCell>{String(item.action || '')}</TableCell>
-                <TableCell>{`${String(item.resource_type || '')} ${String(item.resource_id || '')}`}</TableCell>
-                <TableCell>{String(item.result || '')}</TableCell>
+      <AdminSection title="日志列表" subtitle="点击日志行查看详情。" bodySx={{ p: 0 }}>
+        <AdminTableFrame minWidth={760}>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableCell>时间</TableCell>
+                <TableCell>管理员</TableCell>
+                <TableCell>动作</TableCell>
+                <TableCell>资源</TableCell>
+                <TableCell>结果</TableCell>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </AdminResponsiveTable>
-      <AdminDetailCard title="审计详情">
+            </TableHead>
+            <TableBody>
+              {items.map((item) => (
+                <TableRow key={String(item.id)} hover selected={String(selectedItem?.id || '') === String(item.id)} onClick={() => setSelectedItem(item)} sx={{ cursor: 'pointer' }}>
+                  <TableCell>{new Date(Number(item.created_at || 0)).toLocaleString()}</TableCell>
+                  <TableCell>{String(item.admin_display_name || item.admin_email || '')}</TableCell>
+                  <TableCell>{String(item.action || '')}</TableCell>
+                  <TableCell>{`${String(item.resource_type || '')} ${String(item.resource_id || '')}`}</TableCell>
+                  <TableCell>{String(item.result || '')}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </AdminTableFrame>
+      </AdminSection>
+      <AdminSection title="审计详情">
         {selectedItem ? (
           <Stack spacing={0.5}>
             <Typography variant="body2">动作：{String(selectedItem.action || '')}</Typography>
@@ -72,7 +74,7 @@ export default function AdminAuditPage() {
             <Typography variant="body2">时间：{new Date(Number(selectedItem.created_at || 0)).toLocaleString()}</Typography>
           </Stack>
         ) : <Typography variant="body2" color="text.secondary">点击日志行查看详情</Typography>}
-      </AdminDetailCard>
+      </AdminSection>
     </Stack>
   );
 }

@@ -1,39 +1,44 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Box, Button, Chip, Grid, Paper, Stack, Table, TableBody, TableCell, TableHead, TableRow, Typography } from '@mui/material';
+import { Alert, Button, Chip, Grid, Stack, Table, TableBody, TableCell, TableHead, TableRow } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
-import AdminResponsiveTable from '../../components/admin/AdminResponsiveTable';
 import AdminRequestState, { getAdminErrorMessage } from '../../components/admin/AdminRequestState';
+import { AdminMetricGrid, AdminSection, AdminTableFrame, type AdminMetricItem } from '../../components/admin/AdminSurface';
 import { adminApi } from '../../services/adminApi';
 
 type MetricFormat = 'count' | 'money' | 'points';
-type MetricTone = 'default' | 'warning' | 'error' | 'success';
+type MetricMeta = { title: string; route?: string; format?: MetricFormat };
 
-const metricMeta: Array<{ key: string; title: string; group: string; route?: string; format?: MetricFormat; tone?: MetricTone }> = [
-  { key: 'users', title: '用户总数', group: '用户', route: '/admin/users' },
-  { key: 'activeAiEntitlements', title: 'AI开通数', group: '用户', route: '/admin/platform?tab=ai' },
-  { key: 'pendingShareReviews', title: '待处理审核', group: '用户', route: '/admin/moderation', tone: 'warning' },
-  { key: 'activeRestrictions', title: '生效限制', group: '用户', route: '/admin/risk', tone: 'warning' },
-  { key: 'todayPaidAmount', title: '今日实收', group: '订单', route: '/admin/billing', format: 'money', tone: 'success' },
-  { key: 'todayPaidOrders', title: '今日支付订单', group: '订单', route: '/admin/billing' },
-  { key: 'pendingOrders', title: '待支付订单', group: '订单', route: '/admin/billing', tone: 'warning' },
-  { key: 'stalePendingOrders', title: '超时待支付', group: '订单', route: '/admin/billing', tone: 'error' },
-  { key: 'todayRefundAmount', title: '今日退款', group: '退款', route: '/admin/billing', format: 'money', tone: 'warning' },
-  { key: 'todayRefunds', title: '今日退款笔数', group: '退款', route: '/admin/billing' },
-  { key: 'pendingRefunds', title: '处理中退款', group: '退款', route: '/admin/billing', tone: 'warning' },
-  { key: 'failedRefunds', title: '失败退款', group: '退款', route: '/admin/billing', tone: 'error' },
-  { key: 'todayAiRequests', title: '今日AI请求', group: 'AI', route: '/admin/platform?tab=ai' },
-  { key: 'todayAiActiveUsers', title: '今日AI用户', group: 'AI', route: '/admin/platform?tab=ai' },
-  { key: 'todayAiRevenuePoints', title: '今日AI收入', group: 'AI', route: '/admin/platform?tab=ai', format: 'points', tone: 'success' },
-  { key: 'todayAiEstimatedCostPoints', title: '今日AI估算成本', group: 'AI', route: '/admin/platform?tab=ai', format: 'points' },
-  { key: 'todayAiGrossProfitPoints', title: '今日AI毛利', group: 'AI', route: '/admin/platform?tab=ai', format: 'points', tone: 'success' },
-  { key: 'todayAiFailed', title: '今日AI失败', group: 'AI', route: '/admin/platform?tab=ai', tone: 'error' },
-  { key: 'queuedNotifications', title: '排队通知', group: '通知安全', route: '/admin/notifications' },
-  { key: 'dueNotifications', title: '待发送通知', group: '通知安全', route: '/admin/notifications', tone: 'warning' },
-  { key: 'failedNotifications', title: '失败通知', group: '通知安全', route: '/admin/notifications', tone: 'error' },
-  { key: 'staleNotificationJobs', title: '卡住通知', group: '通知安全', route: '/admin/notifications', tone: 'error' },
-  { key: 'auditEvents24h', title: '24h审计事件', group: '通知安全', route: '/admin/audit' },
-  { key: 'failedAdminLogins24h', title: '24h登录失败', group: '通知安全', route: '/admin/audit', tone: 'warning' },
-];
+const metricMeta: Record<string, MetricMeta> = {
+  users: { title: '用户总数', route: '/admin/users' },
+  activeAiEntitlements: { title: 'AI开通数', route: '/admin/platform?tab=ai' },
+  pendingShareReviews: { title: '待处理审核', route: '/admin/moderation' },
+  activeRestrictions: { title: '生效限制', route: '/admin/risk' },
+  todayPaidAmount: { title: '今日实收', route: '/admin/billing', format: 'money' },
+  todayPaidOrders: { title: '今日支付订单', route: '/admin/billing' },
+  pendingOrders: { title: '待支付订单', route: '/admin/billing' },
+  stalePendingOrders: { title: '超时待支付', route: '/admin/billing' },
+  todayRefundAmount: { title: '今日退款', route: '/admin/billing', format: 'money' },
+  todayRefunds: { title: '今日退款笔数', route: '/admin/billing' },
+  pendingRefunds: { title: '处理中退款', route: '/admin/billing' },
+  failedRefunds: { title: '失败退款', route: '/admin/billing' },
+  todayAiRequests: { title: '今日AI请求', route: '/admin/platform?tab=ai' },
+  todayAiActiveUsers: { title: '今日AI用户', route: '/admin/platform?tab=ai' },
+  todayAiRevenuePoints: { title: '今日AI收入', route: '/admin/platform?tab=ai', format: 'points' },
+  todayAiEstimatedCostPoints: { title: '今日AI估算成本', route: '/admin/platform?tab=ai', format: 'points' },
+  todayAiGrossProfitPoints: { title: '今日AI毛利', route: '/admin/platform?tab=ai', format: 'points' },
+  todayAiFailed: { title: '今日AI失败', route: '/admin/platform?tab=ai' },
+  queuedNotifications: { title: '排队通知', route: '/admin/notifications' },
+  dueNotifications: { title: '待发送通知', route: '/admin/notifications' },
+  failedNotifications: { title: '失败通知', route: '/admin/notifications' },
+  staleNotificationJobs: { title: '卡住通知', route: '/admin/notifications' },
+  auditEvents24h: { title: '24h审计事件', route: '/admin/audit' },
+  failedAdminLogins24h: { title: '24h登录失败', route: '/admin/audit' },
+};
+
+const primaryMetricKeys = ['todayPaidAmount', 'todayPaidOrders', 'todayRefundAmount', 'todayAiGrossProfitPoints'];
+const operationMetricKeys = ['pendingOrders', 'stalePendingOrders', 'pendingRefunds', 'failedRefunds', 'pendingShareReviews', 'activeRestrictions', 'dueNotifications', 'failedNotifications'];
+const aiMetricKeys = ['todayAiRequests', 'todayAiActiveUsers', 'todayAiRevenuePoints', 'todayAiEstimatedCostPoints', 'todayAiFailed'];
+const baseMetricKeys = ['users', 'activeAiEntitlements', 'queuedNotifications', 'auditEvents24h', 'failedAdminLogins24h'];
 
 function formatTime(value: unknown) {
   const parsed = Number(value || 0);
@@ -46,24 +51,66 @@ function formatMetricValue(value: number, format: MetricFormat = 'count') {
   return String(Math.round(value));
 }
 
-function getToneColor(tone: MetricTone = 'default') {
-  if (tone === 'success') return 'success.main';
-  if (tone === 'warning') return 'warning.main';
-  if (tone === 'error') return 'error.main';
-  return 'primary.main';
+function formatGeneratedAt(value: unknown) {
+  const parsed = Number(value || 0);
+  return parsed > 0 ? `更新于 ${new Date(parsed).toLocaleTimeString()}` : '';
+}
+
+function metricSecondaryText(key: string, metrics: Record<string, number>) {
+  if (key === 'todayPaidAmount') return `${formatMetricValue(Number(metrics.todayPaidOrders || 0))} 笔支付`;
+  if (key === 'todayRefundAmount') return `${formatMetricValue(Number(metrics.todayRefunds || 0))} 笔退款`;
+  if (key === 'todayAiGrossProfitPoints') return `收入 ${formatMetricValue(Number(metrics.todayAiRevenuePoints || 0), 'points')}`;
+  if (key === 'todayAiEstimatedCostPoints') return `毛利 ${formatMetricValue(Number(metrics.todayAiGrossProfitPoints || 0), 'points')}`;
+  if (key === 'queuedNotifications') return `${formatMetricValue(Number(metrics.dueNotifications || 0))} 条待发送`;
+  return '';
+}
+
+function metricTone(key: string): AdminMetricItem['tone'] {
+  if (key.includes('Failed') || key.includes('stale')) return 'error';
+  if (key.includes('Revenue') || key.includes('Paid') || key.includes('Gross')) return 'success';
+  return 'default';
+}
+
+function buildMetricItem(metricKey: string, metrics: Record<string, number>, onNavigate: (route: string) => void): AdminMetricItem | null {
+  const meta = metricMeta[metricKey];
+  if (!meta) return null;
+  const value = Number(metrics[metricKey] || 0);
+  return {
+    key: metricKey,
+    label: meta.title,
+    value: formatMetricValue(value, meta.format),
+    helper: metricSecondaryText(metricKey, metrics),
+    onClick: meta.route ? () => onNavigate(meta.route!) : undefined,
+    tone: metricTone(metricKey),
+  };
+}
+
+function MetricGrid({
+  metricKeys,
+  metrics,
+  minWidth = 144,
+  compact = false,
+  onNavigate,
+}: {
+  metricKeys: string[];
+  metrics: Record<string, number>;
+  minWidth?: number;
+  compact?: boolean;
+  onNavigate: (route: string) => void;
+}) {
+  const items = metricKeys
+    .map((key) => buildMetricItem(key, metrics, onNavigate))
+    .filter(Boolean) as AdminMetricItem[];
+  return <AdminMetricGrid items={items} minWidth={minWidth} compact={compact} />;
 }
 
 function CompactSummaryTable({ title, empty, rows, route }: { title: string; empty: string; rows: Array<Record<string, unknown>>; route: string }) {
   const navigate = useNavigate();
   return (
-    <Paper sx={{ borderRadius: 3, overflow: 'hidden', height: '100%' }}>
-      <Stack direction="row" sx={{ px: 2, py: 1.5, justifyContent: 'space-between', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-        <Typography sx={{ fontWeight: 800 }}>{title}</Typography>
-        <Button size="small" onClick={() => navigate(route)}>查看全部</Button>
-      </Stack>
+    <AdminSection title={title} action={<Button size="small" onClick={() => navigate(route)}>查看全部</Button>} sx={{ height: '100%' }} bodySx={{ p: 0 }}>
       {!rows.length ? <Alert severity="info" sx={{ mx: 2, mb: 2 }}>{empty}</Alert> : null}
       {rows.length ? (
-        <AdminResponsiveTable minWidth={520}>
+        <AdminTableFrame minWidth={520}>
           <Table size="small">
             <TableHead>
               <TableRow>
@@ -87,9 +134,9 @@ function CompactSummaryTable({ title, empty, rows, route }: { title: string; emp
               })}
             </TableBody>
           </Table>
-        </AdminResponsiveTable>
+        </AdminTableFrame>
       ) : null}
-    </Paper>
+    </AdminSection>
   );
 }
 
@@ -102,15 +149,6 @@ export default function AdminDashboardPage() {
   const [recentAudits, setRecentAudits] = useState<Array<Record<string, unknown>>>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const metricGroups = useMemo(() => {
-    const groups = new Map<string, typeof metricMeta>();
-    metricMeta.forEach((item) => {
-      const items = groups.get(item.group) || [];
-      items.push(item);
-      groups.set(item.group, items);
-    });
-    return Array.from(groups.entries());
-  }, []);
   const alerts = useMemo(() => {
     const stalePendingOrderMinutes = Number(operations.stalePendingOrderMinutes || 120);
     return [
@@ -175,61 +213,62 @@ export default function AdminDashboardPage() {
   }, []);
 
   return (
-    <Stack spacing={2}>
+    <Stack spacing={1.5}>
       <AdminRequestState loading={loading} error={error} onRetry={() => void load()} />
 
-      {alerts.length ? (
-        <Paper sx={{ p: 2, borderRadius: 3 }}>
-          <Stack spacing={1.25}>
-            <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
-              <Typography sx={{ fontWeight: 900 }}>运营预警</Typography>
-              <Chip size="small" color="warning" label={`${alerts.length}项待处理`} />
+      <AdminSection
+        title="运营总览"
+        subtitle={formatGeneratedAt(operations.generatedAt) || '实时运营指标'}
+        action={<Button size="small" variant="outlined" onClick={() => void load()} disabled={loading}>刷新</Button>}
+      >
+        <MetricGrid metricKeys={primaryMetricKeys} metrics={metrics} minWidth={150} onNavigate={navigate} />
+      </AdminSection>
+
+      <Grid container spacing={1.5}>
+        <Grid size={{ xs: 12, lg: 5 }}>
+          <AdminSection
+            title="待处理事项"
+            action={<Chip size="small" color={alerts.length ? 'warning' : 'success'} label={alerts.length ? `${alerts.length}项` : '正常'} />}
+            sx={{ height: '100%' }}
+          >
+            <Stack spacing={1}>
+              {alerts.length ? alerts.map((item) => (
+                <Alert
+                  key={item.key}
+                  severity={item.severity}
+                  variant="outlined"
+                  action={<Button size="small" color="inherit" onClick={() => navigate(item.route)}>处理</Button>}
+                  sx={{ alignItems: 'center' }}
+                >
+                  {item.message}
+                </Alert>
+              )) : (
+                <Alert severity="success" variant="outlined">当前没有需要立即处理的运营事项。</Alert>
+              )}
             </Stack>
-            {alerts.map((item) => (
-              <Alert
-                key={item.key}
-                severity={item.severity}
-                action={<Button size="small" color="inherit" onClick={() => navigate(item.route)}>处理</Button>}
-              >
-                {item.message}
-              </Alert>
-            ))}
-          </Stack>
-        </Paper>
-      ) : null}
+          </AdminSection>
+        </Grid>
+        <Grid size={{ xs: 12, lg: 7 }}>
+          <AdminSection title="运营指标" sx={{ height: '100%' }}>
+            <MetricGrid metricKeys={operationMetricKeys} metrics={metrics} minWidth={132} compact onNavigate={navigate} />
+          </AdminSection>
+        </Grid>
+      </Grid>
 
-      <Stack spacing={2}>
-        {metricGroups.map(([group, cards]) => (
-          <Box key={group}>
-            <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1, fontWeight: 800 }}>{group}</Typography>
-            <Grid container spacing={2}>
-              {cards.map((meta) => {
-                const value = Number(metrics[meta.key] || 0);
-                return (
-                  <Grid key={meta.key} size={{ xs: 12, sm: 6, lg: 4, xl: 3 }}>
-                    <Paper
-                      sx={{
-                        p: { xs: 1.75, sm: 2.25 },
-                        borderRadius: 3,
-                        height: '100%',
-                        cursor: meta.route ? 'pointer' : 'default',
-                        borderLeft: 4,
-                        borderColor: getToneColor(value > 0 ? meta.tone : 'default'),
-                      }}
-                      onClick={meta.route ? () => navigate(meta.route!) : undefined}
-                    >
-                      <Typography variant="body2" color="text.secondary">{meta.title}</Typography>
-                      <Typography variant="h4" sx={{ fontWeight: 900, mt: 0.5 }}>{formatMetricValue(value, meta.format)}</Typography>
-                    </Paper>
-                  </Grid>
-                );
-              })}
-            </Grid>
-          </Box>
-        ))}
-      </Stack>
+      <Grid container spacing={1.5}>
+        <Grid size={{ xs: 12, lg: 7 }}>
+          <AdminSection title="AI 指标" sx={{ height: '100%' }}>
+            <MetricGrid metricKeys={aiMetricKeys} metrics={metrics} minWidth={132} compact onNavigate={navigate} />
+          </AdminSection>
+        </Grid>
+        <Grid size={{ xs: 12, lg: 5 }}>
+          <AdminSection title="基础状态" sx={{ height: '100%' }}>
+            <MetricGrid metricKeys={baseMetricKeys} metrics={metrics} minWidth={124} compact onNavigate={navigate} />
+          </AdminSection>
+        </Grid>
+      </Grid>
 
-      <Grid container spacing={2}>
+      <Grid container spacing={1.5}>
         <Grid size={{ xs: 12, xl: 4 }}>
           <CompactSummaryTable title="最近订单" empty="暂无订单" rows={recentOrders} route="/admin/billing" />
         </Grid>

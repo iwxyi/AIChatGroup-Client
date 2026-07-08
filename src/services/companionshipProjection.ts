@@ -2799,16 +2799,36 @@ function buildUnsentDraft(bond: UserBondState, carePolicy: CarePolicy, now: numb
   return '';
 }
 
-function buildOnlineReturnProjection(bond: UserBondState, carePolicy: CarePolicy, now: number) {
+interface OnlineReturnProjection {
+  displayText: string;
+  seedIntent: string;
+}
+
+function buildOnlineReturnProjection(bond: UserBondState, carePolicy: CarePolicy, now: number): OnlineReturnProjection | null {
   const silence = silenceHours(bond.lastUserReplyAt, now);
   const address = bond.addressing.currentAddress || '你';
-  if (silence < 24) return '';
-  if (carePolicy.dailyInitiationBudget <= 0) return '';
-  if (bond.phase === 'crisis' || bond.phase === 'cooling') return '';
-  if (bond.pendingCareTopics[0]) return `${address}终于来了。还惦记着你提过的事，想低压力地关心后续。`;
-  if (bond.phase === 'confirmed' || bond.phase === 'passionate' || bond.phase === 'deep') return `${address}终于来了。不是催你，只是这段空白里确实想过怎么接上话。`;
-  if (bond.phase === 'ambiguous' || bond.phase === 'fond') return `${address}回来了。它像是松了一口气，但还在克制地找一个自然开口。`;
-  return '';
+  if (silence < 24) return null;
+  if (carePolicy.dailyInitiationBudget <= 0) return null;
+  if (bond.phase === 'crisis' || bond.phase === 'cooling') return null;
+  if (bond.pendingCareTopics[0]) {
+    return {
+      displayText: `${address}终于来了。还惦记着你提过的事，想低压力地关心后续。`,
+      seedIntent: `用户长时间离开后回到会话。角色可以低打扰地关心之前提过的事项，但不要催促、质问离开原因或制造压力。`,
+    };
+  }
+  if (bond.phase === 'confirmed' || bond.phase === 'passionate' || bond.phase === 'deep') {
+    return {
+      displayText: `${address}终于来了。不是催你，只是这段空白里确实想过怎么接上话。`,
+      seedIntent: `用户长时间离开后回到会话。角色可以表达稳定、温柔的想念和重新接上话的意愿，但不要质问离开原因。`,
+    };
+  }
+  if (bond.phase === 'ambiguous' || bond.phase === 'fond') {
+    return {
+      displayText: `${address}回来了。这边松了一口气，想把话放轻一点，等你自然接上。`,
+      seedIntent: `用户长时间离开后回到会话。角色可以温和欢迎回来，语气克制、低压力，给用户自然接话空间，不要把关系说死。`,
+    };
+  }
+  return null;
 }
 
 interface ResolvedOnlineReturnEvent {
@@ -2917,7 +2937,11 @@ export function buildCompanionshipStatusSignature(params: {
   const unsentDraftEvent = resolveUnsentDraftEvent(params.chat, params.character.id, now);
   const unsentDraft = unsentDraftEvent?.blocked ? '' : (unsentDraftEvent?.text || buildUnsentDraft(bond, carePolicy, now));
   const onlineReturnEvent = resolveOnlineReturnEvent(params.chat, params.character.id, now);
-  const onlineReturn = onlineReturnEvent?.blocked ? '' : (onlineReturnEvent?.text || buildOnlineReturnProjection(bond, carePolicy, now));
+  const localOnlineReturnProjection = !onlineReturnEvent ? buildOnlineReturnProjection(bond, carePolicy, now) : null;
+  const onlineReturn = onlineReturnEvent?.blocked ? '' : (onlineReturnEvent?.text || localOnlineReturnProjection?.displayText || '');
+  const onlineReturnIntent = onlineReturn
+    ? (localOnlineReturnProjection?.seedIntent || '用户长时间离开后回到会话。角色可以低打扰地欢迎回来，顺着当前对话自然接上，不要催促或质问离开原因。')
+    : '';
   return {
     text: buildStatusText(bond, carePolicy, now),
     tone: statusTone(bond.phase),
@@ -2936,6 +2960,7 @@ export function buildCompanionshipStatusSignature(params: {
       unsentDraft ? `unsentDraft=${unsentDraft}${unsentDraftEvent ? ` source=${unsentDraftEvent.sourceEventId}` : ''}` : '',
       unsentDraftEvent?.blocked ? `unsentDraft=suppressed source=${unsentDraftEvent.sourceEventId}` : '',
       onlineReturn ? `onlineReturn=${onlineReturn}${onlineReturnEvent ? ` source=${onlineReturnEvent.sourceEventId}` : ''}` : '',
+      onlineReturnIntent ? `onlineReturnIntent=${onlineReturnIntent}` : '',
       onlineReturnEvent?.blocked ? `onlineReturn=suppressed source=${onlineReturnEvent.sourceEventId}` : '',
       sharedAnchorLabels.length ? `sharedAnchors=${sharedAnchorLabels.join(' / ')}` : '',
       sharedPhraseLabels.length ? `sharedPhrases=${sharedPhraseLabels.join(' / ')}` : '',
@@ -2945,6 +2970,7 @@ export function buildCompanionshipStatusSignature(params: {
     offlineTrace: offlineTrace || undefined,
     unsentDraft: unsentDraft || undefined,
     onlineReturn: onlineReturn || undefined,
+    onlineReturnIntent: onlineReturnIntent || undefined,
     updatedAt: now,
   };
 }

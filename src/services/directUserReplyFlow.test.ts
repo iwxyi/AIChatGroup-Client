@@ -125,32 +125,17 @@ function message(content: string): Message {
 }
 
 describe('directUserReplyFlow companionship phase events', () => {
-  it('creates confirmed romantic phase event from explicit relationship confirmation', () => {
+  it('does not create confirmed romantic phase event from local relationship text', () => {
     const event = buildCompanionshipPhaseEventFromDirectUserMessage({
       chat: chat('direct'),
       character: character(),
       message: message('那我们就按恋人关系相处吧。'),
     });
 
-    expect(event).toMatchObject({
-      kind: 'phase_transition',
-      createdAt: 1000,
-      actorIds: ['user'],
-      targetIds: ['char-a'],
-      evidenceMessageIds: ['msg-1'],
-      visibility: 'pair_private',
-      payload: {
-        eventType: 'companionship_phase_event',
-        characterId: 'char-a',
-        userId: 'user',
-        phase: 'confirmed',
-        style: 'romantic',
-        initiatedBy: 'user',
-      },
-    });
+    expect(event).toBeNull();
   });
 
-  it('creates reconciling and crisis events from explicit repair or conflict text', () => {
+  it('does not create reconciling and crisis events from local repair or conflict text', () => {
     const repair = buildCompanionshipPhaseEventFromDirectUserMessage({
       chat: chat('direct'),
       character: character(),
@@ -162,8 +147,8 @@ describe('directUserReplyFlow companionship phase events', () => {
       message: message('你刚刚那句话让我很不舒服，我们先冷静一下。'),
     });
 
-    expect(repair?.payload).toMatchObject({ phase: 'reconciling' });
-    expect(crisis?.payload).toMatchObject({ phase: 'crisis' });
+    expect(repair).toBeNull();
+    expect(crisis).toBeNull();
   });
 
   it('does not create phase events for ordinary direct or group messages', () => {
@@ -192,7 +177,7 @@ describe('directUserReplyFlow companionship phase events', () => {
     })).toBeNull();
   });
 
-  it('uses model judgment before local fallback when text api config exists', async () => {
+  it('uses model judgment when text api config exists', async () => {
     generateJsonResponseMock.mockResolvedValueOnce(JSON.stringify({
       shouldCreate: true,
       phase: 'confirmed',
@@ -281,7 +266,7 @@ describe('directUserReplyFlow companionship phase events', () => {
     expect(event).toBeNull();
   });
 
-  it('falls back to local judgment only when model judgment fails', async () => {
+  it('skips phase write when model judgment fails', async () => {
     generateJsonResponseMock.mockRejectedValueOnce(new Error('model unavailable'));
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
@@ -292,12 +277,8 @@ describe('directUserReplyFlow companionship phase events', () => {
       textApiConfig: { provider: 'openai', apiKey: 'key', baseUrl: 'https://example.test', model: 'model' },
     });
 
-    expect(event?.payload).toMatchObject({
-      phase: 'reconciling',
-      decisionSource: 'local_fallback',
-    });
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('[recoverable-warning] companionship:phase-model-fallback'), expect.objectContaining({
-      fallback: 'local_fallback',
+    expect(event).toBeNull();
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('[recoverable-warning] companionship:phase-model'), expect.objectContaining({
       messagePreview: '我们别冷战了，慢慢说开吧。',
     }));
     warnSpy.mockRestore();

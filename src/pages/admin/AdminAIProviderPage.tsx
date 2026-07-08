@@ -2,10 +2,8 @@ import { useEffect, useState } from 'react';
 import { Alert, Box, Button, Dialog, DialogContent, DialogTitle, FormControlLabel, MenuItem, Stack, Switch, Tab, Table, TableBody, TableCell, TableHead, TablePagination, TableRow, Tabs, TextField, Typography } from '@mui/material';
 import { useParams } from 'react-router-dom';
 import AdminAiUserUsageDialog from '../../components/admin/AdminAiUserUsageDialog';
-import AdminDetailCard from '../../components/admin/AdminDetailCard';
-import AdminInlineGroup from '../../components/admin/AdminInlineGroup';
-import AdminResponsiveTable from '../../components/admin/AdminResponsiveTable';
 import AdminRequestState, { getAdminErrorMessage } from '../../components/admin/AdminRequestState';
+import { AdminSection, AdminTableFrame } from '../../components/admin/AdminSurface';
 import { adminApi } from '../../services/adminApi';
 import { formatAiAmount, formatAiBalanceAmount } from '../../utils/aiPoints';
 
@@ -938,7 +936,7 @@ export default function AdminAIProviderPage() {
 
       {tab === 0 ? (
         <Stack spacing={1.25}>
-          <AdminDetailCard title="主账号配置">
+          <AdminSection title="主账号配置" subtitle="配置上游调用、管理凭证和主账号余额查询。">
             <Stack spacing={1.25}>
               <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.25}>
                 <TextField label="名称" value={form.name} onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))} fullWidth />
@@ -1044,7 +1042,7 @@ export default function AdminAIProviderPage() {
                     首次请求：{String(moacodeUsageSummary.firstRequestAt ?? moacodeUsageSummary.first_request_at ?? '-')}；最近请求：{String(moacodeUsageSummary.lastRequestAt ?? moacodeUsageSummary.last_request_at ?? '-')}
                   </Typography>
                   {moacodeUsageModels.length ? (
-                    <AdminResponsiveTable minWidth={760}>
+                    <AdminTableFrame minWidth={760}>
                       <Table size="small">
                         <TableHead>
                           <TableRow>
@@ -1071,15 +1069,15 @@ export default function AdminAIProviderPage() {
                           ))}
                         </TableBody>
                       </Table>
-                    </AdminResponsiveTable>
+                    </AdminTableFrame>
                   ) : null}
                 </Stack>
               ) : null}
               </Stack>
-          </AdminDetailCard>
+          </AdminSection>
 
           {usesInternalLedger ? (
-            <AdminDetailCard title={`${providerDisplayName} 扣费配置`}>
+            <AdminSection title={`${providerDisplayName} 扣费配置`}>
               <Stack spacing={1.25}>
                 <Alert severity="info">
                   {isMoacode
@@ -1130,10 +1128,10 @@ export default function AdminAIProviderPage() {
                   />
                 </Stack>
               </Stack>
-            </AdminDetailCard>
+            </AdminSection>
           ) : null}
 
-          <AdminDetailCard title={isApi2d ? 'Key 分配参数' : '新用户默认额度'}>
+          <AdminSection title={isApi2d ? 'Key 分配参数' : '新用户默认额度'}>
             <Stack spacing={1.25}>
               {isApi2d ? (
                 <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.25}>
@@ -1179,14 +1177,14 @@ export default function AdminAIProviderPage() {
                 </>
               ) : null}
             </Stack>
-          </AdminDetailCard>
+          </AdminSection>
 
         </Stack>
       ) : isMoacode && tab === publicModelTabIndex ? (
         <Stack spacing={1.5}>
-          <AdminDetailCard title="Moacode 公开价格表">
+          <AdminSection title="Moacode 公开价格表" subtitle="按模型合并展示不同上游的倍率和 token 价格。">
             <Stack spacing={1.25}>
-              <AdminInlineGroup>
+              <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
                 <TextField
                   size="small"
                   label="搜索模型或供应商"
@@ -1216,7 +1214,7 @@ export default function AdminAIProviderPage() {
                 <Typography variant="caption" color="text.secondary">
                   同一模型可能有多家上游；扣费估算会按当前 token 构成取最高价。
                 </Typography>
-              </AdminInlineGroup>
+              </Stack>
               {publicModelError ? <Alert severity="error">{publicModelError}</Alert> : null}
               {publicModels.length ? (
                 <Alert severity="info">
@@ -1225,7 +1223,7 @@ export default function AdminAIProviderPage() {
               ) : null}
               {!publicModels.length && !publicModelLoading && !publicModelError ? <Alert severity="info">暂无公开价格表</Alert> : null}
               {publicModels.length ? (
-                <AdminResponsiveTable minWidth={980}>
+                <AdminTableFrame minWidth={980}>
                   <Table size="small">
                     <TableHead>
                       <TableRow>
@@ -1281,10 +1279,10 @@ export default function AdminAIProviderPage() {
                       )))}
                     </TableBody>
                   </Table>
-                </AdminResponsiveTable>
+                </AdminTableFrame>
               ) : null}
             </Stack>
-          </AdminDetailCard>
+          </AdminSection>
         </Stack>
       ) : tab === userManagementTabIndex ? (
         usesInternalLedger ? (
@@ -1293,7 +1291,8 @@ export default function AdminAIProviderPage() {
               <TextField size="small" label="搜索用户" value={userBalanceSearch} onChange={(e) => setUserBalanceSearch(e.target.value)} sx={{ width: { xs: 180, sm: 260 } }} />
               <Button variant="contained" disabled={userBalanceLoading} onClick={() => void loadUserBalances(0, userBalanceRowsPerPage)} sx={{ minWidth: 88, height: 40 }}>查询</Button>
             </Stack>
-            <AdminResponsiveTable minWidth={760}>
+            <AdminSection title="用户点数" subtitle="点击用户行查看额度流水和调用消耗。" bodySx={{ p: 0 }}>
+            <AdminTableFrame minWidth={760}>
               <Table size="small">
                 <TableHead>
                   <TableRow>
@@ -1325,7 +1324,8 @@ export default function AdminAIProviderPage() {
                   ))}
                 </TableBody>
               </Table>
-            </AdminResponsiveTable>
+            </AdminTableFrame>
+            </AdminSection>
             <TablePagination
               component="div"
               count={userBalanceTotal}
@@ -1350,7 +1350,8 @@ export default function AdminAIProviderPage() {
               <Box sx={{ flex: 1 }} />
               <Button variant="contained" onClick={() => setCreateDialogOpen(true)} sx={{ minWidth: 88, height: 40 }}>创建</Button>
             </Stack>
-            <AdminResponsiveTable minWidth={980}>
+            <AdminSection title="Key 列表" bodySx={{ p: 0 }}>
+            <AdminTableFrame minWidth={980}>
               <Table size="small">
                 <TableHead>
                   <TableRow>
@@ -1383,7 +1384,8 @@ export default function AdminAIProviderPage() {
                   ))}
                 </TableBody>
               </Table>
-            </AdminResponsiveTable>
+            </AdminTableFrame>
+            </AdminSection>
           </Stack>
         )
       ) : (
@@ -1478,7 +1480,8 @@ export default function AdminAIProviderPage() {
               调用 {formatCount(usageStats.totals?.requestCount)}，失败 {formatCount(usageStats.totals?.failedCount)}，输入 {formatCount(usageStats.totals?.inputTokens)}，输出 {formatCount(usageStats.totals?.outputTokens)}，实扣 {formatPoint(usageStats.totals?.chargedAmount, providerCode)}
             </Alert>
           ) : null}
-          <AdminResponsiveTable minWidth={1200}>
+          <AdminSection title="用量统计" bodySx={{ p: 0 }}>
+          <AdminTableFrame minWidth={1200}>
             <Table size="small">
               <TableHead>
                 <TableRow>
@@ -1523,7 +1526,8 @@ export default function AdminAIProviderPage() {
                 ))}
               </TableBody>
             </Table>
-          </AdminResponsiveTable>
+          </AdminTableFrame>
+          </AdminSection>
           <TablePagination
             component="div"
             count={toPageTotal(usageStats?.total)}

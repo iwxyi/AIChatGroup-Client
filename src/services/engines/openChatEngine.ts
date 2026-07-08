@@ -14,19 +14,14 @@ import type {
 import { normalizeSocialEventHints } from '../../types/runtimeEvent';
 import { DEFAULT_OPEN_CHAT_MODE_CONFIG, DEFAULT_OPEN_CHAT_MODE_STATE } from '../../types/chat';
 import { buildChatPatch, buildNextWorldState, buildRelationshipTransition, buildWorldRuntimeEvents } from '../chatRuntimeTransitionBuilder';
-import { judgeInteractionEvent } from '../interactionJudge';
-import { getRelationshipLedgerEntry, inferRelationshipDelta, reduceRelationshipLedger, summarizeRelationshipDelta, getRelationshipDeltaDirection } from '../relationshipLedger';
+import { getRelationshipLedgerEntry, inferRelationshipDelta, reduceRelationshipLedger, summarizeRelationshipDelta } from '../relationshipLedger';
 import { calculateRoomShift } from '../roomStateSynthesizer';
 import { resolveRuntimeEvolutionConfig } from '../runtimeEvolutionConfig';
 import type { APIConfig } from '../../types/settings';
 import { getGuidanceTargetActorIds, parseUserGuidanceIntent } from '../userGuidanceIntent';
-import { projectWorldAttentionStates, projectWorldCalendar } from '../worldRuntimeProjection';
-import { isCharacterFeatureEnabled } from '../characterGenerationPolicy';
 import { orchestrateWorldDecision } from '../worldDecisionOrchestrator';
 import { buildMomentPostText } from '../momentTextBuilder';
-import { buildCharacterCompanionshipStates, shouldBlockUserProactiveContactByCompanionshipPolicy } from '../companionshipProjection';
-import { buildCompanionshipPrivateThreadScheduleEvent, getRecentCompanionshipPrivateThreadSchedule } from '../companionshipPrivateThreadSchedule';
-import { getCompanionshipRuntimeConfig } from '../companionshipRuntimeConfig';
+import { isCharacterFeatureEnabled } from '../characterGenerationPolicy';
 
 const MAX_OPEN_CHAT_RUNTIME_EVENTS = 120;
 
@@ -58,56 +53,6 @@ function buildRuntimeContextBundle(params: { conversation: GroupChat; speaker: {
       policyHits: [`open_chat:${params.conversation.type}`],
     },
   };
-}
-
-type AttentionStateSnapshot = ReturnType<typeof projectWorldAttentionStates>[number];
-
-function readWorldInfluenceBias(conversation: GroupChat, actorId: string, now: number) {
-  const latest = (conversation.runtimeEventsV2 || [])
-    .slice()
-    .reverse()
-    .find((event) => {
-      if (event.kind !== 'action_resolution') return false;
-      if ((event.actorIds || [])[0] !== actorId) return false;
-      if (now - event.createdAt > 2 * 60 * 60_000) return false;
-      const payload = event.payload as { eventType?: string };
-      return payload.eventType === 'world_influence_rule_evaluated';
-    });
-  if (!latest) {
-    return {
-      comfortBoost: 0,
-      scheduleBoost: 0,
-      restraintPenalty: 0,
-    };
-  }
-  const payload = latest.payload as {
-    matchedRuleIds?: string[];
-    unmetRuleIds?: string[];
-  };
-  const matched = new Set(payload.matchedRuleIds || []);
-  const unmet = new Set(payload.unmetRuleIds || []);
-  return {
-    comfortBoost: matched.has('comfort_first') ? 0.05 : 0,
-    scheduleBoost: matched.has('urgent_calendar_first') || matched.has('calendar_conflict_clarify_first') ? 0.06 : 0,
-    restraintPenalty: unmet.has('low_pressure_restraint') ? 0.04 : 0,
-  };
-}
-
-function attachAttentionTrace(
-  payload: SocialEventCandidatePayload,
-  attentionState: AttentionStateSnapshot | undefined,
-) {
-  if (!attentionState) return payload;
-  return {
-    ...payload,
-    attentionTrace: {
-      score: attentionState.attentionScore,
-      restraint: attentionState.restraint,
-      suggestedActions: attentionState.suggestedActions as NonNullable<SocialEventCandidatePayload['attentionTrace']>['suggestedActions'],
-      reasons: attentionState.reasons.slice(0, 4),
-      latestEvidenceAt: attentionState.latestEvidenceAt,
-    },
-  } satisfies SocialEventCandidatePayload;
 }
 
 type OpenChatCommittedMessage = Pick<Message, 'content' | 'type' | 'senderId' | 'metadata'> & {
@@ -213,19 +158,12 @@ async function resolveInteraction(params: {
   recentMessages?: Message[];
   apiConfig?: APIConfig;
 }) {
+  void params.conversation;
+  void params.characters;
+  void params.recentMessages;
+  void params.apiConfig;
   const hint = params.message.interactionHint || null;
   if (hint?.targetId && (hint.confidence || 0) >= 0.8) return hint;
-  if (params.conversation.type !== 'group') return hint;
-  if (params.apiConfig) {
-    const fallback = await judgeInteractionEvent({
-      api: params.apiConfig,
-      chat: params.conversation,
-      message: { content: params.message.content, senderId: params.message.senderId },
-      recentMessages: params.recentMessages || [],
-      characters: params.characters,
-    });
-    if (fallback.interaction) return fallback.interaction;
-  }
   return hint;
 }
 
@@ -324,319 +262,10 @@ function buildPairPrivateThreadCandidate(params: {
   structuredRoomState: GroupChat['worldState']['structuredRoomState'];
   message: Pick<Message, 'content' | 'senderId'> & { socialEventHints?: SocialEventHintEnvelope[] | null };
 }): RuntimeEventV2 | null {
-  const hinted = buildPairPrivateThreadCandidateFromHint(params);
-  if (!hinted) return null;
-  const payload = hinted.payload as SocialEventCandidatePayload;
-  const targetId = payload.targetIds?.[0] || payload.participantIds.find((id) => id !== payload.initiatorId) || null;
-  const explicitPrivateIntent = Boolean(payload.triggerReason && payload.openingMessage && payload.confidence >= 0.85);
-  if (targetId && explicitPrivateIntent) {
-    return {
-      ...hinted,
-      payload: {
-        ...payload,
-        reasonType: payload.reasonType || 'unresolved_question',
-        confidence: Math.max(payload.confidence, 0.86),
-      },
-    } satisfies RuntimeEventV2;
-  }
-  if (!targetId || !params.interaction || params.interaction.targetId !== targetId) return null;
-  if (params.interaction.intensity < 3 || params.interaction.confidence < 0.85) return null;
-  const relation = getRelationshipLedgerEntry(params.relationshipLedger || [], payload.initiatorId, targetId);
-  const hostilePressure = relation?.current.threat || 0;
-  const connectivePressure = (relation?.current.warmth || 0) + (relation?.current.competence || 0) + (relation?.current.trust || 0);
-  const roomFocus = params.structuredRoomState?.dominantThread?.includes(payload.initiatorId) && params.structuredRoomState?.dominantThread?.includes(targetId);
-  const reason = params.interaction.kind;
-  const qualifies = (
-    (reason === 'probe' || reason === 'challenge') && (hostilePressure >= 8 || roomFocus)
-  ) || (
-    (reason === 'support' || reason === 'defend') && connectivePressure >= 12 && params.interaction.intensity >= 4
-  );
-  if (!qualifies) return null;
-  return {
-    ...hinted,
-    payload: {
-      ...payload,
-      reasonType: payload.reasonType || (reason === 'support' || reason === 'defend' ? 'mutual_affinity' : 'unresolved_question'),
-      confidence: Math.max(payload.confidence, roomFocus ? 0.88 : 0.82),
-      triggerReason: payload.triggerReason || `基于当前${reason}互动，${payload.initiatorId}需要和${targetId}私下延续刚才的话题。`,
-      openingMessage: payload.openingMessage || payload.seedIntent,
-    },
-  } satisfies RuntimeEventV2;
-}
-
-function buildAttentionDrivenPrivateThreadCandidate(params: {
-  conversation: GroupChat;
-  characters: AICharacter[];
-  message: Pick<Message, 'content' | 'senderId'>;
-}): RuntimeEventV2 | null {
-  const actorId = params.message.senderId;
-  if (!actorId || actorId === 'user') return null;
-  if (!params.conversation.memberIds.includes('user')) return null;
-  const actor = params.characters.find((item) => item.id === actorId) || null;
-  const attentionState = projectWorldAttentionStates([params.conversation], params.characters)
-    .find((item) => item.actorId === actorId && item.targetId === 'user');
-  if (shouldBlockUserProactiveContactByCompanionshipPolicy({
-    character: actor,
-    chat: params.conversation,
-    eventKind: 'check_in',
-    reasonType: 'world_attention_private_message',
-    attentionScore: attentionState?.attentionScore,
-    enforceTemporalPolicy: false,
-  }).blocked) return null;
-  if (attentionState && !attentionState.suggestedActions.includes('private_message')) return null;
-  const recentAttention = (params.conversation.runtimeEventsV2 || [])
-    .slice()
-    .reverse()
-    .find((event) => (
-      event.kind === 'attention_candidate'
-      && (event.actorIds || []).includes('user')
-      && (event.targetIds || []).includes(actorId)
-      && Date.now() - event.createdAt <= 20 * 60_000
-    ));
-  if (!recentAttention) return null;
-  const payload: SocialEventCandidatePayload = {
-    eventKind: 'pair_private_thread',
-    initiatorId: actorId,
-    participantIds: [actorId, 'user'],
-    targetIds: ['user'],
-    reasonType: 'attention_followup',
-    confidence: 0.81,
-    urgency: 'soon',
-    seedIntent: '用户刚刚点名了我，适合私下跟进确认。',
-    triggerReason: '用户刚刚点名或触发关注状态，角色需要转入私域跟进确认。',
-    openingMessage: '刚才你提到我的时候，我有点在意。方便的话，我想单独问问你真实的想法。',
-    visibilityPlan: 'user_private',
-    expectedArtifacts: ['private_thread_summary'],
-    sourceText: params.message.content.trim().slice(0, 128),
-    dedupeKey: `attention-followup-${params.conversation.id}-${actorId}`,
-  };
-  const tracedPayload = attachAttentionTrace(payload, attentionState);
-  return createRuntimeEventV2({
-    conversationId: params.conversation.id,
-    kind: 'event_candidate',
-    summary: `${actorId} 生成了一个面向用户的私聊跟进候选`,
-    actorIds: [actorId],
-    targetIds: ['user'],
-    visibility: 'derived_public',
-    payload: tracedPayload,
-  });
-}
-
-function pickCompanionshipPrivateThreadState(params: {
-  conversation: GroupChat;
-  actor: AICharacter;
-}) {
-  const memberIds = new Set(params.conversation.memberIds.filter((id) => id !== 'user'));
-  const now = Date.now();
-  const candidates = buildCharacterCompanionshipStates(params.actor, now, params.conversation)
-    .filter((state) => memberIds.has(state.targetId))
-    .map((state) => {
-      const textureScore = state.sharedSecrets.length * 9 + state.sharedRituals.length * 7 + state.sharedPromises.length * 10 + state.unresolvedCareTopics.length * 12;
-      const score = state.closeness * 0.36 + state.protectiveness * 0.34 + state.reliance * 0.28 + textureScore;
-      const coolingSchedule = getRecentCompanionshipPrivateThreadSchedule({
-        chat: params.conversation,
-        participantIds: [params.actor.id, state.targetId],
-        now,
-      });
-      return { state, score, coolingSchedule };
-    })
-    .filter(({ state, score }) => {
-      if (state.unresolvedCareTopics.length) return score >= 44;
-      if (state.sharedPromises.length) return score >= 48;
-      if (state.sharedSecrets.length || state.sharedRituals.length) return score >= 52;
-      return score >= 68;
-    })
-    .sort((left, right) => right.score - left.score);
-  const available = candidates.find((item) => !item.coolingSchedule);
-  if (available) return { ...available, skippedBySchedule: null };
-  const skipped = candidates.find((item) => item.coolingSchedule) || null;
-  return skipped ? { ...skipped, skippedBySchedule: skipped.coolingSchedule } : null;
-}
-
-function buildCompanionshipPrivateThreadOpening(actorName: string, targetName: string, texture: string, sourceText: string) {
-  const cleanedTexture = texture.replace(/\s+/g, ' ').trim();
-  const cleanedSource = sourceText.replace(/\s+/g, ' ').trim();
-  if (/担心|放心不下|想帮|护着/.test(cleanedTexture)) {
-    return `${targetName}，刚才在群里我没接着问，是不想让你难堪。但这件事我还是有点放心不下，想单独确认一下。`;
-  }
-  if (/约定|暗号|共同梗|仪式/.test(cleanedTexture)) {
-    return `${targetName}，刚才那一下我突然想起我们之前说好的事。群里不太适合展开，我想单独跟你把这个接上。`;
-  }
-  if (/秘密|只有.*知道|保密/.test(cleanedTexture)) {
-    return `${targetName}，有些话在群里说出来就不是那个味道了。刚才那点我想单独和你确认一下。`;
-  }
-  if (cleanedSource) {
-    return `${targetName}，刚才你听到我那句了吗？我不是随口一说，想单独和你接着聊一下。`;
-  }
-  return `${targetName}，刚才在群里我没完全说完，想单独和你接着聊一下。`;
-}
-
-function buildCompanionshipPrivateThreadCandidate(params: {
-  conversation: GroupChat;
-  characters: AICharacter[];
-  message: Pick<Message, 'content' | 'senderId'>;
-}): { candidate: RuntimeEventV2 | null; skippedEvent: RuntimeEventV2 | null } {
-  const actor = params.characters.find((item) => item.id === params.message.senderId);
-  if (!actor || actor.id === 'user') return { candidate: null, skippedEvent: null };
-  if (params.conversation.type !== 'group') return { candidate: null, skippedEvent: null };
-  if (!params.conversation.memberIds.includes(actor.id)) return { candidate: null, skippedEvent: null };
-  const picked = pickCompanionshipPrivateThreadState({ conversation: params.conversation, actor });
-  if (!picked) return { candidate: null, skippedEvent: null };
-  const target = params.characters.find((item) => item.id === picked.state.targetId);
-  if (!target) return { candidate: null, skippedEvent: null };
-  const texture = [
-    picked.state.unresolvedCareTopics[0],
-    picked.state.sharedPromises[0],
-    picked.state.sharedRituals[0],
-    picked.state.sharedSecrets[0],
-  ].filter(Boolean).join('；');
-  const reasonType = picked.state.unresolvedCareTopics.length
-    ? 'companionship_care_followup'
-    : picked.state.sharedPromises.length
-      ? 'companionship_promise_followup'
-      : picked.state.sharedRituals.length
-      ? 'companionship_ritual_followup'
-      : picked.state.sharedSecrets.length
-        ? 'companionship_secret_followup'
-        : 'companionship_bond_followup';
-  const seedIntent = texture
-    ? `${actor.name} 对 ${target.name} 的陪伴关系有未尽余波：${texture}`
-    : `${actor.name} 和 ${target.name} 的关系已经足够熟悉，适合私下补一句没有在群里说完的话。`;
-  const openingMessage = buildCompanionshipPrivateThreadOpening(actor.name, target.name, texture, params.message.content);
-  const confidence = Math.max(0.82, Math.min(0.94, picked.score / 100));
-  const payload: SocialEventCandidatePayload = {
-    eventKind: 'pair_private_thread',
-    initiatorId: actor.id,
-    participantIds: [actor.id, target.id],
-    targetIds: [target.id],
-    reasonType,
-    confidence,
-    urgency: 'soon',
-    seedIntent,
-    triggerReason: texture
-      ? `角色-角色陪伴关系触发：${texture}`
-      : '角色-角色陪伴关系达到可私下延续的强度。',
-    openingMessage,
-    visibilityPlan: 'conversation_private',
-    expectedArtifacts: ['private_thread_summary'],
-    sourceText: params.message.content.trim().slice(0, 128),
-    decisionSource: 'local_fallback',
-    title: '陪伴私聊',
-    activityType: '角色陪伴跟进',
-    dedupeKey: `companionship-private-thread-${params.conversation.id}-${actor.id}-${target.id}`,
-  };
-  if (!getCompanionshipRuntimeConfig().enableCharacterPrivateThreads) {
-    return {
-      candidate: null,
-      skippedEvent: buildCompanionshipPrivateThreadScheduleEvent({
-        chat: params.conversation,
-        payload,
-        action: 'suppressed',
-      }),
-    };
-  }
-  if (picked.skippedBySchedule) {
-    const nextAvailableAt = (picked.skippedBySchedule.payload as { nextAvailableAt?: number }).nextAvailableAt;
-    return {
-      candidate: null,
-      skippedEvent: buildCompanionshipPrivateThreadScheduleEvent({
-        chat: params.conversation,
-        payload,
-        action: 'skipped',
-        nextAvailableAt,
-      }),
-    };
-  }
-  return {
-    skippedEvent: null,
-    candidate: createRuntimeEventV2({
-    conversationId: params.conversation.id,
-    kind: 'event_candidate',
-    summary: `${actor.name} 因陪伴关系想和 ${target.name} 私下接一句`,
-    actorIds: [actor.id],
-    targetIds: [target.id],
-    visibility: 'derived_public',
-    payload,
-    }),
-  };
-}
-
-function buildGroupMediationLine(actorName: string, targetName: string, texture: string) {
-  const cleanedTexture = texture.replace(/\s+/g, ' ').trim();
-  if (/担心|放心不下|想帮|护着/.test(cleanedTexture)) {
-    return `${actorName}没有继续把话压重，而是替${targetName}把气氛往回带了一点。`;
-  }
-  if (/约定|说好|修复|台阶|争执/.test(cleanedTexture)) {
-    return `${actorName}想起和${targetName}说过的台阶，于是在群里先把话放软。`;
-  }
-  if (/秘密|只有.*知道|暗号|共同梗/.test(cleanedTexture)) {
-    return `${actorName}避开了那层只属于他们的暗线，只用一句轻话把场面接住。`;
-  }
-  return `${actorName}察觉到${targetName}被晾在气氛里，顺手把话题稳了一下。`;
-}
-
-function buildCompanionshipGroupMediationCandidate(params: {
-  conversation: GroupChat;
-  characters: AICharacter[];
-  interaction: InteractionEventPayload | null;
-  structuredRoomState: GroupChat['worldState']['structuredRoomState'];
-  message: Pick<Message, 'content' | 'senderId'>;
-}): RuntimeEventV2 | null {
-  const actor = params.characters.find((item) => item.id === params.message.senderId);
-  if (!actor || actor.id === 'user') return null;
-  if (params.conversation.type !== 'group') return null;
-  if (hasPendingCandidateSuppression(params.conversation, actor.id, 'conflict_expression', Date.now())) return null;
-  const picked = pickCompanionshipPrivateThreadState({ conversation: params.conversation, actor });
-  if (!picked) return null;
-  const target = params.characters.find((item) => item.id === picked.state.targetId);
-  if (!target) return null;
-  const texture = [
-    picked.state.unresolvedCareTopics[0],
-    picked.state.sharedPromises[0],
-    picked.state.sharedRituals[0],
-    picked.state.sharedSecrets[0],
-  ].filter(Boolean).join('；');
-  const roomHeat = params.structuredRoomState?.heat || 0;
-  const conflictPairs = params.structuredRoomState?.conflictPairs || [];
-  const pairInConflict = conflictPairs.some((pair) => pair.includes(actor.id) && pair.includes(target.id));
-  const targetedTension = Boolean(params.interaction?.targetId && params.interaction.targetId === target.id && ['challenge', 'mock', 'dismiss', 'probe'].includes(params.interaction.kind) && params.interaction.confidence >= 0.72);
-  const mediationTexture = /(担心|放心不下|想帮|护着|约定|说好|修复|台阶|争执|秘密|暗号|共同梗)/.test(texture);
-  if (!pairInConflict && !targetedTension && roomHeat < 18 && !mediationTexture) return null;
-  if (picked.score < 50 && !pairInConflict && !targetedTension) return null;
-  const seedIntent = texture
-    ? `${actor.name} 和 ${target.name} 的陪伴关系适合在群里轻轻圆场：${texture}`
-    : `${actor.name} 需要在群聊里替 ${target.name} 接一下气氛，避免关系张力扩大。`;
-  const text = buildGroupMediationLine(actor.name, target.name, texture);
-  const payload: SocialEventCandidatePayload = {
-    eventKind: 'conflict_expression',
-    initiatorId: actor.id,
-    participantIds: [actor.id, target.id],
-    targetIds: [target.id],
-    reasonType: 'companionship_group_mediation',
-    confidence: Math.max(0.8, Math.min(0.92, picked.score / 100 + (pairInConflict ? 0.08 : targetedTension ? 0.05 : 0))),
-    urgency: pairInConflict || targetedTension ? 'immediate' : 'soon',
-    seedIntent,
-    triggerReason: texture
-      ? `角色-角色陪伴圆场触发：${texture}`
-      : '群聊里出现可由亲近角色公开递台阶的关系张力。',
-    openingMessage: text,
-    visibilityPlan: 'public',
-    expectedArtifacts: ['conflict_note'],
-    sourceText: params.message.content.trim().slice(0, 128),
-    decisionSource: 'local_fallback',
-    title: '群聊圆场',
-    activityType: '陪伴圆场',
-    dedupeKey: `companionship-group-mediation-${params.conversation.id}-${actor.id}-${target.id}`,
-  };
-  return createRuntimeEventV2({
-    conversationId: params.conversation.id,
-    kind: 'event_candidate',
-    summary: `${actor.name} 因陪伴关系尝试替 ${target.name} 圆场`,
-    actorIds: [actor.id],
-    targetIds: [target.id],
-    visibility: 'derived_public',
-    payload,
-  });
+  void params.interaction;
+  void params.relationshipLedger;
+  void params.structuredRoomState;
+  return buildPairPrivateThreadCandidateFromHint(params);
 }
 
 function buildAttentionDrivenCheckInCandidate(params: {
@@ -644,64 +273,8 @@ function buildAttentionDrivenCheckInCandidate(params: {
   characters: AICharacter[];
   message: Pick<Message, 'content' | 'senderId'>;
 }): RuntimeEventV2 | null {
-  const actorId = params.message.senderId;
-  if (!actorId || actorId === 'user') return null;
-  if (hasPendingCandidateSuppression(params.conversation, actorId, 'check_in', Date.now())) return null;
-  if (!params.conversation.memberIds.includes('user')) return null;
-  const actor = params.characters.find((item) => item.id === actorId) || null;
-  const attentionState = projectWorldAttentionStates([params.conversation], params.characters)
-    .find((item) => item.actorId === actorId && item.targetId === 'user');
-  if (shouldBlockUserProactiveContactByCompanionshipPolicy({
-    character: actor,
-    chat: params.conversation,
-    eventKind: 'check_in',
-    reasonType: 'attention_check_in',
-    attentionScore: attentionState?.attentionScore,
-    enforceTemporalPolicy: false,
-  }).blocked) return null;
-  if (attentionState && !attentionState.suggestedActions.includes('check_in')) return null;
-  const recentAttention = (params.conversation.runtimeEventsV2 || [])
-    .slice()
-    .reverse()
-    .find((event) => (
-      event.kind === 'attention_candidate'
-      && (event.actorIds || []).includes('user')
-      && (event.targetIds || []).includes(actorId)
-      && Date.now() - event.createdAt <= 45 * 60_000
-    ));
-  if (!recentAttention) return null;
-  const followupBoosted = hasRecentCompletedAttentionFollowup(
-    params.conversation,
-    actorId,
-    'user',
-    Date.now(),
-    90 * 60_000,
-  );
-  const bias = readWorldInfluenceBias(params.conversation, actorId, Date.now());
-  const payload: SocialEventCandidatePayload = {
-    eventKind: 'check_in',
-    initiatorId: actorId,
-    participantIds: [actorId, 'user'],
-    targetIds: ['user'],
-    reasonType: 'attention_check_in',
-    confidence: Math.max(0.7, Math.min(0.95, (followupBoosted ? 0.84 : 0.78) + bias.comfortBoost - bias.restraintPenalty)),
-    urgency: 'soon',
-    seedIntent: followupBoosted ? '刚完成一次用户跟进，适合顺势补一句关心或确认近况。' : '用户刚刚点名后，适合补一句关心或确认近况。',
-    visibilityPlan: 'user_private',
-    expectedArtifacts: ['status_note'],
-    sourceText: params.message.content.trim().slice(0, 128),
-    dedupeKey: `attention-check-in-${params.conversation.id}-${actorId}`,
-  };
-  const tracedPayload = attachAttentionTrace(payload, attentionState);
-  return createRuntimeEventV2({
-    conversationId: params.conversation.id,
-    kind: 'event_candidate',
-    summary: `${actorId} 生成了一个对用户的 check_in 候选`,
-    actorIds: [actorId],
-    targetIds: ['user'],
-    visibility: 'derived_public',
-    payload: tracedPayload,
-  });
+  void params;
+  return null;
 }
 
 function buildAttentionDrivenReactMomentCandidate(params: {
@@ -709,56 +282,8 @@ function buildAttentionDrivenReactMomentCandidate(params: {
   characters: AICharacter[];
   message: Pick<Message, 'content' | 'senderId'>;
 }): RuntimeEventV2 | null {
-  const actorId = params.message.senderId;
-  if (!actorId || actorId === 'user') return null;
-  if (hasPendingCandidateSuppression(params.conversation, actorId, 'react_to_moment', Date.now())) return null;
-  if (!params.conversation.memberIds.includes('user')) return null;
-  const attentionState = projectWorldAttentionStates([params.conversation], params.characters)
-    .find((item) => item.actorId === actorId && item.targetId === 'user');
-  if (attentionState && !attentionState.suggestedActions.includes('react_to_moment')) return null;
-  const recentMoment = (params.conversation.runtimeEventsV2 || [])
-    .slice()
-    .reverse()
-    .find((event) => (
-      event.kind === 'artifact'
-      && (event.visibility === 'public' || event.visibility === 'derived_public')
-      && typeof event.payload === 'object'
-      && event.payload !== null
-      && ((event.payload as { eventKind?: string }).eventKind === 'post_moment')
-      && Date.now() - event.createdAt <= 60 * 60_000
-    ));
-  if (!recentMoment) return null;
-  const followupBoosted = hasRecentCompletedAttentionFollowup(
-    params.conversation,
-    actorId,
-    'user',
-    Date.now(),
-    90 * 60_000,
-  );
-  const payload: SocialEventCandidatePayload = {
-    eventKind: 'react_to_moment',
-    initiatorId: actorId,
-    participantIds: [actorId],
-    targetIds: ['user'],
-    reasonType: 'moment_reaction',
-    confidence: followupBoosted ? 0.82 : 0.76,
-    urgency: 'defer',
-    seedIntent: followupBoosted ? '刚完成跟进后，适合顺势补一句动态回应。' : '刚刚有人发了动态，适合补一句回应。',
-    visibilityPlan: 'public',
-    expectedArtifacts: ['moment_text'],
-    sourceText: params.message.content.trim().slice(0, 128),
-    dedupeKey: `react-moment-${params.conversation.id}-${actorId}`,
-  };
-  const tracedPayload = attachAttentionTrace(payload, attentionState);
-  return createRuntimeEventV2({
-    conversationId: params.conversation.id,
-    kind: 'event_candidate',
-    summary: `${actorId} 生成了 react_to_moment 候选`,
-    actorIds: [actorId],
-    targetIds: ['user'],
-    visibility: 'derived_public',
-    payload: tracedPayload,
-  });
+  void params;
+  return null;
 }
 
 function buildAttentionDrivenInviteActivityCandidate(params: {
@@ -766,59 +291,8 @@ function buildAttentionDrivenInviteActivityCandidate(params: {
   characters: AICharacter[];
   message: Pick<Message, 'content' | 'senderId'>;
 }): RuntimeEventV2 | null {
-  const actorId = params.message.senderId;
-  if (!actorId || actorId === 'user') return null;
-  if (hasPendingCandidateSuppression(params.conversation, actorId, 'social_outing', Date.now())) return null;
-  if (!params.conversation.memberIds.includes('user')) return null;
-  const attentionState = projectWorldAttentionStates([params.conversation], params.characters)
-    .find((item) => item.actorId === actorId && item.targetId === 'user');
-  if (attentionState && !attentionState.suggestedActions.includes('invite_activity')) return null;
-  const recentAttention = (params.conversation.runtimeEventsV2 || [])
-    .slice()
-    .reverse()
-    .find((event) => (
-      event.kind === 'attention_candidate'
-      && (event.actorIds || []).includes('user')
-      && (event.targetIds || []).includes(actorId)
-      && Date.now() - event.createdAt <= 60 * 60_000
-    ));
-  if (!recentAttention) return null;
-  const hasRecentOuting = (params.conversation.runtimeEventsV2 || []).some((event) => {
-    if (Date.now() - event.createdAt > 3 * 60 * 60_000) return false;
-    if (event.kind !== 'artifact') return false;
-    const payload = event.payload as { artifactType?: string; eventKind?: string };
-    return payload.artifactType === 'outing_summary'
-      && payload.eventKind === 'social_outing'
-      && (event.actorIds || [])[0] === actorId;
-  });
-  if (hasRecentOuting) return null;
-  const bias = readWorldInfluenceBias(params.conversation, actorId, Date.now());
-  const payload: SocialEventCandidatePayload = {
-    eventKind: 'social_outing',
-    initiatorId: actorId,
-    participantIds: [actorId, 'user'],
-    targetIds: ['user'],
-    reasonType: 'world_attention_invite_activity',
-    confidence: Math.max(0.7, Math.min(0.95, 0.82 - bias.scheduleBoost * 0.5 - bias.restraintPenalty)),
-    urgency: 'soon',
-    seedIntent: '最近互动升温，适合发起一次轻量活动邀约。',
-    visibilityPlan: 'user_private',
-    expectedArtifacts: ['outing_summary'],
-    sourceText: params.message.content.trim().slice(0, 128),
-    title: '活动邀约',
-    activityType: '活动邀约',
-    dedupeKey: `attention-invite-${params.conversation.id}-${actorId}`,
-  };
-  const tracedPayload = attachAttentionTrace(payload, attentionState);
-  return createRuntimeEventV2({
-    conversationId: params.conversation.id,
-    kind: 'event_candidate',
-    summary: `${actorId} 生成了活动邀约候选`,
-    actorIds: [actorId],
-    targetIds: ['user'],
-    visibility: 'derived_public',
-    payload: tracedPayload,
-  });
+  void params;
+  return null;
 }
 
 function buildAttentionDrivenCalendarReminderCandidate(params: {
@@ -826,85 +300,8 @@ function buildAttentionDrivenCalendarReminderCandidate(params: {
   characters: AICharacter[];
   message: Pick<Message, 'content' | 'senderId'>;
 }): RuntimeEventV2 | null {
-  const actorId = params.message.senderId;
-  if (!actorId || actorId === 'user') return null;
-  if (hasPendingCandidateSuppression(params.conversation, actorId, 'status_update', Date.now())) return null;
-  if (!params.conversation.memberIds.includes('user')) return null;
-  const now = Date.now();
-  const bias = readWorldInfluenceBias(params.conversation, actorId, now);
-  const attentionState = projectWorldAttentionStates([params.conversation], params.characters)
-    .find((item) => item.actorId === actorId && item.targetId === 'user');
-  if (attentionState && !attentionState.suggestedActions.includes('calendar_reminder')) return null;
-  const upcomingCalendarItem = projectWorldCalendar([params.conversation], params.characters, { now }).items
-    .filter((item) => (
-      item.status !== 'cancelled'
-      && item.status !== 'completed'
-      && typeof item.startAt === 'number'
-      && item.startAt > now
-      && item.startAt - now <= 6 * 60 * 60_000
-      && item.participantIds.includes(actorId)
-      && item.participantIds.includes('user')
-    ))
-    .sort((left, right) => (left.startAt || 0) - (right.startAt || 0))[0];
-  const recentAttention = (params.conversation.runtimeEventsV2 || [])
-    .slice()
-    .reverse()
-    .find((event) => (
-      event.kind === 'attention_candidate'
-      && (event.actorIds || []).includes('user')
-      && (event.targetIds || []).includes(actorId)
-      && now - event.createdAt <= 75 * 60_000
-    ));
-  if (!recentAttention && !upcomingCalendarItem) return null;
-  const hasRecentReminder = (params.conversation.runtimeEventsV2 || []).some((event) => {
-    if (now - event.createdAt > 2 * 60 * 60_000) return false;
-    if (event.kind !== 'artifact') return false;
-    const payload = event.payload as { artifactType?: string; eventKind?: string };
-    return payload.artifactType === 'status_note'
-      && payload.eventKind === 'status_update'
-      && (event.actorIds || [])[0] === actorId
-      && (event.targetIds || []).includes('user');
-  });
-  if (hasRecentReminder) return null;
-  const minutesUntil = upcomingCalendarItem?.startAt ? Math.max(0, Math.round((upcomingCalendarItem.startAt - now) / 60_000)) : null;
-  const reminderTitle = upcomingCalendarItem?.title || '日程提醒';
-  const reminderType = upcomingCalendarItem?.activityType || reminderTitle;
-  const calendarDrivenReminder = Boolean(upcomingCalendarItem);
-  const sourceText = calendarDrivenReminder
-    ? `${upcomingCalendarItem?.summary || reminderTitle}${minutesUntil !== null ? `（${minutesUntil} 分钟后）` : ''}`
-    : params.message.content.trim().slice(0, 128);
-  const payload: SocialEventCandidatePayload = {
-    eventKind: 'status_update',
-    initiatorId: actorId,
-    participantIds: [actorId],
-    targetIds: ['user'],
-    reasonType: calendarDrivenReminder ? 'world_calendar_upcoming_reminder' : 'world_attention_calendar_reminder',
-    confidence: Math.max(0.72, Math.min(0.96, (calendarDrivenReminder ? 0.86 : 0.8) + bias.scheduleBoost - bias.restraintPenalty * 0.5)),
-    urgency: 'soon',
-    seedIntent: calendarDrivenReminder
-      ? `${reminderTitle} 即将开始，适合提前提醒并确认用户安排。`
-      : '最近的互动提示有待提醒事项，适合给用户补一条日程提醒。',
-    visibilityPlan: 'user_private',
-    expectedArtifacts: ['status_note'],
-    sourceText,
-    title: reminderTitle,
-    activityType: reminderType,
-    dedupeKey: calendarDrivenReminder
-      ? `calendar-upcoming-reminder-${params.conversation.id}-${actorId}-${upcomingCalendarItem?.id || 'item'}`
-      : `attention-reminder-${params.conversation.id}-${actorId}`,
-  };
-  const tracedPayload = attachAttentionTrace(payload, attentionState);
-  return createRuntimeEventV2({
-    conversationId: params.conversation.id,
-    kind: 'event_candidate',
-    summary: calendarDrivenReminder
-      ? `${actorId} 基于临近日程生成了提醒候选`
-      : `${actorId} 生成了日程提醒候选`,
-    actorIds: [actorId],
-    targetIds: ['user'],
-    visibility: 'derived_public',
-    payload: tracedPayload,
-  });
+  void params;
+  return null;
 }
 
 function buildAttentionDrivenComfortCandidate(params: {
@@ -912,49 +309,8 @@ function buildAttentionDrivenComfortCandidate(params: {
   characters: AICharacter[];
   message: Pick<Message, 'content' | 'senderId'>;
 }): RuntimeEventV2 | null {
-  const actorId = params.message.senderId;
-  if (!actorId || actorId === 'user') return null;
-  if (!params.conversation.memberIds.includes('user')) return null;
-  const attentionState = projectWorldAttentionStates([params.conversation], params.characters)
-    .find((item) => item.actorId === actorId && item.targetId === 'user');
-  if (!attentionState || !attentionState.suggestedActions.includes('comfort')) return null;
-  const now = Date.now();
-  const hasRecentComfort = (params.conversation.runtimeEventsV2 || []).some((event) => {
-    if (now - event.createdAt > 2 * 60 * 60_000) return false;
-    if (event.kind !== 'artifact') return false;
-    const payload = event.payload as { eventKind?: string; reasonType?: string };
-    return payload.eventKind === 'check_in'
-      && payload.reasonType === 'world_attention_comfort'
-      && (event.actorIds || [])[0] === actorId
-      && (event.targetIds || []).includes('user');
-  });
-  if (hasRecentComfort) return null;
-  const payload: SocialEventCandidatePayload = {
-    eventKind: 'check_in',
-    initiatorId: actorId,
-    participantIds: [actorId, 'user'],
-    targetIds: ['user'],
-    reasonType: 'world_attention_comfort',
-    confidence: 0.83,
-    urgency: 'soon',
-    seedIntent: '察觉到用户状态波动，想补一句更具体的关心。',
-    visibilityPlan: 'user_private',
-    expectedArtifacts: ['check_in_note'],
-    sourceText: params.message.content.trim().slice(0, 128),
-    title: '关怀跟进',
-    activityType: '关怀',
-    dedupeKey: `attention-comfort-${params.conversation.id}-${actorId}`,
-  };
-  const tracedPayload = attachAttentionTrace(payload, attentionState);
-  return createRuntimeEventV2({
-    conversationId: params.conversation.id,
-    kind: 'event_candidate',
-    summary: `${actorId} 生成了关怀跟进候选`,
-    actorIds: [actorId],
-    targetIds: ['user'],
-    visibility: 'derived_public',
-    payload: tracedPayload,
-  });
+  void params;
+  return null;
 }
 
 function buildAttentionDrivenShareMomentCandidate(params: {
@@ -962,102 +318,8 @@ function buildAttentionDrivenShareMomentCandidate(params: {
   characters: AICharacter[];
   message: Pick<Message, 'content' | 'senderId'>;
 }): RuntimeEventV2 | null {
-  const now = Date.now();
-  const actorId = params.message.senderId;
-  if (!actorId || actorId === 'user') return null;
-  if (hasPendingCandidateSuppression(params.conversation, actorId, 'post_moment', now)) return null;
-  const actor = params.characters.find((item) => item.id === actorId) || null;
-  if (actor && !isCharacterFeatureEnabled(actor, 'moments')) return null;
-  const attentionState = projectWorldAttentionStates([params.conversation], params.characters)
-    .find((item) => item.actorId === actorId && item.targetId !== 'user');
-  if (!attentionState || !attentionState.suggestedActions.includes('share_moment')) return null;
-  const targetId = attentionState.targetId;
-  if (!targetId || targetId === 'user') return null;
-  if (!params.conversation.memberIds.includes(targetId)) return null;
-  const recentAttention = (params.conversation.runtimeEventsV2 || [])
-    .slice()
-    .reverse()
-    .find((event) => (
-      event.kind === 'attention_candidate'
-      && (event.actorIds || []).includes(actorId)
-      && (event.targetIds || []).includes(targetId)
-      && now - event.createdAt <= 90 * 60_000
-    ));
-  if (!recentAttention) return null;
-  const personaText = `${actor?.speakingStyle || ''} ${actor?.background || ''} ${(actor?.expertise || []).join(' ')}`.toLowerCase();
-  const isNightOwl = /(夜猫|熬夜|夜班|主播|直播|vlog|夜生活|night|stream)/i.test(personaText);
-  const hour = new Date(now).getHours();
-  const isLateNight = hour >= 23 || hour < 7;
-  if (isLateNight && !isNightOwl) return null;
-  const hasRecentMoment = (params.conversation.runtimeEventsV2 || []).some((event) => {
-    if (now - event.createdAt > 4 * 60 * 60_000) return false;
-    if (event.kind !== 'artifact') return false;
-    const payload = event.payload as { artifactType?: string; eventKind?: string };
-    return payload.artifactType === 'moment_text'
-      && payload.eventKind === 'post_moment'
-      && (event.actorIds || [])[0] === actorId;
-  });
-  if (hasRecentMoment) return null;
-  const lastSocialArtifactAt = (params.conversation.runtimeEventsV2 || [])
-    .filter((event) => event.kind === 'artifact' && ['social_outing', 'check_in', 'react_to_moment', 'status_update', 'gift_exchange'].includes((event.payload as { eventKind?: string }).eventKind || ''))
-    .map((event) => event.createdAt)
-    .sort((a, b) => b - a)[0];
-  if (typeof lastSocialArtifactAt === 'number' && now - lastSocialArtifactAt < 18 * 60_000) return null;
-  const followupBoosted = hasRecentCompletedAttentionFollowup(
-    params.conversation,
-    actorId,
-    targetId,
-    now,
-    120 * 60_000,
-  );
-  const bias = readWorldInfluenceBias(params.conversation, actorId, now);
-  const targetName = params.characters.find((item) => item.id === targetId)?.name || targetId;
-  const styleSeed = Math.abs(stableEventSeed([params.conversation.id, actorId, targetId, Math.floor(now / (60 * 60_000))]).split('').reduce((sum, ch) => sum + ch.charCodeAt(0), 0));
-  const styleVariant = styleSeed % 3;
-  const momentMode = styleVariant === 0 ? 'event_capture' : styleVariant === 1 ? 'photo_social' : 'reflective_subtext';
-  const expectedArtifacts = momentMode === 'photo_social'
-    ? ['moment_text', 'moment_group_photo', 'moment_selfie']
-    : momentMode === 'reflective_subtext'
-      ? ['moment_text']
-      : ['moment_text', 'moment_group_photo'];
-  const title = momentMode === 'photo_social'
-    ? '随手一拍'
-    : momentMode === 'reflective_subtext'
-      ? '今日碎片'
-      : '朋友圈动态';
-  const seedIntent = momentMode === 'photo_social'
-    ? `和${targetName}这波互动之后，想发一条带照片的轻量动态。`
-    : momentMode === 'reflective_subtext'
-      ? `不直说事件细节，想写一条更内心化的动态，留一点余味。`
-      : `刚和${targetName}互动后，想发一条记录当下氛围的动态。`;
-  const payload: SocialEventCandidatePayload = {
-    eventKind: 'post_moment',
-    initiatorId: actorId,
-    participantIds: [actorId],
-    targetIds: [targetId],
-    reasonType: 'world_attention_share_moment',
-    confidence: Math.max(0.7, Math.min(0.95, (followupBoosted ? 0.88 : 0.81) - bias.scheduleBoost * 0.45 - bias.restraintPenalty)),
-    urgency: 'defer',
-    seedIntent: followupBoosted
-      ? `刚完成对${targetName}的跟进，${seedIntent}`
-      : seedIntent,
-    visibilityPlan: 'public',
-    expectedArtifacts,
-    sourceText: params.message.content.trim().slice(0, 128),
-    title,
-    activityType: momentMode === 'photo_social' ? '随拍' : momentMode === 'reflective_subtext' ? '情绪碎片' : '关系互动',
-    dedupeKey: `attention-share-moment-${params.conversation.id}-${actorId}-${targetId}`,
-  };
-  const tracedPayload = attachAttentionTrace(payload, attentionState);
-  return createRuntimeEventV2({
-    conversationId: params.conversation.id,
-    kind: 'event_candidate',
-    summary: `${actorId} 生成了动态分享候选`,
-    actorIds: [actorId],
-    targetIds: [targetId],
-    visibility: 'derived_public',
-    payload: tracedPayload,
-  });
+  void params;
+  return null;
 }
 
 function buildPostMomentCandidateFromHint(params: {
@@ -1136,22 +398,9 @@ function buildStatusUpdateCandidate(params: {
   structuredRoomState: GroupChat['worldState']['structuredRoomState'];
   message: Pick<Message, 'content' | 'senderId'> & { socialEventHints?: SocialEventHintEnvelope[] | null };
 }): RuntimeEventV2 | null {
-  const hinted = buildStatusUpdateCandidateFromHint(params);
-  if (!hinted) return null;
-  const payload = hinted.payload as SocialEventCandidatePayload;
-  const text = params.message.content.trim();
-  const statusLanguage = /(最近|这两天|我现在|我这边|更新一下|汇报一下|补充一下进展|近况|状态)/i.test(text);
-  const roomHeat = params.structuredRoomState?.heat || 0;
-  const selfFocused = params.interaction === null || !params.interaction.targetId;
-  if (!statusLanguage && !(selfFocused && roomHeat <= 28)) return null;
-  return {
-    ...hinted,
-    payload: {
-      ...payload,
-      confidence: Math.max(payload.confidence, statusLanguage ? 0.9 : 0.82),
-      reasonType: payload.reasonType || 'self_disclosure',
-    },
-  } satisfies RuntimeEventV2;
+  void params.interaction;
+  void params.structuredRoomState;
+  return buildStatusUpdateCandidateFromHint(params);
 }
 
 function buildStatusUpdateArtifactEvents(params: {
@@ -1291,22 +540,9 @@ function buildGiftExchangeCandidate(params: {
   structuredRoomState: GroupChat['worldState']['structuredRoomState'];
   message: Pick<Message, 'content' | 'senderId'> & { socialEventHints?: SocialEventHintEnvelope[] | null };
 }): RuntimeEventV2 | null {
-  const hinted = buildGiftExchangeCandidateFromHint(params);
-  if (!hinted) return null;
-  const payload = hinted.payload as SocialEventCandidatePayload;
-  const text = params.message.content.trim();
-  const giftLanguage = /(送你|给你带|小礼物|给你买了|请你喝|红包|纪念品|伴手礼)/i.test(text);
-  const warmTargeted = Boolean(params.interaction?.targetId && ['support', 'defend'].includes(params.interaction.kind));
-  const roomCohesion = params.structuredRoomState?.cohesion || 0;
-  if (!giftLanguage && !(warmTargeted && roomCohesion >= 5)) return null;
-  return {
-    ...hinted,
-    payload: {
-      ...payload,
-      confidence: Math.max(payload.confidence, giftLanguage ? 0.9 : 0.84),
-      reasonType: payload.reasonType || 'care_gesture',
-    },
-  } satisfies RuntimeEventV2;
+  void params.interaction;
+  void params.structuredRoomState;
+  return buildGiftExchangeCandidateFromHint(params);
 }
 
 function buildGiftExchangeArtifactEvents(params: {
@@ -1395,22 +631,9 @@ function buildConflictExpressionCandidate(params: {
   structuredRoomState: GroupChat['worldState']['structuredRoomState'];
   message: Pick<Message, 'content' | 'senderId'> & { socialEventHints?: SocialEventHintEnvelope[] | null };
 }): RuntimeEventV2 | null {
-  const hinted = buildConflictExpressionCandidateFromHint(params);
-  if (!hinted) return null;
-  const payload = hinted.payload as SocialEventCandidatePayload;
-  const text = params.message.content.trim();
-  const conflictLanguage = /(受不了|不爽|别这样|你这也太|真无语|我很不满|吵起来|翻脸)/i.test(text);
-  const conflictTargeted = Boolean(params.interaction?.targetId && ['challenge', 'mock', 'dismiss', 'pile_on'].includes(params.interaction.kind));
-  const roomHeat = params.structuredRoomState?.heat || 0;
-  if (!conflictLanguage && !conflictTargeted && roomHeat < 24) return null;
-  return {
-    ...hinted,
-    payload: {
-      ...payload,
-      confidence: Math.max(payload.confidence, conflictTargeted ? 0.9 : conflictLanguage ? 0.88 : 0.82),
-      reasonType: payload.reasonType || 'frustration',
-    },
-  } satisfies RuntimeEventV2;
+  void params.interaction;
+  void params.structuredRoomState;
+  return buildConflictExpressionCandidateFromHint(params);
 }
 
 function buildConflictExpressionArtifactEvents(params: {
@@ -1757,29 +980,19 @@ function buildPostMomentCandidate(params: {
   structuredRoomState: GroupChat['worldState']['structuredRoomState'];
   message: Pick<Message, 'content' | 'senderId'> & { socialEventHints?: SocialEventHintEnvelope[] | null };
 }): RuntimeEventV2 | null {
-  const hinted = buildPostMomentCandidateFromHint(params);
-  if (!hinted) return null;
+  void params.interaction;
+  void params.structuredRoomState;
   const actor = params.characters.find((item) => item.id === params.message.senderId) || null;
   if (actor && !isCharacterFeatureEnabled(actor, 'moments')) return null;
-  const payload = hinted.payload as SocialEventCandidatePayload;
+  const hinted = buildPostMomentCandidateFromHint(params);
+  if (!hinted) return null;
   const now = Date.now();
-  const text = params.message.content.trim();
-  const modelHinted = normalizeSocialEventHints(params.message.socialEventHints).some((hint) => hint.eventKind === 'post_moment' && (hint.confidence || 0) >= 0.8);
-  const expressive = /(发个朋友圈|发条动态|想发|晒|记录一下|发出来|po一下)/i.test(text);
-  const roomHeat = params.structuredRoomState?.heat || 0;
-  const roomCohesion = params.structuredRoomState?.cohesion || 0;
-  const emotionalPush = params.interaction && params.interaction.confidence >= 0.85 && (params.interaction.intensity >= 3 || params.interaction.kind === 'side_comment');
-  if (!modelHinted && !expressive && !emotionalPush && !(roomHeat >= 18 && roomCohesion >= 2)) return null;
-  const personaText = `${actor?.speakingStyle || ''} ${actor?.background || ''} ${(actor?.expertise || []).join(' ')}`.toLowerCase();
-  const isNightOwl = /(夜猫|熬夜|夜班|主播|直播|vlog|夜生活|night|stream)/i.test(personaText);
-  const hour = new Date(now).getHours();
-  const isLateNight = hour >= 23 || hour < 7;
-  if (isLateNight && !isNightOwl) return null;
   const lastSocialArtifactAt = (params.conversation.runtimeEventsV2 || [])
     .filter((event) => event.kind === 'artifact' && ['social_outing', 'check_in', 'react_to_moment', 'status_update', 'gift_exchange'].includes((event.payload as { eventKind?: string }).eventKind || ''))
     .map((event) => event.createdAt)
     .sort((a, b) => b - a)[0];
   if (typeof lastSocialArtifactAt === 'number' && now - lastSocialArtifactAt < 18 * 60 * 60_000) return null;
+  const payload = hinted.payload as SocialEventCandidatePayload;
   const modeSeed = Math.abs(stableEventSeed([params.conversation.id, params.message.senderId, Math.floor(now / (60 * 60_000))]).split('').reduce((sum, ch) => sum + ch.charCodeAt(0), 0));
   const modeVariant = modeSeed % 3;
   const expectedArtifacts = payload.expectedArtifacts?.length
@@ -1796,8 +1009,8 @@ function buildPostMomentCandidate(params: {
       title,
       activityType,
       expectedArtifacts,
-      confidence: Math.max(payload.confidence, expressive ? 0.92 : emotionalPush ? 0.86 : 0.82),
-      reasonType: payload.reasonType || (roomCohesion >= 10 ? 'celebration' : 'emotion_release'),
+      confidence: payload.confidence,
+      reasonType: payload.reasonType || 'emotion_release',
       urgency: payload.urgency === 'immediate' ? 'soon' : payload.urgency,
     },
   } satisfies RuntimeEventV2;
@@ -1809,12 +1022,27 @@ function buildSocialOutingCandidateFromHint(params: {
 }): RuntimeEventV2 | null {
   const hint = normalizeSocialEventHints(params.message.socialEventHints).find((item) => item.eventKind === 'social_outing');
   if (!hint || (hint.confidence || 0) < 0.8) return null;
-  const participantIds = (hint.participantIds || []).filter((id) => params.conversation.memberIds.includes(id));
+  const memberIds = new Set(params.conversation.memberIds);
+  const validParticipantIds = (hint.participantIds || []).filter((id) => memberIds.has(id));
+  const validTargetIds = (hint.targetIds || []).filter((id) => memberIds.has(id));
+  const participantIds = Array.from(new Set([
+    ...validParticipantIds,
+    ...(memberIds.has(params.message.senderId) ? [params.message.senderId] : []),
+    ...validTargetIds,
+  ]));
+  const counterpartIds = participantIds.filter((id) => id !== params.message.senderId);
+  if (!counterpartIds.length) return null;
+  const participantStates = Object.fromEntries(
+    participantIds.map((id) => [
+      id,
+      hint.participantStates?.[id] || (id === params.message.senderId ? 'interested' : 'invited'),
+    ]),
+  ) as SocialEventCandidatePayload['participantStates'];
   const payload: SocialEventCandidatePayload = {
     eventKind: 'social_outing',
     initiatorId: params.message.senderId,
-    participantIds: participantIds.length ? participantIds : [params.message.senderId],
-    targetIds: hint.targetIds?.filter((id) => params.conversation.memberIds.includes(id)),
+    participantIds,
+    targetIds: validTargetIds.length ? validTargetIds : counterpartIds,
     reasonType: hint.reasonType || 'celebration',
     confidence: Math.max(0.8, hint.confidence || 0),
     urgency: hint.urgency || 'soon',
@@ -1827,6 +1055,7 @@ function buildSocialOutingCandidateFromHint(params: {
     timeHint: hint.timeHint ?? null,
     locationHint: hint.locationHint ?? null,
     dedupeKey: hint.dedupeKey ?? null,
+    participantStates,
   };
   return createRuntimeEventV2({
     conversationId: params.conversation.id,
@@ -1837,6 +1066,64 @@ function buildSocialOutingCandidateFromHint(params: {
     visibility: 'derived_public',
     payload,
   });
+}
+
+function buildRejectedSocialOutingHintDiagnostic(params: {
+  conversation: GroupChat;
+  message: Pick<Message, 'content' | 'senderId'> & { socialEventHints?: SocialEventHintEnvelope[] | null };
+}): RuntimeEventV2 | null {
+  const hint = normalizeSocialEventHints(params.message.socialEventHints).find((item) => item.eventKind === 'social_outing');
+  if (!hint || (hint.confidence || 0) < 0.8) return null;
+  if (buildSocialOutingCandidateFromHint(params)) return null;
+  const memberIds = new Set(params.conversation.memberIds);
+  const rawParticipantIds = hint.participantIds || [];
+  const rawTargetIds = hint.targetIds || [];
+  const invalidParticipantIds = rawParticipantIds.filter((id) => !memberIds.has(id));
+  const invalidTargetIds = rawTargetIds.filter((id) => !memberIds.has(id));
+  return createRuntimeEventV2({
+    conversationId: params.conversation.id,
+    kind: 'action_resolution',
+    summary: '活动结构化字段已拒绝：缺少有效参与者或目标成员',
+    actorIds: [params.message.senderId],
+    targetIds: [],
+    visibility: 'moderator_only',
+    payload: {
+      eventType: 'structured_social_event_hint_rejected',
+      candidateEventKind: 'social_outing',
+      reasonType: 'invalid_participants',
+      reasonLabel: 'social_outing 缺少发起者之外的有效会话成员',
+      confidence: hint.confidence || null,
+      rawParticipantIds,
+      rawTargetIds,
+      invalidParticipantIds,
+      invalidTargetIds,
+      validMemberIds: params.conversation.memberIds,
+      source: 'model_structured_output',
+    },
+  });
+}
+
+function buildCalendarItemIdForSocialOuting(event: RuntimeEventV2) {
+  const payload = event.payload as Partial<SocialEventCandidatePayload> & Record<string, unknown>;
+  if (typeof payload.dedupeKey === 'string' && payload.dedupeKey.trim()) return payload.dedupeKey.trim();
+  return [
+    typeof payload.eventKind === 'string' ? payload.eventKind : '',
+    typeof payload.title === 'string' ? payload.title : '',
+    typeof payload.activityType === 'string' ? payload.activityType : '',
+    typeof payload.timeHint === 'string' ? payload.timeHint : '',
+    typeof payload.locationHint === 'string' ? payload.locationHint : '',
+    Array.isArray(payload.participantIds) ? payload.participantIds.filter((id): id is string => typeof id === 'string').sort().join(',') : '',
+  ].join('::');
+}
+
+function findRecentSocialOutingCalendarItemId(conversation: GroupChat) {
+  const latest = [...(conversation.runtimeEventsV2 || [])]
+    .reverse()
+    .find((event) => {
+      const payload = event.payload as { eventKind?: string };
+      return event.kind === 'event_candidate' && payload.eventKind === 'social_outing';
+    });
+  return latest ? buildCalendarItemIdForSocialOuting(latest) : '';
 }
 
 function normalizeSemanticText(value: string | null | undefined) {
@@ -2146,7 +1433,6 @@ function resolveCandidateSuppressionReason(chat: GroupChat, event: RuntimeEventV
   const payload = event.payload as SocialEventCandidatePayload;
   if (!passesAttentionRestraintPolicy(chat, payload, event.createdAt)) return 'restraint_policy';
   if (payload.eventKind === 'post_moment' && !shouldAutoBackflowMoment(chat, payload, event.createdAt)) return 'dedupe_backflow_post_moment';
-  if (payload.eventKind === 'social_outing' && !shouldAutoBackflowOuting(chat, payload, event.createdAt)) return 'dedupe_backflow_social_outing';
   if (payload.eventKind === 'status_update' && !shouldAutoBackflowStatusUpdate(chat, payload, event.createdAt)) return 'dedupe_backflow_status_update';
   if (payload.eventKind === 'check_in' && !shouldAutoBackflowCheckIn(chat, payload, event.createdAt)) return 'dedupe_backflow_check_in';
   if (payload.eventKind === 'react_to_moment' && !shouldAutoBackflowReactToMoment(chat, payload, event.createdAt)) return 'dedupe_backflow_react_to_moment';
@@ -2326,67 +1612,15 @@ void mergeCompactedRuntimeEvents;
 
 function buildSocialOutingCandidate(params: {
   conversation: GroupChat;
+  characters: AICharacter[];
   interaction: InteractionEventPayload | null;
   structuredRoomState: GroupChat['worldState']['structuredRoomState'];
   message: Pick<Message, 'content' | 'senderId'> & { socialEventHints?: SocialEventHintEnvelope[] | null };
 }): RuntimeEventV2 | null {
-  const hinted = buildSocialOutingCandidateFromHint(params);
-  if (!hinted) return null;
-  const payload = hinted.payload as SocialEventCandidatePayload;
-  const text = params.message.content.trim();
-  const outingLanguage = /(今晚|周末|一起去|约饭|吃火锅|聚餐|看展|唱歌|散步|庆祝|线下)/i.test(text);
-  const roomHeat = params.structuredRoomState?.heat || 0;
-  const roomCohesion = params.structuredRoomState?.cohesion || 0;
-  const relationshipBoost = payload.participantIds.some((participantId) => participantId !== payload.initiatorId && (() => {
-    const relation = getRelationshipLedgerEntry(params.conversation.relationshipLedger || [], payload.initiatorId, participantId);
-    return Boolean(relation && (relation.current.warmth + relation.current.competence + relation.current.trust) >= 12);
-  })());
-  const positiveInteraction = params.interaction && params.interaction.confidence >= 0.85 && getRelationshipDeltaDirection(inferRelationshipDelta(params.interaction)?.delta || {}) === 'up';
-  if (!outingLanguage && !relationshipBoost && !(positiveInteraction && roomHeat >= 12 && roomCohesion >= 5)) return null;
-  return {
-    ...hinted,
-    payload: {
-      ...payload,
-      confidence: Math.max(payload.confidence, outingLanguage ? 0.92 : relationshipBoost ? 0.87 : 0.82),
-      reasonType: payload.reasonType || (roomCohesion >= 10 ? 'celebration' : 'follow_up_hangout'),
-    },
-  } satisfies RuntimeEventV2;
-}
-
-function buildOutingArtifactEvents(params: {
-  conversation: GroupChat;
-  socialEventCandidates: RuntimeEventV2[];
-  characters: AICharacter[];
-}): RuntimeEventV2[] {
-  return params.socialEventCandidates
-    .filter((event) => (event.payload as SocialEventCandidatePayload).eventKind === 'social_outing')
-    .map((event) => {
-      const payload = event.payload as SocialEventCandidatePayload;
-      const participantNames = payload.participantIds.map((id) => params.characters.find((item) => item.id === id)?.name || id);
-      const label = payload.activityType || payload.title || '线下活动';
-      const text = `${participantNames.join('、')} 一起去参加了刚才聊到的${label}。`;
-      return createRuntimeEventV2({
-        conversationId: params.conversation.id,
-        kind: 'artifact',
-        summary: text,
-        actorIds: [payload.initiatorId],
-        targetIds: payload.participantIds,
-        visibility: 'derived_public',
-        payload: {
-          artifactType: 'outing_summary',
-          eventKind: 'social_outing',
-          text,
-          candidateId: event.id,
-          title: payload.title,
-          activityType: payload.activityType,
-          timeHint: payload.timeHint,
-          locationHint: payload.locationHint,
-          dedupeKey: payload.dedupeKey,
-          participantIds: payload.participantIds,
-          expectedArtifacts: payload.expectedArtifacts || [],
-        },
-      });
-    });
+  void params.characters;
+  void params.interaction;
+  void params.structuredRoomState;
+  return buildSocialOutingCandidateFromHint(params);
 }
 
 function buildSocialEventCandidates(params: {
@@ -2397,150 +1631,24 @@ function buildSocialEventCandidates(params: {
   structuredRoomState: GroupChat['worldState']['structuredRoomState'];
   message: Pick<Message, 'content' | 'senderId'> & { socialEventHints?: SocialEventHintEnvelope[] | null };
 }) {
-  const companionshipPrivateThreadResult = buildCompanionshipPrivateThreadCandidate({
-    conversation: params.conversation,
-    characters: params.characters,
-    message: params.message,
-  });
+  void params.characters;
+  void params.interaction;
+  void params.relationshipLedger;
+  void params.structuredRoomState;
   const selection = dedupeAgainstRecentRuntime(params.conversation, [
-    buildAttentionDrivenCheckInCandidate({
-      conversation: params.conversation,
-      characters: params.characters,
-      message: params.message,
-    }),
-    buildAttentionDrivenPrivateThreadCandidate({
-      conversation: params.conversation,
-      characters: params.characters,
-      message: params.message,
-    }),
-    buildAttentionDrivenReactMomentCandidate({
-      conversation: params.conversation,
-      characters: params.characters,
-      message: params.message,
-    }),
-    buildAttentionDrivenInviteActivityCandidate({
-      conversation: params.conversation,
-      characters: params.characters,
-      message: params.message,
-    }),
-    buildAttentionDrivenCalendarReminderCandidate({
-      conversation: params.conversation,
-      characters: params.characters,
-      message: params.message,
-    }),
-    buildAttentionDrivenComfortCandidate({
-      conversation: params.conversation,
-      characters: params.characters,
-      message: params.message,
-    }),
-    buildAttentionDrivenShareMomentCandidate({
-      conversation: params.conversation,
-      characters: params.characters,
-      message: params.message,
-    }),
-    buildPairPrivateThreadCandidate({
-      conversation: params.conversation,
-      interaction: params.interaction,
-      relationshipLedger: params.relationshipLedger,
-      structuredRoomState: params.structuredRoomState,
-      message: params.message,
-    }),
-    companionshipPrivateThreadResult.candidate,
-    buildCompanionshipGroupMediationCandidate({
-      conversation: params.conversation,
-      characters: params.characters,
-      interaction: params.interaction,
-      structuredRoomState: params.structuredRoomState,
-      message: params.message,
-    }),
+    buildPairPrivateThreadCandidateFromHint(params),
     buildPostMomentCandidate(params),
-    buildSocialOutingCandidate(params),
-    buildStatusUpdateCandidate(params),
-    buildGiftExchangeCandidate(params),
-    buildConflictExpressionCandidate(params),
+    buildSocialOutingCandidateFromHint(params),
+    buildStatusUpdateCandidateFromHint(params),
+    buildGiftExchangeCandidateFromHint(params),
+    buildConflictExpressionCandidateFromHint(params),
   ].filter(Boolean) as RuntimeEventV2[]);
   return {
     candidates: selection.candidates,
-    suppressedEvents: companionshipPrivateThreadResult.skippedEvent
-      ? [...selection.suppressedEvents, companionshipPrivateThreadResult.skippedEvent]
-      : selection.suppressedEvents,
-  };
-}
-
-function inferUserInteractionFromMessage(params: {
-  message: Pick<Message, 'content' | 'senderId'>;
-  characters: AICharacter[];
-  recentMessages?: Message[];
-}): InteractionEventPayload | null {
-  const content = params.message.content.trim();
-  if (!content) return null;
-  const targetFromMention = params.characters.find((character) => character.name && content.includes(character.name));
-  const recent = (params.recentMessages || [])
-    .filter((item) => !item.isDeleted && item.type !== 'system' && item.type !== 'event')
-    .slice(-4);
-  const latestAiSpeakerId = recent
-    .slice()
-    .reverse()
-    .find((item) => item.type === 'ai' && item.senderId !== 'user')?.senderId || null;
-  const target = targetFromMention
-    || (latestAiSpeakerId ? params.characters.find((character) => character.id === latestAiSpeakerId) : undefined);
-  if (!target) return null;
-  const supportive = /(谢谢|辛苦|支持|赞同|说得对|太好了|thanks|great|nice|good point)/i.test(content);
-  const challenging = /(不对|不同意|凭什么|为什么|离谱|急什么|别|wrong|disagree|ridiculous)/i.test(content);
-  const probing = /(吗|么|呢|\?|？|how|what|why|can you)/i.test(content);
-  const kind: InteractionEventPayload['kind'] = supportive
-    ? 'support'
-    : challenging
-      ? 'challenge'
-      : probing
-        ? 'probe'
-        : 'side_comment';
-  if (kind === 'side_comment') return null;
-  const tone: InteractionEventPayload['tone'] = supportive ? 'warm' : challenging ? 'annoyed' : 'cold';
-  return {
-    kind,
-    actorId: params.message.senderId,
-    targetId: target.id,
-    intensity: supportive ? 3 : challenging ? 3 : 3,
-    tone,
-    evidenceText: content.slice(0, 120),
-    confidence: 0.86,
-  };
-}
-
-function inferAiInteractionTowardUserFromRecentTurn(params: {
-  message: Pick<Message, 'content' | 'type' | 'senderId'>;
-  recentMessages?: Message[];
-}): InteractionEventPayload | null {
-  if (params.message.type !== 'ai' || params.message.senderId === 'user') return null;
-  const recent = (params.recentMessages || [])
-    .filter((item) => !item.isDeleted && item.type !== 'system' && item.type !== 'event')
-    .slice(-4);
-  const latestUserMessage = recent.slice().reverse().find((item) => item.senderId === 'user' && item.type === 'user');
-  if (!latestUserMessage) return null;
-  const content = params.message.content.trim();
-  if (!content) return null;
-  const supportive = /(谢谢|辛苦|支持|赞同|说得对|太好了|thanks|great|nice|good point)/i.test(content);
-  const challenging = /(不对|不同意|凭什么|为什么|离谱|急什么|别|wrong|disagree|ridiculous)/i.test(content);
-  const probing = /(吗|么|呢|\?|？|how|what|why|can you|would you)/i.test(content);
-  const addressesUser = /(你|你们|你的|您)/.test(content);
-  const kind: InteractionEventPayload['kind'] = supportive
-    ? 'support'
-    : challenging
-      ? 'challenge'
-      : (probing || addressesUser)
-        ? 'probe'
-        : 'side_comment';
-  if (kind === 'side_comment') return null;
-  const tone: InteractionEventPayload['tone'] = supportive ? 'warm' : challenging ? 'annoyed' : 'cold';
-  return {
-    kind,
-    actorId: params.message.senderId,
-    targetId: 'user',
-    intensity: supportive || challenging ? 3 : 2,
-    tone,
-    evidenceText: content.slice(0, 120),
-    confidence: supportive || challenging ? 0.82 : 0.76,
+    suppressedEvents: [
+      ...selection.suppressedEvents,
+      buildRejectedSocialOutingHintDiagnostic(params),
+    ].filter(Boolean) as RuntimeEventV2[],
   };
 }
 
@@ -2617,7 +1725,6 @@ function buildMomentArtifactEventsAndOuting(params: {
 }) {
   return [
     ...buildMomentArtifactEvents(params),
-    ...buildOutingArtifactEvents(params),
     ...buildStatusUpdateArtifactEvents(params),
     ...buildCheckInArtifactEvents(params),
     ...buildReactToMomentArtifactEvents(params),
@@ -2643,8 +1750,8 @@ async function buildStructuredRuntime(params: {
     const summary = params.message.content.trim().slice(0, 128);
     const guidance = params.message.type === 'god' ? parseUserGuidanceIntent(params.message.content, params.characters) : null;
     const targetActorIds = getGuidanceTargetActorIds(guidance);
-    const mentionedActorIds = params.characters.filter((character) => character.name && params.message.content.includes(character.name)).map((character) => character.id);
-    const directorTargetActorIds = targetActorIds.length ? targetActorIds : mentionedActorIds;
+    const mentionedActorIds: string[] = [];
+    const directorTargetActorIds = targetActorIds;
     const cueEvent = summary && isUserPersonaMessage ? createRuntimeEventV2({
       conversationId: params.conversation.id,
       kind: 'memory_candidate',
@@ -2657,47 +1764,11 @@ async function buildStructuredRuntime(params: {
         confidence: 0.74,
       } satisfies MemoryCandidatePayload,
     }) : null;
-    const inferredUserInteraction = isUserPersonaMessage
-      ? inferUserInteractionFromMessage({ message: params.message, characters: params.characters, recentMessages: params.recentMessages })
-      : null;
-    const userInteractionEvent = inferredUserInteraction ? createRuntimeEventV2({
-      conversationId: params.conversation.id,
-      kind: 'interaction',
-      summary: `${params.message.senderId} → ${inferredUserInteraction.targetId} · ${inferredUserInteraction.evidenceText}`,
-      actorIds: [params.message.senderId],
-      targetIds: inferredUserInteraction.targetId ? [inferredUserInteraction.targetId] : undefined,
-      payload: inferredUserInteraction,
-    }) : null;
-    const userRelationshipLedger = userInteractionEvent && inferredUserInteraction
-      ? reduceRelationshipLedger(
-        params.conversation.relationshipLedger || [],
-        inferredUserInteraction,
-        userInteractionEvent,
-      )
-      : (params.conversation.relationshipLedger || []);
-    const { nextState: userStructuredRoomState, shift: userRoomShift } = inferredUserInteraction
-      ? calculateRoomShift(
-        params.conversation.worldState.structuredRoomState || null,
-        inferredUserInteraction,
-      )
-      : { nextState: params.conversation.worldState.structuredRoomState || null, shift: null };
-    const userRoomShiftEvent = inferredUserInteraction && userRoomShift ? createRuntimeEventV2({
-      conversationId: params.conversation.id,
-      kind: 'room_shift',
-      summary: `房间态势更新：热度 ${userStructuredRoomState?.heat ?? 0} / 凝聚 ${userStructuredRoomState?.cohesion ?? 0}`,
-      actorIds: [params.message.senderId],
-      targetIds: inferredUserInteraction.targetId ? [inferredUserInteraction.targetId] : undefined,
-      payload: userRoomShift,
-    }) : null;
-    const userRelationshipDelta = inferredUserInteraction ? inferRelationshipDelta(inferredUserInteraction) : null;
-    const userRelationshipDeltaEvent = userRelationshipDelta ? createRuntimeEventV2({
-      conversationId: params.conversation.id,
-      kind: 'relationship_delta',
-      summary: `${params.message.senderId}→${userRelationshipDelta.targetId} ${summarizeRelationshipDelta(userRelationshipDelta)}`,
-      actorIds: [params.message.senderId],
-      targetIds: userRelationshipDelta.targetId ? [userRelationshipDelta.targetId] : undefined,
-      payload: userRelationshipDelta,
-    }) : null;
+    const userInteractionEvent: RuntimeEventV2 | null = null;
+    const userRelationshipLedger = params.conversation.relationshipLedger || [];
+    const userStructuredRoomState = params.conversation.worldState.structuredRoomState || null;
+    const userRoomShiftEvent: RuntimeEventV2 | null = null;
+    const userRelationshipDeltaEvent: RuntimeEventV2 | null = null;
     const userMemoryFromInteraction = userInteractionEvent ? buildMemoryCandidateFromStructuredEvent(userInteractionEvent) : null;
     const userMemoryFromRoomShift = userRoomShiftEvent ? buildMemoryCandidateFromStructuredEvent(userRoomShiftEvent) : null;
     const directorEvent = summary && params.message.type === 'god' ? createRuntimeEventV2({
@@ -2733,10 +1804,7 @@ async function buildStructuredRuntime(params: {
         },
       } satisfies DirectorInterventionPayload,
     }) : null;
-    const attentionTargetIds = Array.from(new Set([
-      ...mentionedActorIds,
-      ...(inferredUserInteraction?.targetId && inferredUserInteraction.targetId !== 'user' ? [inferredUserInteraction.targetId] : []),
-    ]));
+    const attentionTargetIds: string[] = [];
     const attentionEvent = isUserPersonaMessage && attentionTargetIds.length ? createRuntimeEventV2({
       conversationId: params.conversation.id,
       kind: 'attention_candidate',
@@ -2801,13 +1869,9 @@ async function buildStructuredRuntime(params: {
     payload: { text: params.message.content.trim().slice(0, 128), messageType: params.message.type },
   });
 
-  const resolvedInteraction = await resolveInteraction({
+  const interaction = await resolveInteraction({
     ...params,
     message: enrichedMessage,
-  });
-  const interaction = resolvedInteraction || inferAiInteractionTowardUserFromRecentTurn({
-    message: params.message,
-    recentMessages: params.recentMessages,
   });
   if (!interaction) {
     const artifactEvent = buildArtifactEvent(params);
@@ -2966,8 +2030,101 @@ function toLegacyMetrics(interaction: InteractionEventPayload, relationshipLedge
   return relationshipLedger?.find((entry) => entry.actorId === interaction.actorId && entry.targetId === interaction.targetId)?.current || null;
 }
 
-function buildStructuredLegacyEvents(runtimeEventsV2: RuntimeEventV2[], relationshipLedger: GroupChat['relationshipLedger'], structuredRoomState: GroupChat['worldState']['structuredRoomState']): Array<{ eventType: string; title: string; summary: string; pair?: [string, string]; metrics?: unknown }> {
-  const events: Array<{ eventType: string; title: string; summary: string; pair?: [string, string]; metrics?: unknown }> = [];
+type StructuredLegacyEvent = { eventType: string; title: string; summary: string; pair?: [string, string]; metrics?: unknown };
+
+function buildActivityDebugLabel(id: string, characters: AICharacter[]) {
+  if (id === 'user') return '我';
+  return characters.find((item) => item.id === id)?.name || id;
+}
+
+function buildActivityParticipantStateText(value: unknown, characters: AICharacter[]) {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return '';
+  return Object.entries(value as Record<string, unknown>)
+    .map(([id, state]) => typeof state === 'string' ? `${buildActivityDebugLabel(id, characters)}:${state}` : '')
+    .filter(Boolean)
+    .join('、');
+}
+
+function buildCalendarActivityLegacyEvents(runtimeEventsV2: RuntimeEventV2[], characters: AICharacter[]): StructuredLegacyEvent[] {
+  return runtimeEventsV2.flatMap((event) => {
+    if (event.kind === 'event_candidate' && (event.payload as { eventKind?: string }).eventKind === 'social_outing') {
+      const payload = event.payload as SocialEventCandidatePayload & { participantStates?: Record<string, string> };
+      const label = payload.title || payload.activityType || '线下活动';
+      const participants = (payload.participantIds || []).map((id) => buildActivityDebugLabel(id, characters)).join('、') || '未定';
+      const participantStates = buildActivityParticipantStateText(payload.participantStates, characters);
+      const detail = [
+        `候选 ${label}`,
+        payload.timeHint ? `时间 ${payload.timeHint}` : '',
+        payload.locationHint ? `地点 ${payload.locationHint}` : '',
+        `参与 ${participants}`,
+        participantStates ? `状态 ${participantStates}` : '',
+        `置信 ${payload.confidence.toFixed(2)}`,
+        payload.dedupeKey ? `key ${payload.dedupeKey}` : '',
+      ].filter(Boolean).join(' · ');
+      const debugEvents: StructuredLegacyEvent[] = [{
+        eventType: 'calendar_activity_candidate',
+        title: '活动候选进入日历',
+        summary: detail,
+        metrics: {
+          eventId: event.id,
+          calendarItemId: payload.dedupeKey || null,
+          reasonType: payload.reasonType,
+          confidence: payload.confidence,
+          participantIds: payload.participantIds,
+          participantStates: payload.participantStates || null,
+          sourceText: payload.sourceText || null,
+        },
+      }, {
+        eventType: 'calendar_activity_invite',
+        title: payload.reasonType === 'chat_activity_invite' ? '聊天邀约识别' : '活动邀约候选',
+        summary: [
+          payload.seedIntent,
+          payload.sourceText ? `原文 ${payload.sourceText}` : '',
+          payload.expectedArtifacts?.length ? `后续产物 ${payload.expectedArtifacts.join('、')}` : '',
+        ].filter(Boolean).join(' · '),
+        metrics: {
+          eventId: event.id,
+          reasonType: payload.reasonType,
+          expectedArtifacts: payload.expectedArtifacts || [],
+          visibilityPlan: payload.visibilityPlan,
+          urgency: payload.urgency,
+        },
+      }];
+      return debugEvents;
+    }
+    if (event.kind === 'calendar_item_patch') {
+      const payload = event.payload as Record<string, unknown>;
+      if (payload.source !== 'chat_activity_followup') return [];
+      const participantStates = buildActivityParticipantStateText(payload.addParticipantStates, characters);
+      const debugEvents: StructuredLegacyEvent[] = [{
+        eventType: 'calendar_activity_patch',
+        title: '活动候选更新',
+        summary: [
+          typeof payload.timeHint === 'string' ? `时间 ${payload.timeHint}` : '',
+          typeof payload.locationHint === 'string' ? `地点 ${payload.locationHint}` : '',
+          typeof payload.status === 'string' ? `状态 ${payload.status}` : '',
+          participantStates ? `参与 ${participantStates}` : '',
+          typeof payload.summary === 'string' ? `依据 ${payload.summary}` : '',
+          typeof payload.calendarItemId === 'string' ? `item ${payload.calendarItemId}` : '',
+        ].filter(Boolean).join(' · ') || event.summary,
+        metrics: {
+          eventId: event.id,
+          calendarItemId: typeof payload.calendarItemId === 'string' ? payload.calendarItemId : null,
+          addParticipantIds: Array.isArray(payload.addParticipantIds) ? payload.addParticipantIds : [],
+          addParticipantStates: payload.addParticipantStates || null,
+          timeHint: typeof payload.timeHint === 'string' ? payload.timeHint : null,
+          locationHint: typeof payload.locationHint === 'string' ? payload.locationHint : null,
+          status: typeof payload.status === 'string' ? payload.status : null,
+        },
+      }];
+      return debugEvents;
+    }
+    return [];
+  });
+}
+
+function buildStructuredLegacyEvents(runtimeEventsV2: RuntimeEventV2[], relationshipLedger: GroupChat['relationshipLedger'], structuredRoomState: GroupChat['worldState']['structuredRoomState'], characters: AICharacter[]): StructuredLegacyEvent[] {
+  const events: StructuredLegacyEvent[] = [];
   const latestInteraction = runtimeEventsV2.slice().reverse().find((event) => event.kind === 'interaction');
   if (latestInteraction) {
     const payload = latestInteraction.payload as InteractionEventPayload;
@@ -2997,6 +2154,7 @@ function buildStructuredLegacyEvents(runtimeEventsV2: RuntimeEventV2[], relation
       metrics: structuredRoomState,
     });
   }
+  events.push(...buildCalendarActivityLegacyEvents(runtimeEventsV2, characters));
   return events;
 }
 
@@ -3129,7 +2287,7 @@ async function onMessageCommitted(params: {
       createdAt: Date.now(),
     }] : []),
     ...worldRuntimeEvents,
-    ...buildStructuredLegacyEvents(nextStructuredEvents, effectiveRelationshipLedger, structuredRoomState),
+    ...buildStructuredLegacyEvents(nextStructuredEvents, effectiveRelationshipLedger, structuredRoomState, params.characters),
   ];
   const withdrawalRuntimeEventsV2: RuntimeEventV2[] = publicMessage.metadata?.withdrawal?.withdrawn ? [
     createRuntimeEventV2({

@@ -532,7 +532,7 @@ describe('directSessionRuntime pair-thread adjudication helpers', () => {
     expect(updateChat).toHaveBeenCalledTimes(1);
   });
 
-  it('world-driven fallback prioritizes check_in when attention suggests user follow-up', async () => {
+  it('world-driven fallback does not turn user follow-up attention into local outing artifacts', async () => {
     const now = Date.now();
     const chat = {
       ...buildChatWithEvents([{
@@ -569,10 +569,10 @@ describe('directSessionRuntime pair-thread adjudication helpers', () => {
     const firstCall = updateChat.mock.calls.at(0) as [string, { runtimeEventsV2?: RuntimeEventV2[] }] | undefined;
     const patch = firstCall?.[1];
     expect((patch?.runtimeEventsV2 || []).some((event) => {
-      if (event.kind !== 'artifact') return false;
-      const payload = event.payload as { artifactType?: string };
-      return payload.artifactType === 'check_in_note' || payload.artifactType === 'outing_summary';
-    })).toBe(true);
+      const payload = event.payload as { artifactType?: string; eventKind?: string };
+      return event.kind === 'event_candidate' && payload.eventKind === 'social_outing'
+        || event.kind === 'artifact' && payload.artifactType === 'outing_summary';
+    })).toBe(false);
   });
 
   it('creates and consumes check_in candidate when a direct pending care topic is due', async () => {
@@ -997,8 +997,11 @@ describe('directSessionRuntime pair-thread adjudication helpers', () => {
       && (event.payload as { eventType?: string; reasonType?: string }).eventType === 'world_decision_v2'
       && (event.payload as { reasonType?: string }).reasonType === 'companionship_online_return_greeting');
     expect(candidate).toBeTruthy();
-    expect((candidate?.payload as { seedIntent?: string })?.seedIntent || '').toContain('低打扰');
-    expect((candidate?.payload as { seedIntent?: string })?.seedIntent || '').toContain('不限制用户若继续提出任务时的回答完整度');
+    const candidatePayload = candidate?.payload as { seedIntent?: string; sourceText?: string };
+    expect(candidatePayload.seedIntent || '').toContain('低压力');
+    expect(candidatePayload.seedIntent || '').toContain('不限制用户若继续提出任务时的回答完整度');
+    expect(candidatePayload.seedIntent || '').not.toContain('回来了。');
+    expect(candidatePayload.sourceText || '').toContain('回来了。');
     expect(artifact).toBeTruthy();
     expect(decision).toBeTruthy();
   });
@@ -1179,7 +1182,7 @@ describe('directSessionRuntime pair-thread adjudication helpers', () => {
     expect((worldCandidate?.payload as { reasonType?: string }).reasonType).not.toBe('world_attention_private_message');
   });
 
-  it('world-driven fallback maps invite_activity attention into social_outing candidate', async () => {
+  it('does not map invite_activity attention into social_outing candidate without model-authored social event hint', async () => {
     const now = Date.now();
     const chat = {
       ...buildChatWithEvents([
@@ -1217,11 +1220,8 @@ describe('directSessionRuntime pair-thread adjudication helpers', () => {
     const firstCall = updateChat.mock.calls.at(0) as [string, { runtimeEventsV2?: RuntimeEventV2[] }] | undefined;
     const patch = firstCall?.[1];
     const worldCandidate = (patch?.runtimeEventsV2 || []).find((event) => event.kind === 'event_candidate' && (event.payload as { eventKind?: string }).eventKind === 'social_outing');
-    expect((worldCandidate?.payload as { reasonType?: string }).reasonType).toBe('world_attention_invite_activity');
-    expect((worldCandidate?.payload as { activityType?: string }).activityType).toBe('活动邀约');
-    expect((worldCandidate?.payload as { participantIds?: string[] }).participantIds).toEqual(['a', 'user']);
-    expect(worldCandidate?.summary).toContain('活动邀约候选');
-    expect((patch?.runtimeEventsV2 || []).some((event) => event.kind === 'artifact' && (event.payload as { eventKind?: string; artifactType?: string }).eventKind === 'social_outing' && (event.payload as { artifactType?: string }).artifactType === 'outing_summary')).toBe(true);
+    expect(worldCandidate).toBeUndefined();
+    expect((patch?.runtimeEventsV2 || []).some((event) => event.kind === 'artifact' && (event.payload as { eventKind?: string; artifactType?: string }).eventKind === 'social_outing' && (event.payload as { artifactType?: string }).artifactType === 'outing_summary')).toBe(false);
   });
 
   it('world-driven fallback maps calendar_reminder attention into status_update candidate', async () => {
@@ -1481,10 +1481,6 @@ describe('directSessionRuntime pair-thread adjudication helpers', () => {
       && (event.payload as { eventType?: string; reasonType?: string }).eventType === 'world_decision_v2'
       && (event.payload as { reasonType?: string }).reasonType === 'world_attention_model_arbitration');
     expect(modelArbitrationDecision).toBeFalsy();
-    const triggerDecision = (patch?.runtimeEventsV2 || []).find((event) => event.kind === 'artifact'
-      && (event.payload as { eventType?: string; decisionType?: string }).eventType === 'world_decision_v2'
-      && (event.payload as { decisionType?: string }).decisionType === 'trigger');
-    expect(triggerDecision).toBeTruthy();
     jsonSpy.mockRestore();
   });
 

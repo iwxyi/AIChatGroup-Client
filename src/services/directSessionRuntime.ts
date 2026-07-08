@@ -8,7 +8,6 @@ import type { CompanionshipMomentReflectionEventPayload } from '../types/compani
 import { createDefaultConversationFrameworkPatch, mergeSessionChatPatch } from '../types/sessionEngine';
 import { DEFAULT_CONVERSATION_WORLD_STATE } from '../types/chat';
 import { resolveRuntimeEvolutionConfig } from './runtimeEvolutionConfig';
-import { updateCharacterRelationship } from './relationshipEngine';
 import { deriveEmotionalState, derivePersonalityDrift } from './personalityDrift';
 import { updateCharacterLayeredMemories } from './characterLayeredMemory';
 import { accumulateCharacterRuntime } from './characterRuntime';
@@ -1347,8 +1346,8 @@ export async function applyAiDirectFeedback(params: {
   if (!starter || !target) return;
 
   const evolution = resolveRuntimeEvolutionConfig(params.chat.runtimeEvolutionIntensity);
-  const updatedStarter = updateCharacterRelationship(starter, targetId, params.content, evolution.relationshipMultiplier);
-  const updatedTarget = updateCharacterRelationship(target, starterId, params.content, evolution.reciprocalRelationshipMultiplier);
+  const updatedStarter = starter;
+  const updatedTarget = target;
   const starterDrift = derivePersonalityDrift(starter, params.content, evolution.driftMultiplier);
   const targetDrift = derivePersonalityDrift(target, params.content, evolution.driftMultiplier * 0.85);
   const starterEmotion = deriveEmotionalState(starter, params.content, evolution.emotionMultiplier, evolution.emotionDecayBias);
@@ -1864,6 +1863,8 @@ function buildOnlineReturnCompanionshipGreetingCandidate(
   });
   const onlineReturn = signature?.onlineReturn?.trim();
   if (!onlineReturn) return null;
+  const onlineReturnIntent = signature?.onlineReturnIntent?.trim()
+    || '用户长时间离开后回到会话。角色可以低打扰地欢迎回来，顺着当前对话自然接上，不要催促或质问离开原因。';
   const reasonType = 'companionship_online_return_greeting';
   const attentionScore = signature?.debugLines.some((line) => line.includes('pendingCareTopics=') && !line.endsWith('=0')) ? 0.82 : 0.76;
   if (!passesWorldAttentionRestraintPolicy(chat, actor.id, 'user', now, 'check_in', reasonType, actor, { attentionScore })) return null;
@@ -1882,7 +1883,7 @@ function buildOnlineReturnCompanionshipGreetingCandidate(
       reasonType,
       confidence: attentionScore,
       urgency: 'soon',
-      seedIntent: `${onlineReturn} 适合低打扰地回应上线，不要催促，不要质问为什么离开。这个主动问候意图只约束语气和时机，不限制用户若继续提出任务时的回答完整度。`,
+      seedIntent: `${onlineReturnIntent} 这个主动问候意图只约束语气和时机，不限制用户若继续提出任务时的回答完整度。`,
       triggerReason: `Online return: ${onlineReturn}`,
       visibilityPlan: 'user_private',
       expectedArtifacts: ['check_in_note'],
@@ -1975,9 +1976,7 @@ async function buildWorldDrivenCandidate(
     && hasRecentMomentSignal(chat, 7 * 24 * 60 * 60_000)
     && !hasRecentWorldArtifact(chat, attention.actorId, 'react_to_moment', 120 * 60_000)
     && passesWorldAttentionRestraintPolicy(chat, attention.actorId, 'user', now, 'react_to_moment', followupReasonType, actor, { attentionScore: attention.attentionScore });
-  const canInviteActivity = attention.suggestedActions.includes('invite_activity')
-    && !hasRecentWorldArtifact(chat, attention.actorId, 'social_outing', 6 * 60 * 60_000)
-    && passesWorldAttentionRestraintPolicy(chat, attention.actorId, 'user', now, 'social_outing', inviteReasonType, actor, { attentionScore: attention.attentionScore });
+  const canInviteActivity = false;
   const canCalendarReminder = attention.suggestedActions.includes('calendar_reminder')
     && !hasRecentWorldArtifact(chat, attention.actorId, 'status_update', 120 * 60_000)
     && passesWorldAttentionRestraintPolicy(chat, attention.actorId, 'user', now, 'status_update', reminderReasonType, actor, { attentionScore: attention.attentionScore });
@@ -2332,16 +2331,12 @@ async function evaluateWorldDrivenDecision(
     || attention.suggestedActions.includes('check_in')
     || attention.suggestedActions.includes('comfort')
     ? 'check_in'
-    : attention.suggestedActions.includes('invite_activity')
-      ? 'social_outing'
-      : attention.suggestedActions.includes('react_to_moment')
+    : attention.suggestedActions.includes('react_to_moment')
         ? 'react_to_moment'
         : attention.suggestedActions.includes('calendar_reminder')
           ? 'status_update'
           : null;
-  const boundaryReasonType = boundaryCandidateKind === 'social_outing'
-    ? 'world_attention_invite_activity'
-    : boundaryCandidateKind === 'status_update'
+  const boundaryReasonType = boundaryCandidateKind === 'status_update'
       ? 'world_attention_calendar_reminder'
       : boundaryCandidateKind === 'check_in'
         ? 'world_attention_private_message'
@@ -2460,9 +2455,7 @@ async function evaluateWorldDrivenDecision(
         ? 'check_in'
         : attention.suggestedActions.includes('check_in')
           ? 'check_in'
-          : attention.suggestedActions.includes('invite_activity')
-            ? 'social_outing'
-            : attention.suggestedActions.includes('react_to_moment')
+          : attention.suggestedActions.includes('react_to_moment')
               ? 'react_to_moment'
               : null;
   if (shareMomentSuggested && !momentsEnabled && candidatePayload?.eventKind && candidatePayload.eventKind !== 'post_moment') {
@@ -2485,9 +2478,7 @@ async function evaluateWorldDrivenDecision(
       ? checkInCooldownNextAt
       : fallbackIntent === 'react_to_moment'
         ? reactCooldownNextAt
-        : fallbackIntent === 'social_outing'
-          ? inviteCooldownNextAt
-          : null;
+        : null;
     const fallbackReasonType = fallbackIntent === 'post_moment' && postMomentDelayBlocked
       ? 'world_attention_moment_delay_window'
       : cooldownFallbackNextAt

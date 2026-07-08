@@ -11,6 +11,7 @@ vi.mock('./aiClient', () => ({
 }));
 
 const generateJsonResponseMock = vi.mocked(generateJsonResponse);
+const textApiConfig = { provider: 'openai' as const, apiKey: 'key', baseUrl: 'https://example.test', model: 'model' };
 
 beforeEach(() => {
   generateJsonResponseMock.mockReset();
@@ -81,11 +82,33 @@ function message(content: string, id = 'msg-1', timestamp = 1000): Message {
 }
 
 describe('directCompanionshipCare', () => {
-  it('opens a runtime care topic from direct user plans or pressure', () => {
+  it('does not open care topics from local text matching', () => {
     const events = buildCompanionshipCareTopicEventsFromDirectUserMessage({
       chat: chat(),
       character: character(),
       message: message('明天面试有点紧张。'),
+    });
+
+    expect(events).toEqual([]);
+  });
+
+  it('opens a runtime care topic from model-authored direct user plans or pressure', async () => {
+    generateJsonResponseMock.mockResolvedValueOnce(JSON.stringify({
+      shouldCreate: true,
+      action: 'opened',
+      topicText: '用户明天面试有点紧张。',
+      urgency: 'high',
+      dueInHours: 48,
+      confidence: 0.88,
+      reason: '用户明确提到自己的面试和紧张状态。',
+      evidence: '明天面试有点紧张。',
+    }));
+
+    const events = await resolveCompanionshipCareTopicEventsFromDirectUserMessage({
+      chat: chat(),
+      character: character(),
+      message: message('明天面试有点紧张。'),
+      textApiConfig,
     });
 
     expect(events).toHaveLength(1);
@@ -98,21 +121,43 @@ describe('directCompanionshipCare', () => {
         characterId: 'char-a',
         action: 'opened',
         urgency: 'high',
-        topicText: '明天面试有点紧张。',
+        topicText: '用户明天面试有点紧张。',
       },
     });
   });
 
-  it('closes an active runtime care topic when user reports it is done', () => {
-    const opened = buildCompanionshipCareTopicEventsFromDirectUserMessage({
+  it('closes an active runtime care topic when model reports it is done', async () => {
+    generateJsonResponseMock.mockResolvedValueOnce(JSON.stringify({
+      shouldCreate: true,
+      action: 'opened',
+      topicText: '用户明天面试有点紧张。',
+      urgency: 'high',
+      dueInHours: 48,
+      confidence: 0.88,
+      reason: '用户明确提到自己的面试和紧张状态。',
+      evidence: '明天面试有点紧张。',
+    }));
+    const opened = await resolveCompanionshipCareTopicEventsFromDirectUserMessage({
       chat: chat(),
       character: character(),
       message: message('明天面试有点紧张。', 'msg-open', 1000),
+      textApiConfig,
     });
-    const closed = buildCompanionshipCareTopicEventsFromDirectUserMessage({
+    generateJsonResponseMock.mockResolvedValueOnce(JSON.stringify({
+      shouldCreate: true,
+      action: 'closed',
+      existingTopicId: (opened[0]?.payload as { topicId: string }).topicId,
+      topicText: '用户明天面试有点紧张。',
+      urgency: 'high',
+      confidence: 0.86,
+      reason: '用户明确说面试已经搞定。',
+      evidence: '面试结束了，已经搞定了。',
+    }));
+    const closed = await resolveCompanionshipCareTopicEventsFromDirectUserMessage({
       chat: chat(opened),
       character: character(),
       message: message('面试结束了，已经搞定了。', 'msg-close', 2000),
+      textApiConfig,
     });
 
     expect(closed).toHaveLength(1);
@@ -124,16 +169,38 @@ describe('directCompanionshipCare', () => {
     expect(readActiveCompanionshipCareTopicsFromEvents(chat([...opened, ...closed]), 'char-a', 3000)).toEqual([]);
   });
 
-  it('blocks an active runtime care topic when user rejects reminders', () => {
-    const opened = buildCompanionshipCareTopicEventsFromDirectUserMessage({
+  it('blocks an active runtime care topic when model reports user rejects reminders', async () => {
+    generateJsonResponseMock.mockResolvedValueOnce(JSON.stringify({
+      shouldCreate: true,
+      action: 'opened',
+      topicText: '用户周末要去复查。',
+      urgency: 'medium',
+      dueInHours: 96,
+      confidence: 0.86,
+      reason: '用户明确提到自己的复查计划。',
+      evidence: '周末要去复查。',
+    }));
+    const opened = await resolveCompanionshipCareTopicEventsFromDirectUserMessage({
       chat: chat(),
       character: character(),
       message: message('周末要去复查。', 'msg-open', 1000),
+      textApiConfig,
     });
-    const blocked = buildCompanionshipCareTopicEventsFromDirectUserMessage({
+    generateJsonResponseMock.mockResolvedValueOnce(JSON.stringify({
+      shouldCreate: true,
+      action: 'blocked',
+      existingTopicId: (opened[0]?.payload as { topicId: string }).topicId,
+      topicText: '用户周末要去复查。',
+      urgency: 'medium',
+      confidence: 0.88,
+      reason: '用户明确拒绝提醒和追问。',
+      evidence: '这件事不用提醒，也别问了。',
+    }));
+    const blocked = await resolveCompanionshipCareTopicEventsFromDirectUserMessage({
       chat: chat(opened),
       character: character(),
       message: message('这件事不用提醒，也别问了。', 'msg-block', 2000),
+      textApiConfig,
     });
 
     expect(blocked[0]?.payload).toMatchObject({
@@ -144,11 +211,22 @@ describe('directCompanionshipCare', () => {
     expect(readActiveCompanionshipCareTopicsFromEvents(chat([...opened, ...blocked]), 'char-a', 3000)).toEqual([]);
   });
 
-  it('reads overdue care topics as stale after their useful follow-up window', () => {
-    const opened = buildCompanionshipCareTopicEventsFromDirectUserMessage({
+  it('reads overdue care topics as stale after their useful follow-up window', async () => {
+    generateJsonResponseMock.mockResolvedValueOnce(JSON.stringify({
+      shouldCreate: true,
+      action: 'opened',
+      topicText: '用户明天面试有点紧张。',
+      urgency: 'high',
+      dueInHours: 48,
+      confidence: 0.88,
+      reason: '用户明确提到自己的面试和紧张状态。',
+      evidence: '明天面试有点紧张。',
+    }));
+    const opened = await resolveCompanionshipCareTopicEventsFromDirectUserMessage({
       chat: chat(),
       character: character(),
       message: message('明天面试有点紧张。', 'msg-open', 1000),
+      textApiConfig,
     });
     const dueAt = (opened[0]?.payload as { dueAt?: number }).dueAt || 0;
     const staleTopics = readStaleCompanionshipCareTopicsFromEvents(chat(opened), 'char-a', dueAt + 8 * 24 * 60 * 60_000);
@@ -176,7 +254,7 @@ describe('directCompanionshipCare', () => {
       chat: chat(),
       character: character(),
       message: message('明天下午面试，有点紧张。'),
-      textApiConfig: { provider: 'openai', apiKey: 'key', baseUrl: 'https://example.test', model: 'model' },
+      textApiConfig,
     });
 
     expect(generateJsonResponseMock).toHaveBeenCalledTimes(1);
@@ -203,7 +281,7 @@ describe('directCompanionshipCare', () => {
       chat: chat(),
       character: character(),
       message: message('这个压力锅最近真的很好用。'),
-      textApiConfig: { provider: 'openai', apiKey: 'key', baseUrl: 'https://example.test', model: 'model' },
+      textApiConfig,
     });
 
     expect(events).toEqual([]);
@@ -227,7 +305,7 @@ describe('directCompanionshipCare', () => {
     })).toEqual([]);
   });
 
-  it('falls back to local care-topic judgment only when model judgment fails', async () => {
+  it('skips care-topic write when model judgment fails', async () => {
     generateJsonResponseMock.mockRejectedValueOnce(new Error('model unavailable'));
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
@@ -235,16 +313,11 @@ describe('directCompanionshipCare', () => {
       chat: chat(),
       character: character(),
       message: message('明天面试有点紧张。'),
-      textApiConfig: { provider: 'openai', apiKey: 'key', baseUrl: 'https://example.test', model: 'model' },
+      textApiConfig,
     });
 
-    expect(events[0]?.payload).toMatchObject({
-      eventType: 'companionship_care_topic',
-      action: 'opened',
-      decisionSource: 'local_fallback',
-    });
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('[recoverable-warning] companionship:care-topic-model-fallback'), expect.objectContaining({
-      fallback: 'local_fallback',
+    expect(events).toEqual([]);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('[recoverable-warning] companionship:care-topic-model'), expect.objectContaining({
       messagePreview: '明天面试有点紧张。',
     }));
     warnSpy.mockRestore();

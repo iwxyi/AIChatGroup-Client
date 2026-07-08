@@ -141,7 +141,7 @@ describe('directUserProfileMemory', () => {
     expect(event).toBeNull();
   });
 
-  it('falls back to local profile extraction only when model fails', async () => {
+  it('skips profile memory write when model fails', async () => {
     generateJsonResponseMock.mockRejectedValueOnce(new Error('model unavailable'));
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
@@ -152,12 +152,8 @@ describe('directUserProfileMemory', () => {
       textApiConfig: { provider: 'openai', apiKey: 'key', baseUrl: 'https://example.test', model: 'model' },
     });
 
-    expect(event?.payload).toMatchObject({
-      eventType: 'companionship_user_profile_memory',
-      decisionSource: 'local_fallback',
-    });
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('[recoverable-warning] companionship:user-profile-model-fallback'), expect.objectContaining({
-      fallback: 'local_fallback',
+    expect(event).toBeNull();
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('[recoverable-warning] companionship:user-profile-model'), expect.objectContaining({
       messagePreview: '以后叫我小夏就好。',
     }));
     warnSpy.mockRestore();
@@ -194,20 +190,13 @@ describe('directUserProfileMemory', () => {
     })).toBeNull();
   });
 
-  it('keeps local fallback for explicit user sensitive cues when model is unavailable', () => {
+  it('does not keep local fallback for explicit user sensitive cues when model is unavailable', () => {
     const event = buildUserProfileMemoryEventFromDirectUserMessage({
       chat: chat(),
       character: character(),
       message: message('我最近工作压力有点大。'),
     });
 
-    expect(event?.payload).toMatchObject({
-      eventType: 'companionship_user_profile_memory',
-      decisionSource: 'local_fallback',
-    });
-    expect((event?.payload as { items: Array<{ kind: string; sensitive?: boolean }> }).items[0]).toMatchObject({
-      kind: 'emotional_pattern',
-      sensitive: true,
-    });
+    expect(event).toBeNull();
   });
 });

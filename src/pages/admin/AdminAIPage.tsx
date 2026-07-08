@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, Chip, Dialog, DialogContent, DialogTitle, FormControlLabel, Paper, Stack, Switch, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography } from '@mui/material';
+import { Box, Button, Chip, Dialog, DialogContent, DialogTitle, FormControlLabel, Paper, Stack, Switch, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
-import AdminInlineGroup from '../../components/admin/AdminInlineGroup';
-import AdminResponsiveTable from '../../components/admin/AdminResponsiveTable';
 import AdminRequestState, { getAdminErrorMessage } from '../../components/admin/AdminRequestState';
+import { AdminMetricGrid, AdminSection, AdminTableFrame, type AdminMetricItem } from '../../components/admin/AdminSurface';
 import { adminApi } from '../../services/adminApi';
 
 type BalanceState = {
@@ -77,7 +76,7 @@ function formatOpsPercent(value: unknown) {
   return `${formatOpsNumber(parsed * 100, 1)}%`;
 }
 
-function OpsMetricCard({
+function buildOpsMetricItem({
   label,
   value,
   subValue,
@@ -86,16 +85,15 @@ function OpsMetricCard({
   label: string;
   value: string;
   subValue?: string;
-  tone?: 'primary' | 'success' | 'warning' | 'info';
-}) {
-  const color = tone === 'success' ? 'success.main' : tone === 'warning' ? 'warning.main' : tone === 'info' ? 'info.main' : 'primary.main';
-  return (
-    <Paper variant="outlined" sx={{ p: 1.25, borderRadius: 1.5, flex: '1 1 160px', minWidth: 0 }}>
-      <Typography variant="caption" color="text.secondary">{label}</Typography>
-      <Typography variant="h6" sx={{ mt: 0.25, fontWeight: 900, color, wordBreak: 'break-all' }}>{value}</Typography>
-      {subValue ? <Typography variant="caption" color="text.secondary">{subValue}</Typography> : null}
-    </Paper>
-  );
+  tone?: AdminMetricItem['tone'];
+}): AdminMetricItem {
+  return {
+    key: label,
+    label,
+    value,
+    helper: subValue,
+    tone,
+  };
 }
 
 function OpsRankingTable({
@@ -107,12 +105,10 @@ function OpsRankingTable({
   rows: Array<Record<string, unknown>>;
   labelBuilder?: (row: Record<string, unknown>) => string;
 }) {
+  const displayRows = rows.slice(0, 5);
   return (
-    <Paper variant="outlined" sx={{ borderRadius: 1.5, overflow: 'hidden', flex: '1 1 360px', minWidth: 0 }}>
-      <Stack direction="row" sx={{ px: 1.25, py: 1, alignItems: 'center', justifyContent: 'space-between', bgcolor: 'action.hover' }}>
-        <Typography variant="subtitle2" sx={{ fontWeight: 900 }}>{title}</Typography>
-      </Stack>
-      <AdminResponsiveTable minWidth={520}>
+    <AdminSection title={title} sx={{ flex: { xs: '0 0 auto', lg: '1 1 360px' }, minWidth: 0 }} bodySx={{ p: 0 }}>
+      <AdminTableFrame minWidth={520}>
         <Table size="small">
           <TableHead>
             <TableRow>
@@ -124,10 +120,10 @@ function OpsRankingTable({
             </TableRow>
           </TableHead>
           <TableBody>
-            {rows.length ? rows.map((row) => (
+            {displayRows.length ? displayRows.map((row) => (
               <TableRow key={`${String(row.key || '')}-${String(row.providerCode || '')}-${String(row.model || '')}`}>
                 <TableCell>
-                  <Typography variant="body2" sx={{ fontWeight: 800 }}>{labelBuilder ? labelBuilder(row) : String(row.label || row.key || '-')}</Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 800, lineHeight: 1.3 }}>{labelBuilder ? labelBuilder(row) : String(row.label || row.key || '-')}</Typography>
                 </TableCell>
                 <TableCell align="right">{formatOpsNumber(row.requestCount, 0)}</TableCell>
                 <TableCell align="right">{formatOpsPoints(row.revenuePoints)}</TableCell>
@@ -141,14 +137,14 @@ function OpsRankingTable({
             )) : (
               <TableRow>
                 <TableCell colSpan={5}>
-                  <Typography variant="body2" color="text.secondary" sx={{ py: 1 }}>暂无数据</Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ py: 0.5 }}>暂无数据</Typography>
                 </TableCell>
               </TableRow>
             )}
           </TableBody>
         </Table>
-      </AdminResponsiveTable>
-    </Paper>
+      </AdminTableFrame>
+    </AdminSection>
   );
 }
 
@@ -165,28 +161,31 @@ function OpsSummaryPanel({
 }) {
   const today = asRecord(summary?.today);
   const month = asRecord(summary?.month);
+  const metricItems = [
+    buildOpsMetricItem({ label: '今日收入', value: formatOpsPoints(today.revenuePoints), subValue: `请求 ${formatOpsNumber(today.requestCount, 0)} 次`, tone: 'primary' }),
+    buildOpsMetricItem({ label: '今日成本', value: formatOpsPoints(today.estimatedCostPoints), subValue: `毛利 ${formatOpsPoints(today.grossProfitPoints)}`, tone: 'warning' }),
+    buildOpsMetricItem({ label: '本月收入', value: formatOpsPoints(month.revenuePoints), subValue: `用户 ${formatOpsNumber(month.activeUsers, 0)} 个`, tone: 'success' }),
+    buildOpsMetricItem({ label: '本月毛利率', value: formatOpsPercent(month.grossMargin), subValue: `成本 ${formatOpsPoints(month.estimatedCostPoints)}`, tone: 'info' }),
+  ];
   return (
-    <Stack spacing={1.25}>
-      <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap' }}>
-        <Typography variant="subtitle1" sx={{ fontWeight: 900 }}>AI 成本利润</Typography>
-        <Button size="small" onClick={onRetry} disabled={loading}>刷新看板</Button>
+    <AdminSection
+      title="AI 成本利润"
+      subtitle="按调用收入、估算成本和用途排行查看运营质量"
+      action={<Button size="small" variant="outlined" onClick={onRetry} disabled={loading}>刷新看板</Button>}
+    >
+      <Stack spacing={1.25}>
+        <AdminRequestState loading={loading} error={error} onRetry={onRetry} />
+        <AdminMetricGrid items={metricItems} minWidth={140} compact />
+        <Stack direction={{ xs: 'column', lg: 'row' }} spacing={1} sx={{ alignItems: 'stretch' }}>
+          <OpsRankingTable title="Provider 排行" rows={asArray(summary?.providers)} />
+          <OpsRankingTable title="模型排行" rows={asArray(summary?.models)} labelBuilder={(row) => [row.providerCode, row.model || row.label].filter(Boolean).join(' / ')} />
+        </Stack>
+        <Stack direction={{ xs: 'column', lg: 'row' }} spacing={1} sx={{ alignItems: 'stretch' }}>
+          <OpsRankingTable title="用途排行" rows={asArray(summary?.usages)} />
+          <OpsRankingTable title="高消耗用户" rows={asArray(summary?.users)} labelBuilder={(row) => String(row.userNickname || row.userPhone || row.userId || row.label || '-')} />
+        </Stack>
       </Stack>
-      <AdminRequestState loading={loading} error={error} onRetry={onRetry} />
-      <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.25}>
-        <OpsMetricCard label="今日收入" value={formatOpsPoints(today.revenuePoints)} subValue={`请求 ${formatOpsNumber(today.requestCount, 0)} 次`} tone="primary" />
-        <OpsMetricCard label="今日成本" value={formatOpsPoints(today.estimatedCostPoints)} subValue={`毛利 ${formatOpsPoints(today.grossProfitPoints)}`} tone="warning" />
-        <OpsMetricCard label="本月收入" value={formatOpsPoints(month.revenuePoints)} subValue={`用户 ${formatOpsNumber(month.activeUsers, 0)} 个`} tone="success" />
-        <OpsMetricCard label="本月毛利率" value={formatOpsPercent(month.grossMargin)} subValue={`成本 ${formatOpsPoints(month.estimatedCostPoints)}`} tone="info" />
-      </Stack>
-      <Stack direction={{ xs: 'column', lg: 'row' }} spacing={1.25} sx={{ alignItems: 'stretch' }}>
-        <OpsRankingTable title="Provider 排行" rows={asArray(summary?.providers)} />
-        <OpsRankingTable title="模型排行" rows={asArray(summary?.models)} labelBuilder={(row) => [row.providerCode, row.model || row.label].filter(Boolean).join(' / ')} />
-      </Stack>
-      <Stack direction={{ xs: 'column', lg: 'row' }} spacing={1.25} sx={{ alignItems: 'stretch' }}>
-        <OpsRankingTable title="用途排行" rows={asArray(summary?.usages)} />
-        <OpsRankingTable title="高消耗用户" rows={asArray(summary?.users)} labelBuilder={(row) => String(row.userNickname || row.userPhone || row.userId || row.label || '-')} />
-      </Stack>
-    </Stack>
+    </AdminSection>
   );
 }
 
@@ -200,7 +199,7 @@ function ProviderTable({
   onOpen: (providerCode: string) => void;
 }) {
   return (
-    <AdminResponsiveTable minWidth={760}>
+    <AdminTableFrame minWidth={760}>
       <Table>
         <TableHead>
           <TableRow>
@@ -247,7 +246,7 @@ function ProviderTable({
           })}
         </TableBody>
       </Table>
-    </AdminResponsiveTable>
+    </AdminTableFrame>
   );
 }
 
@@ -272,6 +271,7 @@ export default function AdminAIPage() {
   const [opsError, setOpsError] = useState<string | null>(null);
   const [globalError, setGlobalError] = useState<string | null>(null);
   const providerStats = useMemo(() => ({
+    total: items.length,
     active: items.filter((item) => String(item.status || '') === 'active').length,
     disabled: items.filter((item) => String(item.status || '') !== 'active').length,
   }), [items]);
@@ -366,44 +366,36 @@ export default function AdminAIPage() {
     void loadOpsSummary();
   }, []);
 
+  const providerMetricItems = [
+    buildOpsMetricItem({ label: '全部 Provider', value: formatOpsNumber(providerStats.total, 0), subValue: '当前配置', tone: 'info' }),
+    buildOpsMetricItem({ label: '启用 Provider', value: formatOpsNumber(providerStats.active, 0), subValue: '可供调用', tone: 'success' }),
+    buildOpsMetricItem({ label: '停用 Provider', value: formatOpsNumber(providerStats.disabled, 0), subValue: '保留兼容', tone: 'warning' }),
+  ];
+
   return (
-    <Stack spacing={2}>
-      <AdminInlineGroup>
-        <Paper
-          variant="outlined"
-          sx={{
-            px: 1.25,
-            py: 0.75,
-            borderRadius: 1.5,
-            minWidth: 120,
-            borderColor: 'success.light',
-            bgcolor: 'success.light',
-            color: 'success.contrastText',
-          }}
-        >
-          <Typography variant="caption" sx={{ color: 'inherit', opacity: 0.82 }}>启用 Provider</Typography>
-          <Typography variant="subtitle1" sx={{ fontWeight: 800, lineHeight: 1.25 }}>{providerStats.active}</Typography>
-        </Paper>
-        <Paper
-          variant="outlined"
-          sx={{
-            px: 1.25,
-            py: 0.75,
-            borderRadius: 1.5,
-            minWidth: 120,
-            borderColor: 'warning.light',
-            bgcolor: 'warning.light',
-            color: 'warning.contrastText',
-          }}
-        >
-          <Typography variant="caption" sx={{ color: 'inherit', opacity: 0.82 }}>停用 Provider</Typography>
-          <Typography variant="subtitle1" sx={{ fontWeight: 800, lineHeight: 1.25 }}>{providerStats.disabled}</Typography>
-        </Paper>
-        <Button variant="outlined" onClick={openGlobalDialog} sx={{ ml: 'auto' }}>全局配置</Button>
-      </AdminInlineGroup>
+    <Stack spacing={1.5}>
+      <AdminSection
+        title="AI 平台运营"
+        subtitle="管理官方 Provider、余额状态和默认分配策略"
+        action={<Button variant="outlined" size="small" onClick={openGlobalDialog}>全局配置</Button>}
+      >
+        <AdminMetricGrid items={providerMetricItems} minWidth={132} compact />
+      </AdminSection>
+
       <OpsSummaryPanel summary={opsSummary} loading={opsLoading} error={opsError} onRetry={() => void loadOpsSummary()} />
-      <AdminRequestState loading={loading} error={error} onRetry={() => void loadProviders()} />
-      <ProviderTable items={items} balances={balances} onOpen={(providerCode) => navigate(`/admin/platform/ai/providers/${encodeURIComponent(providerCode)}`)} />
+
+      <AdminSection
+        title="Provider 列表"
+        subtitle="点击行进入对应平台配置与用量详情"
+        action={<Button size="small" onClick={() => void loadProviders()} disabled={loading}>刷新</Button>}
+        bodySx={{ p: 0 }}
+      >
+        <Box sx={{ px: 1.5, pt: 0.75, pb: error || loading ? 0.75 : 0 }}>
+          <AdminRequestState loading={loading} error={error} onRetry={() => void loadProviders()} />
+        </Box>
+        <ProviderTable items={items} balances={balances} onOpen={(providerCode) => navigate(`/admin/platform/ai/providers/${encodeURIComponent(providerCode)}`)} />
+      </AdminSection>
+
       <Dialog open={globalDialogOpen} onClose={() => setGlobalDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>AI 全局配置</DialogTitle>
         <DialogContent>

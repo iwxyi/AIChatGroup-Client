@@ -1,5 +1,4 @@
 import type { AICharacter, CharacterRelationshipPreset } from '../types/character';
-import { deriveRelationshipDelta } from './emotionTracker';
 
 function sanitizeMetric(value: number) {
   return Number.isFinite(value) ? value : 0;
@@ -41,26 +40,8 @@ function sanitizeCharacterRelationships(character: AICharacter): AICharacter {
   };
 }
 
-function looksLikeNeutralProbe(text: string) {
-  return /[?？]$/.test(text.trim()) || /(能具体说说|可以具体说说|你观察到了哪些|为什么这么觉得|怎么判断|什么依据|能展开吗|能详细说说)/.test(text);
-}
-
-function looksSupportiveOrProfessional(text: string) {
-  return /(关键|具体说说|继续说|我想听听|这很重要|谢谢你分享|能展开一点|我们先看看)/.test(text);
-}
-
 function normalizeRawDelta(rawDelta: { warmth?: number; competence?: number; trust?: number; threat?: number }) {
   return sanitizeDelta(rawDelta);
-}
-
-function deriveSafeRelationshipDelta(messageContent: string) {
-  if (looksLikeNeutralProbe(messageContent)) return { warmth: 0, competence: 1, trust: 0, threat: 0 };
-  if (looksSupportiveOrProfessional(messageContent)) return { warmth: 2, competence: 1, trust: 1, threat: 0 };
-  const rawDelta = sanitizeDelta(deriveRelationshipDelta(messageContent));
-  if (rawDelta.threat > 0 && rawDelta.warmth >= 0 && rawDelta.trust >= 0 && !/[你他她它].*(错|闭嘴|别装|胡说|可疑|有问题|威胁|麻烦)|滚|蠢|废物|讨厌|反对/.test(messageContent)) {
-    return { ...rawDelta, threat: 0 };
-  }
-  return rawDelta;
 }
 
 function roundRelationshipDelta(rawDelta: { warmth?: number; competence?: number; trust?: number; threat?: number }, multiplier: number) {
@@ -114,7 +95,8 @@ export function applyRelationshipDelta(
 }
 
 export function deriveFallbackRelationshipDelta(messageContent: string) {
-  return deriveSafeRelationshipDelta(messageContent);
+  void messageContent;
+  return { warmth: 0, competence: 0, trust: 0, threat: 0 };
 }
 
 export function updateCharacterRelationship(
@@ -123,7 +105,10 @@ export function updateCharacterRelationship(
   messageContent: string,
   multiplier: number = 1,
 ): AICharacter {
-  return applyRelationshipDelta(character, targetCharacterId, deriveSafeRelationshipDelta(messageContent), multiplier);
+  void targetCharacterId;
+  void messageContent;
+  void multiplier;
+  return sanitizeCharacterRelationships(character);
 }
 
 export function updateCharacterRelationshipFromDelta(

@@ -12,7 +12,7 @@ function compactPhaseEvidence(text: string, max = 120) {
   return normalized.length > max ? `${normalized.slice(0, max)}...` : normalized;
 }
 
-type PhaseDecisionSource = 'model' | 'local_fallback';
+type PhaseDecisionSource = 'model';
 export type CompanionshipPhaseDecision = {
   phase: CompanionshipPhase;
   style?: CompanionshipStyle;
@@ -39,40 +39,6 @@ function cleanJsonCandidate(raw: string) {
   if (fenced?.[1]) return fenced[1].trim();
   const object = text.match(/\{[\s\S]*\}/);
   return object?.[0] || text;
-}
-
-function detectCompanionshipPhaseFromUserText(content: string): Omit<CompanionshipPhaseDecision, 'decisionSource' | 'confidence' | 'evidence'> | null {
-  const text = content.trim();
-  if (!text) return null;
-  const looksNonRelationshipContext = /(工作|学校|游戏|电影|剧情|小说|漫画|综艺|别人|他说|她说).{0,18}(冷静一下|不舒服|受伤|失望|难受)|(冷静一下|不舒服|受伤|失望|难受).{0,18}(工作|学校|游戏|电影|剧情|小说|漫画|综艺|别人|他说|她说)/.test(text);
-  if (
-    !looksNonRelationshipContext
-    && (/(分开|结束这段关系|不想继续这段关系|不想继续和你|先别聊了|你让我失望|你刚刚.*不舒服|那句话.*不舒服|我很受伤|别这样)/.test(text)
-      || /(我们|你|这段关系|和你).{0,16}(冷静一下|先别聊|暂停|失望|受伤|不舒服)/.test(text))
-  ) {
-    return { phase: 'crisis', reason: '用户明确表达受伤、失望、暂停或关系危机。' };
-  }
-  if (/(和好|重新来|重新开始|慢慢说|好好说开|原谅你|给彼此.*台阶|我也有不对|我们别冷战)/.test(text)) {
-    return { phase: 'reconciling', reason: '用户表达和好、修复或愿意重新沟通。' };
-  }
-  if (/(我们.*(在一起|确认关系|算情侣|是情侣|恋人关系|对象关系)|按.*(恋人|情侣|对象).*相处|你是我的(男朋友|女朋友|对象|恋人)|我愿意.*(做你|和你).*(男朋友|女朋友|对象|恋人)|可以.*(在一起|确认关系))/.test(text)) {
-    return { phase: 'confirmed', style: 'romantic', reason: '用户明确确认亲密/恋爱关系边界。' };
-  }
-  if (/(我喜欢你|我爱你|对你心动|想和你在一起|想认真靠近你|有点喜欢你|可能喜欢上你了)/.test(text)) {
-    return { phase: 'confessing', style: 'ambiguous', reason: '用户明确表达心意但尚未形成确认关系事件。' };
-  }
-  return null;
-}
-
-function buildLocalFallbackDecision(content: string): CompanionshipPhaseDecision | null {
-  const detected = detectCompanionshipPhaseFromUserText(content);
-  if (!detected) return null;
-  return {
-    ...detected,
-    confidence: 0.62,
-    evidence: [compactPhaseEvidence(content)],
-    decisionSource: 'local_fallback',
-  };
 }
 
 function normalizeModelDecision(raw: unknown, userContent: string): CompanionshipPhaseDecision | null {
@@ -178,9 +144,8 @@ export function buildCompanionshipPhaseEventFromDirectUserMessage(params: {
   character: AICharacter;
   message: Message;
 }): RuntimeEventV2 | null {
-  const decision = buildLocalFallbackDecision(params.message.content);
-  if (!decision) return null;
-  return buildCompanionshipPhaseEventFromDecision({ ...params, decision });
+  void params;
+  return null;
 }
 
 export async function resolveCompanionshipPhaseEventFromDirectUserMessage(params: {
@@ -204,21 +169,18 @@ export async function resolveCompanionshipPhaseEventFromDirectUserMessage(params
       return null;
     } catch (error) {
       reportRecoverableWarning({
-        location: 'companionship:phase-model-fallback',
+        location: 'companionship:phase-model',
         error,
-        message: '关系阶段模型裁决失败，已退回本地保守判断。',
+        message: '关系阶段模型裁决失败，已跳过本轮关系阶段写入。',
         extra: {
           chatId: params.chat.id,
           characterId: params.character.id,
           messageId: params.message.id,
           messagePreview: compactPhaseEvidence(params.message.content, 80),
-          fallback: 'local_fallback',
         },
       });
-      const fallback = buildLocalFallbackDecision(params.message.content);
-      return fallback ? buildCompanionshipPhaseEventFromDecision({ ...params, decision: fallback }) : null;
+      return null;
     }
   }
-  const fallback = buildLocalFallbackDecision(params.message.content);
-  return fallback ? buildCompanionshipPhaseEventFromDecision({ ...params, decision: fallback }) : null;
+  return null;
 }

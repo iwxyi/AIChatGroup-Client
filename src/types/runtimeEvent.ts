@@ -202,6 +202,7 @@ export interface SocialEventCandidatePayload {
   timeHint?: string | null;
   locationHint?: string | null;
   dedupeKey?: string | null;
+  participantStates?: Partial<Record<string, 'mentioned' | 'invited' | 'interested' | 'maybe' | 'going' | 'declined' | 'withdrawn'>>;
   attentionTrace?: {
     score: number;
     restraint: number;
@@ -228,6 +229,7 @@ export interface SocialEventHintEnvelope {
   timeHint?: string | null;
   locationHint?: string | null;
   dedupeKey?: string | null;
+  participantStates?: Partial<Record<string, 'mentioned' | 'invited' | 'interested' | 'maybe' | 'going' | 'declined' | 'withdrawn'>>;
 }
 
 const SOCIAL_EVENT_KINDS: SocialEventKind[] = [
@@ -248,6 +250,19 @@ function isSocialEventKind(value: unknown): value is SocialEventKind {
 
 function normalizeStringArray(value: unknown) {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && Boolean(item.trim())) : undefined;
+}
+
+const SOCIAL_EVENT_PARTICIPANT_STATES = ['mentioned', 'invited', 'interested', 'maybe', 'going', 'declined', 'withdrawn'] as const;
+
+function normalizeParticipantStates(value: unknown): SocialEventHintEnvelope['participantStates'] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter((entry): entry is [string, typeof SOCIAL_EVENT_PARTICIPANT_STATES[number]] => (
+      Boolean(entry[0].trim())
+      && typeof entry[1] === 'string'
+      && SOCIAL_EVENT_PARTICIPANT_STATES.includes(entry[1] as typeof SOCIAL_EVENT_PARTICIPANT_STATES[number])
+    ));
+  return entries.length ? Object.fromEntries(entries) : undefined;
 }
 
 function normalizeSocialEventHint(value: unknown): SocialEventHintEnvelope | null {
@@ -275,6 +290,7 @@ function normalizeSocialEventHint(value: unknown): SocialEventHintEnvelope | nul
     timeHint: typeof raw.timeHint === 'string' || raw.timeHint === null ? raw.timeHint : undefined,
     locationHint: typeof raw.locationHint === 'string' || raw.locationHint === null ? raw.locationHint : undefined,
     dedupeKey: typeof raw.dedupeKey === 'string' || raw.dedupeKey === null ? raw.dedupeKey : undefined,
+    participantStates: normalizeParticipantStates(raw.participantStates),
   };
 }
 

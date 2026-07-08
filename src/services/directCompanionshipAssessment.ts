@@ -628,41 +628,9 @@ function createSharedPhraseRuntimeEvent(params: {
   };
 }
 
-function inferLocalSharedPhraseKind(text: string): SharedPhrase['kind'] {
-  if (/(叫我|称呼|昵称|喊我)/.test(text)) return 'pet_name';
-  if (/(暗号|口令|密语|只有我们|我们之间|共同梗|梗)/.test(text)) return 'inside_joke';
-  if (/(约定|承诺|答应|说好|以后.*一起|下次.*一起)/.test(text)) return 'promise_line';
-  if (/(别怕|没关系|我在|陪着你|不用硬撑|慢慢来)/.test(text)) return 'comfort_line';
-  if (/(喜欢你|爱你|想你|在一起|表白)/.test(text)) return 'confession_line';
-  if (/(秘密|小秘密|不能告诉|保密|只告诉)/.test(text)) return 'secret_code';
-  return 'other';
-}
-
 function buildLocalSharedPhraseDecisions(message: Message): SharedPhraseDecision[] {
-  const content = compactText(message.content, 240);
-  if (!content) return [];
-  const quoted = content.match(/[“"「『](.{1,36}?)[”"」』]/)?.[1]
-    || content.match(/(?:暗号|口令|约定|说好|叫我|称呼)[是叫为：:\s]*(.{1,28})/)?.[1];
-  if (!quoted) return [];
-  const text = compactText(quoted, 80);
-  if (!text) return [];
-  const action: SharedPhraseDecision['action'] = /(不要|别再|不想|不用).{0,12}(说|用|叫|提|复读|记)/.test(content) ? 'suppressed' : 'upsert';
-  const kind = inferLocalSharedPhraseKind(content);
-  return [{
-    action,
-    text,
-    kind,
-    visibility: kind === 'secret_code' ? 'private' : 'between_actors',
-    firstSaidBy: USER_ACTOR_ID,
-    reason: action === 'suppressed'
-      ? '本地兜底判断用户不想继续复用这句共同话语。'
-      : '本地兜底判断用户明确给出一句共同话语。',
-    evidence: content,
-    emotionalWeight: kind === 'other' ? 44 : 62,
-    reuseCount: 1,
-    confidence: 0.64,
-    decisionSource: 'local_fallback',
-  }];
+  void message;
+  return [];
 }
 
 function buildSharedPhraseEventsFromDecisions(params: {
@@ -713,44 +681,9 @@ function createIntimateConflictRuntimeEvent(params: {
   };
 }
 
-function detectLocalIntimateConflict(content: string): Omit<IntimateConflictDecision, 'decisionSource' | 'confidence' | 'evidence'> | null {
-  const text = content.trim();
-  if (!text) return null;
-  const nonRelationship = /(工作|学校|游戏|电影|剧情|小说|漫画|综艺|别人|他说|她说).{0,18}(冷静一下|不舒服|受伤|失望|难受)|(冷静一下|不舒服|受伤|失望|难受).{0,18}(工作|学校|游戏|电影|剧情|小说|漫画|综艺|别人|他说|她说)/.test(text);
-  if (/(和好|重新来|重新开始|慢慢说|好好说开|原谅你|给彼此.*台阶|我也有不对|我们别冷战)/.test(text)) {
-    return {
-      action: 'repair_attempted',
-      kind: 'repair_attempt',
-      severity: 34,
-      repairReadiness: 64,
-      summary: '用户表达愿意修复这段关系或重新沟通。',
-    };
-  }
-  if (
-    !nonRelationship
-    && (/(分开|结束这段关系|不想继续这段关系|不想继续和你|先别聊了|你让我失望|你刚刚.*不舒服|那句话.*不舒服|我很受伤|别这样)/.test(text)
-      || /(我们|你|这段关系|和你).{0,16}(冷静一下|先别聊|暂停|失望|受伤|不舒服)/.test(text))
-  ) {
-    return {
-      action: 'opened',
-      kind: /(算了|没事|不用说了|不想解释)/.test(text) ? 'withdrawal' : /(我很受伤|委屈|撑不住)/.test(text) ? 'vulnerability_burst' : 'accusation',
-      severity: 58,
-      repairReadiness: 24,
-      summary: '用户明确表达了关系里的受伤、失望或暂停。',
-    };
-  }
-  return null;
-}
-
 function buildLocalIntimateConflictDecision(message: Message): IntimateConflictDecision | null {
-  const detected = detectLocalIntimateConflict(message.content);
-  if (!detected) return null;
-  return {
-    ...detected,
-    evidence: [compactText(message.content, 120)],
-    confidence: 0.64,
-    decisionSource: 'local_fallback',
-  };
+  void message;
+  return null;
 }
 
 function createAttachmentProfileRuntimeEvent(params: {
@@ -943,21 +876,8 @@ function buildLocalFallbackEvents(params: {
   message: Message;
   now?: number;
 }) {
-  return [
-    buildCompanionshipPhaseEventFromDirectUserMessage(params),
-    ...buildCompanionshipCareTopicEventsFromDirectUserMessage(params),
-    buildUserProfileMemoryEventFromDirectUserMessage(params),
-    ...buildSharedPhraseEventsFromDecisions({
-      chat: params.chat,
-      character: params.character,
-      message: params.message,
-      decisions: buildLocalSharedPhraseDecisions(params.message),
-    }),
-    (() => {
-      const decision = buildLocalIntimateConflictDecision(params.message);
-      return decision ? createIntimateConflictRuntimeEvent({ ...params, decision }) : null;
-    })(),
-  ].filter((event): event is RuntimeEventV2 => Boolean(event));
+  void params;
+  return [] as RuntimeEventV2[];
 }
 
 export async function resolveDirectCompanionshipAssessmentEvents(params: {
@@ -969,7 +889,7 @@ export async function resolveDirectCompanionshipAssessmentEvents(params: {
   now?: number;
 }): Promise<RuntimeEventV2[]> {
   if (!isDirectUserMessage(params.chat, params.message)) return [];
-  if (!params.textApiConfig) return buildLocalFallbackEvents(params);
+  if (!params.textApiConfig) return [];
   try {
     const assessment = await runModelAssessment({
       config: params.textApiConfig,
@@ -1040,17 +960,16 @@ export async function resolveDirectCompanionshipAssessmentEvents(params: {
     ].filter((event): event is RuntimeEventV2 => Boolean(event));
   } catch (error) {
     reportRecoverableWarning({
-      location: 'companionship:direct-assessment-model-fallback',
+      location: 'companionship:direct-assessment-model',
       error,
-      message: '亲密陪伴合并评估失败，已退回本地保守判断。',
+      message: '亲密陪伴合并评估失败，已跳过本轮亲密陪伴运行态写入。',
       extra: {
         chatId: params.chat.id,
         characterId: params.character.id,
         messageId: params.message.id,
         messagePreview: compactText(params.message.content, 80),
-        fallback: 'local_fallback',
       },
     });
-    return buildLocalFallbackEvents(params);
+    return [];
   }
 }

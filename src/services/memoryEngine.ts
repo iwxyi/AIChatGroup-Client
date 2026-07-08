@@ -38,29 +38,7 @@ function extractArtifactCandidate(normalized: string) {
 }
 
 export function extractMemoryCandidate(text: string): MemoryCandidate | null {
-  const normalized = normalizeText(text);
-  if (!normalized) return null;
-
-  const artifactText = extractArtifactCandidate(normalized);
-  if (artifactText) {
-    return {
-      kind: 'artifact',
-      text: artifactText,
-      reason: 'contains explicit outcome language',
-    };
-  }
-
-  if (isLowValueUtterance(normalized)) return null;
-
-  const noteMatch = normalized.match(/([^。！？!?]{8,50})(应该|需要|必须|最好|不能|关键是|问题在于)([^。！？!?]{4,30})/);
-  if (noteMatch) {
-    return {
-      kind: 'note',
-      text: `${noteMatch[1]}${noteMatch[2]}${noteMatch[3]}`.slice(0, 96),
-      reason: 'contains stable decision/problem framing',
-    };
-  }
-
+  void text;
   return null;
 }
 

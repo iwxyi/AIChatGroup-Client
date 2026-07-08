@@ -15,6 +15,7 @@ import { projectWorldCalendar } from '../../services/worldRuntimeProjection';
 import { buildWorldCalendarPatchApplyPlan } from '../../services/worldCalendarPatchPlanner';
 import { applyWorldCalendarPatchDraftQueue } from '../../services/worldCalendarPatchApply';
 import { summarizeParticipantStateCounts } from '../../services/worldCalendarPresentation';
+import { useSettingsStore } from '../../stores/useSettingsStore';
 import {
   filterAndSortCalendarItems,
   groupCalendarItemsByDay,
@@ -138,6 +139,20 @@ function normalizeDisplayText(value: string) {
   return value.replace(/\s+/g, ' ').trim().toLowerCase();
 }
 
+function isLikelyStructuredScheduleText(value: string, isZh: boolean) {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  if (isZh) {
+    return /(\d{4}年)?\d{1,2}月\d{1,2}日/.test(trimmed)
+      || /\d{1,2}:\d{2}/.test(trimmed)
+      || trimmed === '全天';
+  }
+  return /\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\b/i.test(trimmed)
+    || /\b\d{1,2}:\d{2}\b/.test(trimmed)
+    || /\b(?:am|pm)\b/i.test(trimmed)
+    || /^all day$/i.test(trimmed);
+}
+
 function buildListSummary(item: WorldCalendarItem, scheduleHint: string | null, isZh: boolean) {
   const summary = item.summary.trim();
   if (!summary) return null;
@@ -152,6 +167,7 @@ function buildListSummary(item: WorldCalendarItem, scheduleHint: string | null, 
     .filter((part) => {
       const key = normalizeDisplayText(part);
       if (!key || key === titleKey || key === scheduleKey || key === locationKey || key === participantKey) return false;
+      if (scheduleHint && isLikelyStructuredScheduleText(part, isZh)) return false;
       if (isZh && (/^角色[:：]/.test(part) || /^地点[:：]/.test(part) || part === '全天')) return false;
       if (!isZh && (/^characters?:/i.test(part) || /^location:/i.test(part) || /^all day$/i.test(part))) return false;
       return true;
@@ -197,6 +213,51 @@ function getCalendarKindDotColor(kind: WorldCalendarItem['kind']) {
   return 'primary.main';
 }
 
+function formatRelativeLifecycleTime(timestamp: number, now: number, isZh: boolean) {
+  const diffMs = now - timestamp;
+  const absMinutes = Math.max(1, Math.round(Math.abs(diffMs) / 60_000));
+  if (absMinutes < 60) {
+    return diffMs >= 0
+      ? (isZh ? `${absMinutes} 分钟前` : `${absMinutes} min ago`)
+      : (isZh ? `${absMinutes} 分钟后` : `in ${absMinutes} min`);
+  }
+  const absHours = Math.round(absMinutes / 60);
+  if (absHours < 48) {
+    return diffMs >= 0
+      ? (isZh ? `${absHours} 小时前` : `${absHours} hr ago`)
+      : (isZh ? `${absHours} 小时后` : `in ${absHours} hr`);
+  }
+  return formatCompactDateTime(new Date(timestamp), isZh);
+}
+
+function buildCalendarLifecycleDebugRows(items: WorldCalendarItem[], now: number, isZh: boolean) {
+  return items
+    .flatMap((item) => {
+      const rows: Array<{ key: string; tone: 'primary' | 'success'; label: string; text: string; at: number }> = [];
+      if (item.status === 'in_progress' && typeof item.startAt === 'number') {
+        rows.push({
+          key: `${item.id}:started`,
+          tone: 'primary',
+          label: isZh ? '开始' : 'Started',
+          text: `${item.title} · ${formatRelativeLifecycleTime(item.startAt, now, isZh)}`,
+          at: item.startAt,
+        });
+      }
+      if (item.status === 'completed' && typeof item.endAt === 'number' && now - item.endAt <= 72 * 60 * 60_000) {
+        rows.push({
+          key: `${item.id}:ended`,
+          tone: 'success',
+          label: isZh ? '结束' : 'Ended',
+          text: `${item.title} · ${formatRelativeLifecycleTime(item.endAt, now, isZh)}`,
+          at: item.endAt,
+        });
+      }
+      return rows;
+    })
+    .sort((left, right) => right.at - left.at)
+    .slice(0, 5);
+}
+
 interface WorldCalendarPanelProps {
   chats: GroupChat[];
   characters: AICharacter[];
@@ -231,7 +292,10 @@ export default function WorldCalendarPanel({
   const [detailItemId, setDetailItemId] = useState<string | null>(null);
   const [isApplyingPatchQueue, setIsApplyingPatchQueue] = useState(false);
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({ open: false, message: '', severity: 'success' });
-  const projection = useMemo(() => projectWorldCalendar(chats, characters, { conversationId: conversationId || undefined }), [chats, characters, conversationId]);
+  const developerMode = useSettingsStore((state) => state.developerMode);
+  const showCalendarEvents = useSettingsStore((state) => state.developerUI.showCalendarEvents);
+  const [temporalNow, setTemporalNow] = useState(() => Date.now());
+  const projection = useMemo(() => projectWorldCalendar(chats, characters, { conversationId: conversationId || undefined, now: temporalNow }), [chats, characters, conversationId, temporalNow]);
   const calendarItems = projection.items;
   const patchPlan = useMemo(() => buildWorldCalendarPatchApplyPlan(projection), [projection]);
   const patchDraftQueue = patchPlan.queue;
@@ -291,6 +355,15 @@ export default function WorldCalendarPanel({
     return map;
   }, [baseFilteredItems]);
   const detailItem = useMemo(() => calendarItems.find((item) => item.id === detailItemId) || null, [calendarItems, detailItemId]);
+  const lifecycleDebugRows = useMemo(
+    () => buildCalendarLifecycleDebugRows(baseFilteredItems, temporalNow, isZh),
+    [baseFilteredItems, isZh, temporalNow],
+  );
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setTemporalNow(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (!automaticPatchQueue.length || isApplyingPatchQueue) return;
@@ -506,6 +579,29 @@ export default function WorldCalendarPanel({
           <Typography variant="subtitle2" sx={{ mb: 1.25, fontWeight: 760, color: 'text.secondary' }}>
             {formatDayTitle(selectedDayStart || Date.now(), isZh)}
           </Typography>
+
+      {developerMode && showCalendarEvents && lifecycleDebugRows.length ? (
+        <SurfaceCard contentSx={{ p: compact ? 1 : 1.2, mb: 1.25, '&:last-child': { pb: compact ? 1 : 1.2 } }}>
+          <Stack spacing={0.8}>
+            <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+              <Chip size="small" color="warning" variant="outlined" sx={calendarMetaChipSx} label={isZh ? '日历生命周期调试' : 'Calendar lifecycle debug'} />
+              <Typography variant="caption" color="text.secondary">
+                {isZh ? '开始/结束来自当前时间窗口投影，不会写入事件流。' : 'Start/end are projected from the current time window and are not persisted as runtime events.'}
+              </Typography>
+            </Stack>
+            <Stack spacing={0.55}>
+              {lifecycleDebugRows.map((row) => (
+                <Stack key={row.key} direction="row" spacing={0.8} sx={{ alignItems: 'center', minWidth: 0 }}>
+                  <Chip size="small" color={row.tone} variant="outlined" sx={calendarMetaChipSx} label={row.label} />
+                  <Typography variant="caption" color="text.secondary" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {row.text}
+                  </Typography>
+                </Stack>
+              ))}
+            </Stack>
+          </Stack>
+        </SurfaceCard>
+      ) : null}
 
       {manualPatchQueue.length ? (
         <Stack spacing={1} sx={{ mb: 2 }}>

@@ -111,6 +111,14 @@ export interface ProjectedRuntimeTimelineItem {
       endAt?: number;
       durationMinutes?: number;
       reason?: string;
+      source?: string;
+      summary?: string;
+      status?: string;
+      timeHint?: string;
+      locationHint?: string;
+      addParticipantIds?: string[];
+      removeParticipantIds?: string[];
+      addParticipantStates?: Record<string, string>;
     };
     candidateSuppression?: {
       eventType: 'event_candidate_suppressed';
@@ -244,6 +252,13 @@ function toCalendarPatchMeta(event: RuntimeEventV2) {
   const payload = (typeof event.payload === 'object' && event.payload !== null ? event.payload : {}) as Record<string, unknown>;
   const readString = (value: unknown) => typeof value === 'string' ? value : '';
   const readNumber = (value: unknown) => typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+  const readStringArray = (value: unknown) => Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : undefined;
+  const readStringRecord = (value: unknown) => {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter((entry): entry is [string, string] => typeof entry[1] === 'string');
+    return entries.length ? Object.fromEntries(entries) : undefined;
+  };
   const source = readString(payload.source);
   return {
     isAuto: source === 'world_calendar_patch_executor',
@@ -254,6 +269,14 @@ function toCalendarPatchMeta(event: RuntimeEventV2) {
     endAt: readNumber(payload.endAt),
     durationMinutes: readNumber(payload.durationMinutes),
     reason: readString(payload.reason) || undefined,
+    source: source || undefined,
+    summary: readString(payload.summary) || undefined,
+    status: readString(payload.status) || undefined,
+    timeHint: readString(payload.timeHint) || undefined,
+    locationHint: readString(payload.locationHint) || undefined,
+    addParticipantIds: readStringArray(payload.addParticipantIds),
+    removeParticipantIds: readStringArray(payload.removeParticipantIds),
+    addParticipantStates: readStringRecord(payload.addParticipantStates),
   };
 }
 

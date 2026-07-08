@@ -394,7 +394,7 @@ describe('chatEngine streaming preview', () => {
     expect(contract).toContain('visible first bubble');
     expect(contract).toContain('deliberate repeated tone, keyword, rhythm, format');
     expect(contract).toContain('accidental template drift');
-    expect(contract).toContain('socialEventHints: this is the only per-turn semantic source');
+    expect(contract).toContain('socialEventHints: this is the only model-authored per-turn semantic source');
     expect(contract).toContain('Recent transcript scope');
     expect(contract).toContain('does not repeat raw dialogue');
     expect(contract).not.toContain('美羊羊发个灰太狼证件照的图片');
@@ -457,6 +457,80 @@ describe('chatEngine streaming preview', () => {
     expect(contract).toContain('In AI direct chats, target the other participant');
     expect(contract).toContain('do not target the speaker or the user unless the user is an actual participant');
     expect(contract).toContain('id=char-2; name=乙');
+  });
+
+  it('lists user as a valid structured event participant when user is a member', () => {
+    const contract = buildInlineInteractionContract({
+      chat: buildChat({ memberIds: ['char-1', 'user'] }),
+      speaker: { id: 'char-1', name: '甲' } as AICharacter,
+      characters: [{ id: 'char-1', name: '甲' } as AICharacter],
+      recentMessages: [],
+    });
+
+    expect(contract).toContain('- id=user; name=用户/我; aliases=用户,我');
+    expect(contract).toContain('Include "user" when the user is an invited or participating member');
+  });
+
+  it('does not list non-members as valid structured event participants', () => {
+    const contract = buildInlineInteractionContract({
+      chat: buildChat({ memberIds: ['char-1', 'char-2'] }),
+      speaker: { id: 'char-1', name: '甲' } as AICharacter,
+      characters: [
+        { id: 'char-1', name: '甲' } as AICharacter,
+        { id: 'char-2', name: '乙' } as AICharacter,
+        { id: 'char-outside', name: '场外角色' } as AICharacter,
+      ],
+      recentMessages: [],
+    });
+
+    expect(contract).toContain('- id=char-2; name=乙');
+    expect(contract).not.toContain('char-outside');
+  });
+
+  it('records structured output protocol diagnostics for invite guidance without social outing hints', async () => {
+    generateResponseMock.mockReset();
+    generateResponseMock.mockResolvedValue(JSON.stringify({
+      content: '今晚九点半，后巷蓝布门帘那家旧茶馆，大家来不来随意。',
+      interactionHints: null,
+      socialEventHints: null,
+      conflictFocus: null,
+    }));
+    const luxun = buildCharacter('luxun', '鲁迅');
+    const chat = buildChat({ memberIds: ['luxun', 'user'] });
+    const directorIntent: DirectorIntent = {
+      source: 'user_message',
+      beatType: 'invite',
+      targetActorIds: ['luxun'],
+      pressure: 0.9,
+      reason: '用户要求安排活动',
+      userGuidance: {
+        kind: 'direct_reply',
+        rawText: '鲁迅，主动安排一个今晚大家可以一起参加的具体活动。',
+        actorIds: ['luxun'],
+        mentionedActorIds: ['luxun'],
+        focusText: '主动安排一个今晚大家可以一起参加的具体活动',
+        beatType: 'invite',
+        pressure: 0.9,
+        maxTurns: 1,
+        reason: '用户要求角色安排活动',
+      },
+    };
+
+    const message = await generateSpeakerMessage({
+      chat,
+      speaker: luxun,
+      characters: [luxun],
+      messages: [
+        buildUserMessage('鲁迅，主动安排一个今晚大家可以一起参加的具体活动。', 1),
+      ],
+      apiConfig: buildProfiles(),
+      directorIntent,
+    });
+    const trace = message.metadata?.runtimeDecision?.generationRuntime?.trace as { policyHits?: string[]; guidanceValidation?: string } | undefined;
+
+    expect(trace?.policyHits).toContain('structured_output:json_envelope_parsed');
+    expect(trace?.policyHits).toContain('structured_output:invite_guidance_without_social_outing');
+    expect(trace?.guidanceValidation).toContain('inviteGuidanceSocialOuting=missing');
   });
 
   it('does not locally force detailed chat requests into a professional longform surface', async () => {

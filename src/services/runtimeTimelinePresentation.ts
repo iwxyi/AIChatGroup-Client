@@ -109,6 +109,45 @@ function formatActorOrigin(origin: string | undefined) {
   return '未知';
 }
 
+function formatActivityCandidateStage(candidate: ReturnType<typeof readSocialEventCandidateMeta>) {
+  if (candidate?.eventKind !== 'social_outing') return null;
+  if (candidate.reasonType === 'chat_activity_invite') return '聊天邀约候选';
+  if (candidate.reasonType === 'world_attention_invite_activity') return '关注驱动邀约';
+  return '活动候选';
+}
+
+function formatActivityCandidateDetail(candidate: ReturnType<typeof readSocialEventCandidateMeta>, members: DisplayTextMember[]) {
+  const stage = formatActivityCandidateStage(candidate);
+  if (!candidate || !stage) return null;
+  const title = candidate.title || candidate.activityType || '线下活动';
+  return cleanText([
+    stage,
+    title,
+    candidate.timeHint ? `时间 ${candidate.timeHint}` : '',
+    candidate.locationHint ? `地点 ${candidate.locationHint}` : '',
+    Number.isFinite(candidate.confidence) ? `置信 ${(candidate.confidence * 100).toFixed(0)}%` : '',
+    candidate.dedupeKey ? `key ${shortEventId(candidate.dedupeKey)}` : '',
+  ].filter(Boolean).join(' · '), members);
+}
+
+function formatCalendarPatchMetaLine(patch: ReturnType<typeof readCalendarPatchMeta>, members: DisplayTextMember[]) {
+  if (!patch) return '';
+  const stateText = Object.entries(patch.addParticipantStates || {})
+    .map(([id, state]) => {
+      const name = members.find((member) => member.id === id)?.name || id;
+      return `${name}:${state}`;
+    })
+    .join('、');
+  return cleanText([
+    patch.source === 'chat_activity_followup' ? '聊天修订' : '',
+    patch.timeHint ? `时间 ${patch.timeHint}` : '',
+    patch.locationHint ? `地点 ${patch.locationHint}` : '',
+    patch.status ? `状态 ${patch.status}` : '',
+    stateText ? `参与 ${stateText}` : '',
+    patch.calendarItemId ? `item ${shortEventId(patch.calendarItemId)}` : '',
+  ].filter(Boolean).join(' · '), members);
+}
+
 export function buildRuntimeTimelineTitle(item: ProjectedRuntimeTimelineItem) {
   if (item.event?.kind === 'calendar_item_patch') return buildCalendarPatchTimelineTitle(item.event, true);
   if (readUnifiedWorldDecisionMeta(item)) return '世界决策';
@@ -188,6 +227,8 @@ export function buildRuntimeTimelineBody(item: ProjectedRuntimeTimelineItem, mem
       : '';
     return clip(cleanText(`应用 ${patchApply.appliedCount} · 跳过 ${patchApply.skippedCount} · 失败 ${patchApply.failedCount}${chainBlockedText}${modelText}`, members), 88);
   }
+  const activityCandidateDetail = formatActivityCandidateDetail(candidate, members);
+  if (activityCandidateDetail) return clip(activityCandidateDetail, 88);
   if (distillation) {
     const candidateTexts = Array.isArray(distillation.candidateTexts)
       ? sanitizeDistillationTexts(distillation.candidateTexts
@@ -210,7 +251,10 @@ export function buildRuntimeTimelineBody(item: ProjectedRuntimeTimelineItem, mem
 
 export function buildRuntimeTimelineMeta(item: ProjectedRuntimeTimelineItem, members: DisplayTextMember[] = []) {
   if (item.event?.kind === 'calendar_item_patch') {
-    return readCalendarPatchMeta(item)?.isAuto ? cleanText('来源 · 自动冲突修正执行器', members) : cleanText('来源 · 手动/常规更新', members);
+    const patch = readCalendarPatchMeta(item);
+    const detail = formatCalendarPatchMetaLine(patch, members);
+    if (detail) return detail;
+    return patch?.isAuto ? cleanText('来源 · 自动冲突修正执行器', members) : cleanText('来源 · 手动/常规更新', members);
   }
   const relation = readRelationshipDeltaMeta(item);
   const room = readRoomShiftMeta(item);
@@ -292,6 +336,11 @@ export function buildRuntimeTimelineMeta(item: ProjectedRuntimeTimelineItem, mem
     return cleanText(`${owner}蒸馏 · 证据 ${evidence} · ${reason}`, members);
   }
   if (candidate) {
+    const activityCandidateDetail = formatActivityCandidateDetail(candidate, members);
+    if (activityCandidateDetail) {
+      const source = candidate.reasonType === 'chat_activity_invite' ? '聊天本地识别' : candidate.reasonType || '候选生成';
+      return cleanText(`${source} · 参与 ${candidate.participantIds?.length || 0} · ${activityCandidateDetail}`, members);
+    }
     const attentionMeta = readAttentionInfoMeta(item);
     if (attentionMeta) {
       const actorKind = attentionMeta.actorKindLabel ? `发起 ${attentionMeta.actorKindLabel}` : '';
