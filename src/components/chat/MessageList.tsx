@@ -679,6 +679,7 @@ export default function MessageList({
   const pendingInitialRestoreRef = useRef<MessageListScrollPosition | null>(initialScrollPosition?.pinned ? null : initialScrollPosition);
   const appliedInitialRestoreKeyRef = useRef<string | null>(null);
   const prependRestoreRef = useRef<ScrollAnchorSnapshot | null>(null);
+  const prependRestoreBoundaryRef = useRef<{ firstKey: string | null; itemCount: number } | null>(null);
   const bottomRestoreDistanceRef = useRef<number | null>(null);
   const latestScrollAnchorRef = useRef<ScrollAnchorSnapshot | null>(null);
   const lastScrollTopRef = useRef(0);
@@ -994,6 +995,39 @@ export default function MessageList({
     };
   }, [getDistanceFromBottom]);
 
+  const captureTopVisibleScrollAnchor = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return null;
+    const containerRect = container.getBoundingClientRect();
+    const messageNodes = Array.from(container.querySelectorAll<HTMLElement>('[data-message-id]'));
+    const scrollAnchorNodes = Array.from(container.querySelectorAll<HTMLElement>('[data-scroll-anchor]'));
+    const nodes = messageNodes.length ? messageNodes : scrollAnchorNodes;
+    const anchorNode = nodes
+      .map((node) => ({ node, rect: node.getBoundingClientRect() }))
+      .filter(({ rect }) => rect.bottom > containerRect.top + 1 && rect.top < containerRect.bottom - 1)
+      .sort((left, right) => {
+        const leftDistance = Math.abs(left.rect.top - containerRect.top);
+        const rightDistance = Math.abs(right.rect.top - containerRect.top);
+        return leftDistance - rightDistance;
+      })[0]?.node;
+    const messageId = anchorNode ? getElementScrollAnchorId(anchorNode) : '';
+    if (!anchorNode || !messageId) return null;
+    return {
+      messageId,
+      offsetTop: anchorNode.getBoundingClientRect().top - containerRect.top,
+      sourceTimestamp: getElementScrollTimestamp(anchorNode),
+    };
+  }, []);
+
+  const rememberPrependRestoreAnchor = useCallback((snapshot: ScrollAnchorSnapshot | null) => {
+    if (!snapshot) return;
+    prependRestoreRef.current = snapshot;
+    prependRestoreBoundaryRef.current = {
+      firstKey: renderItems[0]?.key ?? null,
+      itemCount: renderItems.length,
+    };
+  }, [renderItems]);
+
   const restoreScrollAnchor = useCallback((
     snapshot: ScrollAnchorSnapshot & { behavior?: ScrollBehavior },
     options?: { intent?: MessageScrollIntentKind; allowDuringUserScroll?: boolean },
@@ -1171,11 +1205,11 @@ export default function MessageList({
         scrollTop: Math.round(containerRef.current?.scrollTop ?? 0),
       }, 'debug', 'chat-scroll');
     }
-    if (isLoadingOlder && snapshot) {
-      prependRestoreRef.current = snapshot;
+    if (isLoadingOlder && snapshot && !prependRestoreRef.current) {
+      rememberPrependRestoreAnchor(snapshot);
     }
     return snapshot;
-  }, [captureScrollAnchor, isLoadingOlder, onScrollPositionChange]);
+  }, [captureScrollAnchor, isLoadingOlder, onScrollPositionChange, rememberPrependRestoreAnchor]);
 
   const scheduleRememberScrollAnchor = useCallback((options?: { persist?: boolean; reason?: string }) => {
     if (scrollAnchorFrameRef.current != null) return;
@@ -1587,7 +1621,6 @@ export default function MessageList({
   const schedulePrependAnchorRestore = useCallback((snapshot: ScrollAnchorSnapshot) => {
     cancelProgrammaticScroll();
     const runFrame = (frameCount: number, stableCount: number) => {
-      scrollVirtualizerToAnchor(snapshot, { intent: 'prependPreserve', allowDuringUserScroll: true });
       const restored = restoreScrollAnchor(snapshot, { intent: 'prependPreserve', allowDuringUserScroll: true });
       const nextStableCount = restored ? stableCount + 1 : 0;
       if (nextStableCount >= INITIAL_REVEAL_STABLE_FRAMES || frameCount >= INITIAL_REVEAL_MAX_FRAMES) {
@@ -1610,12 +1643,18 @@ export default function MessageList({
       window.requestAnimationFrame(() => runFrame(frameCount + 1, nextStableCount));
     };
     window.requestAnimationFrame(() => runFrame(1, 0));
-  }, [cancelProgrammaticScroll, isUserScrollMomentumActive, renderItems.length, restoreScrollAnchor, scrollVirtualizerToAnchor, updatePinnedState]);
+  }, [cancelProgrammaticScroll, isUserScrollMomentumActive, renderItems.length, restoreScrollAnchor, updatePinnedState]);
 
   useLayoutEffect(() => {
     const snapshot = prependRestoreRef.current;
     if (!snapshot) return;
+    const boundary = prependRestoreBoundaryRef.current;
+    const currentFirstKey = renderItems[0]?.key ?? null;
+    if (boundary && boundary.firstKey === currentFirstKey && boundary.itemCount === renderItems.length) {
+      return;
+    }
     prependRestoreRef.current = null;
+    prependRestoreBoundaryRef.current = null;
     schedulePrependAnchorRestore(snapshot);
   }, [renderItems, schedulePrependAnchorRestore]);
 
@@ -1702,8 +1741,13 @@ export default function MessageList({
   useEffect(() => {
     if (!isLoadingOlder) {
       topLoadTriggeredRef.current = false;
+      const boundary = prependRestoreBoundaryRef.current;
+      if (boundary && boundary.firstKey === (renderItems[0]?.key ?? null) && boundary.itemCount === renderItems.length) {
+        prependRestoreRef.current = null;
+        prependRestoreBoundaryRef.current = null;
+      }
     }
-  }, [isLoadingOlder]);
+  }, [isLoadingOlder, renderItems]);
 
   useEffect(() => {
     if (!isLoadingNewer) {
@@ -1800,7 +1844,7 @@ export default function MessageList({
         if (!hasUserScrollIntentRef.current || !isScrollingUp) return;
         if (!onReachTop || topLoadTriggeredRef.current || isLoadingOlder || !hasMore) return;
 
-        prependRestoreRef.current = captureScrollAnchor() || latestScrollAnchorRef.current;
+        rememberPrependRestoreAnchor(captureTopVisibleScrollAnchor() || captureScrollAnchor() || latestScrollAnchorRef.current);
         topLoadTriggeredRef.current = true;
         logDeveloperDiagnostic('chat-scroll:reach-top', {
           reason: 'user-scroll',
