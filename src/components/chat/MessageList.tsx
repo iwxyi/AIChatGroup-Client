@@ -1143,20 +1143,22 @@ export default function MessageList({
     const snapshot = captureScrollAnchor();
     latestScrollAnchorRef.current = snapshot;
     if (snapshot && options?.persist !== false) {
-      logDeveloperDiagnostic('故事阅读保存：持久化', {
-        reason: options?.reason || 'unknown',
-        messageId: snapshot.messageId,
-        offsetTop: Math.round(snapshot.offsetTop),
-        pinned: shouldStickToBottomRef.current,
-        sourceTimestamp: snapshot.sourceTimestamp,
-        userScrollIntent: hasUserScrollIntentRef.current,
-        scrollTop: Math.round(containerRef.current?.scrollTop ?? 0),
-      }, 'info', 'chat-scroll');
-      onScrollPositionChange?.({
-        ...snapshot,
-        pinned: shouldStickToBottomRef.current,
-      });
-    } else if (snapshot) {
+      if (onScrollPositionChange) {
+        logDeveloperDiagnostic('故事阅读保存：持久化', {
+          reason: options?.reason || 'unknown',
+          messageId: snapshot.messageId,
+          offsetTop: Math.round(snapshot.offsetTop),
+          pinned: shouldStickToBottomRef.current,
+          sourceTimestamp: snapshot.sourceTimestamp,
+          userScrollIntent: hasUserScrollIntentRef.current,
+          scrollTop: Math.round(containerRef.current?.scrollTop ?? 0),
+        }, 'info', 'chat-scroll');
+        onScrollPositionChange({
+          ...snapshot,
+          pinned: shouldStickToBottomRef.current,
+        });
+      }
+    } else if (snapshot && onScrollPositionChange) {
       logDeveloperDiagnostic('故事阅读保存：跳过持久化', {
         reason: options?.reason || 'unknown',
         messageId: snapshot.messageId,
@@ -1243,9 +1245,7 @@ export default function MessageList({
     const distance = Math.abs(top - container.scrollTop);
     const effectiveBehavior = prefersReducedMotion() || distance > SMOOTH_SCROLL_DISTANCE_LIMIT ? 'auto' : behavior;
     const didWrite = runScrollWrite(intent, (scrollContainer) => {
-      if (effectiveBehavior !== 'auto') {
-        programmaticScrollRef.current = { mode: 'jump', startedAt: performance.now(), targetTop: top };
-      }
+      programmaticScrollRef.current = { mode: 'jump', startedAt: performance.now(), targetTop: top };
       scrollContainer.scrollTo({ top, behavior: effectiveBehavior });
     }, { allowDuringUserScroll: intent === 'explicitJump' });
     if (!didWrite) return;
@@ -1312,10 +1312,13 @@ export default function MessageList({
   const forceTailScrollPosition = useCallback((intent: MessageScrollIntentKind = 'tailFollow') => {
     const container = containerRef.current;
     if (!container || renderItems.length === 0) return;
-    const top = Math.max(0, container.scrollHeight - container.clientHeight);
     runScrollWrite(intent, (scrollContainer) => {
       messageVirtualizer.scrollToIndex(renderItems.length - 1, { align: 'end', behavior: 'auto' });
-      scrollContainer.scrollTop = top;
+      programmaticScrollRef.current = {
+        mode: 'jump',
+        startedAt: performance.now(),
+        targetTop: Math.max(0, scrollContainer.scrollHeight - scrollContainer.clientHeight),
+      };
     }, { allowDuringUserScroll: intent === 'initialRestore' || intent === 'explicitJump' });
   }, [messageVirtualizer, renderItems.length, runScrollWrite]);
 

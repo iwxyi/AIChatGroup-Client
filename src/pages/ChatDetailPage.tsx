@@ -1613,17 +1613,19 @@ export default function ChatDetailPage() {
         : 'tail';
       const previousOpen = openedChatWindowRef.current;
       if (previousOpen?.chatId === id) {
-        logDeveloperDiagnostic('故事阅读恢复：跳过重复打开窗口', {
-          chatId: id,
-          existingRequestKey: previousOpen.requestKey,
-          nextRequestKey: requestKey,
-          savedPosition: entryStoryReadingPosition ? {
-            messageId: entryStoryReadingPosition.messageId,
-            offsetTop: entryStoryReadingPosition.offsetTop,
-            pinned: entryStoryReadingPosition.pinned,
-            sourceTimestamp: entryStoryReadingPosition.sourceTimestamp,
-          } : null,
-        }, 'debug', 'chat-scroll');
+        if (isStoryRoom) {
+          logDeveloperDiagnostic('故事阅读恢复：跳过重复打开窗口', {
+            chatId: id,
+            existingRequestKey: previousOpen.requestKey,
+            nextRequestKey: requestKey,
+            savedPosition: entryStoryReadingPosition ? {
+              messageId: entryStoryReadingPosition.messageId,
+              offsetTop: entryStoryReadingPosition.offsetTop,
+              pinned: entryStoryReadingPosition.pinned,
+              sourceTimestamp: entryStoryReadingPosition.sourceTimestamp,
+            } : null,
+          }, 'debug', 'chat-scroll');
+        }
         return;
       }
       openedChatWindowRef.current = {
@@ -1632,17 +1634,19 @@ export default function ChatDetailPage() {
         openedAt: Date.now(),
         restored: requestKey !== 'tail',
       };
-      logDeveloperDiagnostic('故事阅读恢复：打开消息窗口', {
-        chatId: id,
-        requestKey,
-        savedPosition: entryStoryReadingPosition ? {
-          messageId: entryStoryReadingPosition.messageId,
-          offsetTop: entryStoryReadingPosition.offsetTop,
-          pinned: entryStoryReadingPosition.pinned,
-          sourceTimestamp: entryStoryReadingPosition.sourceTimestamp,
-        } : null,
-        aroundTimestamp,
-      }, 'info', 'chat-scroll');
+      if (isStoryRoom) {
+        logDeveloperDiagnostic('故事阅读恢复：打开消息窗口', {
+          chatId: id,
+          requestKey,
+          savedPosition: entryStoryReadingPosition ? {
+            messageId: entryStoryReadingPosition.messageId,
+            offsetTop: entryStoryReadingPosition.offsetTop,
+            pinned: entryStoryReadingPosition.pinned,
+            sourceTimestamp: entryStoryReadingPosition.sourceTimestamp,
+          } : null,
+          aroundTimestamp,
+        }, 'info', 'chat-scroll');
+      }
       logDeveloperDiagnostic('chat-window:open', {
         chatId: id,
         isStoryRoom: chat?.sessionKind?.scenarioId === 'story-reader',
