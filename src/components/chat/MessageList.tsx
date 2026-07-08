@@ -33,6 +33,9 @@ const USER_SCROLL_INERTIA_GRACE_MS = 480;
 const MIN_BOTTOM_PREFETCH_PAGES = 1;
 const MAX_BOTTOM_PREFETCH_PAGES = 3;
 const SCROLL_INTENT_SETTLE_MS = 160;
+const INITIAL_REVEAL_MAX_FRAMES = 12;
+const INITIAL_REVEAL_STABLE_FRAMES = 2;
+const INITIAL_TAIL_REVEAL_THRESHOLD = 4;
 const storyNodeFadeIn = keyframes`
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
@@ -1313,12 +1316,12 @@ export default function MessageList({
     const container = containerRef.current;
     if (!container || renderItems.length === 0) return;
     runScrollWrite(intent, (scrollContainer) => {
-      messageVirtualizer.scrollToIndex(renderItems.length - 1, { align: 'end', behavior: 'auto' });
       programmaticScrollRef.current = {
         mode: 'jump',
         startedAt: performance.now(),
         targetTop: Math.max(0, scrollContainer.scrollHeight - scrollContainer.clientHeight),
       };
+      messageVirtualizer.scrollToIndex(renderItems.length - 1, { align: 'end', behavior: 'auto' });
     }, { allowDuringUserScroll: intent === 'initialRestore' || intent === 'explicitJump' });
   }, [messageVirtualizer, renderItems.length, runScrollWrite]);
 
@@ -1334,35 +1337,64 @@ export default function MessageList({
 
   const scheduleInitialTailReveal = useCallback(() => {
     cancelInitialTailRevealFrames();
-    forceTailScrollPosition('initialRestore');
-    const firstFrame = window.requestAnimationFrame(() => {
+    setInitialViewportReady(false);
+    const runFrame = (frameCount: number, stableCount: number) => {
       forceTailScrollPosition('initialRestore');
-      const secondFrame = window.requestAnimationFrame(() => {
-        forceTailScrollPosition('initialRestore');
+      const container = containerRef.current;
+      const distanceFromBottom = container ? getDistanceFromBottom(container) : Number.POSITIVE_INFINITY;
+      const nextStableCount = distanceFromBottom <= INITIAL_TAIL_REVEAL_THRESHOLD ? stableCount + 1 : 0;
+      if (nextStableCount >= INITIAL_REVEAL_STABLE_FRAMES || frameCount >= INITIAL_REVEAL_MAX_FRAMES) {
+        logDeveloperDiagnostic('chat-scroll:initial-tail-reveal', {
+          frameCount,
+          stableCount: nextStableCount,
+          distanceFromBottom: Number.isFinite(distanceFromBottom) ? Math.round(distanceFromBottom) : null,
+          scrollTop: Math.round(container?.scrollTop ?? 0),
+          scrollHeight: Math.round(container?.scrollHeight ?? 0),
+          clientHeight: Math.round(container?.clientHeight ?? 0),
+          renderItemCount: renderItems.length,
+        }, 'debug', 'chat-scroll');
         initialTailRevealFramesRef.current = [];
         setInitialViewportReady(true);
-      });
-      initialTailRevealFramesRef.current = [secondFrame];
-    });
+        return;
+      }
+      const handle = window.requestAnimationFrame(() => runFrame(frameCount + 1, nextStableCount));
+      initialTailRevealFramesRef.current = [handle];
+    };
+    const firstFrame = window.requestAnimationFrame(() => runFrame(1, 0));
     initialTailRevealFramesRef.current = [firstFrame];
-  }, [cancelInitialTailRevealFrames, forceTailScrollPosition]);
+  }, [cancelInitialTailRevealFrames, forceTailScrollPosition, getDistanceFromBottom, renderItems.length]);
 
   const scheduleInitialAnchorReveal = useCallback((position: MessageListScrollPosition) => {
     cancelInitialAnchorRevealFrames();
     setInitialViewportReady(false);
-    scrollVirtualizerToAnchor(position, { intent: 'initialRestore', allowDuringUserScroll: true });
-    restoreScrollAnchor(position, { intent: 'initialRestore', allowDuringUserScroll: true });
-    const firstFrame = window.requestAnimationFrame(() => {
-      restoreScrollAnchor(position, { intent: 'initialRestore', allowDuringUserScroll: true });
-      const secondFrame = window.requestAnimationFrame(() => {
-        restoreScrollAnchor(position, { intent: 'initialRestore', allowDuringUserScroll: true });
+    const runFrame = (frameCount: number, stableCount: number) => {
+      scrollVirtualizerToAnchor(position, { intent: 'initialRestore', allowDuringUserScroll: true });
+      const restored = restoreScrollAnchor(position, { intent: 'initialRestore', allowDuringUserScroll: true });
+      const nextStableCount = restored ? stableCount + 1 : 0;
+      if (nextStableCount >= INITIAL_REVEAL_STABLE_FRAMES || frameCount >= INITIAL_REVEAL_MAX_FRAMES) {
+        const container = containerRef.current;
+        logDeveloperDiagnostic('chat-scroll:initial-anchor-reveal', {
+          messageId: position.messageId,
+          offsetTop: Math.round(position.offsetTop),
+          sourceTimestamp: position.sourceTimestamp,
+          frameCount,
+          restored,
+          stableCount: nextStableCount,
+          scrollTop: Math.round(container?.scrollTop ?? 0),
+          scrollHeight: Math.round(container?.scrollHeight ?? 0),
+          clientHeight: Math.round(container?.clientHeight ?? 0),
+          renderItemCount: renderItems.length,
+        }, restored ? 'debug' : 'warn', 'chat-scroll');
         initialAnchorRevealFramesRef.current = [];
         setInitialViewportReady(true);
-      });
-      initialAnchorRevealFramesRef.current = [secondFrame];
-    });
+        return;
+      }
+      const handle = window.requestAnimationFrame(() => runFrame(frameCount + 1, nextStableCount));
+      initialAnchorRevealFramesRef.current = [handle];
+    };
+    const firstFrame = window.requestAnimationFrame(() => runFrame(1, 0));
     initialAnchorRevealFramesRef.current = [firstFrame];
-  }, [cancelInitialAnchorRevealFrames, restoreScrollAnchor, scrollVirtualizerToAnchor]);
+  }, [cancelInitialAnchorRevealFrames, renderItems.length, restoreScrollAnchor, scrollVirtualizerToAnchor]);
 
   useEffect(() => cancelProgrammaticScroll, [cancelProgrammaticScroll]);
 
