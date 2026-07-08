@@ -30,6 +30,7 @@ const routeMeta = [
   { match: (pathname: string) => /^\/characters\/[^/]+\/edit$/.test(pathname), titleKey: 'character.edit' },
   { match: (pathname: string) => pathname.startsWith('/characters'), titleKey: 'nav.characters' },
   { match: (pathname: string) => pathname.startsWith('/moments'), titleKey: 'nav.moments' },
+  { match: (pathname: string) => pathname.startsWith('/market'), titleKey: 'nav.market' },
   { match: (pathname: string) => pathname.startsWith('/calendar'), titleKey: 'nav.calendar' },
   { match: (pathname: string) => pathname.startsWith('/letters'), titleKey: 'nav.letters' },
   { match: (pathname: string) => pathname.startsWith('/intro'), titleKey: 'nav.intro' },

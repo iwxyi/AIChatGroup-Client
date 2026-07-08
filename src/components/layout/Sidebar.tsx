@@ -36,6 +36,7 @@ const navItems: NavItem[] = [
   { path: '/chats', iconKind: 'chats', labelKey: 'nav.chats' },
   { path: '/characters', iconKind: 'characters', labelKey: 'nav.characters' },
   { path: '/moments', iconKind: 'moments', labelKey: 'nav.moments' },
+  { path: '/market', iconKind: 'market', labelKey: 'nav.market' },
   { path: '/calendar', iconKind: 'calendar', labelKey: 'nav.calendar' },
   { path: '/letters', iconKind: 'letters', labelKey: 'nav.letters' },
   { path: '/models', iconKind: 'models', labelKey: 'nav.models' },

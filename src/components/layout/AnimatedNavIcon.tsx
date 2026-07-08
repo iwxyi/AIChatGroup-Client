@@ -6,6 +6,7 @@ export type AnimatedNavIconKind =
   | 'chats'
   | 'characters'
   | 'moments'
+  | 'market'
   | 'calendar'
   | 'letters'
   | 'models'
@@ -110,6 +111,8 @@ const iconSx: SxProps<Theme> = {
   '.PneumataNavButton:hover & .character-front, &.is-active .character-front': { transform: 'translate(-1.1px, 0.45px)' },
   '.PneumataNavButton:hover & .moment-eye, &.is-active .moment-eye': { transform: 'scale(1.13)' },
   '.PneumataNavButton:hover & .moment-iris': { animation: 'navEyeFocus 1.35s ease-in-out infinite' },
+  '.PneumataNavButton:hover & .market-awning, &.is-active .market-awning': { transform: 'translateY(-0.8px)' },
+  '.PneumataNavButton:hover & .market-box, &.is-active .market-box': { transform: 'translateY(0.7px)' },
   '.PneumataNavButton:hover & .calendar-top': { animation: 'navCalendarTick 1.35s ease-in-out infinite' },
   '.PneumataNavButton:hover & .calendar-mark, &.is-active .calendar-mark': { strokeWidth: 2.45, transform: 'translateY(-0.8px)' },
   '& .letter-flap-open': {
@@ -176,6 +179,15 @@ function iconPaths(kind: AnimatedNavIconKind) {
           <path className="moment-eye" d="M4.6 12s2.6-4.9 7.4-4.9 7.4 4.9 7.4 4.9-2.6 4.9-7.4 4.9S4.6 12 4.6 12Z" />
           <circle className="moment-iris accent-line" cx="12" cy="12" r="2.45" />
           <path d="M8.2 5.5c1.1-.5 2.4-.8 3.8-.8s2.7.3 3.8.8M8.2 18.5c1.1.5 2.4.8 3.8.8s2.7-.3 3.8-.8" opacity={0.42} />
+        </>
+      );
+    case 'market':
+      return (
+        <>
+          <path className="market-awning accent-line" d="M5.4 9.3 7.2 5.8h9.6l1.8 3.5" />
+          <path className="market-awning" d="M5.1 9.3h13.8v1.4c0 .9-.7 1.6-1.6 1.6-.8 0-1.4-.5-1.6-1.2-.2.7-.8 1.2-1.6 1.2s-1.4-.5-1.6-1.2c-.2.7-.8 1.2-1.6 1.2s-1.4-.5-1.6-1.2c-.2.7-.8 1.2-1.6 1.2-.9 0-1.6-.7-1.6-1.6Z" />
+          <path d="M6.7 12.2v5.6c0 .6.5 1.1 1.1 1.1h8.4c.6 0 1.1-.5 1.1-1.1v-5.6" />
+          <path className="market-box accent-line" d="M10 18.8v-4.1h4v4.1" />
         </>
       );
     case 'calendar':

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Box, Button, Typography } from '@mui/material';
+import { Box, Button, IconButton, Menu, MenuItem, Typography } from '@mui/material';
+import MoreVertIcon from '@mui/icons-material/MoreVert';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useShallow } from 'zustand/react/shallow';
@@ -11,8 +12,10 @@ import { ensureCharacterArtifactStoreHydrated, useCharacterArtifactStore } from 
 import CharacterForm from '../components/character/CharacterForm';
 import ConfirmDialog from '../components/common/ConfirmDialog';
 import LoadingState from '../components/common/LoadingState';
+import MarketUploadDialog, { type MarketUploadDraft } from '../components/market/MarketUploadDialog';
 import { enqueueAvatarGenerationForCharacter } from '../services/avatarGeneration';
 import { initializeDefaultRelationshipsForCreatedCharacters } from '../services/defaultRelationshipInitializer';
+import { buildCharacterMarketPayload, getMarketSummaryForCharacter, getMarketTitleForCharacter } from '../services/templateMarketPayload';
 import { getPreferredAIProfile, isAIProfileUsable } from '../types/settings';
 
 export default function CharacterEditorPage() {
@@ -47,6 +50,8 @@ export default function CharacterEditorPage() {
   const [bootstrapComplete, setBootstrapComplete] = useState(false);
   const characterDataReady = bootstrapComplete || characters.length > 0;
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [marketMenuAnchor, setMarketMenuAnchor] = useState<HTMLElement | null>(null);
+  const [marketUploadDraft, setMarketUploadDraft] = useState<MarketUploadDraft | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [draftNameState, setDraftNameState] = useState<{ editId: string | null; name: string }>({ editId: null, name: '' });
 
@@ -110,7 +115,15 @@ export default function CharacterEditorPage() {
     setHeaderTitle(headerTitle);
     setHeaderBackAction(() => () => goBack());
     setHideMobileBottomNav(true);
-    setHeaderActions(null);
+    setHeaderActions(editChar && editId && !editChar.isPreset ? (
+      <IconButton
+        size="small"
+        onClick={(event) => setMarketMenuAnchor(event.currentTarget)}
+        aria-label={i18n.language.startsWith('zh') ? '更多操作' : 'More actions'}
+      >
+        <MoreVertIcon fontSize="small" />
+      </IconButton>
+    ) : null);
 
     return () => {
       setHeaderActions(null);
@@ -118,7 +131,21 @@ export default function CharacterEditorPage() {
       setHeaderBackAction(null);
       setHideMobileBottomNav(false);
     };
-  }, [editId, goBack, headerTitle, setHeaderActions, setHeaderBackAction, setHeaderTitle, setHideMobileBottomNav, t]);
+  }, [editChar, editId, goBack, headerTitle, i18n.language, setHeaderActions, setHeaderBackAction, setHeaderTitle, setHideMobileBottomNav, t]);
+
+  const openCharacterMarketUpload = useCallback(() => {
+    if (!editChar || !editId) return;
+    setMarketMenuAnchor(null);
+    setMarketUploadDraft({
+      kind: 'character_template',
+      title: getMarketTitleForCharacter(editChar),
+      summary: getMarketSummaryForCharacter(editChar),
+      coverImage: editChar.avatar || null,
+      payload: buildCharacterMarketPayload(editChar),
+      sourceEntityId: editId,
+      marketItemId: editChar.sourceMarketItemId || null,
+    });
+  }, [editChar, editId]);
 
   const duplicateNameErrorText = i18n.language.startsWith('zh') ? '已存在同名角色' : 'A character with the same name already exists';
   const shouldWaitForCharacter = Boolean(editId && !editChar && !bootstrapComplete);
@@ -222,6 +249,30 @@ export default function CharacterEditorPage() {
           }
         }}
         onCancel={goBack}
+      />
+
+      <Menu
+        anchorEl={marketMenuAnchor}
+        open={Boolean(marketMenuAnchor)}
+        onClose={() => setMarketMenuAnchor(null)}
+      >
+        <MenuItem onClick={openCharacterMarketUpload}>
+          {editChar?.sourceMarketItemId ? '更新角色' : '上传角色到市场'}
+        </MenuItem>
+      </Menu>
+
+      <MarketUploadDialog
+        open={Boolean(marketUploadDraft)}
+        draft={marketUploadDraft}
+        onClose={() => setMarketUploadDraft(null)}
+        onUploaded={(item) => {
+          if (!editId) return;
+          void updateCharacter(editId, {
+            sourceMarketItemId: item.id,
+            sourceMarketItemVersion: item.payloadVersion,
+            sourceMarketKind: item.kind,
+          });
+        }}
       />
 
       <ConfirmDialog

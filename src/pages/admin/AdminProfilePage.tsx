@@ -52,6 +52,8 @@ const permissionLabels: Record<string, string> = {
   'billing.manage': '套餐订单管理',
   'platform.read': '平台配置查看',
   'platform.manage': '平台配置管理',
+  'market.read': '市场查看',
+  'market.manage': '市场管理',
   'notifications.read': '通知查看',
   'notifications.manage': '通知管理',
   'risk.read': '风控查看',

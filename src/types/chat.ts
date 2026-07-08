@@ -797,6 +797,9 @@ export interface GroupChat {
   topicSeed: string;
   sourceChatId?: string | null;
   sourceMemberIds?: string[];
+  sourceMarketItemId?: string | null;
+  sourceMarketItemVersion?: number | null;
+  sourceMarketKind?: 'character_template' | 'chat_template' | 'bundle_template' | string | null;
   memberCharacterSummaries?: ChatMemberCharacterSummary[];
   layeredMemories?: MemoryItem[];
   runtimeSeed?: {
@@ -905,6 +908,9 @@ export function normalizeConversation(input: (Omit<GroupChat, 'type' | 'governan
     runtimeEvolutionIntensity: input.runtimeEvolutionIntensity || DEFAULT_RUNTIME_EVOLUTION_INTENSITY,
     sourceChatId: input.sourceChatId || null,
     sourceMemberIds: input.sourceMemberIds || [],
+    sourceMarketItemId: input.sourceMarketItemId || null,
+    sourceMarketItemVersion: input.sourceMarketItemVersion || null,
+    sourceMarketKind: input.sourceMarketKind || null,
     operatorIds: input.operatorIds || [],
     layeredMemories: input.layeredMemories || [],
     runtimeSeed: {

@@ -16,6 +16,8 @@ export const ADMIN_PERMISSION_CODES = {
   notificationsManage: 'notifications.manage',
   riskRead: 'risk.read',
   riskManage: 'risk.manage',
+  marketRead: 'market.read',
+  marketManage: 'market.manage',
   auditRead: 'audit.read',
 } as const;
 
@@ -36,5 +38,6 @@ export const ADMIN_DASHBOARD_PERMISSIONS = [
   ADMIN_PERMISSION_CODES.platformRead,
   ADMIN_PERMISSION_CODES.notificationsRead,
   ADMIN_PERMISSION_CODES.riskRead,
+  ADMIN_PERMISSION_CODES.marketRead,
   ADMIN_PERMISSION_CODES.auditRead,
 ];

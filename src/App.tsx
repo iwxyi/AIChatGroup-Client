@@ -33,6 +33,7 @@ const routePreloaders = [
   () => import('./pages/LettersPage'),
   () => import('./pages/CalendarPage'),
   () => import('./pages/MomentsPage'),
+  () => import('./pages/MarketPage'),
   () => import('./pages/IntroPage'),
   () => import('./pages/LoginPage'),
   () => import('./pages/PublicSharedChatPage'),
@@ -45,6 +46,7 @@ const routePreloaders = [
   () => import('./pages/admin/AdminPlatformPage'),
   () => import('./pages/admin/AdminBillingPage'),
   () => import('./pages/admin/AdminModerationPage'),
+  () => import('./pages/admin/AdminMarketPage'),
   () => import('./pages/admin/AdminRiskPage'),
   () => import('./pages/admin/AdminAuditPage'),
   () => import('./pages/admin/AdminNotificationsPage'),
@@ -70,6 +72,7 @@ const [
   loadLettersPage,
   loadCalendarPage,
   loadMomentsPage,
+  loadMarketPage,
   loadIntroPage,
   loadLoginPage,
   loadPublicSharedChatPage,
@@ -82,6 +85,7 @@ const [
   loadAdminPlatformPage,
   loadAdminBillingPage,
   loadAdminModerationPage,
+  loadAdminMarketPage,
   loadAdminRiskPage,
   loadAdminAuditPage,
   loadAdminNotificationsPage,
@@ -106,6 +110,7 @@ const BatchGenerateCharactersPage = lazy(loadBatchGenerateCharactersPage);
 const LettersPage = lazy(loadLettersPage);
 const CalendarPage = lazy(loadCalendarPage);
 const MomentsPage = lazy(loadMomentsPage);
+const MarketPage = lazy(loadMarketPage);
 const IntroPage = lazy(loadIntroPage);
 const LoginPage = lazy(loadLoginPage);
 const PublicSharedChatPage = lazy(loadPublicSharedChatPage);
@@ -118,6 +123,7 @@ const AdminAIProviderPage = lazy(loadAdminAIProviderPage);
 const AdminPlatformPage = lazy(loadAdminPlatformPage);
 const AdminBillingPage = lazy(loadAdminBillingPage);
 const AdminModerationPage = lazy(loadAdminModerationPage);
+const AdminMarketPage = lazy(loadAdminMarketPage);
 const AdminRiskPage = lazy(loadAdminRiskPage);
 const AdminAuditPage = lazy(loadAdminAuditPage);
 const AdminNotificationsPage = lazy(loadAdminNotificationsPage);
@@ -309,6 +315,7 @@ function RoutedApp() {
           <Route path="platform" element={<RouteElement><AdminPermissionGate permissions={[ADMIN_PERMISSION_CODES.platformRead, ADMIN_PERMISSION_CODES.aiRead]}><AdminPlatformPage /></AdminPermissionGate></RouteElement>} />
           <Route path="billing" element={<RouteElement><AdminPermissionGate permissions={[ADMIN_PERMISSION_CODES.billingRead]}><AdminBillingPage /></AdminPermissionGate></RouteElement>} />
           <Route path="moderation" element={<RouteElement><AdminPermissionGate permissions={[ADMIN_PERMISSION_CODES.sharesReview]}><AdminModerationPage /></AdminPermissionGate></RouteElement>} />
+          <Route path="market" element={<RouteElement><AdminPermissionGate permissions={[ADMIN_PERMISSION_CODES.marketRead]}><AdminMarketPage /></AdminPermissionGate></RouteElement>} />
           <Route path="notifications" element={<RouteElement><AdminPermissionGate permissions={[ADMIN_PERMISSION_CODES.notificationsRead]}><AdminNotificationsPage /></AdminPermissionGate></RouteElement>} />
           <Route path="send-records" element={<RouteElement><AdminPermissionGate permissions={[ADMIN_PERMISSION_CODES.notificationsRead]}><AdminSendRecordsPage /></AdminPermissionGate></RouteElement>} />
           <Route path="risk" element={<RouteElement><AdminPermissionGate permissions={[ADMIN_PERMISSION_CODES.riskRead]}><AdminRiskPage /></AdminPermissionGate></RouteElement>} />
@@ -334,6 +341,7 @@ function RoutedApp() {
         <Route path="/letters" element={<RouteElement><LettersPage /></RouteElement>} />
         <Route path="/calendar" element={<RouteElement><CalendarPage /></RouteElement>} />
         <Route path="/moments" element={<RouteElement><MomentsPage /></RouteElement>} />
+        <Route path="/market" element={<RouteElement><MarketPage /></RouteElement>} />
         <Route path="/models" element={<RouteElement><AIModelsPage /></RouteElement>} />
         <Route path="/membership" element={<RouteElement><MembershipPage /></RouteElement>} />
         <Route path="/account" element={<RouteElement><AccountPage /></RouteElement>} />

@@ -1,12 +1,13 @@
 import { lazy, Suspense, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useLayoutHeaderActions } from '../components/layout/AppLayoutContext';
 import {
-  Box, Typography, Button, Dialog, DialogTitle, DialogContent, DialogActions,
+  Box, Typography, Button, Dialog, DialogTitle, DialogContent, DialogActions, IconButton, Menu, MenuItem,
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import SaveIcon from '@mui/icons-material/Save';
 import ForumIcon from '@mui/icons-material/Forum';
+import MoreVertIcon from '@mui/icons-material/MoreVert';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useShallow } from 'zustand/react/shallow';
@@ -47,6 +48,8 @@ import FloatingSegmentedTabs, { buildFloatingTabContainerSx } from '../component
 import AppSnackbar from '../components/common/AppSnackbar';
 import ExpandableFab from '../components/common/ExpandableFab';
 import SurfaceCard from '../components/common/SurfaceCard';
+import MarketUploadDialog, { type MarketUploadDraft } from '../components/market/MarketUploadDialog';
+import { buildBundleMarketPayload, buildChatMarketPayload, getMarketSummaryForChat, getMarketTitleForChat } from '../services/templateMarketPayload';
 
 const HotTopicDialogContainer = lazy(() => import('../components/createChat/HotTopicDialogContainer'));
 const CHAT_DRAFT_KEY = storageKey('create-chat-draft');
@@ -195,6 +198,8 @@ export default function CreateChatPage() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [clearMessagesConfirmOpen, setClearMessagesConfirmOpen] = useState(false);
   const [clearMemoryConfirmOpen, setClearMemoryConfirmOpen] = useState(false);
+  const [marketMenuAnchor, setMarketMenuAnchor] = useState<HTMLElement | null>(null);
+  const [marketUploadDraft, setMarketUploadDraft] = useState<MarketUploadDraft | null>(null);
   const [configTab, setConfigTab] = useState(0);
 
   const editingChat = id ? chats.find((chat) => chat.id === id) : null;
@@ -830,6 +835,19 @@ export default function CreateChatPage() {
   const handleAutofillAction = useCallback(() => {
     void handleAutofill();
   }, [handleAutofill]);
+  const openChatMarketUpload = useCallback((kind: 'chat_template' | 'bundle_template') => {
+    if (!editingChat) return;
+    setMarketMenuAnchor(null);
+    const isBundle = kind === 'bundle_template';
+    setMarketUploadDraft({
+      kind,
+      title: getMarketTitleForChat(editingChat),
+      summary: getMarketSummaryForChat(editingChat),
+      payload: isBundle ? buildBundleMarketPayload(editingChat, characters) : buildChatMarketPayload(editingChat),
+      sourceEntityId: editingChat.id,
+      marketItemId: isBundle ? null : editingChat.sourceMarketItemId || null,
+    });
+  }, [characters, editingChat]);
   const handleDeleteAction = () => {
     void handleDelete();
   };
@@ -880,9 +898,14 @@ export default function CreateChatPage() {
             {autofillLabel}
           </Button>
         ) : null}
+        {editingChat ? (
+          <IconButton size="small" onClick={(event) => setMarketMenuAnchor(event.currentTarget)} aria-label={isZh ? '更多操作' : 'More actions'}>
+            <MoreVertIcon fontSize="small" />
+          </IconButton>
+        ) : null}
       </Box>
     );
-  }, [autofillLabel, canAutofill, editingChat, handleAutofillAction, headerTitle, navigate, setHeaderActions, setHeaderBackAction, setHeaderTitle, setHideMobileBottomNav]);
+  }, [autofillLabel, canAutofill, editingChat, handleAutofillAction, headerTitle, isZh, navigate, setHeaderActions, setHeaderBackAction, setHeaderTitle, setHideMobileBottomNav]);
 
   useEffect(() => {
     return () => {
@@ -1473,6 +1496,33 @@ export default function CreateChatPage() {
           />
         </Suspense>
       ) : null}
+
+      <Menu
+        anchorEl={marketMenuAnchor}
+        open={Boolean(marketMenuAnchor)}
+        onClose={() => setMarketMenuAnchor(null)}
+      >
+        <MenuItem onClick={() => openChatMarketUpload('chat_template')}>
+          {editingChat?.sourceMarketItemId ? '更新聊天模板' : '上传聊天到市场'}
+        </MenuItem>
+        <MenuItem onClick={() => openChatMarketUpload('bundle_template')}>
+          上传组合包到市场
+        </MenuItem>
+      </Menu>
+
+      <MarketUploadDialog
+        open={Boolean(marketUploadDraft)}
+        draft={marketUploadDraft}
+        onClose={() => setMarketUploadDraft(null)}
+        onUploaded={(item) => {
+          if (!editingChat || item.kind !== 'chat_template') return;
+          void updateChat(editingChat.id, {
+            sourceMarketItemId: item.id,
+            sourceMarketItemVersion: item.payloadVersion,
+            sourceMarketKind: item.kind,
+          });
+        }}
+      />
     </Box>
   );
 }

@@ -523,6 +523,25 @@ class AdminApiClient {
     return this.request<Record<string, unknown>>('POST', `/moderation/shares/${encodeURIComponent(caseId)}/decision`, { decision, reason });
   }
 
+  getMarketItems(params?: { status?: string; kind?: string; ownerUserId?: string; sort?: string; order?: string; limit?: number }) {
+    return this.request<{ items: Array<Record<string, unknown>> }>('GET', `/market/items${this.buildQuery({
+      status: params?.status,
+      kind: params?.kind,
+      ownerUserId: params?.ownerUserId,
+      sort: params?.sort,
+      order: params?.order,
+      limit: params?.limit,
+    })}`);
+  }
+
+  getMarketItem(itemId: string) {
+    return this.request<{ item: Record<string, unknown> }>('GET', `/market/items/${encodeURIComponent(itemId)}`);
+  }
+
+  decideMarketItem(itemId: string, payload: { status: 'approved' | 'rejected' | 'archived'; reviewNote?: string }) {
+    return this.request<{ item: Record<string, unknown> }>('POST', `/market/items/${encodeURIComponent(itemId)}/decision`, payload);
+  }
+
   getUserRestrictions(userId: string) {
     return this.request<{ items: Array<Record<string, unknown>> }>('GET', `/risk/users/${encodeURIComponent(userId)}/restrictions`);
   }

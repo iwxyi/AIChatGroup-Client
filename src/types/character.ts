@@ -230,6 +230,9 @@ export interface AICharacter {
   isPreset: boolean;
   deletedAt?: number | null;
   fieldVersions?: Record<string, number>;
+  sourceMarketItemId?: string | null;
+  sourceMarketItemVersion?: number | null;
+  sourceMarketKind?: 'character_template' | 'chat_template' | 'bundle_template' | string | null;
   characterDetailLoaded?: boolean;
   createdAt: number;
   updatedAt: number;
