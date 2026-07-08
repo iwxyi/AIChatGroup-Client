@@ -32,6 +32,7 @@ const PROGRAMMATIC_SCROLL_SETTLE_MS = 120;
 const USER_SCROLL_INERTIA_GRACE_MS = 480;
 const MIN_BOTTOM_PREFETCH_PAGES = 1;
 const MAX_BOTTOM_PREFETCH_PAGES = 3;
+const SCROLL_INTENT_SETTLE_MS = 160;
 const storyNodeFadeIn = keyframes`
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
@@ -42,6 +43,26 @@ interface ScrollAnchorSnapshot {
   offsetTop: number;
   sourceTimestamp?: number;
 }
+
+type MessageScrollIntentKind =
+  | 'userScroll'
+  | 'explicitJump'
+  | 'initialRestore'
+  | 'prependPreserve'
+  | 'appendPreserve'
+  | 'tailFollow'
+  | 'resizePreserve';
+
+const MESSAGE_SCROLL_INTENT_PRIORITY: Record<MessageScrollIntentKind, number> = {
+  userScroll: 100,
+  explicitJump: 90,
+  initialRestore: 80,
+  prependPreserve: 70,
+  appendPreserve: 70,
+  tailFollow: 50,
+  resizePreserve: 40,
+};
+
 export interface MessageListScrollPosition extends ScrollAnchorSnapshot {
   pinned: boolean;
 }
@@ -666,6 +687,7 @@ export default function MessageList({
   const scrollAnchorFrameRef = useRef<number | null>(null);
   const followScrollAnimationRef = useRef<number | null>(null);
   const programmaticScrollRef = useRef<{ mode: 'follow' | 'jump'; startedAt: number; targetTop: number } | null>(null);
+  const scrollWriteIntentRef = useRef<{ kind: MessageScrollIntentKind; priority: number; startedAt: number } | null>(null);
   const initialTailRevealFramesRef = useRef<number[]>([]);
   const initialAnchorRevealFramesRef = useRef<number[]>([]);
   const previousStoryChoiceSubmittingValueRef = useRef<string | null>(storyChoiceSubmittingValue);
@@ -859,6 +881,11 @@ export default function MessageList({
 
   const markUserScrollIntent = useCallback(() => {
     hasUserScrollIntentRef.current = true;
+    scrollWriteIntentRef.current = {
+      kind: 'userScroll',
+      priority: MESSAGE_SCROLL_INTENT_PRIORITY.userScroll,
+      startedAt: performance.now(),
+    };
     cancelProgrammaticScroll();
   }, [cancelProgrammaticScroll]);
 
@@ -877,6 +904,47 @@ export default function MessageList({
     if (direction && current.direction !== direction) return false;
     return performance.now() - current.at <= USER_SCROLL_INERTIA_GRACE_MS;
   }, []);
+
+  const runScrollWrite = useCallback((
+    intent: MessageScrollIntentKind,
+    write: (container: HTMLDivElement) => void,
+    options?: { allowDuringUserScroll?: boolean },
+  ) => {
+    const container = containerRef.current;
+    if (!container) return false;
+    const now = performance.now();
+    const priority = MESSAGE_SCROLL_INTENT_PRIORITY[intent];
+    const active = scrollWriteIntentRef.current;
+    const userScrollActive = isUserScrollMomentumActive();
+    if (!options?.allowDuringUserScroll && userScrollActive && priority < MESSAGE_SCROLL_INTENT_PRIORITY.explicitJump) {
+      logDeveloperDiagnostic('chat-scroll:intent-blocked', {
+        intent,
+        reason: 'user-scroll-active',
+        activeIntent: active?.kind,
+        scrollTop: Math.round(container.scrollTop),
+      }, 'debug', 'chat-scroll');
+      return false;
+    }
+    if (
+      active
+      && active.priority > priority
+      && now - active.startedAt <= SCROLL_INTENT_SETTLE_MS
+      && !(active.kind === 'userScroll' && options?.allowDuringUserScroll)
+    ) {
+      logDeveloperDiagnostic('chat-scroll:intent-blocked', {
+        intent,
+        reason: 'higher-priority-active',
+        activeIntent: active.kind,
+        activeAge: Math.round(now - active.startedAt),
+        scrollTop: Math.round(container.scrollTop),
+      }, 'debug', 'chat-scroll');
+      return false;
+    }
+    scrollWriteIntentRef.current = { kind: intent, priority, startedAt: now };
+    write(container);
+    lastScrollTopRef.current = container.scrollTop;
+    return true;
+  }, [isUserScrollMomentumActive]);
 
   const updateAdaptiveBottomPrefetch = useCallback((element: HTMLDivElement, isScrollingDown: boolean) => {
     if (!hasUserScrollIntentRef.current || !isScrollingDown) return;
@@ -924,7 +992,10 @@ export default function MessageList({
     };
   }, [getDistanceFromBottom]);
 
-  const restoreScrollAnchor = useCallback((snapshot: ScrollAnchorSnapshot & { behavior?: ScrollBehavior }) => {
+  const restoreScrollAnchor = useCallback((
+    snapshot: ScrollAnchorSnapshot & { behavior?: ScrollBehavior },
+    options?: { intent?: MessageScrollIntentKind; allowDuringUserScroll?: boolean },
+  ) => {
     const container = containerRef.current;
     if (!container) return false;
     const containerRect = container.getBoundingClientRect();
@@ -958,11 +1029,14 @@ export default function MessageList({
     const delta = currentOffset - snapshot.offsetTop;
     const beforeTop = container.scrollTop;
     if (Math.abs(delta) >= 1) {
-      if ('behavior' in snapshot && snapshot.behavior && snapshot.behavior !== 'auto') {
-        container.scrollTo({ top: container.scrollTop + delta, behavior: snapshot.behavior });
-      } else {
-        container.scrollTop += delta;
-      }
+      const didWrite = runScrollWrite(options?.intent || 'explicitJump', (scrollContainer) => {
+        if ('behavior' in snapshot && snapshot.behavior && snapshot.behavior !== 'auto') {
+          scrollContainer.scrollTo({ top: scrollContainer.scrollTop + delta, behavior: snapshot.behavior });
+        } else {
+          scrollContainer.scrollTop += delta;
+        }
+      }, { allowDuringUserScroll: options?.allowDuringUserScroll });
+      if (!didWrite) return false;
     }
     lastScrollTopRef.current = container.scrollTop;
     logDeveloperDiagnostic('故事阅读恢复：执行', {
@@ -984,7 +1058,7 @@ export default function MessageList({
       isLoadingNewer,
     }, 'debug', 'chat-scroll');
     return true;
-  }, [hasMore, hasMoreNewer, isLoadingNewer, isLoadingOlder, renderItems]);
+  }, [hasMore, hasMoreNewer, isLoadingNewer, isLoadingOlder, renderItems, runScrollWrite]);
 
   const resolveVirtualScrollAnchorIndex = useCallback((snapshot: ScrollAnchorSnapshot) => {
     const exactIndex = renderItems.findIndex((item) => getRenderItemScrollAnchorId(item) === snapshot.messageId);
@@ -1009,10 +1083,13 @@ export default function MessageList({
     return nearest ? { index: nearest.index, reason: 'source-timestamp' } : null;
   }, [renderItems]);
 
-  const scrollVirtualizerToAnchor = useCallback((snapshot: ScrollAnchorSnapshot) => {
+  const scrollVirtualizerToAnchor = useCallback((snapshot: ScrollAnchorSnapshot, options?: { intent?: MessageScrollIntentKind; allowDuringUserScroll?: boolean }) => {
     const match = resolveVirtualScrollAnchorIndex(snapshot);
     if (!match) return false;
-    messageVirtualizer.scrollToIndex(match.index, { align: 'start', behavior: 'auto' });
+    const didWrite = runScrollWrite(options?.intent || 'explicitJump', () => {
+      messageVirtualizer.scrollToIndex(match.index, { align: 'start', behavior: 'auto' });
+    }, { allowDuringUserScroll: options?.allowDuringUserScroll });
+    if (!didWrite) return false;
     logDeveloperDiagnostic('chat-scroll:virtual-restore-prep', {
       messageId: snapshot.messageId,
       offsetTop: Math.round(snapshot.offsetTop),
@@ -1023,7 +1100,7 @@ export default function MessageList({
       targetMessageId: renderItems[match.index]?.message.id,
     }, 'info', 'chat-scroll');
     return true;
-  }, [messageVirtualizer, renderItems, resolveVirtualScrollAnchorIndex]);
+  }, [messageVirtualizer, renderItems, resolveVirtualScrollAnchorIndex, runScrollWrite]);
 
   const highlightScrollTarget = useCallback((messageId: string) => {
     const container = containerRef.current;
@@ -1158,17 +1235,20 @@ export default function MessageList({
     return performance.now() - current.startedAt <= PROGRAMMATIC_SCROLL_SETTLE_MS;
   }, []);
 
-  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'auto', intent: MessageScrollIntentKind = 'tailFollow') => {
     const container = containerRef.current;
     if (!container) return;
     cancelProgrammaticScroll();
     const top = Math.max(0, container.scrollHeight - container.clientHeight);
     const distance = Math.abs(top - container.scrollTop);
     const effectiveBehavior = prefersReducedMotion() || distance > SMOOTH_SCROLL_DISTANCE_LIMIT ? 'auto' : behavior;
-    if (effectiveBehavior !== 'auto') {
-      programmaticScrollRef.current = { mode: 'jump', startedAt: performance.now(), targetTop: top };
-    }
-    container.scrollTo({ top, behavior: effectiveBehavior });
+    const didWrite = runScrollWrite(intent, (scrollContainer) => {
+      if (effectiveBehavior !== 'auto') {
+        programmaticScrollRef.current = { mode: 'jump', startedAt: performance.now(), targetTop: top };
+      }
+      scrollContainer.scrollTo({ top, behavior: effectiveBehavior });
+    }, { allowDuringUserScroll: intent === 'explicitJump' });
+    if (!didWrite) return;
     shouldStickToBottomRef.current = !hasMoreNewer;
     updateJumpToBottomVisibility(false);
     if (!hasMoreNewer && lastReportedBottomPinnedRef.current !== true) {
@@ -1178,18 +1258,21 @@ export default function MessageList({
     if (effectiveBehavior === 'auto') {
       lastScrollTopRef.current = top;
     }
-  }, [cancelProgrammaticScroll, hasMoreNewer, onBottomPinnedChange, updateJumpToBottomVisibility]);
+  }, [cancelProgrammaticScroll, hasMoreNewer, onBottomPinnedChange, runScrollWrite, updateJumpToBottomVisibility]);
 
-  const followScrollToBottom = useCallback((options?: { animate?: boolean; mode?: 'follow' | 'jump' }) => {
+  const followScrollToBottom = useCallback((options?: { animate?: boolean; mode?: 'follow' | 'jump'; intent?: MessageScrollIntentKind }) => {
     const container = containerRef.current;
     if (!container) return;
     cancelProgrammaticScroll();
     const startTop = container.scrollTop;
     const targetTop = Math.max(0, container.scrollHeight - container.clientHeight);
     const distance = targetTop - startTop;
+    const intent = options?.intent || (options?.mode === 'jump' ? 'explicitJump' : 'tailFollow');
     if (options?.animate === false || prefersReducedMotion() || Math.abs(distance) > SMOOTH_SCROLL_DISTANCE_LIMIT) {
-      container.scrollTop = targetTop;
-      lastScrollTopRef.current = targetTop;
+      const didWrite = runScrollWrite(intent, (scrollContainer) => {
+        scrollContainer.scrollTop = targetTop;
+      }, { allowDuringUserScroll: intent === 'explicitJump' });
+      if (!didWrite) return;
       programmaticScrollRef.current = { mode: options?.mode || 'follow', startedAt: performance.now(), targetTop };
       shouldStickToBottomRef.current = !hasMoreNewer;
       return;
@@ -1209,8 +1292,13 @@ export default function MessageList({
       const progress = Math.min(1, (time - startTime) / duration);
       const eased = 1 - ((1 - progress) ** 3);
       const nextTop = startTop + distance * eased;
-      container.scrollTop = nextTop;
-      lastScrollTopRef.current = nextTop;
+      const didWrite = runScrollWrite(intent, (scrollContainer) => {
+        scrollContainer.scrollTop = nextTop;
+      }, { allowDuringUserScroll: intent === 'explicitJump' });
+      if (!didWrite) {
+        followScrollAnimationRef.current = null;
+        return;
+      }
       if (progress < 1) {
         followScrollAnimationRef.current = window.requestAnimationFrame(step);
       } else {
@@ -1219,16 +1307,17 @@ export default function MessageList({
       }
     };
     followScrollAnimationRef.current = window.requestAnimationFrame(step);
-  }, [cancelProgrammaticScroll, hasMoreNewer]);
+  }, [cancelProgrammaticScroll, hasMoreNewer, runScrollWrite]);
 
-  const forceTailScrollPosition = useCallback(() => {
+  const forceTailScrollPosition = useCallback((intent: MessageScrollIntentKind = 'tailFollow') => {
     const container = containerRef.current;
     if (!container || renderItems.length === 0) return;
-    messageVirtualizer.scrollToIndex(renderItems.length - 1, { align: 'end', behavior: 'auto' });
     const top = Math.max(0, container.scrollHeight - container.clientHeight);
-    container.scrollTop = top;
-    lastScrollTopRef.current = top;
-  }, [messageVirtualizer, renderItems.length]);
+    runScrollWrite(intent, (scrollContainer) => {
+      messageVirtualizer.scrollToIndex(renderItems.length - 1, { align: 'end', behavior: 'auto' });
+      scrollContainer.scrollTop = top;
+    }, { allowDuringUserScroll: intent === 'initialRestore' || intent === 'explicitJump' });
+  }, [messageVirtualizer, renderItems.length, runScrollWrite]);
 
   const cancelInitialTailRevealFrames = useCallback(() => {
     initialTailRevealFramesRef.current.forEach((frame) => window.cancelAnimationFrame(frame));
@@ -1242,11 +1331,11 @@ export default function MessageList({
 
   const scheduleInitialTailReveal = useCallback(() => {
     cancelInitialTailRevealFrames();
-    forceTailScrollPosition();
+    forceTailScrollPosition('initialRestore');
     const firstFrame = window.requestAnimationFrame(() => {
-      forceTailScrollPosition();
+      forceTailScrollPosition('initialRestore');
       const secondFrame = window.requestAnimationFrame(() => {
-        forceTailScrollPosition();
+        forceTailScrollPosition('initialRestore');
         initialTailRevealFramesRef.current = [];
         setInitialViewportReady(true);
       });
@@ -1258,12 +1347,12 @@ export default function MessageList({
   const scheduleInitialAnchorReveal = useCallback((position: MessageListScrollPosition) => {
     cancelInitialAnchorRevealFrames();
     setInitialViewportReady(false);
-    scrollVirtualizerToAnchor(position);
-    restoreScrollAnchor(position);
+    scrollVirtualizerToAnchor(position, { intent: 'initialRestore', allowDuringUserScroll: true });
+    restoreScrollAnchor(position, { intent: 'initialRestore', allowDuringUserScroll: true });
     const firstFrame = window.requestAnimationFrame(() => {
-      restoreScrollAnchor(position);
+      restoreScrollAnchor(position, { intent: 'initialRestore', allowDuringUserScroll: true });
       const secondFrame = window.requestAnimationFrame(() => {
-        restoreScrollAnchor(position);
+        restoreScrollAnchor(position, { intent: 'initialRestore', allowDuringUserScroll: true });
         initialAnchorRevealFramesRef.current = [];
         setInitialViewportReady(true);
       });
@@ -1300,14 +1389,14 @@ export default function MessageList({
       if (frame != null) window.cancelAnimationFrame(frame);
       frame = window.requestAnimationFrame(() => {
         frame = null;
-        if (hasUserScrollIntentRef.current || isUserScrollMomentumActive()) return;
+        if (isUserScrollMomentumActive()) return;
         if (shouldStickToBottomRef.current && autoStickToBottom) {
-          followScrollToBottom({ animate: true, mode: 'follow' });
+          followScrollToBottom({ animate: true, mode: 'follow', intent: 'tailFollow' });
           return;
         }
         const snapshot = latestScrollAnchorRef.current;
         if (!snapshot) return;
-        restoreScrollAnchor(snapshot);
+        restoreScrollAnchor(snapshot, { intent: 'resizePreserve' });
         lastScrollTopRef.current = containerRef.current?.scrollTop ?? lastScrollTopRef.current;
       });
     });
@@ -1323,7 +1412,7 @@ export default function MessageList({
     if (!container || renderItems.length === 0 || hasJumpedToBottomRef.current) return;
     const initialPosition = initialScrollPositionRef.current;
     if (initialPosition && !initialPosition.pinned) {
-      const restored = restoreScrollAnchor(initialPosition);
+      const restored = restoreScrollAnchor(initialPosition, { intent: 'initialRestore', allowDuringUserScroll: true });
       if (!restored) {
         pendingInitialRestoreRef.current = initialPosition;
         shouldStickToBottomRef.current = false;
@@ -1339,7 +1428,7 @@ export default function MessageList({
           lastMessageId: renderItems.at(-1)?.message.id,
           lastTimestamp: renderItems.at(-1)?.message.timestamp,
         }, 'warn');
-        if (scrollVirtualizerToAnchor(initialPosition)) {
+        if (scrollVirtualizerToAnchor(initialPosition, { intent: 'initialRestore', allowDuringUserScroll: true })) {
           hasJumpedToBottomRef.current = true;
           scheduleInitialAnchorReveal(initialPosition);
           appliedInitialRestoreKeyRef.current = getInitialRestoreKey(initialPosition);
@@ -1389,7 +1478,7 @@ export default function MessageList({
 
   useLayoutEffect(() => {
     if (!scrollRequest || appliedScrollRequestKeyRef.current === scrollRequest.key) return;
-    const restored = restoreScrollAnchor(scrollRequest);
+    const restored = restoreScrollAnchor(scrollRequest, { intent: 'explicitJump', allowDuringUserScroll: true });
     appliedScrollRequestKeyRef.current = scrollRequest.key;
     if (!restored) {
       onScrollRequestResolved?.(scrollRequest, false);
@@ -1418,8 +1507,8 @@ export default function MessageList({
       pendingInitialRestoreRef.current = null;
       return;
     }
-    if (!restoreScrollAnchor(pending)) {
-      if (scrollVirtualizerToAnchor(pending)) {
+    if (!restoreScrollAnchor(pending, { intent: 'initialRestore', allowDuringUserScroll: true })) {
+      if (scrollVirtualizerToAnchor(pending, { intent: 'initialRestore', allowDuringUserScroll: true })) {
         hasJumpedToBottomRef.current = true;
         scheduleInitialAnchorReveal(pending);
         shouldStickToBottomRef.current = false;
@@ -1466,10 +1555,10 @@ export default function MessageList({
     if (!snapshot) return;
     prependRestoreRef.current = null;
     cancelProgrammaticScroll();
-    restoreScrollAnchor(snapshot);
+    restoreScrollAnchor(snapshot, { intent: 'prependPreserve', allowDuringUserScroll: true });
     if (!isUserScrollMomentumActive('up')) updatePinnedState();
     const handle = window.requestAnimationFrame(() => {
-      restoreScrollAnchor(snapshot);
+      restoreScrollAnchor(snapshot, { intent: 'prependPreserve', allowDuringUserScroll: true });
       if (!isUserScrollMomentumActive('up')) updatePinnedState();
     });
     return () => window.cancelAnimationFrame(handle);
@@ -1483,11 +1572,12 @@ export default function MessageList({
     cancelProgrammaticScroll();
     const restoreBottomDistance = () => {
       if (distance <= BOTTOM_STICKY_THRESHOLD) {
-        scrollToBottom('auto');
+        scrollToBottom('auto', 'appendPreserve');
         return;
       }
-      container.scrollTop = Math.max(0, container.scrollHeight - container.clientHeight - distance);
-      lastScrollTopRef.current = container.scrollTop;
+      runScrollWrite('appendPreserve', (scrollContainer) => {
+        scrollContainer.scrollTop = Math.max(0, scrollContainer.scrollHeight - scrollContainer.clientHeight - distance);
+      }, { allowDuringUserScroll: true });
       if (!isUserScrollMomentumActive('down')) updatePinnedState();
     };
     restoreBottomDistance();
@@ -1518,7 +1608,7 @@ export default function MessageList({
       if (!metricsChanged) return;
       const snapshot = latestScrollAnchorRef.current;
       if (snapshot) {
-        restoreScrollAnchor(snapshot);
+        restoreScrollAnchor(snapshot, { intent: 'resizePreserve' });
       }
       return;
     }
@@ -1541,7 +1631,7 @@ export default function MessageList({
       onBottomPinnedChange?.(true);
     }
 
-    followScrollToBottom({ animate: true, mode: 'follow' });
+    followScrollToBottom({ animate: true, mode: 'follow', intent: 'tailFollow' });
   }, [autoStickToBottom, followScrollToBottom, hasMoreNewer, onBottomPinnedChange, renderItems, restoreScrollAnchor, storyChoiceMessageId, storyChoiceOptions, storyChoiceSubmittingValue, tailContent]);
 
   useLayoutEffect(() => {
@@ -1551,7 +1641,7 @@ export default function MessageList({
     if (!autoStickToBottom) return;
     if (!hasJumpedToBottomRef.current) return;
     shouldStickToBottomRef.current = true;
-    followScrollToBottom({ animate: true, mode: 'follow' });
+    followScrollToBottom({ animate: true, mode: 'follow', intent: 'tailFollow' });
   }, [autoStickToBottom, followScrollToBottom, storyChoiceSubmittingValue]);
 
   useEffect(() => {
@@ -1756,13 +1846,13 @@ export default function MessageList({
               void Promise.resolve(onJumpToConversationBottom()).finally(() => {
                 hasUserScrollIntentRef.current = false;
                 shouldStickToBottomRef.current = true;
-                followScrollToBottom({ animate: true, mode: 'jump' });
+                followScrollToBottom({ animate: true, mode: 'jump', intent: 'explicitJump' });
               });
               return;
             }
             hasUserScrollIntentRef.current = false;
             shouldStickToBottomRef.current = true;
-            followScrollToBottom({ animate: true, mode: 'jump' });
+            followScrollToBottom({ animate: true, mode: 'jump', intent: 'explicitJump' });
           }}
           sx={{
             position: 'fixed',
