@@ -83,6 +83,13 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
   const panelGestureTimerRef = useRef<number | null>(null);
   const panelGestureRafRef = useRef<number | null>(null);
   const pendingPanelOffsetRef = useRef<number | null>(null);
+  const panelHandleCleanupRef = useRef<(() => void) | null>(null);
+  const panelHandleClickSuppressedRef = useRef(false);
+
+  const cleanupPanelHandleListeners = useCallback(() => {
+    panelHandleCleanupRef.current?.();
+    panelHandleCleanupRef.current = null;
+  }, []);
 
   const publishDraftActivity = useCallback((nextText: string, focused = inputFocused) => {
     onDraftActivity?.({
@@ -161,6 +168,7 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
   };
 
   useEffect(() => () => {
+    cleanupPanelHandleListeners();
     if (panelGestureTimerRef.current !== null) {
       window.clearTimeout(panelGestureTimerRef.current);
     }
@@ -168,7 +176,7 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
       window.cancelAnimationFrame(panelGestureRafRef.current);
     }
     clearPanelGestureCss();
-  }, []);
+  }, [cleanupPanelHandleListeners]);
 
   const schedulePanelGestureCss = useCallback((offset: number) => {
     pendingPanelOffsetRef.current = offset;
@@ -193,23 +201,6 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
     if (!input) return false;
     return input.selectionStart !== null && input.selectionEnd !== null && input.selectionStart !== input.selectionEnd;
   }, []);
-
-  const startPanelHandleDrag = useCallback((clientY: number) => {
-    if (!onOpenPanel || inputFocused || inputHasTextSelection()) {
-      panelHandleDragRef.current = null;
-      return;
-    }
-    if (panelGestureTimerRef.current !== null) {
-      window.clearTimeout(panelGestureTimerRef.current);
-      panelGestureTimerRef.current = null;
-    }
-    if (panelGestureRafRef.current !== null) {
-      window.cancelAnimationFrame(panelGestureRafRef.current);
-      panelGestureRafRef.current = null;
-    }
-    pendingPanelOffsetRef.current = null;
-    panelHandleDragRef.current = { startY: clientY, latestY: clientY, moved: false, lastDirection: null };
-  }, [inputFocused, inputHasTextSelection, onOpenPanel]);
 
   const updatePanelHandleDrag = useCallback((clientY: number) => {
     const state = panelHandleDragRef.current;
@@ -241,9 +232,16 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
     const state = panelHandleDragRef.current;
     panelHandleDragRef.current = null;
     if (!state) return;
+    cleanupPanelHandleListeners();
     const travelDistance = getMobilePanelTravelDistance();
     const deltaY = state.startY - state.latestY;
     const shouldOpen = state.moved && state.lastDirection === 'up';
+    if (state.moved) {
+      panelHandleClickSuppressedRef.current = true;
+      window.setTimeout(() => {
+        panelHandleClickSuppressedRef.current = false;
+      }, PANEL_GESTURE_SETTLE_MS);
+    }
     if (shouldOpen) {
       setRightPanelGestureDragging(false);
       setRightPanelGestureOffset(0);
@@ -266,7 +264,66 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
         panelGestureTimerRef.current = null;
       }, PANEL_GESTURE_SETTLE_MS);
     }
-  }, [onOpenPanel, schedulePanelGestureCss, setRightPanelGestureDragging, setRightPanelGestureOffset]);
+  }, [cleanupPanelHandleListeners, onOpenPanel, schedulePanelGestureCss, setRightPanelGestureDragging, setRightPanelGestureOffset]);
+
+  const startPanelHandleDrag = useCallback((clientY: number, input: 'pointer' | 'touch') => {
+    if (!onOpenPanel || inputFocused || inputHasTextSelection()) {
+      panelHandleDragRef.current = null;
+      return;
+    }
+    if (panelGestureTimerRef.current !== null) {
+      window.clearTimeout(panelGestureTimerRef.current);
+      panelGestureTimerRef.current = null;
+    }
+    if (panelGestureRafRef.current !== null) {
+      window.cancelAnimationFrame(panelGestureRafRef.current);
+      panelGestureRafRef.current = null;
+    }
+    cleanupPanelHandleListeners();
+    pendingPanelOffsetRef.current = null;
+    panelHandleDragRef.current = { startY: clientY, latestY: clientY, moved: false, lastDirection: null };
+
+    if (input === 'pointer') {
+      const handleMove = (moveEvent: PointerEvent) => {
+        moveEvent.preventDefault();
+        updatePanelHandleDrag(moveEvent.clientY);
+      };
+      const handleEnd = (endEvent: PointerEvent) => {
+        endEvent.preventDefault();
+        cleanupPanelHandleListeners();
+        finishPanelHandleDrag();
+      };
+      window.addEventListener('pointermove', handleMove, { passive: false });
+      window.addEventListener('pointerup', handleEnd, { passive: false });
+      window.addEventListener('pointercancel', handleEnd, { passive: false });
+      panelHandleCleanupRef.current = () => {
+        window.removeEventListener('pointermove', handleMove);
+        window.removeEventListener('pointerup', handleEnd);
+        window.removeEventListener('pointercancel', handleEnd);
+      };
+      return;
+    }
+
+    const handleTouchMove = (moveEvent: TouchEvent) => {
+      const touch = moveEvent.touches[0];
+      if (!touch) return;
+      moveEvent.preventDefault();
+      updatePanelHandleDrag(touch.clientY);
+    };
+    const handleTouchEnd = (endEvent: TouchEvent) => {
+      endEvent.preventDefault();
+      cleanupPanelHandleListeners();
+      finishPanelHandleDrag();
+    };
+    window.addEventListener('touchmove', handleTouchMove, { passive: false });
+    window.addEventListener('touchend', handleTouchEnd, { passive: false });
+    window.addEventListener('touchcancel', handleTouchEnd, { passive: false });
+    panelHandleCleanupRef.current = () => {
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('touchend', handleTouchEnd);
+      window.removeEventListener('touchcancel', handleTouchEnd);
+    };
+  }, [cleanupPanelHandleListeners, finishPanelHandleDrag, inputFocused, inputHasTextSelection, onOpenPanel, updatePanelHandleDrag]);
 
   return (
     <Box
@@ -332,29 +389,11 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
         <Box
         onTouchStart={(event) => {
           const touch = event.touches[0];
-          if (touch) startPanelHandleDrag(touch.clientY);
+          if (touch) startPanelHandleDrag(touch.clientY, 'touch');
         }}
-        onTouchMove={(event) => {
-          const touch = event.touches[0];
-          if (touch) updatePanelHandleDrag(touch.clientY);
-        }}
-        onTouchEnd={finishPanelHandleDrag}
-        onTouchCancel={finishPanelHandleDrag}
         onPointerDown={(event) => {
           if (event.pointerType === 'touch') return;
-          startPanelHandleDrag(event.clientY);
-        }}
-        onPointerMove={(event) => {
-          if (event.pointerType === 'touch') return;
-          updatePanelHandleDrag(event.clientY);
-        }}
-        onPointerUp={(event) => {
-          if (event.pointerType === 'touch') return;
-          finishPanelHandleDrag();
-        }}
-        onPointerCancel={(event) => {
-          if (event.pointerType === 'touch') return;
-          finishPanelHandleDrag();
+          startPanelHandleDrag(event.clientY, 'pointer');
         }}
         sx={{ display: 'flex', alignItems: 'flex-end', gap: 0.75, width: '100%', touchAction: 'pan-y' }}
       >
@@ -452,32 +491,20 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
           role="button"
           aria-label="打开会话面板"
           title="点击或向上拖拽打开会话面板"
-          onClick={() => onOpenPanel()}
+          onClick={() => {
+            if (panelHandleClickSuppressedRef.current) {
+              panelHandleClickSuppressedRef.current = false;
+              return;
+            }
+            onOpenPanel();
+          }}
           onTouchStart={(event) => {
             const touch = event.touches[0];
-            if (touch) startPanelHandleDrag(touch.clientY);
+            if (touch) startPanelHandleDrag(touch.clientY, 'touch');
           }}
-          onTouchMove={(event) => {
-            const touch = event.touches[0];
-            if (touch) updatePanelHandleDrag(touch.clientY);
-          }}
-          onTouchEnd={finishPanelHandleDrag}
-          onTouchCancel={finishPanelHandleDrag}
           onPointerDown={(event) => {
             if (event.pointerType === 'touch') return;
-            startPanelHandleDrag(event.clientY);
-          }}
-          onPointerMove={(event) => {
-            if (event.pointerType === 'touch') return;
-            updatePanelHandleDrag(event.clientY);
-          }}
-          onPointerUp={(event) => {
-            if (event.pointerType === 'touch') return;
-            finishPanelHandleDrag();
-          }}
-          onPointerCancel={(event) => {
-            if (event.pointerType === 'touch') return;
-            finishPanelHandleDrag();
+            startPanelHandleDrag(event.clientY, 'pointer');
           }}
           sx={{
             width: '100%',

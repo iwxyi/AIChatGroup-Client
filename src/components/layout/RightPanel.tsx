@@ -67,6 +67,12 @@ export default function RightPanel({ children, title, hideMobileTitle = false, t
   const mobileDragRef = useRef<{ startY: number; latestY: number; moved: boolean; input: MobileDragInput } | null>(null);
   const mobileDragMovedRef = useRef(false);
   const mobileCloseTimerRef = useRef<number | null>(null);
+  const mobileDragCleanupRef = useRef<(() => void) | null>(null);
+
+  const cleanupMobileDragListeners = useCallback(() => {
+    mobileDragCleanupRef.current?.();
+    mobileDragCleanupRef.current = null;
+  }, []);
 
   const finishResize = useCallback(() => {
     resizeStateRef.current = null;
@@ -113,10 +119,11 @@ export default function RightPanel({ children, title, hideMobileTitle = false, t
   }, [activePanelMaxWidth, activePanelViewportRatio]);
 
   useEffect(() => () => {
+    cleanupMobileDragListeners();
     if (mobileCloseTimerRef.current !== null) {
       window.clearTimeout(mobileCloseTimerRef.current);
     }
-  }, []);
+  }, [cleanupMobileDragListeners]);
 
   useEffect(() => {
     if (!rightPanelOpen) {
@@ -185,38 +192,12 @@ export default function RightPanel({ children, title, hideMobileTitle = false, t
     setMobileDragOffset(deltaY);
   }, []);
 
-  const startMobileDragClose = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    if (event.pointerType === 'touch') return;
-    startMobileDragCloseAt(event.clientY, 'pointer');
-    try {
-      event.currentTarget.setPointerCapture(event.pointerId);
-    } catch {
-      // Some mobile browsers do not allow pointer capture on this element.
-    }
-  }, [startMobileDragCloseAt]);
-
-  const startMobileTouchDragClose = useCallback((event: React.TouchEvent<HTMLDivElement>) => {
-    const touch = event.touches[0];
-    if (!touch) return;
-    startMobileDragCloseAt(touch.clientY, 'touch');
-  }, [startMobileDragCloseAt]);
-
-  const updateMobileTouchDragClose = useCallback((event: React.TouchEvent<HTMLDivElement>) => {
-    const touch = event.touches[0];
-    if (!touch) return;
-    updateMobileDragCloseAt(touch.clientY, 'touch');
-  }, [updateMobileDragCloseAt]);
-
-  const updateMobileDragClose = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    if (event.pointerType === 'touch') return;
-    updateMobileDragCloseAt(event.clientY, 'pointer');
-  }, [updateMobileDragCloseAt]);
-
   const finishMobileDragCloseAt = useCallback((input: MobileDragInput, event?: React.PointerEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
     event?.preventDefault();
     event?.stopPropagation();
     const state = mobileDragRef.current;
     if (!state || state.input !== input) return;
+    cleanupMobileDragListeners();
     mobileDragRef.current = null;
     const deltaY = Math.max(0, state.latestY - state.startY);
     mobileDragMovedRef.current = state.moved;
@@ -230,16 +211,60 @@ export default function RightPanel({ children, title, hideMobileTitle = false, t
     window.setTimeout(() => {
       mobileDragMovedRef.current = false;
     }, MOBILE_SHEET_SETTLE_MS);
-  }, [closeMobileSheet]);
+  }, [cleanupMobileDragListeners, closeMobileSheet]);
 
-  const finishMobilePointerDragClose = useCallback((event?: React.PointerEvent<HTMLDivElement>) => {
-    if (event?.pointerType === 'touch') return;
-    finishMobileDragCloseAt('pointer', event);
-  }, [finishMobileDragCloseAt]);
+  const startMobileDragClose = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === 'touch') return;
+    event.preventDefault();
+    event.stopPropagation();
+    startMobileDragCloseAt(event.clientY, 'pointer');
+    cleanupMobileDragListeners();
+    const handleMove = (moveEvent: PointerEvent) => {
+      moveEvent.preventDefault();
+      updateMobileDragCloseAt(moveEvent.clientY, 'pointer');
+    };
+    const handleEnd = (endEvent: PointerEvent) => {
+      endEvent.preventDefault();
+      cleanupMobileDragListeners();
+      finishMobileDragCloseAt('pointer');
+    };
+    window.addEventListener('pointermove', handleMove, { passive: false });
+    window.addEventListener('pointerup', handleEnd, { passive: false });
+    window.addEventListener('pointercancel', handleEnd, { passive: false });
+    mobileDragCleanupRef.current = () => {
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleEnd);
+      window.removeEventListener('pointercancel', handleEnd);
+    };
+  }, [cleanupMobileDragListeners, finishMobileDragCloseAt, startMobileDragCloseAt, updateMobileDragCloseAt]);
 
-  const finishMobileTouchDragClose = useCallback((event?: React.TouchEvent<HTMLDivElement>) => {
-    finishMobileDragCloseAt('touch', event);
-  }, [finishMobileDragCloseAt]);
+  const startMobileTouchDragClose = useCallback((event: React.TouchEvent<HTMLDivElement>) => {
+    const touch = event.touches[0];
+    if (!touch) return;
+    event.preventDefault();
+    event.stopPropagation();
+    startMobileDragCloseAt(touch.clientY, 'touch');
+    cleanupMobileDragListeners();
+    const handleMove = (moveEvent: TouchEvent) => {
+      const nextTouch = moveEvent.touches[0];
+      if (!nextTouch) return;
+      moveEvent.preventDefault();
+      updateMobileDragCloseAt(nextTouch.clientY, 'touch');
+    };
+    const handleEnd = (endEvent: TouchEvent) => {
+      endEvent.preventDefault();
+      cleanupMobileDragListeners();
+      finishMobileDragCloseAt('touch');
+    };
+    window.addEventListener('touchmove', handleMove, { passive: false });
+    window.addEventListener('touchend', handleEnd, { passive: false });
+    window.addEventListener('touchcancel', handleEnd, { passive: false });
+    mobileDragCleanupRef.current = () => {
+      window.removeEventListener('touchmove', handleMove);
+      window.removeEventListener('touchend', handleEnd);
+      window.removeEventListener('touchcancel', handleEnd);
+    };
+  }, [cleanupMobileDragListeners, finishMobileDragCloseAt, startMobileDragCloseAt, updateMobileDragCloseAt]);
 
   const handleMobileHandleClick = useCallback(() => {
     if (mobileDragMovedRef.current) {
@@ -367,13 +392,7 @@ export default function RightPanel({ children, title, hideMobileTitle = false, t
         }}>
           <Box
             onPointerDown={startMobileDragClose}
-            onPointerMove={updateMobileDragClose}
-            onPointerUp={finishMobilePointerDragClose}
-            onPointerCancel={finishMobilePointerDragClose}
             onTouchStart={startMobileTouchDragClose}
-            onTouchMove={updateMobileTouchDragClose}
-            onTouchEnd={finishMobileTouchDragClose}
-            onTouchCancel={finishMobileTouchDragClose}
             onClick={handleMobileHandleClick}
             role="button"
             aria-label="关闭面板"
