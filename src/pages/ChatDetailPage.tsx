@@ -1545,6 +1545,7 @@ export default function ChatDetailPage() {
 
   useEffect(() => {
     if (id) {
+      if (!chat) return;
       if (isStoryRoom && !uiHydrated) return;
       const aroundTimestamp = savedStoryReadingPositionForChat && !savedStoryReadingPositionForChat.pinned
         ? savedStoryReadingPositionForChat.sourceTimestamp
@@ -1553,7 +1554,7 @@ export default function ChatDetailPage() {
         ? `restore:${storyReadingRestoreKey}`
         : 'tail';
       const previousOpen = openedChatWindowRef.current;
-      if (previousOpen?.chatId === id && previousOpen.requestKey === requestKey) return;
+      if (previousOpen?.chatId === id) return;
       openedChatWindowRef.current = {
         chatId: id,
         requestKey,
@@ -1580,7 +1581,7 @@ export default function ChatDetailPage() {
         resetWindow: !isStoryRoom && aroundTimestamp === undefined,
       });
     }
-  }, [chat?.sessionKind?.scenarioId, id, isStoryRoom, openChatWindow, savedStoryReadingPositionForChat, storyReadingRestoreKey, uiHydrated]);
+  }, [chat, id, isStoryRoom, openChatWindow, savedStoryReadingPositionForChat, storyReadingRestoreKey, uiHydrated]);
 
   useEffect(() => {
     userDraftActivityRef.current = null;

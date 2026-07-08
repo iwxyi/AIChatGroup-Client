@@ -976,10 +976,10 @@ export default function MessageList({
     }, 'info');
   }, [getInitialRestoreKey, initialScrollPosition, renderItems.length]);
 
-  const rememberScrollAnchor = useCallback(() => {
+  const rememberScrollAnchor = useCallback((options?: { persist?: boolean }) => {
     const snapshot = captureScrollAnchor();
     latestScrollAnchorRef.current = snapshot;
-    if (snapshot) {
+    if (snapshot && options?.persist !== false) {
       onScrollPositionChange?.({
         ...snapshot,
         pinned: shouldStickToBottomRef.current,
@@ -991,11 +991,11 @@ export default function MessageList({
     return snapshot;
   }, [captureScrollAnchor, isLoadingOlder, onScrollPositionChange]);
 
-  const scheduleRememberScrollAnchor = useCallback(() => {
+  const scheduleRememberScrollAnchor = useCallback((options?: { persist?: boolean }) => {
     if (scrollAnchorFrameRef.current != null) return;
     scrollAnchorFrameRef.current = window.requestAnimationFrame(() => {
       scrollAnchorFrameRef.current = null;
-      rememberScrollAnchor();
+      rememberScrollAnchor(options);
     });
   }, [rememberScrollAnchor]);
   const rememberScrollAnchorRef = useRef(rememberScrollAnchor);
@@ -1008,7 +1008,9 @@ export default function MessageList({
       window.cancelAnimationFrame(scrollAnchorFrameRef.current);
       scrollAnchorFrameRef.current = null;
     }
-    rememberScrollAnchorRef.current();
+    rememberScrollAnchorRef.current({
+      persist: hasUserScrollIntentRef.current || shouldStickToBottomRef.current,
+    });
   }, []);
 
   const triggerReachBottom = useCallback(() => {
@@ -1482,7 +1484,7 @@ export default function MessageList({
             lastReportedBottomPinnedRef.current = false;
             onBottomPinnedChange?.(false);
           }
-          scheduleRememberScrollAnchor();
+          scheduleRememberScrollAnchor({ persist: false });
           return;
         }
         if (isScrollingUp) {
