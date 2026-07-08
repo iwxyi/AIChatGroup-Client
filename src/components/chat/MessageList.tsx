@@ -279,6 +279,18 @@ function getElementScrollTimestamp(element: HTMLElement) {
   return Number.isFinite(value) ? value : undefined;
 }
 
+function getSourceMessageIdFromScrollAnchor(messageId: string) {
+  const storyAnchorIndex = messageId.indexOf(':story-');
+  return storyAnchorIndex >= 0 ? messageId.slice(0, storyAnchorIndex) : messageId;
+}
+
+function getRenderItemScrollAnchorId(item: MessageListRenderItem) {
+  if (item.renderKind === 'narrative-block' && item.block) {
+    return buildNarrativeBlockScrollAnchor(item.message, item.block, item.blockIndex ?? 0);
+  }
+  return item.message.id;
+}
+
 function buildNarrativeBlockMessage(parent: Message, block: NarrativeBlock, turn: NarrativeTurnMetadata | undefined, index: number, character?: AICharacter | null): Message {
   const blockKey = `${parent.id}:narrative-block:${block.id || index}`;
   if (block.displayMode === 'bubble') {
@@ -919,15 +931,32 @@ export default function MessageList({
     const nodes = Array.from(container.querySelectorAll<HTMLElement>('[data-scroll-anchor], [data-message-id]'));
     const target = nodes
       .find((node) => getElementScrollAnchorId(node) === snapshot.messageId);
-    const fallbackTarget = target || (snapshot.sourceTimestamp !== undefined
+    const sourceMessageId = getSourceMessageIdFromScrollAnchor(snapshot.messageId);
+    const sourceTarget = target ? null : nodes
+      .find((node) => node.dataset.messageId === sourceMessageId);
+    const fallbackTarget = target || sourceTarget || (snapshot.sourceTimestamp !== undefined
       ? nodes
         .map((node) => ({ node, timestamp: getElementScrollTimestamp(node) }))
         .filter((item): item is { node: HTMLElement; timestamp: number } => item.timestamp !== undefined)
         .sort((left, right) => Math.abs(left.timestamp - snapshot.sourceTimestamp!) - Math.abs(right.timestamp - snapshot.sourceTimestamp!))[0]?.node
       : null);
-    if (!fallbackTarget) return false;
+    if (!fallbackTarget) {
+      logDeveloperDiagnostic('故事阅读恢复：失败', {
+        请求锚点: snapshot,
+        scrollTop: Math.round(container.scrollTop),
+        scrollHeight: Math.round(container.scrollHeight),
+        clientHeight: Math.round(container.clientHeight),
+        renderItemCount: renderItems.length,
+        firstMessageId: renderItems[0]?.message.id,
+        firstTimestamp: renderItems[0]?.message.timestamp,
+        lastMessageId: renderItems.at(-1)?.message.id,
+        lastTimestamp: renderItems.at(-1)?.message.timestamp,
+      }, 'warn', 'chat-scroll');
+      return false;
+    }
     const currentOffset = fallbackTarget.getBoundingClientRect().top - containerRect.top;
     const delta = currentOffset - snapshot.offsetTop;
+    const beforeTop = container.scrollTop;
     if (Math.abs(delta) >= 1) {
       if ('behavior' in snapshot && snapshot.behavior && snapshot.behavior !== 'auto') {
         container.scrollTo({ top: container.scrollTop + delta, behavior: snapshot.behavior });
@@ -936,8 +965,65 @@ export default function MessageList({
       }
     }
     lastScrollTopRef.current = container.scrollTop;
+    logDeveloperDiagnostic('故事阅读恢复：执行', {
+      请求锚点: snapshot,
+      匹配方式: target ? '精确匹配' : sourceTarget ? '源消息兜底' : '按时间兜底',
+      实际锚点: {
+        id: getElementScrollAnchorId(fallbackTarget),
+        timestamp: getElementScrollTimestamp(fallbackTarget),
+      },
+      当前offsetTop: Math.round(currentOffset),
+      目标offsetTop: Math.round(snapshot.offsetTop),
+      delta: Math.round(delta),
+      beforeScrollTop: Math.round(beforeTop),
+      afterScrollTop: Math.round(container.scrollTop),
+      renderItemCount: renderItems.length,
+      hasMore,
+      hasMoreNewer,
+      isLoadingOlder,
+      isLoadingNewer,
+    }, 'debug', 'chat-scroll');
     return true;
-  }, []);
+  }, [hasMore, hasMoreNewer, isLoadingNewer, isLoadingOlder, renderItems]);
+
+  const resolveVirtualScrollAnchorIndex = useCallback((snapshot: ScrollAnchorSnapshot) => {
+    const exactIndex = renderItems.findIndex((item) => getRenderItemScrollAnchorId(item) === snapshot.messageId);
+    if (exactIndex >= 0) {
+      return { index: exactIndex, reason: 'exact-anchor' };
+    }
+
+    const sourceMessageId = getSourceMessageIdFromScrollAnchor(snapshot.messageId);
+    const sourceIndex = renderItems.findIndex((item) => item.message.id === sourceMessageId);
+    if (sourceIndex >= 0) {
+      return { index: sourceIndex, reason: 'source-message' };
+    }
+
+    if (snapshot.sourceTimestamp === undefined) return null;
+    let nearest: { index: number; distance: number } | null = null;
+    for (let index = 0; index < renderItems.length; index += 1) {
+      const item = renderItems[index];
+      if (!item) continue;
+      const distance = Math.abs(item.message.timestamp - snapshot.sourceTimestamp!);
+      if (!nearest || distance < nearest.distance) nearest = { index, distance };
+    }
+    return nearest ? { index: nearest.index, reason: 'source-timestamp' } : null;
+  }, [renderItems]);
+
+  const scrollVirtualizerToAnchor = useCallback((snapshot: ScrollAnchorSnapshot) => {
+    const match = resolveVirtualScrollAnchorIndex(snapshot);
+    if (!match) return false;
+    messageVirtualizer.scrollToIndex(match.index, { align: 'start', behavior: 'auto' });
+    logDeveloperDiagnostic('chat-scroll:virtual-restore-prep', {
+      messageId: snapshot.messageId,
+      offsetTop: Math.round(snapshot.offsetTop),
+      sourceTimestamp: snapshot.sourceTimestamp,
+      index: match.index,
+      reason: match.reason,
+      renderItemCount: renderItems.length,
+      targetMessageId: renderItems[match.index]?.message.id,
+    }, 'info', 'chat-scroll');
+    return true;
+  }, [messageVirtualizer, renderItems, resolveVirtualScrollAnchorIndex]);
 
   const highlightScrollTarget = useCallback((messageId: string) => {
     const container = containerRef.current;
@@ -976,14 +1062,33 @@ export default function MessageList({
     }, 'info');
   }, [getInitialRestoreKey, initialScrollPosition, renderItems.length]);
 
-  const rememberScrollAnchor = useCallback((options?: { persist?: boolean }) => {
+  const rememberScrollAnchor = useCallback((options?: { persist?: boolean; reason?: string }) => {
     const snapshot = captureScrollAnchor();
     latestScrollAnchorRef.current = snapshot;
     if (snapshot && options?.persist !== false) {
+      logDeveloperDiagnostic('故事阅读保存：持久化', {
+        reason: options?.reason || 'unknown',
+        messageId: snapshot.messageId,
+        offsetTop: Math.round(snapshot.offsetTop),
+        pinned: shouldStickToBottomRef.current,
+        sourceTimestamp: snapshot.sourceTimestamp,
+        userScrollIntent: hasUserScrollIntentRef.current,
+        scrollTop: Math.round(containerRef.current?.scrollTop ?? 0),
+      }, 'info', 'chat-scroll');
       onScrollPositionChange?.({
         ...snapshot,
         pinned: shouldStickToBottomRef.current,
       });
+    } else if (snapshot) {
+      logDeveloperDiagnostic('故事阅读保存：跳过持久化', {
+        reason: options?.reason || 'unknown',
+        messageId: snapshot.messageId,
+        offsetTop: Math.round(snapshot.offsetTop),
+        pinned: shouldStickToBottomRef.current,
+        sourceTimestamp: snapshot.sourceTimestamp,
+        userScrollIntent: hasUserScrollIntentRef.current,
+        scrollTop: Math.round(containerRef.current?.scrollTop ?? 0),
+      }, 'debug', 'chat-scroll');
     }
     if (isLoadingOlder && snapshot) {
       prependRestoreRef.current = snapshot;
@@ -991,7 +1096,7 @@ export default function MessageList({
     return snapshot;
   }, [captureScrollAnchor, isLoadingOlder, onScrollPositionChange]);
 
-  const scheduleRememberScrollAnchor = useCallback((options?: { persist?: boolean }) => {
+  const scheduleRememberScrollAnchor = useCallback((options?: { persist?: boolean; reason?: string }) => {
     if (scrollAnchorFrameRef.current != null) return;
     scrollAnchorFrameRef.current = window.requestAnimationFrame(() => {
       scrollAnchorFrameRef.current = null;
@@ -1010,6 +1115,7 @@ export default function MessageList({
     }
     rememberScrollAnchorRef.current({
       persist: hasUserScrollIntentRef.current || shouldStickToBottomRef.current,
+      reason: 'unmount',
     });
   }, []);
 
@@ -1152,6 +1258,7 @@ export default function MessageList({
   const scheduleInitialAnchorReveal = useCallback((position: MessageListScrollPosition) => {
     cancelInitialAnchorRevealFrames();
     setInitialViewportReady(false);
+    scrollVirtualizerToAnchor(position);
     restoreScrollAnchor(position);
     const firstFrame = window.requestAnimationFrame(() => {
       restoreScrollAnchor(position);
@@ -1163,7 +1270,7 @@ export default function MessageList({
       initialAnchorRevealFramesRef.current = [secondFrame];
     });
     initialAnchorRevealFramesRef.current = [firstFrame];
-  }, [cancelInitialAnchorRevealFrames, restoreScrollAnchor]);
+  }, [cancelInitialAnchorRevealFrames, restoreScrollAnchor, scrollVirtualizerToAnchor]);
 
   useEffect(() => cancelProgrammaticScroll, [cancelProgrammaticScroll]);
 
@@ -1193,6 +1300,7 @@ export default function MessageList({
       if (frame != null) window.cancelAnimationFrame(frame);
       frame = window.requestAnimationFrame(() => {
         frame = null;
+        if (hasUserScrollIntentRef.current || isUserScrollMomentumActive()) return;
         if (shouldStickToBottomRef.current && autoStickToBottom) {
           followScrollToBottom({ animate: true, mode: 'follow' });
           return;
@@ -1208,7 +1316,7 @@ export default function MessageList({
       observer.disconnect();
       if (frame != null) window.cancelAnimationFrame(frame);
     };
-  }, [autoStickToBottom, followScrollToBottom, restoreScrollAnchor]);
+  }, [autoStickToBottom, followScrollToBottom, isUserScrollMomentumActive, restoreScrollAnchor]);
 
   useLayoutEffect(() => {
     const container = containerRef.current;
@@ -1231,6 +1339,25 @@ export default function MessageList({
           lastMessageId: renderItems.at(-1)?.message.id,
           lastTimestamp: renderItems.at(-1)?.message.timestamp,
         }, 'warn');
+        if (scrollVirtualizerToAnchor(initialPosition)) {
+          hasJumpedToBottomRef.current = true;
+          scheduleInitialAnchorReveal(initialPosition);
+          appliedInitialRestoreKeyRef.current = getInitialRestoreKey(initialPosition);
+          pendingInitialRestoreRef.current = null;
+          latestScrollAnchorRef.current = initialPosition;
+          logDeveloperDiagnostic('chat-scroll:initial-restore-virtualized', {
+            messageId: initialPosition.messageId,
+            offsetTop: initialPosition.offsetTop,
+            sourceTimestamp: initialPosition.sourceTimestamp,
+            renderItemCount: renderItems.length,
+          }, 'info', 'chat-scroll');
+          return;
+        }
+        if (!hasMore && !hasMoreNewer) {
+          hasJumpedToBottomRef.current = true;
+          pendingInitialRestoreRef.current = null;
+          setInitialViewportReady(true);
+        }
         return;
       }
       hasJumpedToBottomRef.current = true;
@@ -1258,7 +1385,7 @@ export default function MessageList({
       lastReportedBottomPinnedRef.current = true;
       onBottomPinnedChange?.(true);
     }
-  }, [getInitialRestoreKey, onBottomPinnedChange, renderItems.length, restoreScrollAnchor, scheduleInitialAnchorReveal, scheduleInitialTailReveal]);
+  }, [getInitialRestoreKey, hasMore, hasMoreNewer, onBottomPinnedChange, renderItems, restoreScrollAnchor, scheduleInitialAnchorReveal, scheduleInitialTailReveal, scrollVirtualizerToAnchor]);
 
   useLayoutEffect(() => {
     if (!scrollRequest || appliedScrollRequestKeyRef.current === scrollRequest.key) return;
@@ -1291,7 +1418,31 @@ export default function MessageList({
       pendingInitialRestoreRef.current = null;
       return;
     }
-    if (!restoreScrollAnchor(pending)) return;
+    if (!restoreScrollAnchor(pending)) {
+      if (scrollVirtualizerToAnchor(pending)) {
+        hasJumpedToBottomRef.current = true;
+        scheduleInitialAnchorReveal(pending);
+        shouldStickToBottomRef.current = false;
+        lastReportedBottomPinnedRef.current = false;
+        appliedInitialRestoreKeyRef.current = restoreKey;
+        pendingInitialRestoreRef.current = null;
+        latestScrollAnchorRef.current = pending;
+        onBottomPinnedChange?.(false);
+        logDeveloperDiagnostic('chat-scroll:deferred-restore-virtualized', {
+          messageId: pending.messageId,
+          offsetTop: pending.offsetTop,
+          sourceTimestamp: pending.sourceTimestamp,
+          renderItemCount: renderItems.length,
+        }, 'info', 'chat-scroll');
+        return;
+      }
+      if (!hasMore && !hasMoreNewer) {
+        hasJumpedToBottomRef.current = true;
+        pendingInitialRestoreRef.current = null;
+        setInitialViewportReady(true);
+      }
+      return;
+    }
     hasJumpedToBottomRef.current = true;
     scheduleInitialAnchorReveal(pending);
     shouldStickToBottomRef.current = false;
@@ -1308,7 +1459,7 @@ export default function MessageList({
       scrollTop: container.scrollTop,
       renderItemCount: renderItems.length,
     }, 'info');
-  }, [getInitialRestoreKey, onBottomPinnedChange, renderItems, restoreScrollAnchor, scheduleInitialAnchorReveal, updatePinnedState]);
+  }, [getInitialRestoreKey, hasMore, hasMoreNewer, onBottomPinnedChange, renderItems, restoreScrollAnchor, scheduleInitialAnchorReveal, scrollVirtualizerToAnchor, updatePinnedState]);
 
   useLayoutEffect(() => {
     const snapshot = prependRestoreRef.current;
@@ -1354,24 +1505,24 @@ export default function MessageList({
     };
     const previousMetrics = previousRenderMetricsRef.current;
     previousRenderMetricsRef.current = currentMetrics;
+    const metricsChanged = !(
+      currentMetrics.itemCount === previousMetrics.itemCount
+      && currentMetrics.lastItemContentLength === previousMetrics.lastItemContentLength
+      && currentMetrics.lastItemKey === previousMetrics.lastItemKey
+      && currentMetrics.hasTailContent === previousMetrics.hasTailContent
+      && currentMetrics.storyChoiceKey === previousMetrics.storyChoiceKey
+    );
 
     if (!hasJumpedToBottomRef.current) return;
     if (!autoStickToBottom) {
+      if (!metricsChanged) return;
       const snapshot = latestScrollAnchorRef.current;
       if (snapshot) {
         restoreScrollAnchor(snapshot);
       }
       return;
     }
-    if (
-      currentMetrics.itemCount === previousMetrics.itemCount
-      && currentMetrics.lastItemContentLength === previousMetrics.lastItemContentLength
-      && currentMetrics.lastItemKey === previousMetrics.lastItemKey
-      && currentMetrics.hasTailContent === previousMetrics.hasTailContent
-      && currentMetrics.storyChoiceKey === previousMetrics.storyChoiceKey
-    ) {
-      return;
-    }
+    if (!metricsChanged) return;
 
     const tailChanged = currentMetrics.lastItemKey !== previousMetrics.lastItemKey
       || currentMetrics.itemCount !== previousMetrics.itemCount
@@ -1462,7 +1613,7 @@ export default function MessageList({
             lastReportedBottomPinnedRef.current = true;
             onBottomPinnedChange?.(true);
           }
-          scheduleRememberScrollAnchor();
+          scheduleRememberScrollAnchor({ reason: 'programmatic-tail-scroll' });
           return;
         }
 
@@ -1484,7 +1635,7 @@ export default function MessageList({
             lastReportedBottomPinnedRef.current = false;
             onBottomPinnedChange?.(false);
           }
-          scheduleRememberScrollAnchor({ persist: false });
+          scheduleRememberScrollAnchor({ persist: false, reason: 'programmatic-scroll-before-user-intent' });
           return;
         }
         if (isScrollingUp) {
@@ -1499,7 +1650,7 @@ export default function MessageList({
           updatePinnedState();
           if (hasUserScrollIntentRef.current) reportNearBottomState(container);
         }
-        scheduleRememberScrollAnchor();
+        scheduleRememberScrollAnchor({ reason: 'scroll' });
 
         const distanceFromBottom = getDistanceFromBottom(container);
         if (autoStickToBottom && distanceFromBottom < getAdaptiveBottomThreshold(container)) {

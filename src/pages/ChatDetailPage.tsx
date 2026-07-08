@@ -91,6 +91,11 @@ function getMessageListElementScrollAnchor(element: HTMLElement) {
   return element.dataset.scrollAnchor || element.dataset.messageId || '';
 }
 
+function getSourceMessageIdFromScrollAnchor(messageId: string) {
+  const storyAnchorIndex = messageId.indexOf(':story-');
+  return storyAnchorIndex >= 0 ? messageId.slice(0, storyAnchorIndex) : messageId;
+}
+
 function captureMessageListScrollRequest(keyPrefix: string, preferredMessageId?: string): MessageListScrollRequest | null {
   const container = document.querySelector<HTMLElement>('[data-chat-message-list]');
   if (!container) return null;
@@ -725,6 +730,7 @@ export default function ChatDetailPage() {
   const isStoryReaderAtTailRef = useRef(true);
   const lastReadingPositionPersistRef = useRef<{ chatId: string; key: string; at: number } | null>(null);
   const openedChatWindowRef = useRef<{ chatId: string; requestKey: string; openedAt: number; restored: boolean } | null>(null);
+  const storyEntryReadingPositionRef = useRef<{ chatId: string; key: string; position: MessageListScrollPosition } | null>(null);
   const activeChatIdRef = useRef<string | null>(id ?? null);
   const isManualInputPendingRef = useRef<() => boolean>(() => false);
   const userDraftActivityRef = useRef<UserDraftActivity | null>(null);
@@ -903,10 +909,33 @@ export default function ChatDetailPage() {
   );
   const isStoryRoom = chat?.sessionKind?.scenarioId === 'story-reader';
   const savedStoryReadingPositionForChat = isStoryRoom && id ? chatReadingPositions[id] : null;
-  const storyReadingRestoreKey = savedStoryReadingPositionForChat && !savedStoryReadingPositionForChat.pinned
+  const savedStoryReadingRestoreKey = savedStoryReadingPositionForChat && !savedStoryReadingPositionForChat.pinned
     ? `${savedStoryReadingPositionForChat.messageId}:${savedStoryReadingPositionForChat.sourceTimestamp ?? ''}:${Math.round(savedStoryReadingPositionForChat.offsetTop)}`
     : '';
-  const hasSavedNonTailStoryReadingPosition = Boolean(savedStoryReadingPositionForChat && !savedStoryReadingPositionForChat.pinned);
+  if (!id || !isStoryRoom || storyEntryReadingPositionRef.current?.chatId !== id) {
+    storyEntryReadingPositionRef.current = null;
+  }
+  if (id && isStoryRoom && savedStoryReadingPositionForChat && !storyEntryReadingPositionRef.current) {
+    storyEntryReadingPositionRef.current = {
+      chatId: id,
+      key: savedStoryReadingRestoreKey || 'tail',
+      position: {
+        messageId: savedStoryReadingPositionForChat.messageId,
+        offsetTop: savedStoryReadingPositionForChat.offsetTop,
+        pinned: savedStoryReadingPositionForChat.pinned,
+        sourceTimestamp: savedStoryReadingPositionForChat.sourceTimestamp,
+      },
+    };
+  }
+  const entryStoryReadingPositionRecord = storyEntryReadingPositionRef.current;
+  let entryStoryReadingPosition: MessageListScrollPosition | null = null;
+  if (entryStoryReadingPositionRecord && entryStoryReadingPositionRecord.chatId === id) {
+    entryStoryReadingPosition = entryStoryReadingPositionRecord.position;
+  }
+  const storyReadingRestoreKey = entryStoryReadingPosition && !entryStoryReadingPosition.pinned
+    ? `${entryStoryReadingPosition.messageId}:${entryStoryReadingPosition.sourceTimestamp ?? ''}:${Math.round(entryStoryReadingPosition.offsetTop)}`
+    : '';
+  const hasSavedNonTailStoryReadingPosition = Boolean(entryStoryReadingPosition && !entryStoryReadingPosition.pinned);
   useEffect(() => {
     if (!chat || chat.type !== 'ai_direct') {
       setAiDirectPerspectiveMemberId(null);
@@ -1005,7 +1034,7 @@ export default function ChatDetailPage() {
   );
   const initialStoryReadingPosition = useMemo<MessageListScrollPosition | null>(() => {
     if (!isStoryRoom || !id) return null;
-    const position = savedStoryReadingPositionForChat;
+    const position = entryStoryReadingPosition;
     if (!position) return null;
     return {
       messageId: position.messageId,
@@ -1013,7 +1042,36 @@ export default function ChatDetailPage() {
       pinned: position.pinned,
       sourceTimestamp: position.sourceTimestamp,
     };
-  }, [id, isStoryRoom, savedStoryReadingPositionForChat]);
+  }, [entryStoryReadingPosition, id, isStoryRoom]);
+  const storyRestoreWindowReady = useMemo(() => {
+    if (!isStoryRoom || !initialStoryReadingPosition || initialStoryReadingPosition.pinned) return true;
+    const sourceMessageId = getSourceMessageIdFromScrollAnchor(initialStoryReadingPosition.messageId);
+    return currentChatMessages.some((message) => (
+      message.id === sourceMessageId
+      || (
+        initialStoryReadingPosition.sourceTimestamp !== undefined
+        && message.timestamp === initialStoryReadingPosition.sourceTimestamp
+      )
+    ));
+  }, [currentChatMessages, initialStoryReadingPosition, isStoryRoom]);
+  const shouldDelayStoryMessageListForRestore = Boolean(
+    isStoryRoom
+    && initialStoryReadingPosition
+    && !initialStoryReadingPosition.pinned
+    && !storyRestoreWindowReady
+  );
+  useEffect(() => {
+    if (!shouldDelayStoryMessageListForRestore || !id || !initialStoryReadingPosition) return;
+    logDeveloperDiagnostic('故事阅读恢复：等待恢复窗口', {
+      chatId: id,
+      messageId: initialStoryReadingPosition.messageId,
+      sourceMessageId: getSourceMessageIdFromScrollAnchor(initialStoryReadingPosition.messageId),
+      sourceTimestamp: initialStoryReadingPosition.sourceTimestamp,
+      currentMessages: currentChatMessages.length,
+      firstTimestamp: currentChatMessages[0]?.timestamp,
+      lastTimestamp: currentChatMessages.at(-1)?.timestamp,
+    }, 'info', 'chat-scroll');
+  }, [currentChatMessages, id, initialStoryReadingPosition, shouldDelayStoryMessageListForRestore]);
   const effectiveTextInputCapabilities = useMemo(
     () => (isStoryRoom && !effectiveSpeakAsChar ? buildStoryReaderTextInputCapabilities(textInputCapabilities) : textInputCapabilities),
     [effectiveSpeakAsChar, isStoryRoom, textInputCapabilities],
@@ -1547,30 +1605,53 @@ export default function ChatDetailPage() {
     if (id) {
       if (!chat) return;
       if (isStoryRoom && !uiHydrated) return;
-      const aroundTimestamp = savedStoryReadingPositionForChat && !savedStoryReadingPositionForChat.pinned
-        ? savedStoryReadingPositionForChat.sourceTimestamp
+      const aroundTimestamp = entryStoryReadingPosition && !entryStoryReadingPosition.pinned
+        ? entryStoryReadingPosition.sourceTimestamp
         : undefined;
       const requestKey = aroundTimestamp !== undefined && storyReadingRestoreKey
         ? `restore:${storyReadingRestoreKey}`
         : 'tail';
       const previousOpen = openedChatWindowRef.current;
-      if (previousOpen?.chatId === id) return;
+      if (previousOpen?.chatId === id) {
+        logDeveloperDiagnostic('故事阅读恢复：跳过重复打开窗口', {
+          chatId: id,
+          existingRequestKey: previousOpen.requestKey,
+          nextRequestKey: requestKey,
+          savedPosition: entryStoryReadingPosition ? {
+            messageId: entryStoryReadingPosition.messageId,
+            offsetTop: entryStoryReadingPosition.offsetTop,
+            pinned: entryStoryReadingPosition.pinned,
+            sourceTimestamp: entryStoryReadingPosition.sourceTimestamp,
+          } : null,
+        }, 'debug', 'chat-scroll');
+        return;
+      }
       openedChatWindowRef.current = {
         chatId: id,
         requestKey,
         openedAt: Date.now(),
         restored: requestKey !== 'tail',
       };
+      logDeveloperDiagnostic('故事阅读恢复：打开消息窗口', {
+        chatId: id,
+        requestKey,
+        savedPosition: entryStoryReadingPosition ? {
+          messageId: entryStoryReadingPosition.messageId,
+          offsetTop: entryStoryReadingPosition.offsetTop,
+          pinned: entryStoryReadingPosition.pinned,
+          sourceTimestamp: entryStoryReadingPosition.sourceTimestamp,
+        } : null,
+        aroundTimestamp,
+      }, 'info', 'chat-scroll');
       logDeveloperDiagnostic('chat-window:open', {
         chatId: id,
         isStoryRoom: chat?.sessionKind?.scenarioId === 'story-reader',
         requestKey,
-        savedPosition: savedStoryReadingPositionForChat ? {
-          messageId: savedStoryReadingPositionForChat.messageId,
-          offsetTop: savedStoryReadingPositionForChat.offsetTop,
-          pinned: savedStoryReadingPositionForChat.pinned,
-          sourceTimestamp: savedStoryReadingPositionForChat.sourceTimestamp,
-          updatedAt: savedStoryReadingPositionForChat.updatedAt,
+        savedPosition: entryStoryReadingPosition ? {
+          messageId: entryStoryReadingPosition.messageId,
+          offsetTop: entryStoryReadingPosition.offsetTop,
+          pinned: entryStoryReadingPosition.pinned,
+          sourceTimestamp: entryStoryReadingPosition.sourceTimestamp,
         } : null,
         aroundTimestamp,
       }, 'info');
@@ -1581,7 +1662,7 @@ export default function ChatDetailPage() {
         resetWindow: !isStoryRoom && aroundTimestamp === undefined,
       });
     }
-  }, [chat, id, isStoryRoom, openChatWindow, savedStoryReadingPositionForChat, storyReadingRestoreKey, uiHydrated]);
+  }, [chat, entryStoryReadingPosition, id, isStoryRoom, openChatWindow, storyReadingRestoreKey, uiHydrated]);
 
   useEffect(() => {
     userDraftActivityRef.current = null;
@@ -2245,6 +2326,23 @@ export default function ChatDetailPage() {
     const previous = lastReadingPositionPersistRef.current;
     if (previous?.chatId === id && previous.key === key && now - previous.at < STORY_READING_POSITION_SAVE_MS) return;
     lastReadingPositionPersistRef.current = { chatId: id, key, at: now };
+    const previousStored = chatReadingPositions[id];
+    logDeveloperDiagnostic('故事阅读保存：写入UIStore', {
+      chatId: id,
+      next: {
+        messageId: position.messageId,
+        offsetTop: roundedOffsetTop,
+        pinned: position.pinned,
+        sourceTimestamp: position.sourceTimestamp,
+      },
+      previous: previousStored ? {
+        messageId: previousStored.messageId,
+        offsetTop: previousStored.offsetTop,
+        pinned: previousStored.pinned,
+        sourceTimestamp: previousStored.sourceTimestamp,
+        updatedAt: previousStored.updatedAt,
+      } : null,
+    }, 'info', 'chat-scroll');
     logDeveloperDiagnostic('chat-scroll:save-position', {
       chatId: id,
       messageId: position.messageId,
@@ -2258,7 +2356,7 @@ export default function ChatDetailPage() {
       pinned: position.pinned,
       sourceTimestamp: position.sourceTimestamp,
     });
-  }, [id, isStoryRoom, setChatReadingPosition]);
+  }, [chatReadingPositions, id, isStoryRoom, setChatReadingPosition]);
 
   useEffect(() => {
     const effectiveStoryReaderAtTail = resolveEffectiveStoryReaderAtTail({
@@ -2523,7 +2621,7 @@ export default function ChatDetailPage() {
           </Box>
         ) : null}
         <Box sx={{ position: 'absolute', inset: 0, overflow: 'hidden', zIndex: 1 }}>
-          <MessageList
+          {shouldDelayStoryMessageListForRestore ? null : <MessageList
             key={id}
             messages={currentChatMessages}
             characters={characters}
@@ -2564,7 +2662,7 @@ export default function ChatDetailPage() {
             narrativeRevealMessageKeys={narrativeRevealMessageKeys}
             onNarrativeRevealComplete={clearNarrativeRevealMessage}
             autoStickToBottom={sessionScrollCapabilities.autoStickToBottom}
-          />
+          />}
         </Box>
         {isRemoteDeletedChat ? null : <Box
           sx={{
