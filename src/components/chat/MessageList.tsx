@@ -654,8 +654,10 @@ export default function MessageList({
   const scrollAnchorFrameRef = useRef<number | null>(null);
   const followScrollAnimationRef = useRef<number | null>(null);
   const programmaticScrollRef = useRef<{ mode: 'follow' | 'jump'; startedAt: number; targetTop: number } | null>(null);
+  const initialTailRevealFramesRef = useRef<number[]>([]);
   const previousStoryChoiceSubmittingValueRef = useRef<string | null>(storyChoiceSubmittingValue);
   const appliedScrollRequestKeyRef = useRef<string | null>(null);
+  const [initialViewportReady, setInitialViewportReady] = useState(() => !autoStickToBottom || Boolean(initialScrollPosition && !initialScrollPosition.pinned));
   const previousRenderMetricsRef = useRef({
     itemCount: renderItems.length,
     lastItemKey: renderItems.at(-1)?.key ?? null,
@@ -1108,7 +1110,38 @@ export default function MessageList({
     followScrollAnimationRef.current = window.requestAnimationFrame(step);
   }, [cancelProgrammaticScroll, hasMoreNewer]);
 
+  const forceTailScrollPosition = useCallback(() => {
+    const container = containerRef.current;
+    if (!container || renderItems.length === 0) return;
+    messageVirtualizer.scrollToIndex(renderItems.length - 1, { align: 'end', behavior: 'auto' });
+    const top = Math.max(0, container.scrollHeight - container.clientHeight);
+    container.scrollTop = top;
+    lastScrollTopRef.current = top;
+  }, [messageVirtualizer, renderItems.length]);
+
+  const cancelInitialTailRevealFrames = useCallback(() => {
+    initialTailRevealFramesRef.current.forEach((frame) => window.cancelAnimationFrame(frame));
+    initialTailRevealFramesRef.current = [];
+  }, []);
+
+  const scheduleInitialTailReveal = useCallback(() => {
+    cancelInitialTailRevealFrames();
+    forceTailScrollPosition();
+    const firstFrame = window.requestAnimationFrame(() => {
+      forceTailScrollPosition();
+      const secondFrame = window.requestAnimationFrame(() => {
+        forceTailScrollPosition();
+        initialTailRevealFramesRef.current = [];
+        setInitialViewportReady(true);
+      });
+      initialTailRevealFramesRef.current = [secondFrame];
+    });
+    initialTailRevealFramesRef.current = [firstFrame];
+  }, [cancelInitialTailRevealFrames, forceTailScrollPosition]);
+
   useEffect(() => cancelProgrammaticScroll, [cancelProgrammaticScroll]);
+
+  useEffect(() => cancelInitialTailRevealFrames, [cancelInitialTailRevealFrames]);
 
   useEffect(() => {
     if (autoStickToBottom) return;
@@ -1174,6 +1207,7 @@ export default function MessageList({
         return;
       }
       hasJumpedToBottomRef.current = true;
+      setInitialViewportReady(true);
       shouldStickToBottomRef.current = false;
       lastReportedBottomPinnedRef.current = false;
       appliedInitialRestoreKeyRef.current = getInitialRestoreKey(initialPosition);
@@ -1194,14 +1228,14 @@ export default function MessageList({
       return () => window.cancelAnimationFrame(handle);
     }
     pendingInitialRestoreRef.current = null;
-    scrollToBottom('auto');
+    scheduleInitialTailReveal();
     hasJumpedToBottomRef.current = true;
     shouldStickToBottomRef.current = true;
     if (lastReportedBottomPinnedRef.current !== true) {
       lastReportedBottomPinnedRef.current = true;
       onBottomPinnedChange?.(true);
     }
-  }, [getInitialRestoreKey, onBottomPinnedChange, renderItems, restoreScrollAnchor, scrollToBottom]);
+  }, [getInitialRestoreKey, onBottomPinnedChange, renderItems.length, restoreScrollAnchor, scheduleInitialTailReveal]);
 
   useLayoutEffect(() => {
     if (!scrollRequest || appliedScrollRequestKeyRef.current === scrollRequest.key) return;
@@ -1236,6 +1270,7 @@ export default function MessageList({
     }
     if (!restoreScrollAnchor(pending)) return;
     hasJumpedToBottomRef.current = true;
+    setInitialViewportReady(true);
     shouldStickToBottomRef.current = false;
     lastReportedBottomPinnedRef.current = false;
     appliedInitialRestoreKeyRef.current = restoreKey;
@@ -1359,6 +1394,10 @@ export default function MessageList({
   }, [isLoadingNewer]);
 
   useEffect(() => {
+    if (!autoStickToBottom) setInitialViewportReady(true);
+  }, [autoStickToBottom]);
+
+  useEffect(() => {
     const container = containerRef.current;
     if (!container || !onReachTop || isLoadingOlder || !hasMore || autoFillTriggeredRef.current) return;
     if (container.scrollHeight > container.clientHeight + 1) return;
@@ -1375,6 +1414,8 @@ export default function MessageList({
     if (container.scrollHeight > container.clientHeight + 1) return;
     triggerReachBottom();
   }, [hasMoreNewer, isLoadingNewer, renderItems.length, triggerReachBottom]);
+
+  const hideUntilInitialTailPositioned = autoStickToBottom && renderItems.length > 0 && !initialViewportReady;
 
   return (
     <Box
@@ -1470,6 +1511,7 @@ export default function MessageList({
         scrollPaddingBottom: bottomInset || 16,
         overflowAnchor: 'none',
         scrollbarGutter: 'stable',
+        visibility: hideUntilInitialTailPositioned ? 'hidden' : 'visible',
       }}
     >
       {messages.length > 0 ? (
