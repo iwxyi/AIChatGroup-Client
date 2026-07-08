@@ -655,9 +655,11 @@ export default function MessageList({
   const followScrollAnimationRef = useRef<number | null>(null);
   const programmaticScrollRef = useRef<{ mode: 'follow' | 'jump'; startedAt: number; targetTop: number } | null>(null);
   const initialTailRevealFramesRef = useRef<number[]>([]);
+  const initialAnchorRevealFramesRef = useRef<number[]>([]);
   const previousStoryChoiceSubmittingValueRef = useRef<string | null>(storyChoiceSubmittingValue);
   const appliedScrollRequestKeyRef = useRef<string | null>(null);
-  const [initialViewportReady, setInitialViewportReady] = useState(() => !autoStickToBottom || Boolean(initialScrollPosition && !initialScrollPosition.pinned));
+  const hasInitialRestorePosition = Boolean(initialScrollPosition && !initialScrollPosition.pinned);
+  const [initialViewportReady, setInitialViewportReady] = useState(() => !autoStickToBottom && !hasInitialRestorePosition);
   const previousRenderMetricsRef = useRef({
     itemCount: renderItems.length,
     lastItemKey: renderItems.at(-1)?.key ?? null,
@@ -959,12 +961,13 @@ export default function MessageList({
       : null
   ), []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (hasJumpedToBottomRef.current) return;
     initialScrollPositionRef.current = initialScrollPosition;
     const restoreKey = getInitialRestoreKey(initialScrollPosition);
     if (!restoreKey || appliedInitialRestoreKeyRef.current === restoreKey) return;
     pendingInitialRestoreRef.current = initialScrollPosition;
+    setInitialViewportReady(false);
     logDeveloperDiagnostic('chat-scroll:restore-pending', {
       messageId: initialScrollPosition?.messageId,
       offsetTop: initialScrollPosition?.offsetTop,
@@ -1124,6 +1127,11 @@ export default function MessageList({
     initialTailRevealFramesRef.current = [];
   }, []);
 
+  const cancelInitialAnchorRevealFrames = useCallback(() => {
+    initialAnchorRevealFramesRef.current.forEach((frame) => window.cancelAnimationFrame(frame));
+    initialAnchorRevealFramesRef.current = [];
+  }, []);
+
   const scheduleInitialTailReveal = useCallback(() => {
     cancelInitialTailRevealFrames();
     forceTailScrollPosition();
@@ -1139,9 +1147,26 @@ export default function MessageList({
     initialTailRevealFramesRef.current = [firstFrame];
   }, [cancelInitialTailRevealFrames, forceTailScrollPosition]);
 
+  const scheduleInitialAnchorReveal = useCallback((position: MessageListScrollPosition) => {
+    cancelInitialAnchorRevealFrames();
+    setInitialViewportReady(false);
+    restoreScrollAnchor(position);
+    const firstFrame = window.requestAnimationFrame(() => {
+      restoreScrollAnchor(position);
+      const secondFrame = window.requestAnimationFrame(() => {
+        restoreScrollAnchor(position);
+        initialAnchorRevealFramesRef.current = [];
+        setInitialViewportReady(true);
+      });
+      initialAnchorRevealFramesRef.current = [secondFrame];
+    });
+    initialAnchorRevealFramesRef.current = [firstFrame];
+  }, [cancelInitialAnchorRevealFrames, restoreScrollAnchor]);
+
   useEffect(() => cancelProgrammaticScroll, [cancelProgrammaticScroll]);
 
   useEffect(() => cancelInitialTailRevealFrames, [cancelInitialTailRevealFrames]);
+  useEffect(() => cancelInitialAnchorRevealFrames, [cancelInitialAnchorRevealFrames]);
 
   useEffect(() => {
     if (autoStickToBottom) return;
@@ -1207,7 +1232,7 @@ export default function MessageList({
         return;
       }
       hasJumpedToBottomRef.current = true;
-      setInitialViewportReady(true);
+      scheduleInitialAnchorReveal(initialPosition);
       shouldStickToBottomRef.current = false;
       lastReportedBottomPinnedRef.current = false;
       appliedInitialRestoreKeyRef.current = getInitialRestoreKey(initialPosition);
@@ -1221,11 +1246,7 @@ export default function MessageList({
         scrollTop: container.scrollTop,
         renderItemCount: renderItems.length,
       }, 'info');
-      const handle = window.requestAnimationFrame(() => {
-        restoreScrollAnchor(initialPosition);
-        lastScrollTopRef.current = container.scrollTop;
-      });
-      return () => window.cancelAnimationFrame(handle);
+      return;
     }
     pendingInitialRestoreRef.current = null;
     scheduleInitialTailReveal();
@@ -1235,7 +1256,7 @@ export default function MessageList({
       lastReportedBottomPinnedRef.current = true;
       onBottomPinnedChange?.(true);
     }
-  }, [getInitialRestoreKey, onBottomPinnedChange, renderItems.length, restoreScrollAnchor, scheduleInitialTailReveal]);
+  }, [getInitialRestoreKey, onBottomPinnedChange, renderItems.length, restoreScrollAnchor, scheduleInitialAnchorReveal, scheduleInitialTailReveal]);
 
   useLayoutEffect(() => {
     if (!scrollRequest || appliedScrollRequestKeyRef.current === scrollRequest.key) return;
@@ -1270,7 +1291,7 @@ export default function MessageList({
     }
     if (!restoreScrollAnchor(pending)) return;
     hasJumpedToBottomRef.current = true;
-    setInitialViewportReady(true);
+    scheduleInitialAnchorReveal(pending);
     shouldStickToBottomRef.current = false;
     lastReportedBottomPinnedRef.current = false;
     appliedInitialRestoreKeyRef.current = restoreKey;
@@ -1285,7 +1306,7 @@ export default function MessageList({
       scrollTop: container.scrollTop,
       renderItemCount: renderItems.length,
     }, 'info');
-  }, [getInitialRestoreKey, onBottomPinnedChange, renderItems, restoreScrollAnchor, updatePinnedState]);
+  }, [getInitialRestoreKey, onBottomPinnedChange, renderItems, restoreScrollAnchor, scheduleInitialAnchorReveal, updatePinnedState]);
 
   useLayoutEffect(() => {
     const snapshot = prependRestoreRef.current;
@@ -1394,8 +1415,8 @@ export default function MessageList({
   }, [isLoadingNewer]);
 
   useEffect(() => {
-    if (!autoStickToBottom) setInitialViewportReady(true);
-  }, [autoStickToBottom]);
+    if (!autoStickToBottom && !hasInitialRestorePosition) setInitialViewportReady(true);
+  }, [autoStickToBottom, hasInitialRestorePosition]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -1410,12 +1431,12 @@ export default function MessageList({
 
   useEffect(() => {
     const container = containerRef.current;
-    if (!container || !hasMoreNewer || isLoadingNewer) return;
+    if (!autoStickToBottom || !container || !hasMoreNewer || isLoadingNewer) return;
     if (container.scrollHeight > container.clientHeight + 1) return;
     triggerReachBottom();
-  }, [hasMoreNewer, isLoadingNewer, renderItems.length, triggerReachBottom]);
+  }, [autoStickToBottom, hasMoreNewer, isLoadingNewer, renderItems.length, triggerReachBottom]);
 
-  const hideUntilInitialTailPositioned = autoStickToBottom && renderItems.length > 0 && !initialViewportReady;
+  const hideUntilInitialViewportPositioned = renderItems.length > 0 && !initialViewportReady;
 
   return (
     <Box
@@ -1511,7 +1532,7 @@ export default function MessageList({
         scrollPaddingBottom: bottomInset || 16,
         overflowAnchor: 'none',
         scrollbarGutter: 'stable',
-        visibility: hideUntilInitialTailPositioned ? 'hidden' : 'visible',
+        visibility: hideUntilInitialViewportPositioned ? 'hidden' : 'visible',
       }}
     >
       {messages.length > 0 ? (

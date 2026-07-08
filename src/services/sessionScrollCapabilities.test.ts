@@ -21,6 +21,16 @@ describe('sessionScrollCapabilities', () => {
     });
   });
 
+  it('preserves a restored non-tail story-reader position until the reader reaches the tail', () => {
+    expect(resolveSessionScrollCapabilities({
+      sessionKind: { family: 'conversation', scenarioId: 'story-reader', surfaceProfile: 'hybrid' },
+      restoringReaderPosition: true,
+    })).toEqual({
+      autoStickToBottom: false,
+      autoContinueFromTail: false,
+    });
+  });
+
   it('restores story-reader tail following after the reader reaches the new tail', () => {
     expect(resolveSessionScrollCapabilities({
       sessionKind: { family: 'conversation', scenarioId: 'story-reader', surfaceProfile: 'hybrid' },

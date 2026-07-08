@@ -714,6 +714,7 @@ export default function ChatDetailPage() {
   const [isExplicitContinuationScrollFollowSuspended, setIsExplicitContinuationScrollFollowSuspended] = useState(false);
   const [narrativeRevealMessageKeys, setNarrativeRevealMessageKeys] = useState<ReadonlySet<string>>(() => new Set());
   const [chatPageSettingsOpen, setChatPageSettingsOpen] = useState(false);
+  const [uiHydrated, setUiHydrated] = useState(() => useUIStore.persist.hasHydrated());
 
   const loopTokenRef = useRef<string | null>(null);
   const isRunningRef = useRef(false);
@@ -729,6 +730,15 @@ export default function ChatDetailPage() {
   const userDraftActivityRef = useRef<UserDraftActivity | null>(null);
   const directReplyAbortRef = useRef<AbortController | null>(null);
   const directReplyEpochRef = useRef(0);
+  useEffect(() => {
+    if (useUIStore.persist.hasHydrated()) {
+      setUiHydrated(true);
+      return undefined;
+    }
+    const unsubscribe = useUIStore.persist.onFinishHydration(() => setUiHydrated(true));
+    void useUIStore.persist.rehydrate();
+    return unsubscribe;
+  }, []);
   const upsertMessageWithLiveReveal = useCallback((message: Message) => {
     const revealKeys = getNarrativeRevealIdentityKeys(message);
     if (revealKeys.length && shouldRegisterLiveNarrativeReveal(message)) {
@@ -989,8 +999,9 @@ export default function ChatDetailPage() {
     () => resolveSessionScrollCapabilities({
       sessionKind: chat?.sessionKind,
       explicitContinuationPending: isExplicitContinuationScrollFollowSuspended,
+      restoringReaderPosition: hasSavedNonTailStoryReadingPosition && !hasStoryReaderReachedTailIntent,
     }),
-    [chat?.sessionKind, isExplicitContinuationScrollFollowSuspended],
+    [chat?.sessionKind, hasSavedNonTailStoryReadingPosition, hasStoryReaderReachedTailIntent, isExplicitContinuationScrollFollowSuspended],
   );
   const initialStoryReadingPosition = useMemo<MessageListScrollPosition | null>(() => {
     if (!isStoryRoom || !id) return null;
@@ -1534,6 +1545,7 @@ export default function ChatDetailPage() {
 
   useEffect(() => {
     if (id) {
+      if (isStoryRoom && !uiHydrated) return;
       const aroundTimestamp = savedStoryReadingPositionForChat && !savedStoryReadingPositionForChat.pinned
         ? savedStoryReadingPositionForChat.sourceTimestamp
         : undefined;
@@ -1541,7 +1553,7 @@ export default function ChatDetailPage() {
         ? `restore:${storyReadingRestoreKey}`
         : 'tail';
       const previousOpen = openedChatWindowRef.current;
-      if (previousOpen?.chatId === id) return;
+      if (previousOpen?.chatId === id && previousOpen.requestKey === requestKey) return;
       openedChatWindowRef.current = {
         chatId: id,
         requestKey,
@@ -1568,7 +1580,7 @@ export default function ChatDetailPage() {
         resetWindow: !isStoryRoom && aroundTimestamp === undefined,
       });
     }
-  }, [chat?.sessionKind?.scenarioId, id, isStoryRoom, openChatWindow, savedStoryReadingPositionForChat, storyReadingRestoreKey]);
+  }, [chat?.sessionKind?.scenarioId, id, isStoryRoom, openChatWindow, savedStoryReadingPositionForChat, storyReadingRestoreKey, uiHydrated]);
 
   useEffect(() => {
     userDraftActivityRef.current = null;

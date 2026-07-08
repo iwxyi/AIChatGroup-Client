@@ -3,6 +3,7 @@ import type { SessionKind } from '../types/chat';
 export interface SessionScrollCapabilityInput {
   sessionKind?: Pick<SessionKind, 'scenarioId' | 'family' | 'surfaceProfile'> | null;
   explicitContinuationPending?: boolean;
+  restoringReaderPosition?: boolean;
 }
 
 export interface SessionScrollCapabilities {
@@ -11,7 +12,7 @@ export interface SessionScrollCapabilities {
 }
 
 export function resolveSessionScrollCapabilities(params: SessionScrollCapabilityInput): SessionScrollCapabilities {
-  if (params.sessionKind?.scenarioId === 'story-reader' && params.explicitContinuationPending) {
+  if (params.sessionKind?.scenarioId === 'story-reader' && (params.explicitContinuationPending || params.restoringReaderPosition)) {
     return {
       autoStickToBottom: false,
       autoContinueFromTail: false,
