@@ -672,6 +672,11 @@ export default function MessageList({
     estimateSize: () => 108,
     overscan: 2,
   });
+  messageVirtualizer.shouldAdjustScrollPositionOnItemSizeChange = () => (
+    autoStickToBottom
+    && shouldStickToBottomRef.current
+    && !hasUserScrollIntentRef.current
+  );
   const virtualMessageItems = messageVirtualizer.getVirtualItems();
 
   const viewerIndex = viewerKey ? chatImageTimeline.findIndex((item) => item.key === viewerKey) : -1;
@@ -988,12 +993,17 @@ export default function MessageList({
       rememberScrollAnchor();
     });
   }, [rememberScrollAnchor]);
+  const rememberScrollAnchorRef = useRef(rememberScrollAnchor);
+  useEffect(() => {
+    rememberScrollAnchorRef.current = rememberScrollAnchor;
+  }, [rememberScrollAnchor]);
 
   useEffect(() => () => {
     if (scrollAnchorFrameRef.current != null) {
       window.cancelAnimationFrame(scrollAnchorFrameRef.current);
       scrollAnchorFrameRef.current = null;
     }
+    rememberScrollAnchorRef.current();
   }, []);
 
   const triggerReachBottom = useCallback(() => {

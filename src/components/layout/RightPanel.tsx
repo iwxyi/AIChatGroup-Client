@@ -232,6 +232,7 @@ export default function RightPanel({ children, title, hideMobileTitle = false, t
       state.moved = true;
       mobileDragMovedRef.current = true;
     }
+    setMobileDragOffset(deltaY);
     scheduleMobileGestureCss(deltaY);
   }, [scheduleMobileGestureCss]);
 
@@ -444,7 +445,22 @@ export default function RightPanel({ children, title, hideMobileTitle = false, t
             role="button"
             aria-label="关闭面板"
             title="向下拖拽或点击关闭"
-            sx={{ width: '100%', height: 22, display: 'grid', placeItems: 'center', mx: 'auto', mb: 0.35, touchAction: 'none', cursor: 'grab' }}
+            draggable={false}
+            sx={{
+              width: '100%',
+              height: 22,
+              display: 'grid',
+              placeItems: 'center',
+              mx: 'auto',
+              mb: 0.35,
+              touchAction: 'none',
+              cursor: 'grab',
+              userSelect: 'none',
+              WebkitUserSelect: 'none',
+              '&:active': {
+                cursor: 'grabbing',
+              },
+            }}
           >
             <Box sx={{
               width: 40,

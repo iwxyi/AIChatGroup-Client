@@ -526,6 +526,46 @@ describe('useMessageStore', () => {
     expect(state.messageWindowsByChatId[chatId]?.messages.at(-1)?.content).toBe('消息 80 已刷新');
   });
 
+  it('resets the cached active window limit when hydrating a chat from cache', async () => {
+    const { useMessageStore } = await import('./useMessageStore');
+    const { projectCurrentChatMessages } = await import('../services/currentChatMessages');
+    const chatId = 'chat-1';
+    const cachedMessages = Array.from({ length: 120 }, (_, index) => buildMessage(index + 1, chatId));
+
+    useMessageStore.setState({
+      messages: [],
+      messageWindowsByChatId: {
+        [chatId]: {
+          messages: cachedMessages,
+          lastSyncedAt: 0,
+          updatedAt: cachedMessages.at(-1)?.timestamp ?? 0,
+          activeLimit: 120,
+        },
+      },
+      pendingOperations: [],
+      activeChatId: null,
+      isLoading: false,
+      isLoadingOlder: false,
+      hasMore: true,
+    });
+
+    await useMessageStore.getState().hydrateMessagesFromCache(chatId, { limit: 40 });
+
+    const state = useMessageStore.getState();
+    const projected = projectCurrentChatMessages({
+      chatId,
+      activeMessages: state.messages,
+      cachedWindow: state.messageWindowsByChatId[chatId],
+    });
+    expect(state.messages.map((message) => message.id)).toEqual(
+      cachedMessages.slice(-40).map((message) => message.id),
+    );
+    expect(state.messageWindowsByChatId[chatId]?.activeLimit).toBe(40);
+    expect(projected.map((message) => message.id)).toEqual(
+      cachedMessages.slice(-40).map((message) => message.id),
+    );
+  });
+
   it('strips non-message fields when merging fetched and persisted messages', async () => {
     const { useMessageStore } = await import('./useMessageStore');
     const chatId = 'chat-1';

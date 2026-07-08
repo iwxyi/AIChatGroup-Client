@@ -267,7 +267,7 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
   }, [cleanupPanelHandleListeners, onOpenPanel, schedulePanelGestureCss, setRightPanelGestureDragging, setRightPanelGestureOffset]);
 
   const startPanelHandleDrag = useCallback((clientY: number, input: 'pointer' | 'touch') => {
-    if (!onOpenPanel || inputFocused || inputHasTextSelection()) {
+    if (!onOpenPanel || inputHasTextSelection()) {
       panelHandleDragRef.current = null;
       return;
     }
@@ -323,7 +323,7 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
       window.removeEventListener('touchend', handleTouchEnd);
       window.removeEventListener('touchcancel', handleTouchEnd);
     };
-  }, [cleanupPanelHandleListeners, finishPanelHandleDrag, inputFocused, inputHasTextSelection, onOpenPanel, updatePanelHandleDrag]);
+  }, [cleanupPanelHandleListeners, finishPanelHandleDrag, inputHasTextSelection, onOpenPanel, updatePanelHandleDrag]);
 
   return (
     <Box
@@ -387,14 +387,6 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
         </Alert>
         ) : null}
         <Box
-        onTouchStart={(event) => {
-          const touch = event.touches[0];
-          if (touch) startPanelHandleDrag(touch.clientY, 'touch');
-        }}
-        onPointerDown={(event) => {
-          if (event.pointerType === 'touch') return;
-          startPanelHandleDrag(event.clientY, 'pointer');
-        }}
         sx={{ display: 'flex', alignItems: 'flex-end', gap: 0.75, width: '100%', touchAction: 'pan-y' }}
       >
         {mode === 'speakAs' && characterName && !hideSpeakAsChip ? (
@@ -491,6 +483,7 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
           role="button"
           aria-label="打开会话面板"
           title="点击或向上拖拽打开会话面板"
+          draggable={false}
           onClick={() => {
             if (panelHandleClickSuppressedRef.current) {
               panelHandleClickSuppressedRef.current = false;
@@ -500,10 +493,14 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
           }}
           onTouchStart={(event) => {
             const touch = event.touches[0];
+            event.preventDefault();
+            event.stopPropagation();
             if (touch) startPanelHandleDrag(touch.clientY, 'touch');
           }}
           onPointerDown={(event) => {
             if (event.pointerType === 'touch') return;
+            event.preventDefault();
+            event.stopPropagation();
             startPanelHandleDrag(event.clientY, 'pointer');
           }}
           sx={{
@@ -514,6 +511,8 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
             mt: 0.2,
             cursor: 'grab',
             touchAction: 'none',
+            userSelect: 'none',
+            WebkitUserSelect: 'none',
             '&:active': {
               cursor: 'grabbing',
             },

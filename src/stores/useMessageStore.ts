@@ -194,9 +194,19 @@ function localHydratedWindow(state: MessageStore, chatId: string, requestedLimit
   const cachedMessages = cachedWindow?.messages || [];
   const limit = getRequestedWindowLimit(requestedLimit);
   const activeMessages = activeMessageWindow(cachedMessages, limit);
+  const nextWindow = cachedWindow ? {
+    ...cachedWindow,
+    activeLimit: Math.max(activeMessages.length, limit),
+  } : null;
   return {
     activeChatId: chatId,
     messages: activeMessages,
+    ...(nextWindow ? {
+      messageWindowsByChatId: trimCache({
+        ...state.messageWindowsByChatId,
+        [chatId]: nextWindow,
+      }, state.pendingOperations),
+    } : {}),
     hasMore: canLoadMoreFromWindow(cachedWindow, activeMessages, limit),
     hasMoreNewer: canLoadNewerFromWindow(cachedWindow, activeMessages, limit),
   };

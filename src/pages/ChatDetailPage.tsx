@@ -891,11 +891,12 @@ export default function ChatDetailPage() {
     () => speakAsCharacterId ? characters.find((c) => c.id === speakAsCharacterId) ?? null : null,
     [characters, speakAsCharacterId]
   );
-  const savedStoryReadingPositionForChat = id ? chatReadingPositions[id] : null;
+  const isStoryRoom = chat?.sessionKind?.scenarioId === 'story-reader';
+  const savedStoryReadingPositionForChat = isStoryRoom && id ? chatReadingPositions[id] : null;
   const storyReadingRestoreKey = savedStoryReadingPositionForChat && !savedStoryReadingPositionForChat.pinned
     ? `${savedStoryReadingPositionForChat.messageId}:${savedStoryReadingPositionForChat.sourceTimestamp ?? ''}:${Math.round(savedStoryReadingPositionForChat.offsetTop)}`
     : '';
-  const hasSavedNonTailStoryReadingPosition = Boolean(chat?.sessionKind?.scenarioId === 'story-reader' && savedStoryReadingPositionForChat && !savedStoryReadingPositionForChat.pinned);
+  const hasSavedNonTailStoryReadingPosition = Boolean(savedStoryReadingPositionForChat && !savedStoryReadingPositionForChat.pinned);
   useEffect(() => {
     if (!chat || chat.type !== 'ai_direct') {
       setAiDirectPerspectiveMemberId(null);
@@ -980,7 +981,6 @@ export default function ChatDetailPage() {
     language: i18n.language,
   });
   const sidebarTabValue = activeSidebarTab === 'actions' ? (showSessionTab ? 'session' : 'activities') : activeSidebarTab;
-  const isStoryRoom = chat?.sessionKind?.scenarioId === 'story-reader';
   const storyRoomOpeningPreview = useMemo(
     () => buildStoryRoomOpeningPreview(chat, members),
     [chat, members],
@@ -1534,16 +1534,14 @@ export default function ChatDetailPage() {
 
   useEffect(() => {
     if (id) {
-      const aroundTimestamp = chat?.sessionKind?.scenarioId === 'story-reader' && savedStoryReadingPositionForChat && !savedStoryReadingPositionForChat.pinned
+      const aroundTimestamp = savedStoryReadingPositionForChat && !savedStoryReadingPositionForChat.pinned
         ? savedStoryReadingPositionForChat.sourceTimestamp
         : undefined;
       const requestKey = aroundTimestamp !== undefined && storyReadingRestoreKey
         ? `restore:${storyReadingRestoreKey}`
         : 'tail';
       const previousOpen = openedChatWindowRef.current;
-      if (previousOpen?.chatId === id && previousOpen.requestKey === requestKey) return;
-      if (previousOpen?.chatId === id && previousOpen.restored) return;
-      if (previousOpen?.chatId === id && requestKey !== 'tail' && Date.now() - previousOpen.openedAt > 3000) return;
+      if (previousOpen?.chatId === id) return;
       openedChatWindowRef.current = {
         chatId: id,
         requestKey,
@@ -1563,9 +1561,14 @@ export default function ChatDetailPage() {
         } : null,
         aroundTimestamp,
       }, 'info');
-      void openChatWindow(id, { limit: CHAT_MESSAGE_WINDOW_SIZE, revalidate: true, aroundTimestamp });
+      void openChatWindow(id, {
+        limit: CHAT_MESSAGE_WINDOW_SIZE,
+        revalidate: true,
+        aroundTimestamp,
+        resetWindow: !isStoryRoom && aroundTimestamp === undefined,
+      });
     }
-  }, [chat?.sessionKind?.scenarioId, id, openChatWindow, savedStoryReadingPositionForChat?.pinned, storyReadingRestoreKey]);
+  }, [chat?.sessionKind?.scenarioId, id, isStoryRoom, openChatWindow, savedStoryReadingPositionForChat, storyReadingRestoreKey]);
 
   useEffect(() => {
     userDraftActivityRef.current = null;
