@@ -25,6 +25,8 @@ const MOBILE_BACKDROP_MAX_OPACITY = 0.34;
 const MOBILE_SHEET_SETTLE_MS = 360;
 const MOBILE_SHEET_EASING = 'cubic-bezier(0.16, 1, 0.3, 1)';
 const TEMPORARY_PANEL_VIEWPORT_RATIO = 0.82;
+const PANEL_OFFSET_VAR = '--pneumata-right-panel-offset';
+const PANEL_BACKDROP_OPACITY_VAR = '--pneumata-right-panel-backdrop-opacity';
 
 function clampPanelWidth(value: number, maxWidth = MAX_PANEL_WIDTH, viewportRatio = 0.48) {
   if (!Number.isFinite(value)) return DEFAULT_PANEL_WIDTH;
@@ -41,6 +43,20 @@ function getInitialPanelWidth(maxWidth = MAX_PANEL_WIDTH, viewportRatio = 0.48) 
 function getMobileSheetTravelDistance() {
   if (typeof window === 'undefined') return 640;
   return Math.max(320, window.innerHeight * 0.8);
+}
+
+function setMobileSheetGestureCss(offset: number) {
+  if (typeof document === 'undefined') return;
+  const travelDistance = getMobileSheetTravelDistance();
+  const progress = 1 - Math.min(1, Math.max(0, offset) / travelDistance);
+  document.documentElement.style.setProperty(PANEL_OFFSET_VAR, `${Math.max(0, offset)}px`);
+  document.documentElement.style.setProperty(PANEL_BACKDROP_OPACITY_VAR, String(MOBILE_BACKDROP_MAX_OPACITY * progress));
+}
+
+function clearMobileSheetGestureCss() {
+  if (typeof document === 'undefined') return;
+  document.documentElement.style.removeProperty(PANEL_OFFSET_VAR);
+  document.documentElement.style.removeProperty(PANEL_BACKDROP_OPACITY_VAR);
 }
 
 export default function RightPanel({ children, title, hideMobileTitle = false, titleActions, desktopMaxWidth = MAX_PANEL_WIDTH, desktopViewportRatio = 0.48 }: RightPanelProps) {
@@ -68,10 +84,31 @@ export default function RightPanel({ children, title, hideMobileTitle = false, t
   const mobileDragMovedRef = useRef(false);
   const mobileCloseTimerRef = useRef<number | null>(null);
   const mobileDragCleanupRef = useRef<(() => void) | null>(null);
+  const mobileGestureRafRef = useRef<number | null>(null);
+  const pendingMobileGestureOffsetRef = useRef<number | null>(null);
 
   const cleanupMobileDragListeners = useCallback(() => {
     mobileDragCleanupRef.current?.();
     mobileDragCleanupRef.current = null;
+  }, []);
+
+  const scheduleMobileGestureCss = useCallback((offset: number) => {
+    pendingMobileGestureOffsetRef.current = offset;
+    if (mobileGestureRafRef.current !== null) return;
+    mobileGestureRafRef.current = window.requestAnimationFrame(() => {
+      mobileGestureRafRef.current = null;
+      const nextOffset = pendingMobileGestureOffsetRef.current;
+      if (nextOffset !== null) setMobileSheetGestureCss(nextOffset);
+    });
+  }, []);
+
+  const resetMobileGestureCss = useCallback(() => {
+    pendingMobileGestureOffsetRef.current = null;
+    if (mobileGestureRafRef.current !== null) {
+      window.cancelAnimationFrame(mobileGestureRafRef.current);
+      mobileGestureRafRef.current = null;
+    }
+    clearMobileSheetGestureCss();
   }, []);
 
   const finishResize = useCallback(() => {
@@ -120,10 +157,11 @@ export default function RightPanel({ children, title, hideMobileTitle = false, t
 
   useEffect(() => () => {
     cleanupMobileDragListeners();
+    resetMobileGestureCss();
     if (mobileCloseTimerRef.current !== null) {
       window.clearTimeout(mobileCloseTimerRef.current);
     }
-  }, [cleanupMobileDragListeners]);
+  }, [cleanupMobileDragListeners, resetMobileGestureCss]);
 
   useEffect(() => {
     if (!rightPanelOpen) {
@@ -143,12 +181,13 @@ export default function RightPanel({ children, title, hideMobileTitle = false, t
       window.clearTimeout(mobileCloseTimerRef.current);
       mobileCloseTimerRef.current = null;
     }
+    if (rightPanelGestureOffset === null) resetMobileGestureCss();
     mobileDragRef.current = null;
     mobileDragMovedRef.current = false;
     setMobileDragging(false);
     setMobileDragOffset(0);
     setMobileSheetMounted(true);
-  }, [rightPanelGestureOffset, rightPanelOpen]);
+  }, [resetMobileGestureCss, rightPanelGestureOffset, rightPanelOpen]);
 
   const closeMobileSheet = useCallback(() => {
     if (mobileCloseTimerRef.current !== null) {
@@ -160,13 +199,16 @@ export default function RightPanel({ children, title, hideMobileTitle = false, t
     setRightPanelGestureOffset(null);
     setRightPanelGestureDragging(false);
     setMobileDragging(false);
-    setMobileDragOffset(getMobileSheetTravelDistance());
+    const travelDistance = getMobileSheetTravelDistance();
+    scheduleMobileGestureCss(travelDistance);
+    setMobileDragOffset(travelDistance);
     mobileCloseTimerRef.current = window.setTimeout(() => {
       setRightPanelOpen(false);
       setMobileSheetMounted(false);
       mobileCloseTimerRef.current = null;
+      resetMobileGestureCss();
     }, MOBILE_SHEET_SETTLE_MS);
-  }, [setRightPanelGestureDragging, setRightPanelGestureOffset, setRightPanelOpen]);
+  }, [resetMobileGestureCss, scheduleMobileGestureCss, setRightPanelGestureDragging, setRightPanelGestureOffset, setRightPanelOpen]);
 
   const startMobileDragCloseAt = useCallback((clientY: number, input: MobileDragInput) => {
     if (mobileDragRef.current && mobileDragRef.current.input !== input) return;
@@ -178,7 +220,8 @@ export default function RightPanel({ children, title, hideMobileTitle = false, t
     mobileDragRef.current = { startY: clientY, latestY: clientY, moved: false, input };
     setMobileDragging(true);
     setMobileDragOffset(0);
-  }, []);
+    scheduleMobileGestureCss(0);
+  }, [scheduleMobileGestureCss]);
 
   const updateMobileDragCloseAt = useCallback((clientY: number, input: MobileDragInput) => {
     const state = mobileDragRef.current;
@@ -189,8 +232,8 @@ export default function RightPanel({ children, title, hideMobileTitle = false, t
       state.moved = true;
       mobileDragMovedRef.current = true;
     }
-    setMobileDragOffset(deltaY);
-  }, []);
+    scheduleMobileGestureCss(deltaY);
+  }, [scheduleMobileGestureCss]);
 
   const finishMobileDragCloseAt = useCallback((input: MobileDragInput, event?: React.PointerEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
     event?.preventDefault();
@@ -206,12 +249,14 @@ export default function RightPanel({ children, title, hideMobileTitle = false, t
       closeMobileSheet();
       return;
     }
+    scheduleMobileGestureCss(0);
     setMobileDragging(false);
     setMobileDragOffset(0);
     window.setTimeout(() => {
       mobileDragMovedRef.current = false;
+      resetMobileGestureCss();
     }, MOBILE_SHEET_SETTLE_MS);
-  }, [cleanupMobileDragListeners, closeMobileSheet]);
+  }, [cleanupMobileDragListeners, closeMobileSheet, resetMobileGestureCss, scheduleMobileGestureCss]);
 
   const startMobileDragClose = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (event.pointerType === 'touch') return;
@@ -355,8 +400,10 @@ export default function RightPanel({ children, title, hideMobileTitle = false, t
           backdrop: {
             sx: {
               bgcolor: mobileGestureActive
-                ? `rgba(0,0,0,var(--pneumata-right-panel-backdrop-opacity, ${mobileBackdropOpacity}))`
-                : `rgba(0,0,0,${mobileBackdropOpacity})`,
+                ? `rgba(0,0,0,var(${PANEL_BACKDROP_OPACITY_VAR}, ${mobileBackdropOpacity}))`
+                : mobileDragging
+                  ? `rgba(0,0,0,var(${PANEL_BACKDROP_OPACITY_VAR}, ${mobileBackdropOpacity}))`
+                  : `rgba(0,0,0,${mobileBackdropOpacity})`,
               transition: mobileDragging || rightPanelGestureDragging ? 'none' : `background-color ${MOBILE_SHEET_SETTLE_MS}ms ${MOBILE_SHEET_EASING}`,
             },
           },
@@ -372,8 +419,8 @@ export default function RightPanel({ children, title, hideMobileTitle = false, t
             boxShadow: (theme) => theme.palette.mode === 'light' ? '0 -18px 44px rgba(15,23,42,0.10)' : '0 -18px 44px rgba(0,0,0,0.32)',
             contain: 'layout paint',
             overflow: 'hidden',
-            transform: mobileGestureActive
-              ? `translate3d(0, var(--pneumata-right-panel-offset, ${effectiveMobileDragOffset}px), 0) !important`
+            transform: mobileGestureActive || mobileDragging
+              ? `translate3d(0, var(${PANEL_OFFSET_VAR}, ${effectiveMobileDragOffset}px), 0) !important`
               : `translate3d(0, ${effectiveMobileDragOffset}px, 0) !important`,
             transition: mobileDragging || rightPanelGestureDragging ? 'none !important' : `transform ${MOBILE_SHEET_SETTLE_MS}ms ${MOBILE_SHEET_EASING} !important`,
             willChange: mobileDragging || mobileGestureActive || effectiveMobileDragOffset > 0 ? 'transform' : 'auto',
