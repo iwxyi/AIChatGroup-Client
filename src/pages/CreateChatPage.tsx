@@ -15,6 +15,7 @@ import { useChatStore } from '../stores/useChatStore';
 import { useCharacterStore } from '../stores/useCharacterStore';
 import { useMessageStore } from '../stores/useMessageStore';
 import { useSettingsStore } from '../stores/useSettingsStore';
+import type { AICharacter } from '../types/character';
 import { getPreferredAIProfile, isAIProfileUsable } from '../types/settings';
 import type { ChatStyle, GroupChat, RuntimeEvolutionIntensity } from '../types/chat';
 import { ROOM_TEMPLATES, filterRoomTemplatesForAvailability, getRoomTemplate, getRoomTemplateKernel, getRoomTemplateKeyBySessionKind, type RoomTemplateKey } from '../services/roomTemplates';
@@ -49,6 +50,14 @@ import AppSnackbar from '../components/common/AppSnackbar';
 import ExpandableFab from '../components/common/ExpandableFab';
 import SurfaceCard from '../components/common/SurfaceCard';
 import MarketUploadDialog, { type MarketUploadDraft } from '../components/market/MarketUploadDialog';
+import { marketApi } from '../services/marketApi';
+import {
+  buildBundledCharacterPreview,
+  buildImportedChatDraft,
+  getBundledCharacterEntries,
+  getMarketImportDraftState,
+  remapIds,
+} from '../services/marketImportDraft';
 import { buildBundleMarketPayload, buildChatMarketPayload, getMarketSummaryForChat, getMarketTitleForChat } from '../services/templateMarketPayload';
 
 const HotTopicDialogContainer = lazy(() => import('../components/createChat/HotTopicDialogContainer'));
@@ -171,6 +180,7 @@ export default function CreateChatPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { id } = useParams<{ id: string }>();
+  const marketImportDraft = !id ? getMarketImportDraftState(location.state) : null;
   const { setHeaderTitle, setHeaderActions, setHeaderBackAction, setHideMobileBottomNav } = useLayoutHeaderActions();
   const { chats, addChat, updateChat, deleteChat, prefetchChats, markChatsWarm } = useChatStore(useShallow((state) => ({
     chats: state.chats,
@@ -200,6 +210,7 @@ export default function CreateChatPage() {
   const [clearMemoryConfirmOpen, setClearMemoryConfirmOpen] = useState(false);
   const [marketMenuAnchor, setMarketMenuAnchor] = useState<HTMLElement | null>(null);
   const [marketUploadDraft, setMarketUploadDraft] = useState<MarketUploadDraft | null>(null);
+  const [marketBundleCharacterPreviews, setMarketBundleCharacterPreviews] = useState<AICharacter[]>([]);
   const [configTab, setConfigTab] = useState(0);
 
   const editingChat = id ? chats.find((chat) => chat.id === id) : null;
@@ -310,6 +321,7 @@ export default function CreateChatPage() {
     if (id && !editingChat) return;
 
     if (editingChat) {
+      setMarketBundleCharacterPreviews([]);
       setName(editingChat.name || '');
       setTopic(editingChat.topic || '');
       setStyle(editingChat.style);
@@ -354,6 +366,54 @@ export default function CreateChatPage() {
       return;
     }
 
+    if (marketImportDraft?.item && ['chat_template', 'bundle_template'].includes(marketImportDraft.item.kind)) {
+      const importedChat = buildImportedChatDraft(marketImportDraft.item);
+      const matchedTemplateKey = importedChat.sessionKind ? getRoomTemplateKeyBySessionKind(importedChat.sessionKind) : null;
+      setName(importedChat.name || '');
+      setTopic(importedChat.topic || '');
+      setStyle(importedChat.style || chatDraftDefaults.style);
+      styleOverriddenRef.current = Boolean(importedChat.style);
+      setRoomTemplate(matchedTemplateKey || 'open_chat');
+      setSelectedMembers(stripUserMemberId(importedChat.memberIds || []));
+      setOwnerCharacterId(importedChat.governance?.ownerCharacterId || '');
+      setAdminCharacterIds(importedChat.governance?.adminCharacterIds || []);
+      setMood(importedChat.worldState?.mood || '');
+      setFocus(importedChat.worldState?.focus || '');
+      setRecentEvent(importedChat.worldState?.recentEvent || '');
+      setSeedMemoryText((importedChat.runtimeSeed?.notes || []).join('\n'));
+      setSeedArtifactText((importedChat.runtimeSeed?.artifacts || []).join('\n'));
+      setAllowCliques(Boolean(importedChat.dramaRules?.allowCliques));
+      setAllowMockery(Boolean(importedChat.dramaRules?.allowMockery));
+      setShowRoleActions(importedChat.showRoleActions ?? chatDraftDefaults.showRoleActions);
+      setIncludeUserAsMember((importedChat.memberIds || []).includes('user'));
+      setOperatorIdsText((importedChat.operatorIds || []).join(', '));
+      setRuntimeEvolutionIntensity(importedChat.runtimeEvolutionIntensity || chatDraftDefaults.runtimeEvolutionIntensity);
+      setStoryBranchMode(importedChat.scenarioState?.branches?.[0]?.status === 'chosen' ? 'open' : 'guided');
+      setStoryBackground(String(importedChat.scenarioState?.storyBackground || ''));
+      setStoryDirection(String(importedChat.scenarioState?.storyDirection || ''));
+      setStoryOutline(String(importedChat.scenarioState?.storyOutline || ''));
+      setStudyGoalLabel(importedChat.scenarioState?.goals?.find((item) => item.goalId === 'study-goal')?.label || '');
+      setAgentGoalLabel(importedChat.scenarioState?.goals?.find((item) => item.goalId === 'agent-goal')?.label || '');
+      setBoardColumns(importedChat.scenarioState?.board?.schema?.columns || 8);
+      setBoardRows(importedChat.scenarioState?.board?.schema?.rows || 8);
+      setDeductionFactionCount(importedChat.scenarioState?.factions?.length || 2);
+      setWerewolfRoleConfig(String(importedChat.scenarioState?.werewolfRoleConfig || ''));
+      setWerewolfPostGameMode(String(importedChat.scenarioState?.werewolfPostGameMode || 'free_talk'));
+      setMysteryClueCount(importedChat.scenarioState?.progress?.find((item) => item.key === 'mystery-progress')?.target || 6);
+      setMysteryScript(String(importedChat.scenarioState?.mysteryScript || ''));
+      setMysteryRoleMappingMode(String(importedChat.scenarioState?.mysteryRoleMappingMode || 'alias'));
+      setAllowSpeakAs(importedChat.directorControls?.allowSpeakAs ?? true);
+      setAllowDirectorMode(importedChat.directorControls?.allowDirectorMode ?? true);
+      setAllowEventInjection(importedChat.directorControls?.allowEventInjection ?? true);
+      setAllowForcedReply(importedChat.directorControls?.allowForcedReply ?? true);
+      setAutoModeration(Boolean(importedChat.governance?.autoModeration));
+      setAllowMute(importedChat.governance?.allowMute ?? true);
+      setAllowPrivateThreads(importedChat.governance?.allowPrivateThreads ?? true);
+      setMarketBundleCharacterPreviews(marketImportDraft.item.kind === 'bundle_template' ? buildBundledCharacterPreview(marketImportDraft.item) : []);
+      return;
+    }
+
+    setMarketBundleCharacterPreviews([]);
     setStyle(chatDraftDefaults.style);
     styleOverriddenRef.current = false;
     setRoomTemplate('open_chat');
@@ -384,7 +444,7 @@ export default function CreateChatPage() {
     setAutoModeration(false);
     setAllowMute(true);
     setAllowPrivateThreads(true);
-  }, [chatDraftDefaults.runtimeEvolutionIntensity, chatDraftDefaults.showRoleActions, chatDraftDefaults.style, editingChat, id]);
+  }, [chatDraftDefaults.runtimeEvolutionIntensity, chatDraftDefaults.showRoleActions, chatDraftDefaults.style, editingChat, id, marketImportDraft]);
 
   const toggleMember = (memberId: string) => {
     setSelectedMembers((prev) => {
@@ -565,7 +625,10 @@ export default function CreateChatPage() {
 
   const customCharacters = characters.filter((char) => !char.isPreset);
   const presetCharacters = characters.filter((char) => char.isPreset);
-  const selectedCharacters = characters.filter((char) => selectedMembers.includes(char.id));
+  const selectedCharacters = [
+    ...characters.filter((char) => selectedMembers.includes(char.id)),
+    ...marketBundleCharacterPreviews.filter((char) => selectedMembers.includes(char.id) && !characters.some((item) => item.id === char.id)),
+  ];
   const hasCustomCharacters = customCharacters.length > 0;
   const hasPresetCharacters = presetCharacters.length > 0;
   const canAutofill = !editingChat && !aiAutofilling && Boolean(name.trim() || topic.trim() || selectedMembers.length);
@@ -1103,15 +1166,49 @@ export default function CreateChatPage() {
         return;
       }
 
-      const chat = await addChat(buildCurrentGroupChatDraft(
+      let creationIdMap = new Map<string, string>();
+      if (marketImportDraft?.item.kind === 'bundle_template') {
+        const bundledEntries = getBundledCharacterEntries(marketImportDraft.item);
+        const previewByLocalId = new Map(marketBundleCharacterPreviews.map((character) => [character.id, character]));
+        const createdCharacters = await addCharacters(bundledEntries.map((entry) => {
+          const preview = previewByLocalId.get(entry.localId)!;
+          const { id: _id, isPreset: _isPreset, createdAt: _createdAt, updatedAt: _updatedAt, ...draft } = preview;
+          void _id;
+          void _isPreset;
+          void _createdAt;
+          void _updatedAt;
+          return {
+            ...draft,
+          sourceMarketItemId: marketImportDraft.item.id,
+          sourceMarketItemVersion: marketImportDraft.item.payloadVersion,
+          sourceMarketKind: marketImportDraft.item.kind,
+          };
+        }));
+        creationIdMap = new Map(bundledEntries.map((entry, index) => [entry.localId, createdCharacters[index]?.id || entry.localId]));
+      }
+      const mapMemberIds = (ids: string[]) => ids.map((memberId) => creationIdMap.get(memberId) || memberId);
+      const baseDraft = buildCurrentGroupChatDraft(
         name,
-        draftContext.nextMemberIds,
-        draftContext.normalizedOperatorIds,
-        draftContext.normalizedOwnerCharacterId,
-        draftContext.normalizedAdminCharacterIds,
-      ));
+        mapMemberIds(draftContext.nextMemberIds),
+        mapMemberIds(draftContext.normalizedOperatorIds),
+        draftContext.normalizedOwnerCharacterId ? creationIdMap.get(draftContext.normalizedOwnerCharacterId) || draftContext.normalizedOwnerCharacterId : null,
+        mapMemberIds(draftContext.normalizedAdminCharacterIds),
+      );
+      const importedChatRuntime = marketImportDraft?.item.kind === 'bundle_template'
+        ? remapIds(buildImportedChatDraft(marketImportDraft.item), creationIdMap) as Partial<GroupChat>
+        : null;
+      const chat = await addChat({
+        ...(importedChatRuntime || {}),
+        ...baseDraft,
+        memberIds: baseDraft.memberIds,
+        sourceMarketItemId: marketImportDraft?.item.id || undefined,
+        sourceMarketItemVersion: marketImportDraft?.item.payloadVersion,
+        sourceMarketKind: marketImportDraft?.item.kind,
+      });
       if (draftContext.nextMemberIds.length) {
-        const memberNames = draftContext.nextMemberIds.map((memberId) => characters.find((char) => char.id === memberId)?.name || memberId);
+        const memberNames = baseDraft.memberIds.map((memberId) => (
+          memberId === 'user' ? 'User' : characters.find((char) => char.id === memberId)?.name || marketBundleCharacterPreviews.find((char) => creationIdMap.get(char.id) === memberId || char.id === memberId)?.name || memberId
+        ));
         await useMessageStore.getState().addMessage({
           chatId: chat.id,
           type: 'system',
@@ -1123,6 +1220,9 @@ export default function CreateChatPage() {
         });
       }
       await seedOpeningTopicMessage(chat.id, topic);
+      if (marketImportDraft?.item.id) {
+        await marketApi.recordImported(marketImportDraft.item.id);
+      }
       sessionStorage.removeItem(CHAT_DRAFT_KEY);
       setChatDraftDefaults({ style, showRoleActions, runtimeEvolutionIntensity });
       navigate(`/chats/${chat.id}`);

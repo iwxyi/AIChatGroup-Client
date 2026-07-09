@@ -15,6 +15,8 @@ import LoadingState from '../components/common/LoadingState';
 import MarketUploadDialog, { type MarketUploadDraft } from '../components/market/MarketUploadDialog';
 import { enqueueAvatarGenerationForCharacter } from '../services/avatarGeneration';
 import { initializeDefaultRelationshipsForCreatedCharacters } from '../services/defaultRelationshipInitializer';
+import { marketApi } from '../services/marketApi';
+import { buildImportedCharacterDraft, getMarketImportDraftState } from '../services/marketImportDraft';
 import { buildCharacterMarketPayload, getMarketSummaryForCharacter, getMarketTitleForCharacter } from '../services/templateMarketPayload';
 import { getPreferredAIProfile, isAIProfileUsable } from '../types/settings';
 
@@ -25,6 +27,7 @@ export default function CharacterEditorPage() {
   const { id } = useParams<{ id?: string }>();
   const returnTo = new URLSearchParams(location.search).get('returnTo');
   const isCreate = location.pathname === '/characters/create';
+  const marketImportDraft = isCreate ? getMarketImportDraftState(location.state) : null;
   const editId = isCreate ? null : (id || null);
   const settings = useSettingsStore(useShallow((state) => ({
     aiProfiles: state.aiProfiles,
@@ -104,6 +107,11 @@ export default function CharacterEditorPage() {
   }, [editId, syncArtifactCloud]);
 
   const editChar = useMemo(() => (editId ? characters.find((character) => character.id === editId) : undefined), [characters, editId]);
+  const importedCharacterInitial = useMemo(() => (
+    marketImportDraft?.item.kind === 'character_template'
+      ? buildImportedCharacterDraft(marketImportDraft.item)
+      : undefined
+  ), [marketImportDraft]);
   const isRemoteDeletedCharacter = Boolean(editId && remoteDeletedCharacterIds.includes(editId));
   const headerTitle = useMemo(() => {
     const normalizedName = draftNameState.editId === editId ? draftNameState.name.trim() : '';
@@ -198,8 +206,8 @@ export default function CharacterEditorPage() {
   return (
     <Box sx={{ p: 3, pt: { xs: 1, sm: 1, md: 3 }, width: '100%', maxWidth: 'none', mx: 'auto' }}>
       <CharacterForm
-        key={editId || 'create'}
-        initial={editChar}
+        key={editId || marketImportDraft?.item.id || 'create'}
+        initial={editChar || importedCharacterInitial}
         existingNames={characters.map((character) => character.name)}
         saveError={saveError}
         onDraftNameChange={handleDraftNameChange}
@@ -218,7 +226,15 @@ export default function CharacterEditorPage() {
             if (editId) {
               await updateCharacter(editId, data);
             } else {
-              const created = await addCharacter(data);
+              const created = await addCharacter({
+                ...data,
+                sourceMarketItemId: importedCharacterInitial?.sourceMarketItemId,
+                sourceMarketItemVersion: importedCharacterInitial?.sourceMarketItemVersion,
+                sourceMarketKind: importedCharacterInitial?.sourceMarketKind,
+              });
+              if (marketImportDraft?.item.id) {
+                await marketApi.recordImported(marketImportDraft.item.id);
+              }
               const profile = getPreferredAIProfile(settings.aiProfiles, 'text');
               if (isAIProfileUsable(profile)) {
                 void initializeDefaultRelationshipsForCreatedCharacters({
