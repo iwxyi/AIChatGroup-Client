@@ -542,6 +542,10 @@ class AdminApiClient {
     return this.request<{ item: Record<string, unknown> }>('POST', `/market/items/${encodeURIComponent(itemId)}/decision`, payload);
   }
 
+  createDefaultMarketItems() {
+    return this.request<{ items: Array<Record<string, unknown>>; createdCount: number; updatedCount: number }>('POST', '/market/defaults', {});
+  }
+
   getUserRestrictions(userId: string) {
     return this.request<{ items: Array<Record<string, unknown>> }>('GET', `/risk/users/${encodeURIComponent(userId)}/restrictions`);
   }

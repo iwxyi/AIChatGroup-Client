@@ -27,6 +27,9 @@ export default function AdminMarketPage() {
   const [detail, setDetail] = useState<Record<string, unknown> | null>(null);
   const [reviewNote, setReviewNote] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
+  const [defaultDialogOpen, setDefaultDialogOpen] = useState(false);
+  const [defaultCreating, setDefaultCreating] = useState(false);
+  const [snackbarMessage, setSnackbarMessage] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -72,11 +75,32 @@ export default function AdminMarketPage() {
     }
   };
 
+  const createDefaults = async () => {
+    setDefaultCreating(true);
+    setError('');
+    try {
+      const result = await adminApi.createDefaultMarketItems();
+      setDefaultDialogOpen(false);
+      setStatus('approved');
+      setKind('');
+      setSnackbarMessage(`默认预设已同步：新建 ${result.createdCount} 个，更新 ${result.updatedCount} 个`);
+      const refreshed = await adminApi.getMarketItems({ status: 'approved', kind: '', sort, order, limit: 80 });
+      setItems(refreshed.items);
+    } catch (createError) {
+      setError(createError instanceof Error ? createError.message : '创建默认预设失败');
+    } finally {
+      setDefaultCreating(false);
+    }
+  };
+
   return (
     <Box sx={{ display: 'grid', gap: 2 }}>
-      <Box>
-        <Typography variant="h5" sx={{ fontWeight: 900 }}>市场管理</Typography>
-        <Typography variant="body2" color="text.secondary">角色模板、聊天模板和组合包默认待审核，通过后才进入公开市场。</Typography>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, gap: 2, flexDirection: { xs: 'column', sm: 'row' } }}>
+        <Box>
+          <Typography variant="h5" sx={{ fontWeight: 900 }}>市场管理</Typography>
+          <Typography variant="body2" color="text.secondary">角色模板、聊天模板和组合包默认待审核，通过后才进入公开市场。</Typography>
+        </Box>
+        <Button variant="contained" onClick={() => setDefaultDialogOpen(true)}>创建默认</Button>
       </Box>
       <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
         <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5}>
@@ -117,6 +141,7 @@ export default function AdminMarketPage() {
           <Button onClick={() => void load()} disabled={loading}>刷新</Button>
         </Stack>
       </Paper>
+      {snackbarMessage ? <Alert severity="success" onClose={() => setSnackbarMessage('')}>{snackbarMessage}</Alert> : null}
       {error ? <Alert severity="error">{error}</Alert> : null}
       <Paper variant="outlined" sx={{ borderRadius: 2, overflow: 'hidden' }}>
         <Table size="small">
@@ -176,6 +201,26 @@ export default function AdminMarketPage() {
           <Button color="warning" onClick={() => void decide('archived')} disabled={actionLoading}>下架</Button>
           <Button color="error" onClick={() => void decide('rejected')} disabled={actionLoading}>拒绝</Button>
           <Button variant="contained" color="success" onClick={() => void decide('approved')} disabled={actionLoading}>通过</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={defaultDialogOpen} onClose={() => defaultCreating ? undefined : setDefaultDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>创建默认市场预设</DialogTitle>
+        <DialogContent>
+          <Stack spacing={1.5} sx={{ pt: 1 }}>
+            <Typography variant="body2" color="text.secondary">
+              将直接创建或更新一组已通过的默认市场预设，包括角色模板、普通群聊模板、故事房模板，以及对应的组合包。
+            </Typography>
+            <Alert severity="info">
+              这些预设会以“系统默认市场”为作者进入公开市场；再次点击会同步更新已有默认预设，不会重复创建同一批条目。
+            </Alert>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDefaultDialogOpen(false)} disabled={defaultCreating}>取消</Button>
+          <Button variant="contained" onClick={() => void createDefaults()} disabled={defaultCreating}>
+            {defaultCreating ? '创建中' : '确认创建'}
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>
