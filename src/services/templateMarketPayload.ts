@@ -28,6 +28,19 @@ function pickCharacterTemplate(character: AICharacter) {
   };
 }
 
+function getPrimaryVisualReferenceImage(character: AICharacter) {
+  const visualIdentity = character.visualIdentity || null;
+  const images = [
+    ...(visualIdentity?.referenceImages || []),
+    ...((character as AICharacter & { visualReferenceImages?: Array<{ url?: string; isPrimary?: boolean; id?: string }> }).visualReferenceImages || []),
+  ].filter((image) => typeof image?.url === 'string' && image.url);
+  return images.find((image) => image.isPrimary || image.id === visualIdentity?.primaryReferenceImageId) || images[0] || null;
+}
+
+export function getMarketCoverForCharacter(character: AICharacter) {
+  return getPrimaryVisualReferenceImage(character)?.url || character.avatar || null;
+}
+
 export function buildCharacterMarketPayload(character: AICharacter) {
   return {
     schemaVersion: 1,

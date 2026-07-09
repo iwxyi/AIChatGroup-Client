@@ -17,7 +17,7 @@ import { enqueueAvatarGenerationForCharacter } from '../services/avatarGeneratio
 import { initializeDefaultRelationshipsForCreatedCharacters } from '../services/defaultRelationshipInitializer';
 import { marketApi } from '../services/marketApi';
 import { buildImportedCharacterDraft, getMarketImportDraftState } from '../services/marketImportDraft';
-import { buildCharacterMarketPayload, getMarketSummaryForCharacter, getMarketTitleForCharacter } from '../services/templateMarketPayload';
+import { buildCharacterMarketPayload, getMarketCoverForCharacter, getMarketSummaryForCharacter, getMarketTitleForCharacter } from '../services/templateMarketPayload';
 import { getPreferredAIProfile, isAIProfileUsable } from '../types/settings';
 
 export default function CharacterEditorPage() {
@@ -148,7 +148,7 @@ export default function CharacterEditorPage() {
       kind: 'character_template',
       title: getMarketTitleForCharacter(editChar),
       summary: getMarketSummaryForCharacter(editChar),
-      coverImage: editChar.avatar || null,
+      coverImage: getMarketCoverForCharacter(editChar),
       payload: buildCharacterMarketPayload(editChar),
       sourceEntityId: editId,
       marketItemId: editChar.sourceMarketItemId || null,

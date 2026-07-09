@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, Stack, TextField } from '@mui/material';
+import { Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, Stack, Typography } from '@mui/material';
 import { marketApi, type MarketItem, type MarketItemKind } from '../../services/marketApi';
 
 export interface MarketUploadDraft {
@@ -23,32 +23,24 @@ export default function MarketUploadDialog({
   onClose: () => void;
   onUploaded?: (item: MarketItem) => void;
 }) {
-  const [title, setTitle] = useState('');
-  const [summary, setSummary] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
     if (!open || !draft) return;
-    setTitle(draft.title);
-    setSummary(draft.summary || '');
     setError('');
   }, [draft, open]);
 
   const submit = async () => {
     if (!draft || saving) return;
-    const trimmedTitle = title.trim();
-    if (!trimmedTitle) {
-      setError('标题不能为空');
-      return;
-    }
+    const trimmedTitle = draft.title.trim();
     setSaving(true);
     setError('');
     try {
       const result = await marketApi.upload({
         ...draft,
         title: trimmedTitle,
-        summary: summary.trim(),
+        summary: draft.summary?.trim() || '',
       });
       onUploaded?.(result.item);
       onClose();
@@ -64,23 +56,27 @@ export default function MarketUploadDialog({
       <DialogTitle>{draft?.marketItemId ? '更新市场模板' : '上传到市场'}</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ pt: 1 }}>
-          <TextField
-            label="标题"
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
-            slotProps={{ htmlInput: { maxLength: 160 } }}
-            fullWidth
-          />
-          <TextField
-            label="摘要"
-            value={summary}
-            onChange={(event) => setSummary(event.target.value)}
-            slotProps={{ htmlInput: { maxLength: 1000 } }}
-            minRows={3}
-            maxRows={6}
-            multiline
-            fullWidth
-          />
+          <Box sx={{ display: 'grid', gap: 1 }}>
+            <Typography variant="subtitle2" sx={{ fontWeight: 900 }}>会保留</Typography>
+            <Stack direction="row" spacing={0.75} sx={{ flexWrap: 'wrap', gap: 0.75 }}>
+              {draft?.kind === 'character_template' ? (
+                ['头像', '形象图', '视觉形象', '核心画像', '人格', '背景', '说话风格', '展示配置'].map((item) => <Chip key={item} size="small" label={item} />)
+              ) : draft?.kind === 'chat_template' ? (
+                ['聊天类型', '主题', '玩法配置', '导演控制', '展示配置'].map((item) => <Chip key={item} size="small" label={item} />)
+              ) : (
+                ['聊天配置', '包内角色', '包内关系', '包内记忆', '陪伴起点', '运行种子'].map((item) => <Chip key={item} size="small" label={item} />)
+              )}
+            </Stack>
+          </Box>
+          <Box sx={{ display: 'grid', gap: 1 }}>
+            <Typography variant="subtitle2" sx={{ fontWeight: 900 }}>会去掉</Typography>
+            <Stack direction="row" spacing={0.75} sx={{ flexWrap: 'wrap', gap: 0.75 }}>
+              {(draft?.kind === 'bundle_template'
+                ? ['包外角色', '包外关系', '包外记忆', '历史聊天全文', '用户私域信息', '密钥与内部字段']
+                : ['记忆历史', '关系历史', '历史聊天全文', '用户私域信息', '密钥与内部字段']
+              ).map((item) => <Chip key={item} size="small" variant="outlined" label={item} />)}
+            </Stack>
+          </Box>
           {error ? <Alert severity="error">{error}</Alert> : null}
         </Stack>
       </DialogContent>
