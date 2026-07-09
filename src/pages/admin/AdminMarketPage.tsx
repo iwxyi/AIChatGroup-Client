@@ -221,9 +221,19 @@ export default function AdminMarketPage() {
         </Box>
         <Button variant="contained" onClick={() => setDefaultDialogOpen(true)}>创建默认</Button>
       </Box>
-      <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
-        <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5}>
-          <FormControl size="small" sx={{ minWidth: 140 }}>
+      <Paper variant="outlined" sx={{ p: { xs: 1.25, sm: 2 }, borderRadius: 2 }}>
+        <Box
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: {
+              xs: 'repeat(2, minmax(0, 1fr))',
+              sm: 'repeat(auto-fit, minmax(136px, 1fr))',
+            },
+            gap: 1.25,
+            alignItems: 'center',
+          }}
+        >
+          <FormControl size="small" sx={{ minWidth: 0 }}>
             <InputLabel>状态</InputLabel>
             <Select label="状态" value={status} onChange={(event) => setStatus(event.target.value)}>
               <MenuItem value="">全部</MenuItem>
@@ -233,7 +243,7 @@ export default function AdminMarketPage() {
               <MenuItem value="archived">已下架</MenuItem>
             </Select>
           </FormControl>
-          <FormControl size="small" sx={{ minWidth: 150 }}>
+          <FormControl size="small" sx={{ minWidth: 0 }}>
             <InputLabel>类型</InputLabel>
             <Select label="类型" value={kind} onChange={(event) => setKind(event.target.value)}>
               <MenuItem value="">全部</MenuItem>
@@ -242,7 +252,7 @@ export default function AdminMarketPage() {
               <MenuItem value="bundle_template">组合包</MenuItem>
             </Select>
           </FormControl>
-          <FormControl size="small" sx={{ minWidth: 150 }}>
+          <FormControl size="small" sx={{ minWidth: 0 }}>
             <InputLabel>排序</InputLabel>
             <Select label="排序" value={sort} onChange={(event) => setSort(event.target.value)}>
               <MenuItem value="updated_at">更新时间</MenuItem>
@@ -250,20 +260,30 @@ export default function AdminMarketPage() {
               <MenuItem value="imported_count">导入数</MenuItem>
             </Select>
           </FormControl>
-          <FormControl size="small" sx={{ minWidth: 120 }}>
+          <FormControl size="small" sx={{ minWidth: 0 }}>
             <InputLabel>方向</InputLabel>
             <Select label="方向" value={order} onChange={(event) => setOrder(event.target.value)}>
               <MenuItem value="desc">倒序</MenuItem>
               <MenuItem value="asc">正序</MenuItem>
             </Select>
           </FormControl>
-          <Button onClick={() => void load()} disabled={loading}>刷新</Button>
-        </Stack>
+          <Button
+            onClick={() => void load()}
+            disabled={loading}
+            sx={{
+              justifySelf: 'end',
+              minWidth: 88,
+              gridColumn: { xs: '2', sm: 'auto' },
+            }}
+          >
+            刷新
+          </Button>
+        </Box>
       </Paper>
       {snackbarMessage ? <Alert severity="success" onClose={() => setSnackbarMessage('')}>{snackbarMessage}</Alert> : null}
       {error ? <Alert severity="error">{error}</Alert> : null}
-      <Paper variant="outlined" sx={{ borderRadius: 2, overflow: 'hidden' }}>
-        <Table size="small">
+      <Paper variant="outlined" sx={{ borderRadius: 2, overflowX: 'auto' }}>
+        <Table size="small" sx={{ minWidth: 760 }}>
           <TableHead>
             <TableRow>
               <TableCell>标题</TableCell>
