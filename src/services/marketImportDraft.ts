@@ -61,6 +61,7 @@ export function getBundledCharacterEntries(item: MarketItem) {
 
 export function buildBundledCharacterPreview(item: MarketItem): AICharacter[] {
   return getBundledCharacterEntries(item).map((entry) => ({
+    ...entry.template,
     id: entry.localId,
     name: entry.template.name || '未命名角色',
     avatar: entry.template.avatar || '🤖',

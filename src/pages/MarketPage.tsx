@@ -71,7 +71,6 @@ export default function MarketPage() {
     <Box sx={{ p: { xs: 2, md: 3 }, display: 'grid', gap: 2 }}>
       <Box>
         <Typography variant="h5" sx={{ fontWeight: 900 }}>市场</Typography>
-        <Typography variant="body2" color="text.secondary">导入已审核通过的角色模板、聊天模板和组合包。导入后会先进入编辑页，保存后才会创建你的本地实例。</Typography>
       </Box>
       <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
@@ -113,8 +112,7 @@ export default function MarketPage() {
         <DialogContent>
           <Stack spacing={1.5} sx={{ pt: 1 }}>
             <Typography sx={{ fontWeight: 800 }}>{selected?.title}</Typography>
-            <Typography variant="body2" color="text.secondary">{selected?.summary || '无摘要'}</Typography>
-            <Alert severity="info">确认后会进入编辑页，你可以修改内容；只有点击保存后才会创建本地实例并绑定市场来源 ID。</Alert>
+            {selected?.summary ? <Typography variant="body2" color="text.secondary">{selected.summary}</Typography> : null}
           </Stack>
         </DialogContent>
         <DialogActions>

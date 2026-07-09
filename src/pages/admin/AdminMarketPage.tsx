@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, Divider, FormControl, InputLabel, MenuItem, Paper, Select, Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography } from '@mui/material';
+import { Alert, Avatar, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, Divider, FormControl, InputLabel, MenuItem, Paper, Select, Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography } from '@mui/material';
 import { adminApi } from '../../services/adminApi';
 import type { MarketItem } from '../../services/marketApi';
 
@@ -14,6 +14,17 @@ const statusLabels: Record<string, string> = {
   approved: '已通过',
   rejected: '已拒绝',
   archived: '已下架',
+};
+
+const personalityLabels: Record<string, string> = {
+  openness: '开放',
+  extroversion: '外向',
+  agreeableness: '亲和',
+  neuroticism: '敏感',
+  humor: '幽默',
+  creativity: '创造',
+  assertiveness: '主见',
+  empathy: '共情',
 };
 
 type PreviewEntry = {
@@ -31,6 +42,15 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function stringifyStable(value: unknown) {
   return JSON.stringify(value ?? null, null, 2);
+}
+
+function compactText(value: unknown, max = 220) {
+  const text = typeof value === 'string' ? value.trim() : '';
+  return text.length > max ? `${text.slice(0, max)}...` : text;
+}
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
 }
 
 function readTemplateName(value: unknown) {
@@ -121,6 +141,125 @@ function diffLabel(state?: PreviewEntry['diffState']) {
   if (state === 'deleted') return '删除';
   if (state === 'changed') return '变更';
   return '无变化';
+}
+
+function formatTime(value: unknown) {
+  const timestamp = Number(value || 0);
+  return timestamp ? new Date(timestamp).toLocaleString('zh-CN', { hour12: false }) : '-';
+}
+
+function renderTextBlock(label: string, value: unknown, max?: number) {
+  const text = compactText(value, max);
+  if (!text) return null;
+  return (
+    <Box>
+      <Typography variant="caption" color="text.secondary">{label}</Typography>
+      <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{text}</Typography>
+    </Box>
+  );
+}
+
+function EntryStructuredPreview({ entry }: { entry: PreviewEntry }) {
+  const value = asRecord(entry.value);
+  if (entry.type === '角色') {
+    const visualIdentity = asRecord(value.visualIdentity);
+    const coreProfile = asRecord(value.coreProfile);
+    const personality = asRecord(value.personality);
+    const referenceImages = [...asArray(visualIdentity.referenceImages), ...asArray(value.visualReferenceImages)]
+      .map(asRecord)
+      .filter((image) => compactText(image.url, 5000));
+    const avatar = compactText(value.avatar, 5000);
+    return (
+      <Stack spacing={1.5}>
+        <Stack direction="row" spacing={1.25} sx={{ alignItems: 'center' }}>
+          <Avatar src={avatar.startsWith('data:') || avatar.startsWith('http') ? avatar : undefined} sx={{ width: 56, height: 56, fontSize: 24 }}>
+            {avatar && !avatar.startsWith('data:') && !avatar.startsWith('http') ? avatar.slice(0, 2) : entry.label.slice(0, 1)}
+          </Avatar>
+          <Box sx={{ minWidth: 0 }}>
+            <Typography variant="subtitle2" sx={{ fontWeight: 900 }} noWrap>{entry.label}</Typography>
+            <Stack direction="row" spacing={0.75} sx={{ flexWrap: 'wrap', gap: 0.75, mt: 0.5 }}>
+              {asArray(value.expertise).slice(0, 5).map((item) => <Chip key={String(item)} size="small" label={String(item)} />)}
+              {value.group ? <Chip size="small" variant="outlined" label={String(value.group)} /> : null}
+            </Stack>
+          </Box>
+        </Stack>
+        {referenceImages.length ? (
+          <Stack direction="row" spacing={1} sx={{ overflowX: 'auto', pb: 0.5 }}>
+            {referenceImages.slice(0, 6).map((image, index) => {
+              const url = compactText(image.url, 5000);
+              return (
+                <Box
+                  key={String(image.id || image.assetId || index)}
+                  component="img"
+                  src={url}
+                  alt={String(image.label || '形象图')}
+                  sx={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 1, border: '1px solid', borderColor: image.isPrimary ? 'primary.main' : 'divider', flex: '0 0 auto' }}
+                />
+              );
+            })}
+          </Stack>
+        ) : null}
+        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 1.25 }}>
+          {renderTextBlock('视觉形象', visualIdentity.description, 360)}
+          {renderTextBlock('风格提示', visualIdentity.styleHint, 240)}
+          {renderTextBlock('核心欲望', coreProfile.coreDesire, 220)}
+          {renderTextBlock('核心恐惧', coreProfile.coreFear, 220)}
+          {renderTextBlock('社交面具', coreProfile.socialMask, 220)}
+          {renderTextBlock('说话风格', value.speakingStyle, 260)}
+        </Box>
+        {Object.keys(personality).length ? (
+          <Stack direction="row" spacing={0.75} sx={{ flexWrap: 'wrap', gap: 0.75 }}>
+            {Object.entries(personality).map(([key, item]) => (
+              <Chip key={key} size="small" variant="outlined" label={`${personalityLabels[key] || key} ${String(item)}`} />
+            ))}
+          </Stack>
+        ) : null}
+        {renderTextBlock('背景', value.background, 520)}
+        {renderTextBlock('行为参数', Object.keys(asRecord(value.behavior)).length ? stringifyStable(value.behavior) : '', 420)}
+      </Stack>
+    );
+  }
+  if (entry.type === '聊天') {
+    return (
+      <Stack spacing={1.25}>
+        <Stack direction="row" spacing={0.75} sx={{ flexWrap: 'wrap', gap: 0.75 }}>
+          {value.type ? <Chip size="small" label={`类型 ${String(value.type)}`} /> : null}
+          {value.mode ? <Chip size="small" label={`模式 ${String(value.mode)}`} /> : null}
+          {value.sessionKind ? <Chip size="small" label={`会话 ${String(value.sessionKind)}`} /> : null}
+          {asArray(value.memberIds).length ? <Chip size="small" label={`成员 ${asArray(value.memberIds).length}`} /> : null}
+        </Stack>
+        {renderTextBlock('主题', value.topic || value.topicSeed || value.name, 480)}
+        {renderTextBlock('风格', value.style, 260)}
+        {renderTextBlock('治理配置', Object.keys(asRecord(value.governance)).length ? stringifyStable(value.governance) : '', 420)}
+        {renderTextBlock('导演控制', Object.keys(asRecord(value.directorControls)).length ? stringifyStable(value.directorControls) : '', 420)}
+      </Stack>
+    );
+  }
+  return (
+    <Stack spacing={1}>
+      <Typography variant="body2" color="text.secondary">{entry.summary}</Typography>
+      <Typography component="pre" variant="caption" sx={{ whiteSpace: 'pre-wrap', m: 0, wordBreak: 'break-word' }}>{stringifyStable(entry.value)}</Typography>
+    </Stack>
+  );
+}
+
+function EntryDetailPanel({ entry, title }: { entry: PreviewEntry | null; title: string }) {
+  if (!entry) {
+    return <Typography variant="body2" color="text.secondary">{title}不存在</Typography>;
+  }
+  return (
+    <Stack spacing={1.25}>
+      <Typography variant="caption" color="text.secondary">{title}</Typography>
+      <EntryStructuredPreview entry={entry} />
+      <Divider />
+      <Box>
+        <Typography variant="caption" color="text.secondary">原始字段</Typography>
+        <Typography component="pre" variant="caption" sx={{ display: 'block', whiteSpace: 'pre-wrap', m: 0, mt: 0.75, wordBreak: 'break-word' }}>
+          {stringifyStable(entry.value)}
+        </Typography>
+      </Box>
+    </Stack>
+  );
 }
 
 export default function AdminMarketPage() {
@@ -217,7 +356,6 @@ export default function AdminMarketPage() {
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, gap: 2, flexDirection: { xs: 'column', sm: 'row' } }}>
         <Box>
           <Typography variant="h5" sx={{ fontWeight: 900 }}>市场管理</Typography>
-          <Typography variant="body2" color="text.secondary">角色模板、聊天模板和组合包默认待审核，通过后才进入公开市场。</Typography>
         </Box>
         <Button variant="contained" onClick={() => setDefaultDialogOpen(true)}>创建默认</Button>
       </Box>
@@ -283,31 +421,45 @@ export default function AdminMarketPage() {
       {snackbarMessage ? <Alert severity="success" onClose={() => setSnackbarMessage('')}>{snackbarMessage}</Alert> : null}
       {error ? <Alert severity="error">{error}</Alert> : null}
       <Paper variant="outlined" sx={{ borderRadius: 2, overflowX: 'auto' }}>
-        <Table size="small" sx={{ minWidth: 760 }}>
+        <Table size="small" sx={{ minWidth: 860 }}>
           <TableHead>
             <TableRow>
-              <TableCell>标题</TableCell>
+              <TableCell>模板</TableCell>
               <TableCell>类型</TableCell>
               <TableCell>状态</TableCell>
               <TableCell>作者</TableCell>
               <TableCell>版本</TableCell>
               <TableCell>导入</TableCell>
-              <TableCell align="right">操作</TableCell>
+              <TableCell>更新</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {items.map((item) => (
-              <TableRow key={String(item.id)} hover>
+              <TableRow
+                key={String(item.id)}
+                hover
+                onClick={() => void openDetail(item)}
+                sx={{ cursor: 'pointer' }}
+              >
                 <TableCell>
-                  <Typography variant="body2" sx={{ fontWeight: 700 }}>{String(item.title || '')}</Typography>
-                  <Typography variant="caption" color="text.secondary">{String(item.summary || '').slice(0, 80)}</Typography>
+                  <Stack direction="row" spacing={1.25} sx={{ alignItems: 'center', minWidth: 0 }}>
+                    <Avatar src={String(item.coverImage || '') || undefined} sx={{ width: 40, height: 40 }}>{String(item.title || '').slice(0, 1)}</Avatar>
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography variant="body2" sx={{ fontWeight: 800 }} noWrap>{String(item.title || '')}</Typography>
+                      {String(item.summary || '') ? (
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', maxWidth: 360 }} noWrap>
+                          {String(item.summary || '')}
+                        </Typography>
+                      ) : null}
+                    </Box>
+                  </Stack>
                 </TableCell>
                 <TableCell>{kindLabels[String(item.kind)] || String(item.kind || '')}</TableCell>
                 <TableCell><Chip size="small" label={statusLabels[String(item.status)] || String(item.status || '')} /></TableCell>
                 <TableCell>{String(item.ownerNickname || item.ownerPhone || item.ownerUserId || '')}</TableCell>
                 <TableCell>{String(item.payloadVersion || 1)}</TableCell>
                 <TableCell>{String(item.importedCount || 0)}</TableCell>
-                <TableCell align="right"><Button size="small" onClick={() => void openDetail(item)}>查看</Button></TableCell>
+                <TableCell>{formatTime(item.updatedAt)}</TableCell>
               </TableRow>
             ))}
             {!items.length ? (
@@ -326,7 +478,7 @@ export default function AdminMarketPage() {
               <Chip label={statusLabels[String(selected?.status)] || String(selected?.status || '')} />
               <Chip label={`版本 ${String(selected?.payloadVersion || 1)}`} />
             </Stack>
-            <Typography variant="body2" color="text.secondary">{String(selected?.summary || '') || '无摘要'}</Typography>
+            {String(selected?.summary || '') ? <Typography variant="body2" color="text.secondary">{String(selected?.summary || '')}</Typography> : null}
             <TextField label="审核备注" value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} multiline minRows={2} maxRows={5} />
             <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '320px 1fr' }, gap: 1.5 }}>
               <Paper variant="outlined" sx={{ p: 1, maxHeight: 420, overflow: 'auto' }}>
@@ -364,23 +516,11 @@ export default function AdminMarketPage() {
                     <Divider />
                     {hasPreviousPayload ? (
                       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 1.25 }}>
-                        <Box>
-                          <Typography variant="caption" color="text.secondary">旧版本 v{String((detail as MarketItem | null)?.previousPayloadVersion || '-')}</Typography>
-                          <Typography component="pre" variant="caption" sx={{ whiteSpace: 'pre-wrap', m: 0, mt: 0.75 }}>
-                            {previousEntry ? stringifyStable(previousEntry.value) : '旧版本不存在'}
-                          </Typography>
-                        </Box>
-                        <Box>
-                          <Typography variant="caption" color="text.secondary">新版本 v{String((detail as MarketItem | null)?.payloadVersion || '-')}</Typography>
-                          <Typography component="pre" variant="caption" sx={{ whiteSpace: 'pre-wrap', m: 0, mt: 0.75 }}>
-                            {activeEntry.diffState === 'deleted' ? '新版本已删除' : stringifyStable(activeEntry.value)}
-                          </Typography>
-                        </Box>
+                        <EntryDetailPanel entry={previousEntry || null} title={`旧版本 v${String(detail?.previousPayloadVersion || '-')}`} />
+                        <EntryDetailPanel entry={activeEntry.diffState === 'deleted' ? null : activeEntry} title={`新版本 v${String(detail?.payloadVersion || '-')}`} />
                       </Box>
                     ) : (
-                      <Typography component="pre" variant="caption" sx={{ whiteSpace: 'pre-wrap', m: 0 }}>
-                        {stringifyStable(activeEntry.value)}
-                      </Typography>
+                      <EntryDetailPanel entry={activeEntry} title="当前版本" />
                     )}
                   </Stack>
                 ) : (
@@ -401,14 +541,7 @@ export default function AdminMarketPage() {
       <Dialog open={defaultDialogOpen} onClose={() => defaultCreating ? undefined : setDefaultDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>创建默认市场预设</DialogTitle>
         <DialogContent>
-          <Stack spacing={1.5} sx={{ pt: 1 }}>
-            <Typography variant="body2" color="text.secondary">
-              将直接创建或更新一组已通过的默认市场预设，包括角色模板、普通群聊模板、故事房模板，以及对应的组合包。
-            </Typography>
-            <Alert severity="info">
-              这些预设会以“系统默认市场”为作者进入公开市场；再次点击会同步更新已有默认预设，不会重复创建同一批条目。
-            </Alert>
-          </Stack>
+          <Typography sx={{ pt: 1 }}>确认创建或更新默认市场预设？</Typography>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDefaultDialogOpen(false)} disabled={defaultCreating}>取消</Button>

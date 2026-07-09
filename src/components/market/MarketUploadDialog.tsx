@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, Stack, TextField, Typography } from '@mui/material';
+import { Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, Stack, TextField } from '@mui/material';
 import { marketApi, type MarketItem, type MarketItemKind } from '../../services/marketApi';
 
 export interface MarketUploadDraft {
@@ -64,9 +64,6 @@ export default function MarketUploadDialog({
       <DialogTitle>{draft?.marketItemId ? '更新市场模板' : '上传到市场'}</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ pt: 1 }}>
-          <Alert severity="info">
-            上传后默认进入待审核，审核通过前不会出现在公开市场。
-          </Alert>
           <TextField
             label="标题"
             value={title}
@@ -84,9 +81,6 @@ export default function MarketUploadDialog({
             multiline
             fullWidth
           />
-          <Typography variant="body2" color="text.secondary">
-            角色模板不会上传记忆和关系；聊天模板不会上传角色；组合包会裁剪到包内角色、关系和记忆。
-          </Typography>
           {error ? <Alert severity="error">{error}</Alert> : null}
         </Stack>
       </DialogContent>

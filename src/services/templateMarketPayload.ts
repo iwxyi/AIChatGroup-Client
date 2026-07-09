@@ -13,6 +13,7 @@ function pickCharacterTemplate(character: AICharacter) {
     personality: character.personality,
     coreProfile: character.coreProfile || {},
     visualIdentity: character.visualIdentity || null,
+    visualReferenceImages: (character as AICharacter & { visualReferenceImages?: unknown[] }).visualReferenceImages || [],
     voiceConfig: character.voiceConfig || {},
     behavior: character.behavior,
     expertise: character.expertise || [],
