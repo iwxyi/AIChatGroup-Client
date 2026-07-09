@@ -42,6 +42,22 @@ function getCharacterFromItem(item: MarketItem | null) {
   return asRecord(item?.payload?.character);
 }
 
+function getPreviewPayload(item: MarketItem | null) {
+  return asRecord(item?.previewPayload || item?.payload);
+}
+
+function getPreviewCharacter(item: MarketItem | null) {
+  return asRecord(getPreviewPayload(item).character);
+}
+
+function getPreviewChat(item: MarketItem | null) {
+  return asRecord(getPreviewPayload(item).chat);
+}
+
+function getPreviewCharacters(item: MarketItem | null) {
+  return asArray(getPreviewPayload(item).characters).map(asRecord);
+}
+
 function getCharacterReferenceImages(character: Record<string, unknown>) {
   const visualIdentity = asRecord(character.visualIdentity);
   return [...asArray(visualIdentity.referenceImages), ...asArray(character.visualReferenceImages)]
@@ -51,13 +67,32 @@ function getCharacterReferenceImages(character: Record<string, unknown>) {
 
 function getCardImage(item: MarketItem) {
   if (isImageValue(item.coverImage)) return item.coverImage || '';
+  const previewCharacter = getPreviewCharacter(item);
+  if (isImageValue(previewCharacter.coverImage)) return compactText(previewCharacter.coverImage, 5000);
   const character = getCharacterFromItem(item);
   return compactText(getCharacterReferenceImages(character)[0]?.url, 5000);
 }
 
 function getAvatarValue(item: MarketItem) {
+  const previewCharacter = getPreviewCharacter(item);
+  if (compactText(previewCharacter.avatar, 5000)) return compactText(previewCharacter.avatar, 5000);
   const character = getCharacterFromItem(item);
   return compactText(character.avatar, 5000) || (isImageValue(item.coverImage) ? item.coverImage || '' : '');
+}
+
+function getCardDescription(item: MarketItem) {
+  const preview = getPreviewPayload(item);
+  if (item.kind === 'character_template') {
+    const character = asRecord(preview.character);
+    return compactText(character.visualDescription || character.coreDesire || character.speakingStyle || character.background || item.summary, 180);
+  }
+  const chat = asRecord(preview.chat);
+  return compactText(chat.topic || item.summary, 180);
+}
+
+function getChatTitle(item: MarketItem) {
+  const chat = getPreviewChat(item);
+  return compactText(chat.name || chat.topic || item.title, 80) || item.title;
 }
 
 function renderTextBlock(label: string, value: unknown, max?: number) {
@@ -140,6 +175,143 @@ function MarketItemDetail({ item }: { item: MarketItem }) {
         </Stack>
       ) : null}
     </Stack>
+  );
+}
+
+function AvatarToken({ name, avatar }: { name: string; avatar?: string }) {
+  const avatarValue = compactText(avatar, 5000);
+  return (
+    <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', minWidth: 0 }}>
+      <Avatar src={isImageValue(avatarValue) ? avatarValue : undefined} sx={{ width: 24, height: 24, fontSize: 12 }}>
+        {isImageValue(avatarValue) ? undefined : avatarValue.slice(0, 1) || name.slice(0, 1)}
+      </Avatar>
+      <Typography variant="caption" noWrap>{name}</Typography>
+    </Stack>
+  );
+}
+
+function MarketTemplateCard({ item, onOpen }: { item: MarketItem; onOpen: (item: MarketItem) => void }) {
+  const cardImage = getCardImage(item);
+  const avatar = getAvatarValue(item);
+  const description = getCardDescription(item);
+  const preview = getPreviewPayload(item);
+  const chat = getPreviewChat(item);
+  const bundledCharacters = getPreviewCharacters(item);
+  const characterCount = Number(preview.characterCount || bundledCharacters.length || 0);
+  const relationshipCount = Number(preview.relationshipCount || 0);
+  const memoryCount = Number(preview.memoryCount || 0);
+  const cardTitle = item.kind === 'character_template' ? item.title : getChatTitle(item);
+  const metaChips = [
+    chat.type ? `类型 ${String(chat.type)}` : '',
+    chat.mode ? `模式 ${String(chat.mode)}` : '',
+    characterCount ? `角色 ${characterCount}` : '',
+    relationshipCount ? `关系 ${relationshipCount}` : '',
+    memoryCount ? `记忆 ${memoryCount}` : '',
+  ].filter(Boolean);
+
+  return (
+    <Paper
+      variant="outlined"
+      onClick={() => onOpen(item)}
+      sx={{
+        p: 1.25,
+        borderRadius: 2,
+        display: 'grid',
+        gap: 1,
+        alignContent: 'start',
+        cursor: 'pointer',
+        transition: 'border-color 120ms ease, transform 120ms ease, box-shadow 120ms ease',
+        '&:hover': { borderColor: 'primary.main', transform: 'translateY(-1px)', boxShadow: 2 },
+      }}
+    >
+      <Stack direction="row" spacing={1.25} sx={{ alignItems: 'center', minWidth: 0 }}>
+        <Avatar src={isImageValue(avatar) ? avatar : undefined}>
+          {isImageValue(avatar) ? undefined : avatar.slice(0, 2) || item.title.slice(0, 1)}
+        </Avatar>
+        <Box sx={{ minWidth: 0, flex: 1 }}>
+          <Typography sx={{ fontWeight: 900 }} noWrap>{cardTitle}</Typography>
+          <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', flexWrap: 'wrap', gap: 0.75, mt: 0.25 }}>
+            <Chip size="small" label={kindLabels[item.kind]} />
+            {item.kind !== 'character_template' && compactText(chat.sessionKind) ? <Chip size="small" variant="outlined" label={String(chat.sessionKind)} /> : null}
+          </Stack>
+        </Box>
+      </Stack>
+
+      {item.kind === 'character_template' && cardImage ? (
+        <Box
+          component="img"
+          src={cardImage}
+          alt={item.title}
+          sx={{
+            width: '100%',
+            aspectRatio: '3 / 4',
+            objectFit: 'cover',
+            borderRadius: 1,
+            bgcolor: 'action.hover',
+            border: '1px solid',
+            borderColor: 'divider',
+          }}
+        />
+      ) : null}
+
+      {item.kind !== 'character_template' ? (
+        <Box
+          sx={{
+            p: 1.25,
+            minHeight: 118,
+            borderRadius: 1,
+            border: '1px solid',
+            borderColor: 'divider',
+            bgcolor: 'action.hover',
+            display: 'grid',
+            gap: 1,
+            alignContent: 'start',
+          }}
+        >
+          {description ? <Typography variant="body2" sx={{ fontWeight: 700, wordBreak: 'break-word' }}>{description}</Typography> : null}
+          {metaChips.length ? (
+            <Stack direction="row" spacing={0.75} sx={{ flexWrap: 'wrap', gap: 0.75 }}>
+              {metaChips.slice(0, 5).map((label) => <Chip key={label} size="small" variant="outlined" label={label} />)}
+            </Stack>
+          ) : null}
+          {bundledCharacters.length ? (
+            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 0.75 }}>
+              {bundledCharacters.slice(0, 6).map((entry, index) => (
+                <AvatarToken
+                  key={String(entry.localId || entry.name || index)}
+                  name={compactText(entry.name, 40) || `角色 ${index + 1}`}
+                  avatar={compactText(entry.avatar, 5000)}
+                />
+              ))}
+            </Box>
+          ) : null}
+        </Box>
+      ) : null}
+
+      {item.kind === 'character_template' && description ? (
+        <Typography variant="body2" color="text.secondary" sx={{ minHeight: 42, wordBreak: 'break-word' }}>{description}</Typography>
+      ) : null}
+
+      {item.kind === 'character_template' ? (
+        <Stack direction="row" spacing={0.75} sx={{ flexWrap: 'wrap', gap: 0.75 }}>
+          {asArray(getPreviewCharacter(item).expertise).slice(0, 4).map((entry) => <Chip key={String(entry)} size="small" variant="outlined" label={String(entry)} />)}
+        </Stack>
+      ) : null}
+
+      <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center', mt: 0.5 }}>
+        <Typography variant="caption" color="text.secondary">导入 {item.importedCount}</Typography>
+        <Button
+          size="small"
+          variant="contained"
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpen(item);
+          }}
+        >
+          查看
+        </Button>
+      </Stack>
+    </Paper>
   );
 }
 
@@ -228,64 +400,9 @@ export default function MarketPage() {
       </Paper>
       {error ? <Alert severity="error">{error}</Alert> : null}
       <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 1.5 }}>
-        {items.map((item) => {
-          const cardImage = getCardImage(item);
-          const avatar = getAvatarValue(item);
-          return (
-          <Paper
-            key={item.id}
-            variant="outlined"
-            onClick={() => void openImport(item)}
-            sx={{
-              p: 1.25,
-              borderRadius: 2,
-              display: 'grid',
-              gap: 1,
-              cursor: 'pointer',
-              transition: 'border-color 120ms ease, transform 120ms ease, box-shadow 120ms ease',
-              '&:hover': { borderColor: 'primary.main', transform: 'translateY(-1px)', boxShadow: 2 },
-            }}
-          >
-            <Stack direction="row" spacing={1.25} sx={{ alignItems: 'center' }}>
-              <Avatar src={isImageValue(avatar) ? avatar : undefined}>{isImageValue(avatar) ? undefined : avatar.slice(0, 2) || item.title.slice(0, 1)}</Avatar>
-              <Box sx={{ minWidth: 0 }}>
-                <Typography sx={{ fontWeight: 800 }} noWrap>{item.title}</Typography>
-                <Chip size="small" label={kindLabels[item.kind]} />
-              </Box>
-            </Stack>
-            {cardImage ? (
-              <Box
-                component="img"
-                src={cardImage}
-                alt={item.title}
-                sx={{
-                  width: '100%',
-                  aspectRatio: item.kind === 'character_template' ? '3 / 4' : '16 / 9',
-                  objectFit: 'cover',
-                  borderRadius: 1,
-                  bgcolor: 'action.hover',
-                  border: '1px solid',
-                  borderColor: 'divider',
-                }}
-              />
-            ) : null}
-            {item.summary ? <Typography variant="body2" color="text.secondary" sx={{ minHeight: 42 }}>{item.summary}</Typography> : null}
-            <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center' }}>
-              <Typography variant="caption" color="text.secondary">导入 {item.importedCount}</Typography>
-              <Button
-                size="small"
-                variant="contained"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  void openImport(item);
-                }}
-              >
-                查看
-              </Button>
-            </Stack>
-          </Paper>
-          );
-        })}
+        {items.map((item) => (
+          <MarketTemplateCard key={item.id} item={item} onOpen={(nextItem) => void openImport(nextItem)} />
+        ))}
       </Box>
       {!items.length && !loading ? <Alert severity="info">暂无已审核市场模板</Alert> : null}
 

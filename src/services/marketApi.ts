@@ -25,6 +25,7 @@ export interface MarketItem {
   publishedAt?: number | null;
   payload?: Record<string, unknown>;
   previousPayload?: Record<string, unknown> | null;
+  previewPayload?: Record<string, unknown> | null;
 }
 
 export interface MarketUploadPayload {
