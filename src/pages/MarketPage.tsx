@@ -289,6 +289,8 @@ function MarketTemplateCard({ item, onOpen }: { item: MarketItem; onOpen: (item:
         display: 'grid',
         gap: 1,
         alignContent: 'start',
+        breakInside: 'avoid',
+        mb: 1.5,
         cursor: 'pointer',
         transition: 'border-color 120ms ease, transform 120ms ease, box-shadow 120ms ease',
         '&:hover': { borderColor: 'primary.main', transform: 'translateY(-1px)', boxShadow: 2 },
@@ -461,7 +463,12 @@ export default function MarketPage() {
         </Stack>
       </Paper>
       {error ? <Alert severity="error">{error}</Alert> : null}
-      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 1.5 }}>
+      <Box
+        sx={{
+          columnCount: { xs: 1, sm: 2, lg: 3, xl: 4 },
+          columnGap: 1.5,
+        }}
+      >
         {items.map((item) => (
           <MarketTemplateCard key={item.id} item={item} onOpen={(nextItem) => void openImport(nextItem)} />
         ))}
