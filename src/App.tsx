@@ -335,8 +335,8 @@ function RoutedApp() {
         <Route path="/chats/:id/edit" element={<ChatMasterDetailRouteElement detail={<RouteElement><CreateChatPage /></RouteElement>} />} />
         <Route path="/chats/:id" element={<ChatMasterDetailRouteElement detail={<ChatDetailRouteElement />} detailTitle={null} />} />
         <Route path="/characters" element={<CharacterMasterDetailRouteElement detail={null} fallback="master" />} />
-        <Route path="/characters/create" element={<RouteElement><CharacterEditorPage /></RouteElement>} />
-        <Route path="/characters/:id/edit" element={<RouteElement><CharacterEditorPage /></RouteElement>} />
+        <Route path="/characters/create" element={<CharacterMasterDetailRouteElement detail={<RouteElement><CharacterEditorPage /></RouteElement>} />} />
+        <Route path="/characters/:id/edit" element={<CharacterMasterDetailRouteElement detail={<RouteElement><CharacterEditorPage /></RouteElement>} />} />
         <Route path="/characters/batch-generate" element={<RouteElement><BatchGenerateCharactersPage /></RouteElement>} />
         <Route path="/letters" element={<RouteElement><LettersPage /></RouteElement>} />
         <Route path="/calendar" element={<RouteElement><CalendarPage /></RouteElement>} />
