@@ -17,12 +17,14 @@ export interface MarketItem {
   coverImage?: string | null;
   status: MarketItemStatus;
   payloadVersion: number;
+  previousPayloadVersion?: number | null;
   reviewNote?: string;
   importedCount: number;
   createdAt: number;
   updatedAt: number;
   publishedAt?: number | null;
   payload?: Record<string, unknown>;
+  previousPayload?: Record<string, unknown> | null;
 }
 
 export interface MarketUploadPayload {

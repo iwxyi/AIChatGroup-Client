@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, InputLabel, MenuItem, Paper, Select, Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography } from '@mui/material';
+import { Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, Divider, FormControl, InputLabel, MenuItem, Paper, Select, Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography } from '@mui/material';
 import { adminApi } from '../../services/adminApi';
+import type { MarketItem } from '../../services/marketApi';
 
 const kindLabels: Record<string, string> = {
   character_template: '角色模板',
@@ -15,6 +16,113 @@ const statusLabels: Record<string, string> = {
   archived: '已下架',
 };
 
+type PreviewEntry = {
+  key: string;
+  label: string;
+  type: string;
+  summary: string;
+  value: unknown;
+  diffState?: 'added' | 'deleted' | 'changed' | 'same';
+};
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function stringifyStable(value: unknown) {
+  return JSON.stringify(value ?? null, null, 2);
+}
+
+function readTemplateName(value: unknown) {
+  const record = asRecord(value);
+  return String(record.name || record.title || '未命名');
+}
+
+function summarizeEntry(type: string, value: unknown) {
+  const record = asRecord(value);
+  if (type === '角色') return String(record.background || record.speakingStyle || (Array.isArray(record.expertise) ? record.expertise.join('、') : '') || '无摘要');
+  if (type === '聊天') return String(record.topic || record.topicSeed || record.name || '无摘要');
+  return String(record.summary || record.background || record.topic || '无摘要');
+}
+
+function payloadEntries(payload: unknown): PreviewEntry[] {
+  if (!payload) return [];
+  const root = asRecord(payload);
+  const kind = String(root.kind || '');
+  if (kind === 'character_template') {
+    const character = asRecord(root.character);
+    return [{ key: 'character', label: readTemplateName(character), type: '角色', summary: summarizeEntry('角色', character), value: character }];
+  }
+  if (kind === 'chat_template') {
+    const chat = asRecord(root.chat);
+    return [{ key: 'chat', label: readTemplateName(chat), type: '聊天', summary: summarizeEntry('聊天', chat), value: chat }];
+  }
+  if (kind === 'bundle_template') {
+    const chat = asRecord(root.chat);
+    const characters = Array.isArray(root.characters) ? root.characters.map(asRecord) : [];
+    const runtimeEntries = (['relationshipLedger', 'runtimeEventsV2', 'layeredMemories', 'runtimeTimeline'] as const)
+      .flatMap((key) => {
+        const values = [
+          { sourceKey: key, label: key, value: root[key] },
+          { sourceKey: `chat.${key}`, label: `chat.${key}`, value: chat[key] },
+        ];
+        return values
+          .filter((entry) => Array.isArray(entry.value) && entry.value.length)
+          .map((entry) => ({
+            key: entry.sourceKey,
+            label: entry.label,
+            type: '运行数据',
+            summary: `${(entry.value as unknown[]).length} 条`,
+            value: entry.value,
+          }));
+      });
+    return [
+      { key: 'chat', label: readTemplateName(chat), type: '聊天', summary: summarizeEntry('聊天', chat), value: chat },
+      ...characters.map((entry) => {
+        const localId = String(entry.localId || '');
+        const template = asRecord(entry.template);
+        return {
+          key: `character:${localId || readTemplateName(template)}`,
+          label: readTemplateName(template),
+          type: '角色',
+          summary: summarizeEntry('角色', template),
+          value: template,
+        };
+      }),
+      ...runtimeEntries,
+    ];
+  }
+  return [{ key: 'payload', label: 'Payload', type: '未知', summary: '', value: payload }];
+}
+
+function withDiffState(current: PreviewEntry[], previous: PreviewEntry[]) {
+  const previousByKey = new Map(previous.map((entry) => [entry.key, entry]));
+  const currentByKey = new Map(current.map((entry) => [entry.key, entry]));
+  const merged: PreviewEntry[] = current.map((entry) => {
+    const old = previousByKey.get(entry.key);
+    if (!old) return { ...entry, diffState: 'added' };
+    return { ...entry, diffState: stringifyStable(old.value) === stringifyStable(entry.value) ? 'same' : 'changed' };
+  });
+  for (const entry of previous) {
+    if (!currentByKey.has(entry.key)) merged.push({ ...entry, diffState: 'deleted' });
+  }
+  return merged;
+}
+
+function diffBorderColor(state?: PreviewEntry['diffState']) {
+  if (state === 'added') return 'success.main';
+  if (state === 'deleted') return 'error.main';
+  if (state === 'changed') return 'warning.main';
+  return 'divider';
+}
+
+function diffLabel(state?: PreviewEntry['diffState']) {
+  if (state === 'added') return '新增';
+  if (state === 'deleted') return '删除';
+  if (state === 'changed') return '变更';
+  return '无变化';
+}
+
 export default function AdminMarketPage() {
   const [items, setItems] = useState<Array<Record<string, unknown>>>([]);
   const [status, setStatus] = useState('pending');
@@ -24,7 +132,8 @@ export default function AdminMarketPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [selected, setSelected] = useState<Record<string, unknown> | null>(null);
-  const [detail, setDetail] = useState<Record<string, unknown> | null>(null);
+  const [detail, setDetail] = useState<MarketItem | null>(null);
+  const [activeEntryKey, setActiveEntryKey] = useState('');
   const [reviewNote, setReviewNote] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
   const [defaultDialogOpen, setDefaultDialogOpen] = useState(false);
@@ -54,11 +163,21 @@ export default function AdminMarketPage() {
     setReviewNote(String(item.reviewNote || ''));
     try {
       const result = await adminApi.getMarketItem(String(item.id));
-      setDetail(result.item);
+      const loadedItem = result.item as unknown as MarketItem;
+      setDetail(loadedItem);
+      const entries = payloadEntries(loadedItem.payload);
+      setActiveEntryKey(entries[0]?.key || '');
     } catch (detailError) {
       setError(detailError instanceof Error ? detailError.message : '加载详情失败');
     }
   };
+
+  const currentEntries = payloadEntries(detail?.payload);
+  const previousEntries = payloadEntries(detail?.previousPayload);
+  const hasPreviousPayload = Boolean(detail?.previousPayload);
+  const displayEntries = hasPreviousPayload ? withDiffState(currentEntries, previousEntries) : currentEntries;
+  const activeEntry = displayEntries.find((entry) => entry.key === activeEntryKey) || displayEntries[0] || null;
+  const previousEntry = activeEntry ? previousEntries.find((entry) => entry.key === activeEntry.key) : null;
 
   const decide = async (nextStatus: 'approved' | 'rejected' | 'archived') => {
     if (!selected) return;
@@ -66,7 +185,7 @@ export default function AdminMarketPage() {
     try {
       const result = await adminApi.decideMarketItem(String(selected.id), { status: nextStatus, reviewNote });
       setSelected(result.item);
-      setDetail((prev) => ({ ...(prev || {}), ...result.item }));
+      setDetail((prev) => ({ ...(prev || {}), ...(result.item as unknown as Partial<MarketItem>) } as MarketItem));
       await load();
     } catch (decisionError) {
       setError(decisionError instanceof Error ? decisionError.message : '审核操作失败');
@@ -178,7 +297,7 @@ export default function AdminMarketPage() {
         </Table>
       </Paper>
 
-      <Dialog open={Boolean(selected)} onClose={() => setSelected(null)} maxWidth="md" fullWidth>
+      <Dialog open={Boolean(selected)} onClose={() => setSelected(null)} maxWidth="lg" fullWidth>
         <DialogTitle>{String(selected?.title || '市场条目')}</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ pt: 1 }}>
@@ -189,11 +308,66 @@ export default function AdminMarketPage() {
             </Stack>
             <Typography variant="body2" color="text.secondary">{String(selected?.summary || '') || '无摘要'}</Typography>
             <TextField label="审核备注" value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} multiline minRows={2} maxRows={5} />
-            <Paper variant="outlined" sx={{ p: 1.5, bgcolor: 'background.default', maxHeight: 320, overflow: 'auto' }}>
-              <Typography component="pre" variant="caption" sx={{ whiteSpace: 'pre-wrap', m: 0 }}>
-                {detail ? JSON.stringify(detail.payload || {}, null, 2) : '正在加载详情...'}
-              </Typography>
-            </Paper>
+            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '320px 1fr' }, gap: 1.5 }}>
+              <Paper variant="outlined" sx={{ p: 1, maxHeight: 420, overflow: 'auto' }}>
+                <Typography variant="subtitle2" sx={{ px: 1, py: 0.75, fontWeight: 800 }}>内容列表</Typography>
+                <Stack spacing={1}>
+                  {displayEntries.map((entry) => (
+                    <Paper
+                      key={entry.key}
+                      variant="outlined"
+                      onClick={() => setActiveEntryKey(entry.key)}
+                      sx={{
+                        p: 1,
+                        cursor: 'pointer',
+                        borderColor: activeEntry?.key === entry.key ? 'primary.main' : diffBorderColor(entry.diffState),
+                        bgcolor: activeEntry?.key === entry.key ? 'action.selected' : 'background.paper',
+                      }}
+                    >
+                      <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', mb: 0.5 }}>
+                        <Chip size="small" label={entry.type} />
+                        {hasPreviousPayload ? <Chip size="small" variant="outlined" label={diffLabel(entry.diffState)} /> : null}
+                      </Stack>
+                      <Typography variant="body2" sx={{ fontWeight: 800 }}>{entry.label}</Typography>
+                      <Typography variant="caption" color="text.secondary">{entry.summary.slice(0, 90)}</Typography>
+                    </Paper>
+                  ))}
+                </Stack>
+              </Paper>
+              <Paper variant="outlined" sx={{ p: 1.5, bgcolor: 'background.default', minHeight: 280, maxHeight: 420, overflow: 'auto' }}>
+                {activeEntry ? (
+                  <Stack spacing={1.25}>
+                    <Box>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 900 }}>{activeEntry.label}</Typography>
+                      <Typography variant="caption" color="text.secondary">{activeEntry.type} · {hasPreviousPayload ? diffLabel(activeEntry.diffState) : '当前内容'}</Typography>
+                    </Box>
+                    <Divider />
+                    {hasPreviousPayload ? (
+                      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 1.25 }}>
+                        <Box>
+                          <Typography variant="caption" color="text.secondary">旧版本 v{String((detail as MarketItem | null)?.previousPayloadVersion || '-')}</Typography>
+                          <Typography component="pre" variant="caption" sx={{ whiteSpace: 'pre-wrap', m: 0, mt: 0.75 }}>
+                            {previousEntry ? stringifyStable(previousEntry.value) : '旧版本不存在'}
+                          </Typography>
+                        </Box>
+                        <Box>
+                          <Typography variant="caption" color="text.secondary">新版本 v{String((detail as MarketItem | null)?.payloadVersion || '-')}</Typography>
+                          <Typography component="pre" variant="caption" sx={{ whiteSpace: 'pre-wrap', m: 0, mt: 0.75 }}>
+                            {activeEntry.diffState === 'deleted' ? '新版本已删除' : stringifyStable(activeEntry.value)}
+                          </Typography>
+                        </Box>
+                      </Box>
+                    ) : (
+                      <Typography component="pre" variant="caption" sx={{ whiteSpace: 'pre-wrap', m: 0 }}>
+                        {stringifyStable(activeEntry.value)}
+                      </Typography>
+                    )}
+                  </Stack>
+                ) : (
+                  <Typography variant="body2" color="text.secondary">{detail ? '没有可预览内容' : '正在加载详情...'}</Typography>
+                )}
+              </Paper>
+            </Box>
           </Stack>
         </DialogContent>
         <DialogActions>
