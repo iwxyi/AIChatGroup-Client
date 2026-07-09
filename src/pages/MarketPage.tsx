@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, Avatar, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, Divider, FormControl, InputLabel, MenuItem, Paper, Select, Stack, Typography } from '@mui/material';
+import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
+import { Alert, Avatar, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, Divider, Paper, Stack, Typography } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { marketApi, type MarketItem, type MarketItemKind } from '../services/marketApi';
 
@@ -7,6 +8,47 @@ const kindLabels: Record<MarketItemKind, string> = {
   character_template: '角色模板',
   chat_template: '聊天模板',
   bundle_template: '组合包',
+};
+
+const kindFilterOptions: Array<{ value: MarketItemKind | ''; label: string }> = [
+  { value: '', label: '全部' },
+  { value: 'bundle_template', label: '组合包' },
+  { value: 'character_template', label: '角色' },
+  { value: 'chat_template', label: '聊天' },
+];
+
+const chatTypeLabels: Record<string, string> = {
+  group: '普通群聊',
+  direct: '私聊',
+  ai_direct: 'AI 私聊',
+};
+
+const chatModeLabels: Record<string, string> = {
+  open_chat: '开放聊天',
+  story: '故事房',
+  story_reader: '故事房',
+  group_discussion: '群聊讨论',
+  roundtable: '圆桌',
+  werewolf: '狼人杀',
+  murder_mystery: '剧本推理',
+};
+
+const scenarioLabels: Record<string, string> = {
+  'open-chat': '普通群聊',
+  'direct-chat': '私聊',
+  'ai-private-thread': 'AI 私聊',
+  'story-reader': '故事房',
+  'opinion-review': '观点讨论',
+  'roundtable-review': '圆桌讨论',
+  'role-debate': '角色辩论',
+  'courtroom-deliberation': '法庭审议',
+  'expert-review': '专家评审',
+  'public-inquiry': '公开质询',
+  'brainstorm-workshop': '头脑风暴',
+  'task-retrospective': '任务复盘',
+  'werewolf-classic': '狼人杀',
+  'murder-mystery': '剧本推理',
+  'board-game': '棋盘游戏',
 };
 
 const personalityLabels: Record<string, string> = {
@@ -31,6 +73,26 @@ function asArray(value: unknown): unknown[] {
 function compactText(value: unknown, max = 240) {
   const text = typeof value === 'string' ? value.trim() : '';
   return text.length > max ? `${text.slice(0, max)}...` : text;
+}
+
+function getLocalizedLabel(value: unknown, labels: Record<string, string>) {
+  const key = compactText(value, 120);
+  return key ? labels[key] || '' : '';
+}
+
+function getScenarioLabel(value: unknown) {
+  const sessionKind = asRecord(value);
+  return getLocalizedLabel(sessionKind.scenarioId, scenarioLabels)
+    || getLocalizedLabel(sessionKind.family, {
+      conversation: '聊天',
+      analysis: '讨论',
+      study: '学习',
+      deduction: '推理',
+      mystery: '推理',
+      board_game: '棋盘',
+      agent: '协作',
+      simulation: '模拟',
+    });
 }
 
 function isImageValue(value: unknown) {
@@ -157,11 +219,16 @@ function MarketItemDetail({ item }: { item: MarketItem }) {
   }
   const chat = asRecord(item.payload?.chat);
   const bundledCharacters = asArray(item.payload?.characters);
+  const chatTypeLabel = getLocalizedLabel(chat.type, chatTypeLabels);
+  const chatModeLabel = getLocalizedLabel(chat.mode, chatModeLabels);
+  const scenarioLabel = getScenarioLabel(chat.sessionKind);
   return (
     <Stack spacing={1.25}>
       <Stack direction="row" spacing={0.75} sx={{ flexWrap: 'wrap', gap: 0.75 }}>
         <Chip size="small" label={kindLabels[item.kind]} />
-        {chat.type ? <Chip size="small" variant="outlined" label={`类型 ${String(chat.type)}`} /> : null}
+        {chatTypeLabel ? <Chip size="small" variant="outlined" label={chatTypeLabel} /> : null}
+        {chatModeLabel ? <Chip size="small" variant="outlined" label={chatModeLabel} /> : null}
+        {scenarioLabel ? <Chip size="small" variant="outlined" label={scenarioLabel} /> : null}
         {bundledCharacters.length ? <Chip size="small" variant="outlined" label={`角色 ${bundledCharacters.length}`} /> : null}
       </Stack>
       {renderTextBlock('主题', chat.topic || chat.topicSeed || item.summary || item.title, 520)}
@@ -201,9 +268,12 @@ function MarketTemplateCard({ item, onOpen }: { item: MarketItem; onOpen: (item:
   const relationshipCount = Number(preview.relationshipCount || 0);
   const memoryCount = Number(preview.memoryCount || 0);
   const cardTitle = item.kind === 'character_template' ? item.title : getChatTitle(item);
+  const chatTypeLabel = getLocalizedLabel(chat.type, chatTypeLabels);
+  const chatModeLabel = getLocalizedLabel(chat.mode, chatModeLabels);
+  const scenarioLabel = getScenarioLabel(chat.sessionKind);
   const metaChips = [
-    chat.type ? `类型 ${String(chat.type)}` : '',
-    chat.mode ? `模式 ${String(chat.mode)}` : '',
+    chatTypeLabel,
+    chatModeLabel,
     characterCount ? `角色 ${characterCount}` : '',
     relationshipCount ? `关系 ${relationshipCount}` : '',
     memoryCount ? `记忆 ${memoryCount}` : '',
@@ -232,7 +302,7 @@ function MarketTemplateCard({ item, onOpen }: { item: MarketItem; onOpen: (item:
           <Typography sx={{ fontWeight: 900 }} noWrap>{cardTitle}</Typography>
           <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', flexWrap: 'wrap', gap: 0.75, mt: 0.25 }}>
             <Chip size="small" label={kindLabels[item.kind]} />
-            {item.kind !== 'character_template' && compactText(chat.sessionKind) ? <Chip size="small" variant="outlined" label={String(chat.sessionKind)} /> : null}
+            {item.kind !== 'character_template' && scenarioLabel ? <Chip size="small" variant="outlined" label={scenarioLabel} /> : null}
           </Stack>
         </Box>
       </Stack>
@@ -299,17 +369,10 @@ function MarketTemplateCard({ item, onOpen }: { item: MarketItem; onOpen: (item:
       ) : null}
 
       <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center', mt: 0.5 }}>
-        <Typography variant="caption" color="text.secondary">导入 {item.importedCount}</Typography>
-        <Button
-          size="small"
-          variant="contained"
-          onClick={(event) => {
-            event.stopPropagation();
-            onOpen(item);
-          }}
-        >
-          查看
-        </Button>
+        <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', color: 'text.secondary' }}>
+          <FileDownloadOutlinedIcon sx={{ fontSize: 17 }} />
+          <Typography variant="caption">{item.importedCount}</Typography>
+        </Stack>
       </Stack>
     </Paper>
   );
@@ -381,20 +444,19 @@ export default function MarketPage() {
 
   return (
     <Box sx={{ p: { xs: 2, md: 3 }, display: 'grid', gap: 2 }}>
-      <Box>
-        <Typography variant="h5" sx={{ fontWeight: 900 }}>市场</Typography>
-      </Box>
       <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
-          <FormControl size="small" sx={{ minWidth: 160 }}>
-            <InputLabel>类型</InputLabel>
-            <Select label="类型" value={kind} onChange={(event) => setKind(event.target.value as MarketItemKind | '')}>
-              <MenuItem value="">全部</MenuItem>
-              <MenuItem value="character_template">角色模板</MenuItem>
-              <MenuItem value="chat_template">聊天模板</MenuItem>
-              <MenuItem value="bundle_template">组合包</MenuItem>
-            </Select>
-          </FormControl>
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+          {kindFilterOptions.map((option) => (
+            <Chip
+              key={option.value || 'all'}
+              clickable
+              color={kind === option.value ? 'primary' : 'default'}
+              variant={kind === option.value ? 'filled' : 'outlined'}
+              label={option.label}
+              onClick={() => setKind(option.value)}
+              sx={{ borderRadius: 999, height: 32, '& .MuiChip-label': { px: 1.25, fontWeight: 700 } }}
+            />
+          ))}
           <Button onClick={() => void load()} disabled={loading}>刷新</Button>
         </Stack>
       </Paper>
