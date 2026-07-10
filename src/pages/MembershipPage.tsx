@@ -458,6 +458,11 @@ export default function MembershipPage() {
         pb: { xs: 12, sm: 8 },
         maxWidth: 1180,
         mx: 'auto',
+        '@keyframes membershipSheen': {
+          '0%': { transform: 'translateX(-140%) skewX(-18deg)', opacity: 0 },
+          '18%': { opacity: 0.42 },
+          '100%': { transform: 'translateX(180%) skewX(-18deg)', opacity: 0 },
+        },
       }}
     >
       <Stack spacing={2.25}>
@@ -524,6 +529,12 @@ export default function MembershipPage() {
                   transform: 'translateY(-1px)',
                 },
                 ...refinedHoverSx,
+                '&:hover .benefitLine::after': {
+                  transform: 'scaleX(1)',
+                },
+                '&:hover .benefitRefresh': {
+                  transform: 'rotate(28deg)',
+                },
               }}
             >
               <Stack spacing={1.25}>
@@ -531,16 +542,39 @@ export default function MembershipPage() {
                   <Typography variant="overline" color="text.secondary" sx={{ letterSpacing: 0, fontWeight: 800 }}>
                     {isZh ? '当前权益' : 'Current benefits'}
                   </Typography>
-                  <IconButton size="small" onClick={() => void loadData(true)} disabled={loading || aiBalanceLoading} aria-label={isZh ? '刷新权益状态' : 'Refresh benefits'}>
+                  <IconButton
+                    className="benefitRefresh"
+                    size="small"
+                    onClick={() => void loadData(true)}
+                    disabled={loading || aiBalanceLoading}
+                    aria-label={isZh ? '刷新权益状态' : 'Refresh benefits'}
+                    sx={{ transition: transition(['transform', 'background-color'], motion.durations.slow, motion.gentleSpring) }}
+                  >
                     <RefreshIcon fontSize="small" />
                   </IconButton>
                 </Stack>
                 <Box sx={{ display: 'grid', gridTemplateColumns: '1fr', gap: 1 }}>
                   <Box
+                    className="benefitLine"
                     sx={{
                       p: 1.25,
                       borderRadius: 1.5,
                       bgcolor: (theme) => alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.13 : 0.07),
+                      position: 'relative',
+                      overflow: 'hidden',
+                      '&::after': {
+                        content: '""',
+                        position: 'absolute',
+                        left: 12,
+                        right: 12,
+                        bottom: 0,
+                        height: 2,
+                        borderRadius: 999,
+                        bgcolor: 'primary.main',
+                        transform: 'scaleX(0)',
+                        transformOrigin: 'center',
+                        transition: `transform 520ms ${motion.emphasized}`,
+                      },
                     }}
                   >
                     <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 800 }}>{isZh ? '会员套餐' : 'Plan'}</Typography>
@@ -550,11 +584,57 @@ export default function MembershipPage() {
                     </Stack>
                   </Box>
                   <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
-                    <Box sx={{ p: 1.1, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+                    <Box
+                      className="benefitLine"
+                      sx={{
+                        p: 1.1,
+                        borderRadius: 1.5,
+                        border: '1px solid',
+                        borderColor: 'divider',
+                        position: 'relative',
+                        overflow: 'hidden',
+                        '&::after': {
+                          content: '""',
+                          position: 'absolute',
+                          left: 10,
+                          right: 10,
+                          bottom: 0,
+                          height: 2,
+                          borderRadius: 999,
+                          bgcolor: 'primary.main',
+                          transform: 'scaleX(0)',
+                          transformOrigin: 'center',
+                          transition: `transform 520ms ${motion.emphasized}`,
+                        },
+                      }}
+                    >
                       <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 800 }}>{isZh ? '有效期至' : 'Valid until'}</Typography>
                       <Typography sx={{ mt: 0.25, fontWeight: 900 }}>{formatDate(activeSubscription?.currentPeriodEnd)}</Typography>
                     </Box>
-                    <Box sx={{ p: 1.1, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+                    <Box
+                      className="benefitLine"
+                      sx={{
+                        p: 1.1,
+                        borderRadius: 1.5,
+                        border: '1px solid',
+                        borderColor: 'divider',
+                        position: 'relative',
+                        overflow: 'hidden',
+                        '&::after': {
+                          content: '""',
+                          position: 'absolute',
+                          left: 10,
+                          right: 10,
+                          bottom: 0,
+                          height: 2,
+                          borderRadius: 999,
+                          bgcolor: 'primary.main',
+                          transform: 'scaleX(0)',
+                          transformOrigin: 'center',
+                          transition: `transform 520ms ${motion.emphasized}`,
+                        },
+                      }}
+                    >
                       <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 800 }}>{isZh ? 'AI点数' : 'AI points'}</Typography>
                       <Typography sx={{ mt: 0.25, fontWeight: 950 }}>{loggedInCloud ? formatAiPoints(aiBalance, aiBalanceLoading, isZh) : (isZh ? '登录后查看' : 'Sign in')}</Typography>
                     </Box>
@@ -774,13 +854,32 @@ export default function MembershipPage() {
                         bgcolor: 'background.paper',
                         boxShadow: (theme) => `0 8px 18px ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.07 : 0.03)}`,
                         transition: transition(['background-color', 'box-shadow', 'transform', 'border-color'], motion.durations.slow, motion.gentleSpring),
+                        '&::after': {
+                          content: '""',
+                          position: 'absolute',
+                          left: 14,
+                          right: 14,
+                          bottom: 0,
+                          height: 2,
+                          borderRadius: 999,
+                          bgcolor: 'primary.main',
+                          transform: 'scaleX(0)',
+                          transformOrigin: 'center',
+                          transition: `transform 520ms ${motion.emphasized}`,
+                        },
                         '&:hover': {
                           transform: 'translateY(-2px)',
                           borderColor: (theme) => alpha(theme.palette.primary.main, 0.72),
                           boxShadow: (theme) => `0 14px 28px ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.22 : 0.13)}`,
+                          '&::after': {
+                            transform: 'scaleX(1)',
+                          },
                           '& .purchaseAction': {
                             borderColor: 'primary.main',
                             color: 'primary.main',
+                          },
+                          '& .durationPill': {
+                            transform: 'translateX(2px)',
                           },
                         },
                         ...refinedHoverSx,
@@ -803,7 +902,9 @@ export default function MembershipPage() {
                                     lineHeight: 1,
                                     fontWeight: 900,
                                     flex: '0 0 auto',
+                                    transition: transition(['transform', 'background-color'], motion.durations.base, motion.softOut),
                                   }}
+                                  className="durationPill"
                                 >
                                   {planDurationLabel(plan, isZh)}
                                 </Box>
@@ -840,13 +941,28 @@ export default function MembershipPage() {
                             mt: 'auto',
                             minHeight: 36,
                             py: 0.65,
+                            position: 'relative',
+                            overflow: 'hidden',
                             transition: transition(['background-color', 'border-color', 'color', 'box-shadow', 'transform'], motion.durations.base, motion.gentleSpring),
+                            '&::before': {
+                              content: '""',
+                              position: 'absolute',
+                              inset: '0 auto 0 0',
+                              width: '42%',
+                              pointerEvents: 'none',
+                              background: (theme) => `linear-gradient(90deg, transparent, ${alpha(theme.palette.common.white, theme.palette.mode === 'dark' ? 0.22 : 0.34)}, transparent)`,
+                              transform: 'translateX(-140%) skewX(-18deg)',
+                              opacity: 0,
+                            },
                             '&:hover': {
                               bgcolor: 'primary.main',
                               borderColor: 'primary.main',
                               color: 'primary.contrastText',
                               transform: 'translateY(-1px)',
                               boxShadow: (theme) => `0 12px 24px ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.30 : 0.22)}`,
+                              '&::before': {
+                                animation: `membershipSheen 780ms ${motion.softOut}`,
+                              },
                               '& .purchasePrice': {
                                 color: 'primary.contrastText',
                               },
@@ -902,9 +1018,30 @@ export default function MembershipPage() {
                         borderColor: (theme) => alpha(theme.palette.success.main, 0.52),
                         bgcolor: (theme) => alpha(theme.palette.success.main, theme.palette.mode === 'dark' ? 0.12 : 0.06),
                         transition: transition(['border-color', 'box-shadow', 'transform', 'background-color'], motion.durations.base, motion.softOut),
+                        overflow: 'hidden',
+                        position: 'relative',
+                        '&::after': {
+                          content: '""',
+                          position: 'absolute',
+                          left: 14,
+                          right: 14,
+                          bottom: 0,
+                          height: 2,
+                          borderRadius: 999,
+                          bgcolor: 'success.main',
+                          transform: 'scaleX(0)',
+                          transformOrigin: 'center',
+                          transition: `transform 520ms ${motion.emphasized}`,
+                        },
                         '&:hover': {
                           transform: 'translateY(-2px)',
                           boxShadow: (theme) => `0 12px 24px ${alpha(theme.palette.success.main, theme.palette.mode === 'dark' ? 0.16 : 0.10)}`,
+                          '&::after': {
+                            transform: 'scaleX(1)',
+                          },
+                          '& .pointValue': {
+                            transform: 'translateY(-1px) scale(1.035)',
+                          },
                         },
                         ...refinedHoverSx,
                       }}
@@ -912,7 +1049,7 @@ export default function MembershipPage() {
                       <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 0.9, height: '100%', p: 1.25, '&:last-child': { pb: 1.25 } }}>
                         <Stack direction="row" spacing={0.6} sx={{ alignItems: 'center', justifyContent: 'space-between', gap: 0.75 }}>
                           <Typography sx={{ fontWeight: 900, minWidth: 0 }} noWrap>{item.title}</Typography>
-                          <Chip icon={<BoltIcon />} label={formatPoints(item.claim.amount)} size="small" color="success" />
+                          <Chip className="pointValue" icon={<BoltIcon />} label={formatPoints(item.claim.amount)} size="small" color="success" sx={{ transition: transition(['transform'], motion.durations.base, motion.gentleSpring) }} />
                         </Stack>
                         <Typography variant="body2" color="text.secondary" sx={{ flex: 1 }}>{item.description}</Typography>
                         <Button variant="contained" startIcon={<BoltIcon />} disabled={Boolean(claimingPointKind)} onClick={() => void handleClaimPoints(item.kind)} sx={{ fontWeight: 900 }}>
@@ -932,9 +1069,30 @@ export default function MembershipPage() {
                       sx={{
                         borderRadius: 2,
                         transition: transition(['box-shadow', 'transform', 'border-color'], motion.durations.base, motion.softOut),
+                        overflow: 'hidden',
+                        position: 'relative',
+                        '&::after': {
+                          content: '""',
+                          position: 'absolute',
+                          left: 14,
+                          right: 14,
+                          bottom: 0,
+                          height: 2,
+                          borderRadius: 999,
+                          bgcolor: 'primary.main',
+                          transform: 'scaleX(0)',
+                          transformOrigin: 'center',
+                          transition: `transform 520ms ${motion.emphasized}`,
+                        },
                         '&:hover': {
                           transform: 'translateY(-2px)',
                           boxShadow: (theme) => `0 12px 24px ${alpha(theme.palette.common.black, theme.palette.mode === 'dark' ? 0.22 : 0.08)}`,
+                          '&::after': {
+                            transform: 'scaleX(1)',
+                          },
+                          '& .pointValue': {
+                            transform: 'translateY(-1px) scale(1.035)',
+                          },
                           '& .purchaseAction': {
                             bgcolor: 'primary.main',
                             borderColor: 'primary.main',
@@ -948,7 +1106,7 @@ export default function MembershipPage() {
                       <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 0.9, height: '100%', p: 1.25, '&:last-child': { pb: 1.25 } }}>
                         <Stack direction="row" spacing={0.6} sx={{ alignItems: 'center', justifyContent: 'space-between', gap: 0.75 }}>
                           <Typography sx={{ fontWeight: 900, minWidth: 0 }} noWrap>{plan.name}</Typography>
-                          <Chip icon={<BoltIcon />} label={formatPoints(planGrantPoints(plan))} size="small" color="success" />
+                          <Chip className="pointValue" icon={<BoltIcon />} label={formatPoints(planGrantPoints(plan))} size="small" color="success" sx={{ transition: transition(['transform'], motion.durations.base, motion.gentleSpring) }} />
                         </Stack>
                         {description ? (
                           <Typography variant="body2" color="text.secondary" sx={{ flex: 1 }}>{description}</Typography>
