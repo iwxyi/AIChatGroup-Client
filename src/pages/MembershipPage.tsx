@@ -558,13 +558,14 @@ export default function MembershipPage() {
                 <Chip size="small" color="primary" label="1" sx={{ fontWeight: 900, width: 24 }} />
                 <Typography variant="subtitle2" sx={{ fontWeight: 900 }}>{isZh ? '选择会员等级' : 'Choose membership tier'}</Typography>
               </Stack>
-              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 164px), 1fr))', gap: 1, alignItems: 'stretch' }}>
+              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: 1.25, alignItems: 'stretch' }}>
                 {tierOptions.map((tier) => {
                   const active = tier.code === selectedTierOption?.code;
                   const tierPlans = vipPlans.filter((plan) => planVipTierCode(plan) === tier.code);
                   const tierMinPlan = [...tierPlans].sort((a, b) => toNumber(a.price_amount) - toNumber(b.price_amount))[0];
                   const durationCount = new Set(tierPlans.map((plan) => Number(plan.duration_days || 0)).filter((days) => days > 0)).size;
                   const isFree = tier.code === 'free';
+                  const benefitLines = markdownLines(tier.benefitsMarkdown);
                   return (
                     <Box
                       key={tier.code}
@@ -574,16 +575,16 @@ export default function MembershipPage() {
                         border: '1px solid',
                         cursor: 'pointer',
                         width: '100%',
-                        minHeight: 188,
+                        minHeight: 0,
                         display: 'flex',
                         flexDirection: 'column',
-                        gap: 1,
-                        p: 1.25,
+                        gap: 1.15,
+                        p: 1.35,
                         position: 'relative',
-                        overflow: 'hidden',
-                        borderColor: (theme) => active ? alpha(theme.palette.primary.main, 0.62) : alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.20 : 0.12),
-                        bgcolor: (theme) => active ? alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.10 : 0.035) : alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.86 : 0.98),
-                        boxShadow: (theme) => active ? `0 10px 24px ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.16 : 0.09)}` : `0 10px 24px ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.08 : 0.035)}`,
+                        overflow: 'visible',
+                        borderColor: (theme) => active ? alpha(theme.palette.primary.main, 0.64) : alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.18 : 0.10),
+                        bgcolor: (theme) => active ? alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.10 : 0.035) : theme.palette.background.paper,
+                        boxShadow: (theme) => active ? `0 14px 32px ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.18 : 0.10)}` : `0 10px 26px ${alpha(theme.palette.common.black, theme.palette.mode === 'dark' ? 0.20 : 0.055)}`,
                         transition: 'border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease, background-color 160ms ease',
                         '&::before': {
                           content: '""',
@@ -606,24 +607,78 @@ export default function MembershipPage() {
                         },
                       }}
                     >
-                      <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
-                        <Typography sx={{ fontSize: 18, fontWeight: 950, minWidth: 0 }} noWrap>{tier.name}</Typography>
-                        {active ? <CheckCircleIcon color="primary" sx={{ fontSize: 20, flex: '0 0 auto' }} /> : null}
-                      </Stack>
-                      <Box>
-                        {String(tier.description || '').trim() ? (
-                          <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.55 }}>{String(tier.description || '').trim()}</Typography>
+                      <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start', justifyContent: 'space-between', gap: 1 }}>
+                        <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minWidth: 0 }}>
+                          <Box
+                            sx={{
+                              width: 34,
+                              height: 34,
+                              borderRadius: 1.5,
+                              display: 'grid',
+                              placeItems: 'center',
+                              flex: '0 0 auto',
+                              color: active ? 'primary.main' : 'text.secondary',
+                              bgcolor: (theme) => active ? alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.18 : 0.10) : alpha(theme.palette.action.selected, theme.palette.mode === 'dark' ? 0.20 : 0.55),
+                            }}
+                          >
+                            {isFree ? <CheckCircleIcon sx={{ fontSize: 19 }} /> : <WorkspacePremiumIcon sx={{ fontSize: 19 }} />}
+                          </Box>
+                          <Box sx={{ minWidth: 0 }}>
+                            <Typography sx={{ fontSize: 18, fontWeight: 950, minWidth: 0, lineHeight: 1.15 }} noWrap>{tier.name}</Typography>
+                            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 800 }}>
+                              {isFree ? (isZh ? '先轻松体验' : 'Start free') : (isZh ? '解锁更自由的创作' : 'Unlock more freedom')}
+                            </Typography>
+                          </Box>
+                        </Stack>
+                        {active ? (
+                          <Box
+                            sx={{
+                              width: 26,
+                              height: 26,
+                              borderRadius: 999,
+                              display: 'grid',
+                              placeItems: 'center',
+                              flex: '0 0 auto',
+                              color: 'primary.contrastText',
+                              bgcolor: 'primary.main',
+                              boxShadow: (theme) => `0 8px 18px ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.26 : 0.18)}`,
+                            }}
+                          >
+                            <CheckCircleIcon sx={{ fontSize: 17 }} />
+                          </Box>
                         ) : null}
-                      </Box>
-                      <Stack spacing={0.55} sx={{ flex: 1 }}>
-                          {markdownLines(tier.benefitsMarkdown).slice(0, 5).map((line) => (
-                            <Stack key={line} direction="row" spacing={0.8} sx={{ alignItems: 'flex-start' }}>
-                              <CheckCircleIcon color="success" sx={{ fontSize: 16, mt: 0.2 }} />
-                              <Typography variant="body2" sx={{ lineHeight: 1.45 }}>{renderInlineMarkdown(line)}</Typography>
-                            </Stack>
-                          ))}
                       </Stack>
-                      <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', justifyContent: 'space-between', gap: 1, pt: 0.25 }}>
+                      {String(tier.description || '').trim() ? (
+                        <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>{String(tier.description || '').trim()}</Typography>
+                      ) : null}
+                      <Stack spacing={0.65} sx={{ flex: 1 }}>
+                        {benefitLines.map((line) => (
+                          <Stack key={line} direction="row" spacing={0.8} sx={{ alignItems: 'flex-start' }}>
+                            <CheckCircleIcon
+                              sx={{
+                                fontSize: 16,
+                                mt: 0.2,
+                                color: active ? 'primary.main' : 'success.main',
+                                flex: '0 0 auto',
+                              }}
+                            />
+                            <Typography variant="body2" sx={{ lineHeight: 1.5 }}>{renderInlineMarkdown(line)}</Typography>
+                          </Stack>
+                        ))}
+                      </Stack>
+                      <Stack
+                        direction="row"
+                        spacing={0.75}
+                        sx={{
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: 1,
+                          mt: 0.25,
+                          pt: 1,
+                          borderTop: '1px solid',
+                          borderColor: (theme) => alpha(theme.palette.divider, theme.palette.mode === 'dark' ? 0.56 : 0.72),
+                        }}
+                      >
                         {isFree ? (
                           <Typography sx={{ fontWeight: 950, color: active ? 'primary.main' : 'text.primary' }}>{isZh ? '免费' : 'Free'}</Typography>
                         ) : (
