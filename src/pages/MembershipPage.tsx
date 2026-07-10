@@ -586,24 +586,10 @@ export default function MembershipPage() {
                         bgcolor: (theme) => active ? alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.10 : 0.035) : theme.palette.background.paper,
                         boxShadow: (theme) => active ? `0 14px 32px ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.18 : 0.10)}` : `0 10px 26px ${alpha(theme.palette.common.black, theme.palette.mode === 'dark' ? 0.20 : 0.055)}`,
                         transition: 'border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease, background-color 160ms ease',
-                        '&::before': {
-                          content: '""',
-                          position: 'absolute',
-                          top: 0,
-                          left: 0,
-                          right: 0,
-                          height: 3,
-                          bgcolor: 'primary.main',
-                          opacity: active ? 1 : 0,
-                          transition: 'opacity 160ms ease',
-                        },
                         '&:hover': {
                           transform: 'translateY(-2px)',
                           borderColor: (theme) => alpha(theme.palette.primary.main, 0.62),
                           boxShadow: (theme) => `0 14px 30px ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.18 : 0.10)}`,
-                          '&::before': {
-                            opacity: 1,
-                          },
                         },
                       }}
                     >
@@ -617,8 +603,8 @@ export default function MembershipPage() {
                               display: 'grid',
                               placeItems: 'center',
                               flex: '0 0 auto',
-                              color: active ? 'primary.main' : 'text.secondary',
-                              bgcolor: (theme) => active ? alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.18 : 0.10) : alpha(theme.palette.action.selected, theme.palette.mode === 'dark' ? 0.20 : 0.55),
+                              color: 'primary.main',
+                              bgcolor: (theme) => alpha(theme.palette.primary.main, active ? (theme.palette.mode === 'dark' ? 0.18 : 0.10) : (theme.palette.mode === 'dark' ? 0.08 : 0.045)),
                             }}
                           >
                             {isFree ? <CheckCircleIcon sx={{ fontSize: 19 }} /> : <WorkspacePremiumIcon sx={{ fontSize: 19 }} />}
@@ -738,24 +724,10 @@ export default function MembershipPage() {
                         bgcolor: 'background.paper',
                         boxShadow: (theme) => `0 8px 18px ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.07 : 0.03)}`,
                         transition: 'background-color 160ms ease, box-shadow 160ms ease, transform 160ms ease, border-color 160ms ease',
-                        '&::before': {
-                          content: '""',
-                          position: 'absolute',
-                          top: 0,
-                          left: 0,
-                          right: 0,
-                          height: 3,
-                          bgcolor: 'primary.main',
-                          opacity: 0,
-                          transition: 'opacity 160ms ease',
-                        },
                         '&:hover': {
                           transform: 'translateY(-2px)',
                           borderColor: (theme) => alpha(theme.palette.primary.main, 0.72),
                           boxShadow: (theme) => `0 14px 28px ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.22 : 0.13)}`,
-                          '&::before': {
-                            opacity: 1,
-                          },
                           '& .purchaseAction': {
                             borderColor: 'primary.main',
                             color: 'primary.main',
