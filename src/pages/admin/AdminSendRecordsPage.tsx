@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type SyntheticEvent } from 'react';
-import { Alert, Button, Chip, Stack, Tab, Table, TableBody, TableCell, TableHead, TablePagination, TableRow, Tabs, TextField, Tooltip, Typography } from '@mui/material';
+import { Alert, Box, Button, Chip, Stack, Tab, Table, TableBody, TableCell, TableHead, TablePagination, TableRow, Tabs, TextField, Tooltip, Typography } from '@mui/material';
 import AdminRequestState, { getAdminErrorMessage } from '../../components/admin/AdminRequestState';
 import { AdminMetricGrid, AdminSection, AdminTableFrame, type AdminMetricItem } from '../../components/admin/AdminSurface';
 import { adminApi } from '../../services/adminApi';
@@ -133,12 +133,12 @@ export default function AdminSendRecordsPage() {
 
   return (
     <Stack spacing={2}>
-      <AdminSection title="发送记录" subtitle="查询短信和邮件发送结果，失败记录可悬浮查看错误详情。" bodySx={{ py: 0.75 }}>
+      <Box>
         <Tabs value={tab} onChange={changeTab} variant="scrollable" allowScrollButtonsMobile>
           <Tab value="sms" label="短信发送记录" />
           <Tab value="email" label="邮件发送记录" />
         </Tabs>
-      </AdminSection>
+      </Box>
 
       <AdminSection title="发送概览">
         <AdminMetricGrid items={metricItems} compact minWidth={132} />

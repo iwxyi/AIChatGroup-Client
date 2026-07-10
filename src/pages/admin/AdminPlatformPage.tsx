@@ -481,16 +481,7 @@ export default function AdminPlatformPage() {
 
   return (
     <Stack spacing={2}>
-      <AdminSection
-        title="平台配置"
-        subtitle="集中管理 AI、支付、短信和邮箱服务商配置。"
-        action={category !== 'ai' && canReadPlatform ? (
-          <Button variant="outlined" startIcon={<RefreshIcon />} disabled={loading} onClick={() => void load()}>
-            刷新
-          </Button>
-        ) : undefined}
-        bodySx={{ py: 0.75 }}
-      >
+      <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap' }}>
         <Tabs
           value={category}
           onChange={(_event, value) => {
@@ -507,7 +498,12 @@ export default function AdminPlatformPage() {
         >
           {visibleTabs.map((item) => <Tab key={item.value} value={item.value} label={item.label} />)}
         </Tabs>
-      </AdminSection>
+        {category !== 'ai' && canReadPlatform ? (
+          <Button variant="outlined" startIcon={<RefreshIcon />} disabled={loading} onClick={() => void load()}>
+            刷新
+          </Button>
+        ) : null}
+      </Stack>
       {category === 'ai' ? (
         canReadAi ? <AdminAIPage /> : <Alert severity="warning">当前管理员没有访问 AI 平台配置的权限。</Alert>
       ) : (

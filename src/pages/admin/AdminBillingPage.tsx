@@ -1499,16 +1499,12 @@ export default function AdminBillingPage() {
 
   return (
     <Stack spacing={2}>
-      <AdminSection
-        title="套餐订单"
-        subtitle="管理用户可购买的权益套餐、点数套餐和支付订单。"
-        bodySx={{ py: 0.75 }}
-      >
+      <Box>
         <Tabs value={tab} onChange={changeTab} variant="scrollable" allowScrollButtonsMobile sx={{ minWidth: 0, flex: '1 1 auto' }}>
           <Tab label="套餐" />
           <Tab label="订单" />
         </Tabs>
-      </AdminSection>
+      </Box>
 
       {tab === 0 ? (
         <Stack spacing={2}>
