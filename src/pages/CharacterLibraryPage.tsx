@@ -20,6 +20,7 @@ import ListSkeletonGrid from '../components/common/ListSkeletonGrid';
 import FloatingSegmentedTabs, { buildFloatingTabContainerSx } from '../components/common/FloatingSegmentedTabs';
 import AppSnackbar from '../components/common/AppSnackbar';
 import ExpandableFab from '../components/common/ExpandableFab';
+import VipLimitDialog from '../components/common/VipLimitDialog';
 import { usePaneLayout } from '../components/layout/PaneLayoutContext';
 import { canDeleteCharacterGroup, getCharacterGroupList, getCharactersInGroup, isPresetCharacterSelectable, normalizeCharacterGroup, getDuplicateCharacterBannerText, getDuplicateCharacterCount } from '../types/character';
 import { enqueueAvatarGenerationForCharacters } from '../services/avatarGeneration';
@@ -129,6 +130,7 @@ export default function CharacterLibraryPage() {
     severity: 'success',
   });
   const [membership, setMembership] = useState<BillingMembershipResponse | null>(null);
+  const [vipLimitDialog, setVipLimitDialog] = useState<{ title: string; description: string; current?: number | null; limit?: number | null; helperText?: string } | null>(null);
   const activeCharacterId = isMasterPane && !selectionMode ? getActiveCharacterId(location.pathname) : null;
   const floatingActionPositionSx = isMasterPane ? {
     position: 'fixed' as const,
@@ -514,10 +516,11 @@ export default function CharacterLibraryPage() {
 
   const openCreateForm = () => {
     if (characterLimitReached) {
-      setSnackbar({
-        open: true,
-        message: i18n.language.startsWith('zh') ? `角色数量已达当前会员上限（${custom.length}/${maxCharacters}）` : `Character limit reached (${custom.length}/${maxCharacters})`,
-        severity: 'error',
+      setVipLimitDialog({
+        title: '角色数量已达上限',
+        description: '当前会员的角色数量已经达到上限。升级 VIP 后可以创建更多角色，也可以先删除不需要的角色。',
+        current: custom.length,
+        limit: maxCharacters,
       });
       return;
     }
@@ -546,6 +549,16 @@ export default function CharacterLibraryPage() {
         const text = await file.text();
         const data = JSON.parse(text);
         const chars = Array.isArray(data) ? data : [data];
+        if (maxCharacters != null && custom.length + chars.length > maxCharacters) {
+          setVipLimitDialog({
+            title: '导入会超过角色上限',
+            description: `本次准备导入 ${chars.length} 个角色，导入后会超过当前会员的角色数量上限。请减少导入数量，或升级 VIP 后继续导入。`,
+            current: custom.length + chars.length,
+            limit: maxCharacters,
+            helperText: `当前已有 ${custom.length} 个角色。`,
+          });
+          return;
+        }
         await importCharacters(chars);
         setSnackbar({ open: true, message: t('character.importSuccess'), severity: 'success' });
       } catch (error) {
@@ -745,13 +758,21 @@ export default function CharacterLibraryPage() {
         severity={snackbar.severity}
         message={snackbar.message}
       />
+      <VipLimitDialog
+        open={Boolean(vipLimitDialog)}
+        title={vipLimitDialog?.title || ''}
+        description={vipLimitDialog?.description || ''}
+        current={vipLimitDialog?.current}
+        limit={vipLimitDialog?.limit}
+        helperText={vipLimitDialog?.helperText}
+        onClose={() => setVipLimitDialog(null)}
+      />
 
       <ExpandableFab
         icon={<AddIcon />}
         label={t('character.create')}
         ariaLabel={t('character.create')}
         onClick={openCreateForm}
-        disabled={characterLimitReached}
         sx={floatingActionPositionSx}
       />
     </Box>

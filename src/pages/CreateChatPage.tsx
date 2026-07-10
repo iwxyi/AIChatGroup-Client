@@ -48,6 +48,7 @@ import { resolveRoomTemplateCapabilityDefaults } from '../services/conversationC
 import FloatingSegmentedTabs, { buildFloatingTabContainerSx } from '../components/common/FloatingSegmentedTabs';
 import AppSnackbar from '../components/common/AppSnackbar';
 import ExpandableFab from '../components/common/ExpandableFab';
+import VipLimitDialog from '../components/common/VipLimitDialog';
 import SurfaceCard from '../components/common/SurfaceCard';
 import MarketUploadDialog, { type MarketUploadDraft } from '../components/market/MarketUploadDialog';
 import { marketApi } from '../services/marketApi';
@@ -257,6 +258,7 @@ export default function CreateChatPage() {
   const [saving, setSaving] = useState(false);
   const [saveAsChatSaving, setSaveAsChatSaving] = useState(false);
   const [membership, setMembership] = useState<BillingMembershipResponse | null>(null);
+  const [vipLimitDialog, setVipLimitDialog] = useState<{ title: string; description: string; current?: number | null; limit?: number | null; helperText?: string } | null>(null);
   const [aiAutofilling, setAiAutofilling] = useState(false);
   const [hotTopicOpenSignal, setHotTopicOpenSignal] = useState(0);
   const [hotTopicDialogEnabled, setHotTopicDialogEnabled] = useState(false);
@@ -949,7 +951,16 @@ export default function CreateChatPage() {
   const memberDialogConfirmLabel = t('common.confirm');
   const startChatLabel = editingChat ? t('common.save') : '开始群聊';
   const maxChats = membership?.vipEntitlement?.entitlement.maxChats ?? null;
-  const chatLimitReached = !editingChat && maxChats != null && chats.filter((chat) => !chat.deletedAt).length >= maxChats;
+  const activeChatCount = chats.filter((chat) => !chat.deletedAt).length;
+  const chatLimitReached = !editingChat && maxChats != null && activeChatCount >= maxChats;
+  const showChatLimitDialog = (title = '聊天数量已达上限') => {
+    setVipLimitDialog({
+      title,
+      description: '当前会员的聊天数量已经达到上限。升级 VIP 后可以创建更多群聊，也可以先删除不需要的聊天。',
+      current: activeChatCount,
+      limit: maxChats,
+    });
+  };
   const runtimePhaseLabel = editingChat?.worldState.phase || 'idle';
   const runtimeMoodLabel = mood || '未设置';
   const runtimeFocusLabel = focus || '未设置';
@@ -1082,6 +1093,10 @@ export default function CreateChatPage() {
       showError(i18n.language.startsWith('zh') ? '正在处理中，请稍候' : 'Already processing, please wait');
       return;
     }
+    if (maxChats != null && activeChatCount >= maxChats) {
+      showChatLimitDialog('另存为会超过聊天上限');
+      return;
+    }
     const draftContext = buildValidatedDraftContext();
     if (!name.trim()) {
       showError(i18n.language.startsWith('zh') ? '请填写群聊名称' : 'Please enter a chat name');
@@ -1133,7 +1148,7 @@ export default function CreateChatPage() {
       return;
     }
     if (chatLimitReached) {
-      showError(isZh ? `聊天数量已达当前会员上限（${chats.filter((chat) => !chat.deletedAt).length}/${maxChats}）` : `Chat limit reached (${chats.filter((chat) => !chat.deletedAt).length}/${maxChats})`);
+      showChatLimitDialog();
       return;
     }
 
@@ -1513,7 +1528,7 @@ export default function CreateChatPage() {
           label={saving ? t('common.loading') : startChatLabel}
           ariaLabel={saving ? t('common.loading') : startChatLabel}
           onClick={handleCreateAction}
-          disabled={saving || saveAsChatSaving || chatLimitReached}
+          disabled={saving || saveAsChatSaving}
           sx={{
             position: 'fixed',
             right: { xs: 20, sm: 28, md: 36 },
@@ -1529,6 +1544,15 @@ export default function CreateChatPage() {
         severity={snackbar.severity}
         message={snackbar.message}
         offset="none"
+      />
+      <VipLimitDialog
+        open={Boolean(vipLimitDialog)}
+        title={vipLimitDialog?.title || ''}
+        description={vipLimitDialog?.description || ''}
+        current={vipLimitDialog?.current}
+        limit={vipLimitDialog?.limit}
+        helperText={vipLimitDialog?.helperText}
+        onClose={() => setVipLimitDialog(null)}
       />
 
       <MemberSelectionDialog

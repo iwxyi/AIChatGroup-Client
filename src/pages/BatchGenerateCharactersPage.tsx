@@ -14,6 +14,7 @@ import { generateResponse } from '../services/aiClient';
 import { generateCharacterProfilesSafe } from '../services/characterGenerator';
 import AppSnackbar from '../components/common/AppSnackbar';
 import FloatingSegmentedTabs from '../components/common/FloatingSegmentedTabs';
+import VipLimitDialog from '../components/common/VipLimitDialog';
 import CharacterRelationshipView, { type CharacterRelationshipViewCircle, type CharacterRelationshipViewEdge, type CharacterRelationshipViewNode } from '../components/relationship/CharacterRelationshipView';
 import { useLayoutHeaderActions } from '../components/layout/AppLayoutContext';
 import { BATCH_GENERATE_EXAMPLES } from '../constants/batchGenerateExamples';
@@ -778,6 +779,7 @@ export default function BatchGenerateCharactersPage() {
   const [progress, setProgress] = useState<{ current: number; total: number; currentName?: string; items: ProgressItem[] }>({ current: 0, total: 0, currentName: '', items: [] });
   const [membership, setMembership] = useState<BillingMembershipResponse | null>(null);
   const [membershipLoading, setMembershipLoading] = useState(false);
+  const [vipLimitDialog, setVipLimitDialog] = useState<{ title: string; description: string; current?: number | null; limit?: number | null; helperText?: string } | null>(null);
   const cancelGenerationRef = useRef(false);
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
     open: false,
@@ -852,12 +854,20 @@ export default function BatchGenerateCharactersPage() {
   ].join(' · ');
 
   const toggleCandidate = (candidateId: string) => {
+    if (!selectedCandidateIds.includes(candidateId) && batchCharacterLimit != null && selectedCandidateIds.length >= batchCharacterLimit) {
+      setVipLimitDialog({
+        title: '单次批量生成已达上限',
+        description: `当前会员单次最多新增 ${batchCharacterLimit} 个角色。默认选中的名单会保留，继续增加选择需要升级 VIP。`,
+        current: selectedCandidateIds.length,
+        limit: batchCharacterLimit,
+        helperText: '你可以先取消不需要的角色，再选择新的角色。',
+      });
+      return;
+    }
     setSelectedCandidateIds((prev) =>
       prev.includes(candidateId)
         ? prev.filter((item) => item !== candidateId)
-        : (batchCharacterLimit != null && prev.length >= batchCharacterLimit)
-          ? prev
-          : [...prev, candidateId]
+        : [...prev, candidateId]
     );
   };
 
@@ -872,7 +882,13 @@ export default function BatchGenerateCharactersPage() {
 
   const handleFetchNames = async () => {
     if (dailyGenerationExhausted) {
-      setSnackbar({ open: true, message: i18n.language.startsWith('zh') ? '今日 AI 生成次数已用完，请升级会员或明天再试。' : 'Daily AI generation limit reached.', severity: 'error' });
+      setVipLimitDialog({
+        title: '今日生成次数已用完',
+        description: '生成名单会消耗每日 AI 生成次数。当前会员今天的次数已经用完，升级 VIP 后可以获得更高的每日生成额度。',
+        current: dailyGenerationUsed,
+        limit: dailyGenerationLimit,
+        helperText: '明天会自动恢复当天额度。',
+      });
       return;
     }
     const profile = getPreferredAIProfile(settings.aiProfiles, 'text');
@@ -918,7 +934,12 @@ export default function BatchGenerateCharactersPage() {
 
   const handleGenerateCharacters = async () => {
     if (batchSelectionExceeded) {
-      setSnackbar({ open: true, message: i18n.language.startsWith('zh') ? `当前会员单次最多批量生成 ${batchCharacterLimit} 个角色。` : `Your membership allows up to ${batchCharacterLimit} characters per batch.`, severity: 'error' });
+      setVipLimitDialog({
+        title: '本次选择超过单次上限',
+        description: `当前会员单次最多批量生成 ${batchCharacterLimit} 个角色。你可以减少选择数量，或升级 VIP 后继续批量生成更大的阵容。`,
+        current: selectedCandidateIds.length,
+        limit: batchCharacterLimit,
+      });
       return;
     }
     const profile = getPreferredAIProfile(settings.aiProfiles, 'text');
@@ -1164,10 +1185,33 @@ export default function BatchGenerateCharactersPage() {
                   {selectedCandidateIds.length}/{candidateCharacters.length}
                 </Typography>
                 <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end' }}>
-                  <Button size="small" variant="outlined" onClick={() => setSelectedCandidateIds(candidateCharacters.map((candidate) => candidate.id))}>
+                  <Button size="small" variant="outlined" onClick={() => {
+                    if (batchCharacterLimit != null && candidateCharacters.length > batchCharacterLimit) {
+                      setVipLimitDialog({
+                        title: '全选会超过单次上限',
+                        description: `当前名单共有 ${candidateCharacters.length} 个角色，当前会员单次最多批量生成 ${batchCharacterLimit} 个。默认推荐名单不受影响，但手动全选需要更高的 VIP 权益。`,
+                        current: candidateCharacters.length,
+                        limit: batchCharacterLimit,
+                      });
+                      return;
+                    }
+                    setSelectedCandidateIds(candidateCharacters.map((candidate) => candidate.id));
+                  }}>
                     {i18n.language.startsWith('zh') ? '全选' : 'Select all'}
                   </Button>
-                  <Button size="small" variant="outlined" onClick={() => setSelectedCandidateIds(candidateCharacters.filter((candidate) => !selectedSet.has(candidate.id)).map((candidate) => candidate.id))}>
+                  <Button size="small" variant="outlined" onClick={() => {
+                    const nextIds = candidateCharacters.filter((candidate) => !selectedSet.has(candidate.id)).map((candidate) => candidate.id);
+                    if (batchCharacterLimit != null && nextIds.length > batchCharacterLimit) {
+                      setVipLimitDialog({
+                        title: '反选会超过单次上限',
+                        description: `反选后会选择 ${nextIds.length} 个角色，当前会员单次最多批量生成 ${batchCharacterLimit} 个。`,
+                        current: nextIds.length,
+                        limit: batchCharacterLimit,
+                      });
+                      return;
+                    }
+                    setSelectedCandidateIds(nextIds);
+                  }}>
                     {i18n.language.startsWith('zh') ? '反选' : 'Invert'}
                   </Button>
                 </Box>
@@ -1569,6 +1613,15 @@ export default function BatchGenerateCharactersPage() {
         severity={snackbar.severity}
         message={snackbar.message}
         offset="none"
+      />
+      <VipLimitDialog
+        open={Boolean(vipLimitDialog)}
+        title={vipLimitDialog?.title || ''}
+        description={vipLimitDialog?.description || ''}
+        current={vipLimitDialog?.current}
+        limit={vipLimitDialog?.limit}
+        helperText={vipLimitDialog?.helperText}
+        onClose={() => setVipLimitDialog(null)}
       />
     </Box>
   );
