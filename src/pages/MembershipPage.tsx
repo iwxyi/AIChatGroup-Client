@@ -43,6 +43,45 @@ const refinedHoverSx = {
   },
 };
 
+const membershipRadius = {
+  pageCard: 2.25,
+  card: 2,
+  panel: 1.6,
+};
+
+const membershipSectionSx = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 1,
+  flexWrap: 'wrap',
+  '& .sectionIndex': {
+    width: 24,
+    height: 24,
+    borderRadius: 999,
+    display: 'grid',
+    placeItems: 'center',
+    fontSize: 12,
+    fontWeight: 950,
+    lineHeight: 1,
+  },
+};
+
+function centerRevealLineSx(color = 'primary.main', inset = 14) {
+  return {
+    content: '""',
+    position: 'absolute',
+    left: inset,
+    right: inset,
+    bottom: 0,
+    height: 2,
+    borderRadius: 999,
+    bgcolor: color,
+    transform: 'scaleX(0)',
+    transformOrigin: 'center',
+    transition: `transform 520ms ${motion.emphasized}`,
+  };
+}
+
 const DEFAULT_MEMBERSHIP_CONFIG: BillingMembershipConfig = {
   title: 'VIP 会员',
   subtitle: '解锁完整体验并获得 AI 点数',
@@ -463,6 +502,15 @@ export default function MembershipPage() {
           '18%': { opacity: 0.42 },
           '100%': { transform: 'translateX(180%) skewX(-18deg)', opacity: 0 },
         },
+        '@keyframes membershipRiseIn': {
+          '0%': { opacity: 0, transform: 'translateY(8px) scale(0.985)' },
+          '100%': { opacity: 1, transform: 'translateY(0) scale(1)' },
+        },
+        '@keyframes membershipPointArrive': {
+          '0%': { transform: 'translateY(0) scale(1)' },
+          '36%': { transform: 'translateY(-3px) scale(1.055)' },
+          '100%': { transform: 'translateY(-1px) scale(1.035)' },
+        },
       }}
     >
       <Stack spacing={2.25}>
@@ -471,13 +519,21 @@ export default function MembershipPage() {
           variant="outlined"
           sx={{
             overflow: 'hidden',
-            borderRadius: 2,
+            borderRadius: membershipRadius.pageCard,
             borderColor: (theme) => alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.36 : 0.22),
             bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(18,18,18,0.96)' : 'rgba(255,255,255,0.94)',
             background: (theme) => theme.palette.mode === 'dark'
               ? `linear-gradient(135deg, ${alpha(theme.palette.primary.dark, 0.28)}, ${alpha(theme.palette.background.paper, 0.92)} 56%, ${alpha(theme.palette.success.dark, 0.16)}), ${theme.palette.background.paper}`
               : `linear-gradient(135deg, ${alpha(theme.palette.primary.light, 0.20)}, ${alpha(theme.palette.background.paper, 0.96)} 56%, ${alpha(theme.palette.success.light, 0.16)}), ${theme.palette.background.paper}`,
             boxShadow: (theme) => `0 20px 52px ${alpha(theme.palette.common.black, theme.palette.mode === 'dark' ? 0.30 : 0.08)}`,
+            position: 'relative',
+            '&::after': {
+              ...centerRevealLineSx('primary.main', 24),
+              height: 3,
+              bottom: 0,
+              transform: 'scaleX(1)',
+              opacity: 0.72,
+            },
           }}
         >
           <CardContent sx={{ p: { xs: 2, sm: 3 }, display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1.25fr 0.75fr' }, gap: 2.25, alignItems: 'stretch' }}>
@@ -489,11 +545,11 @@ export default function MembershipPage() {
                 ) : null}
               </Stack>
               <Box>
-                <Typography variant="h4" sx={{ fontWeight: 950, letterSpacing: 0, fontSize: { xs: 28, sm: 38 }, lineHeight: 1.12 }}>
+                <Typography variant="h4" sx={{ fontWeight: 950, letterSpacing: 0, fontSize: { xs: 29, sm: 40 }, lineHeight: 1.08, maxWidth: 720 }}>
                   {membershipConfig.title || (isZh ? '选择适合你的会员方案' : 'Choose your membership')}
                 </Typography>
                 {heroDescription ? (
-                  <Typography color="text.secondary" sx={{ mt: 1, maxWidth: 680, lineHeight: 1.75 }}>
+                  <Typography color="text.secondary" sx={{ mt: 1.15, maxWidth: 690, lineHeight: 1.78, fontSize: { xs: 14.5, sm: 15.5 } }}>
                     {heroDescription}
                   </Typography>
                 ) : null}
@@ -516,7 +572,7 @@ export default function MembershipPage() {
               sx={{
                 border: '1px solid',
                 borderColor: (theme) => alpha(theme.palette.divider, 0.8),
-                borderRadius: 2,
+                borderRadius: membershipRadius.card,
                 p: 1.5,
                 width: { xs: 'min(100%, 360px)', md: '100%' },
                 justifySelf: { xs: 'start', md: 'stretch' },
@@ -558,22 +614,12 @@ export default function MembershipPage() {
                     className="benefitLine"
                     sx={{
                       p: 1.25,
-                      borderRadius: 1.5,
+                      borderRadius: membershipRadius.panel,
                       bgcolor: (theme) => alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.13 : 0.07),
                       position: 'relative',
                       overflow: 'hidden',
                       '&::after': {
-                        content: '""',
-                        position: 'absolute',
-                        left: 12,
-                        right: 12,
-                        bottom: 0,
-                        height: 2,
-                        borderRadius: 999,
-                        bgcolor: 'primary.main',
-                        transform: 'scaleX(0)',
-                        transformOrigin: 'center',
-                        transition: `transform 520ms ${motion.emphasized}`,
+                        ...centerRevealLineSx('primary.main', 12),
                       },
                     }}
                   >
@@ -588,23 +634,13 @@ export default function MembershipPage() {
                       className="benefitLine"
                       sx={{
                         p: 1.1,
-                        borderRadius: 1.5,
+                        borderRadius: membershipRadius.panel,
                         border: '1px solid',
                         borderColor: 'divider',
                         position: 'relative',
                         overflow: 'hidden',
                         '&::after': {
-                          content: '""',
-                          position: 'absolute',
-                          left: 10,
-                          right: 10,
-                          bottom: 0,
-                          height: 2,
-                          borderRadius: 999,
-                          bgcolor: 'primary.main',
-                          transform: 'scaleX(0)',
-                          transformOrigin: 'center',
-                          transition: `transform 520ms ${motion.emphasized}`,
+                          ...centerRevealLineSx('primary.main', 10),
                         },
                       }}
                     >
@@ -615,23 +651,13 @@ export default function MembershipPage() {
                       className="benefitLine"
                       sx={{
                         p: 1.1,
-                        borderRadius: 1.5,
+                        borderRadius: membershipRadius.panel,
                         border: '1px solid',
                         borderColor: 'divider',
                         position: 'relative',
                         overflow: 'hidden',
                         '&::after': {
-                          content: '""',
-                          position: 'absolute',
-                          left: 10,
-                          right: 10,
-                          bottom: 0,
-                          height: 2,
-                          borderRadius: 999,
-                          bgcolor: 'primary.main',
-                          transform: 'scaleX(0)',
-                          transformOrigin: 'center',
-                          transition: `transform 520ms ${motion.emphasized}`,
+                          ...centerRevealLineSx('primary.main', 10),
                         },
                       }}
                     >
@@ -658,13 +684,18 @@ export default function MembershipPage() {
 
           {vipPlans.length > 0 && vipTiers.length > 0 ? (
             <Stack spacing={1.2} sx={{ pt: 0.5 }}>
-              <Typography variant="h6" sx={{ fontWeight: 950 }}>{isZh ? '会员套餐' : 'Membership plans'}</Typography>
-              <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
-                <Chip size="small" color="primary" label="1" sx={{ fontWeight: 900, width: 24 }} />
-                <Typography variant="subtitle2" sx={{ fontWeight: 900 }}>{isZh ? '选择会员等级' : 'Choose membership tier'}</Typography>
+              <Box>
+                <Typography variant="h6" sx={{ fontWeight: 950, lineHeight: 1.2 }}>{isZh ? '会员套餐' : 'Membership plans'}</Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.35, maxWidth: 620, lineHeight: 1.65 }}>
+                  {isZh ? '从轻量体验到深度创作，选择适合当前节奏的会员权益。' : 'Pick the membership benefits that match your current creative pace.'}
+                </Typography>
+              </Box>
+              <Stack sx={membershipSectionSx}>
+                <Box className="sectionIndex" sx={{ bgcolor: 'primary.main', color: 'primary.contrastText' }}>1</Box>
+                <Typography variant="subtitle2" sx={{ fontWeight: 950 }}>{isZh ? '选择会员等级' : 'Choose membership tier'}</Typography>
               </Stack>
               <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: 1.25, alignItems: 'stretch' }}>
-                {tierOptions.map((tier) => {
+                {tierOptions.map((tier, tierIndex) => {
                   const active = tier.code === selectedTierOption?.code;
                   const tierPlans = vipPlans.filter((plan) => planVipTierCode(plan) === tier.code);
                   const tierMinPlan = [...tierPlans].sort((a, b) => toNumber(a.price_amount) - toNumber(b.price_amount))[0];
@@ -676,7 +707,7 @@ export default function MembershipPage() {
                       key={tier.code}
                       onClick={() => setSelectedVipTierCode(tier.code)}
                       sx={{
-                        borderRadius: 2,
+                        borderRadius: membershipRadius.card,
                         border: '1px solid',
                         cursor: 'pointer',
                         width: '100%',
@@ -686,10 +717,12 @@ export default function MembershipPage() {
                         gap: 1.15,
                         p: 1.35,
                         position: 'relative',
-                        overflow: 'visible',
+                        overflow: 'hidden',
                         borderColor: (theme) => active ? alpha(theme.palette.primary.main, 0.64) : alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.18 : 0.10),
                         bgcolor: (theme) => active ? alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.10 : 0.035) : theme.palette.background.paper,
                         boxShadow: (theme) => active ? `0 14px 32px ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.18 : 0.10)}` : `0 10px 26px ${alpha(theme.palette.common.black, theme.palette.mode === 'dark' ? 0.20 : 0.055)}`,
+                        animation: `membershipRiseIn 460ms ${motion.softOut} both`,
+                        animationDelay: `${Math.min(tierIndex * 60, 180)}ms`,
                         transition: transition(['border-color', 'box-shadow', 'transform', 'background-color'], motion.durations.slow, motion.gentleSpring),
                         '&:hover': {
                           transform: 'translateY(-2px)',
@@ -701,6 +734,9 @@ export default function MembershipPage() {
                           '& .tierIcon': {
                             transform: 'translateY(-1px) rotate(-4deg)',
                           },
+                          '& .tierBenefitMark': {
+                            transform: 'scale(1.08)',
+                          },
                         },
                         ...refinedHoverSx,
                       }}
@@ -711,7 +747,7 @@ export default function MembershipPage() {
                             sx={{
                               width: 34,
                               height: 34,
-                              borderRadius: 1.5,
+                              borderRadius: membershipRadius.panel,
                               display: 'grid',
                               placeItems: 'center',
                               flex: '0 0 auto',
@@ -752,14 +788,25 @@ export default function MembershipPage() {
                         <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>{String(tier.description || '').trim()}</Typography>
                       ) : null}
                       <Stack spacing={0.65} sx={{ flex: 1 }}>
-                        {benefitLines.map((line) => (
-                          <Stack key={line} direction="row" spacing={0.8} sx={{ alignItems: 'flex-start' }}>
+                        {benefitLines.map((line, lineIndex) => (
+                          <Stack
+                            key={line}
+                            direction="row"
+                            spacing={0.8}
+                            sx={{
+                              alignItems: 'flex-start',
+                              animation: `membershipRiseIn 480ms ${motion.softOut} both`,
+                              animationDelay: `${Math.min(lineIndex * 55, 220)}ms`,
+                            }}
+                          >
                             <CheckCircleIcon
+                              className="tierBenefitMark"
                               sx={{
                                 fontSize: 16,
                                 mt: 0.2,
                                 color: active ? 'primary.main' : 'success.main',
                                 flex: '0 0 auto',
+                                transition: transition(['color', 'transform'], motion.durations.base, motion.gentleSpring),
                               }}
                             />
                             <Typography variant="body2" sx={{ lineHeight: 1.5 }}>{renderInlineMarkdown(line)}</Typography>
@@ -823,20 +870,20 @@ export default function MembershipPage() {
                 })}
               </Box>
               {selectedTierOption?.code === 'free' ? (
-                <Alert severity="info" sx={{ borderRadius: 2 }}>
+                <Alert severity="info" sx={{ borderRadius: membershipRadius.card }}>
                   {isZh ? '免费用户无需购买会员，可直接领取可用点数包。' : 'Free tier does not require a purchase. Claim available point packs below.'}
                 </Alert>
               ) : (
-                <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', mt: 0.5 }}>
-                  <Chip size="small" color="primary" label="2" sx={{ fontWeight: 900, width: 24 }} />
-                  <Typography variant="subtitle2" sx={{ fontWeight: 900 }}>
+                <Stack sx={{ ...membershipSectionSx, mt: 0.5 }}>
+                  <Box className="sectionIndex" sx={{ bgcolor: 'primary.main', color: 'primary.contrastText' }}>2</Box>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 950 }}>
                     {isZh ? `为 ${selectedTierOption?.name || '当前会员'} 选择会员时长` : `Choose duration for ${selectedTierOption?.name || 'selected tier'}`}
                   </Typography>
                 </Stack>
               )}
               {selectedTierOption?.code !== 'free' ? (
               <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 188px), 238px))', gap: 1.15, justifyContent: 'start' }}>
-                {visibleVipPlans.map((plan) => {
+                {visibleVipPlans.map((plan, planIndex) => {
                   const highlightReason = getPlanMetaText(plan, 'highlightReason');
                   const originalPrice = getPlanMetaNumber(plan, 'originalPriceAmount');
                   const purchasing = purchasingPlanCode === plan.code;
@@ -845,34 +892,35 @@ export default function MembershipPage() {
                       key={plan.code}
                       variant="outlined"
                       sx={{
-                        borderRadius: 2,
+                        borderRadius: membershipRadius.card,
                         height: '100%',
                         width: '100%',
-                        overflow: 'hidden',
-                        position: 'relative',
                         borderColor: (theme) => alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.20 : 0.12),
                         bgcolor: 'background.paper',
                         boxShadow: (theme) => `0 8px 18px ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.07 : 0.03)}`,
+                        animation: `membershipRiseIn 420ms ${motion.softOut} both`,
+                        animationDelay: `${Math.min(planIndex * 45, 180)}ms`,
+                        overflow: 'hidden',
+                        position: 'relative',
                         transition: transition(['background-color', 'box-shadow', 'transform', 'border-color'], motion.durations.slow, motion.gentleSpring),
-                        '&::after': {
+                        '&::before': {
                           content: '""',
                           position: 'absolute',
-                          left: 14,
-                          right: 14,
-                          bottom: 0,
-                          height: 2,
-                          borderRadius: 999,
-                          bgcolor: 'primary.main',
-                          transform: 'scaleX(0)',
-                          transformOrigin: 'center',
-                          transition: `transform 520ms ${motion.emphasized}`,
+                          inset: 1,
+                          borderRadius: 'inherit',
+                          pointerEvents: 'none',
+                          background: (theme) => `radial-gradient(circle at 76% 18%, ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.18 : 0.12)}, transparent 34%), linear-gradient(135deg, transparent 0%, ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.10 : 0.055)} 100%)`,
+                          opacity: 0,
+                          transform: 'scale(0.985)',
+                          transition: transition(['opacity', 'transform'], motion.durations.slow, motion.emphasized),
                         },
                         '&:hover': {
                           transform: 'translateY(-2px)',
                           borderColor: (theme) => alpha(theme.palette.primary.main, 0.72),
                           boxShadow: (theme) => `0 14px 28px ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.22 : 0.13)}`,
-                          '&::after': {
-                            transform: 'scaleX(1)',
+                          '&::before': {
+                            opacity: 1,
+                            transform: 'scale(1)',
                           },
                           '& .purchaseAction': {
                             borderColor: 'primary.main',
@@ -1005,42 +1053,51 @@ export default function MembershipPage() {
 
           {showPointPacks ? (
             <Stack spacing={1} sx={{ pt: 0.5 }}>
-              <Typography variant="h6" sx={{ fontWeight: 950 }}>{isZh ? '点数包' : 'Point packs'}</Typography>
+              <Box>
+                <Typography variant="h6" sx={{ fontWeight: 950, lineHeight: 1.2 }}>{isZh ? '点数包' : 'Point packs'}</Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.35, maxWidth: 620, lineHeight: 1.65 }}>
+                  {isZh ? '点数用于官方 AI 调用，适合在灵感集中时补充更稳定的创作余量。' : 'Points power official AI calls when you need more room for focused creation.'}
+                </Typography>
+              </Box>
               <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 188px), 238px))', gap: 1, justifyContent: 'start' }}>
-                {availablePointClaimItems.map((item) => {
+                {availablePointClaimItems.map((item, claimIndex) => {
                   const claiming = claimingPointKind === item.kind;
                   return (
                     <Card
                       key={`claim-${item.kind}`}
                       variant="outlined"
                       sx={{
-                        borderRadius: 2,
+                        borderRadius: membershipRadius.card,
                         borderColor: (theme) => alpha(theme.palette.success.main, 0.52),
                         bgcolor: (theme) => alpha(theme.palette.success.main, theme.palette.mode === 'dark' ? 0.12 : 0.06),
-                        transition: transition(['border-color', 'box-shadow', 'transform', 'background-color'], motion.durations.base, motion.softOut),
+                        animation: `membershipRiseIn 420ms ${motion.softOut} both`,
+                        animationDelay: `${Math.min(claimIndex * 45, 120)}ms`,
                         overflow: 'hidden',
                         position: 'relative',
-                        '&::after': {
+                        transition: transition(['border-color', 'box-shadow', 'transform', 'background-color'], motion.durations.base, motion.softOut),
+                        '&::before': {
                           content: '""',
                           position: 'absolute',
-                          left: 14,
-                          right: 14,
-                          bottom: 0,
-                          height: 2,
+                          top: -28,
+                          right: -24,
+                          width: 88,
+                          height: 88,
                           borderRadius: 999,
-                          bgcolor: 'success.main',
-                          transform: 'scaleX(0)',
-                          transformOrigin: 'center',
-                          transition: `transform 520ms ${motion.emphasized}`,
+                          pointerEvents: 'none',
+                          background: (theme) => `radial-gradient(circle, ${alpha(theme.palette.success.main, theme.palette.mode === 'dark' ? 0.28 : 0.18)}, transparent 66%)`,
+                          opacity: 0.72,
+                          transform: 'scale(0.78)',
+                          transition: transition(['opacity', 'transform'], motion.durations.slow, motion.gentleSpring),
                         },
                         '&:hover': {
                           transform: 'translateY(-2px)',
                           boxShadow: (theme) => `0 12px 24px ${alpha(theme.palette.success.main, theme.palette.mode === 'dark' ? 0.16 : 0.10)}`,
-                          '&::after': {
-                            transform: 'scaleX(1)',
+                          '&::before': {
+                            opacity: 1,
+                            transform: 'scale(1)',
                           },
                           '& .pointValue': {
-                            transform: 'translateY(-1px) scale(1.035)',
+                            animation: `membershipPointArrive 520ms ${motion.gentleSpring} both`,
                           },
                         },
                         ...refinedHoverSx,
@@ -1059,7 +1116,7 @@ export default function MembershipPage() {
                     </Card>
                   );
                 })}
-                {pointPlans.map((plan) => {
+                {pointPlans.map((plan, pointIndex) => {
                   const purchasing = purchasingPlanCode === plan.code;
                   const description = String(plan.description || '').trim();
                   return (
@@ -1067,31 +1124,36 @@ export default function MembershipPage() {
                       key={plan.code}
                       variant="outlined"
                       sx={{
-                        borderRadius: 2,
-                        transition: transition(['box-shadow', 'transform', 'border-color'], motion.durations.base, motion.softOut),
+                        borderRadius: membershipRadius.card,
+                        animation: `membershipRiseIn 420ms ${motion.softOut} both`,
+                        animationDelay: `${Math.min((availablePointClaimItems.length + pointIndex) * 45, 220)}ms`,
                         overflow: 'hidden',
                         position: 'relative',
-                        '&::after': {
+                        transition: transition(['box-shadow', 'transform', 'border-color', 'background-color'], motion.durations.base, motion.softOut),
+                        '&::before': {
                           content: '""',
                           position: 'absolute',
-                          left: 14,
-                          right: 14,
-                          bottom: 0,
-                          height: 2,
+                          top: -30,
+                          right: -26,
+                          width: 92,
+                          height: 92,
                           borderRadius: 999,
-                          bgcolor: 'primary.main',
-                          transform: 'scaleX(0)',
-                          transformOrigin: 'center',
-                          transition: `transform 520ms ${motion.emphasized}`,
+                          pointerEvents: 'none',
+                          background: (theme) => `radial-gradient(circle, ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.20 : 0.11)}, transparent 68%)`,
+                          opacity: 0,
+                          transform: 'scale(0.76)',
+                          transition: transition(['opacity', 'transform'], motion.durations.slow, motion.gentleSpring),
                         },
                         '&:hover': {
                           transform: 'translateY(-2px)',
+                          borderColor: (theme) => alpha(theme.palette.primary.main, 0.44),
                           boxShadow: (theme) => `0 12px 24px ${alpha(theme.palette.common.black, theme.palette.mode === 'dark' ? 0.22 : 0.08)}`,
-                          '&::after': {
-                            transform: 'scaleX(1)',
+                          '&::before': {
+                            opacity: 1,
+                            transform: 'scale(1)',
                           },
                           '& .pointValue': {
-                            transform: 'translateY(-1px) scale(1.035)',
+                            animation: `membershipPointArrive 520ms ${motion.gentleSpring} both`,
                           },
                           '& .purchaseAction': {
                             bgcolor: 'primary.main',
@@ -1130,7 +1192,7 @@ export default function MembershipPage() {
                     key={`claim-${item.kind}`}
                     variant="outlined"
                     sx={{
-                      borderRadius: 2,
+                      borderRadius: membershipRadius.card,
                       opacity: 0.72,
                       bgcolor: (theme) => alpha(theme.palette.action.disabledBackground, theme.palette.mode === 'dark' ? 0.16 : 0.28),
                     }}
