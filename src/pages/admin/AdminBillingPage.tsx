@@ -77,6 +77,15 @@ type VipTierForm = {
   benefitsMarkdown: string;
 };
 
+type VipEntitlementForm = {
+  maxCharacters: string;
+  maxChats: string;
+  dailyAiGenerationLimit: string;
+  batchCharacterGenerationLimit: string;
+  officialProviderAccessText: string;
+  aiBillingDiscount: string;
+};
+
 type MembershipConfigForm = {
   title: string;
   subtitle: string;
@@ -84,6 +93,7 @@ type MembershipConfigForm = {
   benefitsText: string;
   fulfillmentNote: string;
   tiers: VipTierForm[];
+  entitlements: Record<string, VipEntitlementForm>;
 };
 
 const EMPTY_PLAN_FORM: PlanForm = {
@@ -141,6 +151,40 @@ const DEFAULT_VIP_TIERS: VipTierForm[] = [
     benefitsMarkdown: '- 包含高级会员权益\n- **最高使用上限**\n- **优先体验新功能**',
   },
 ];
+const DEFAULT_VIP_ENTITLEMENTS: Record<string, VipEntitlementForm> = {
+  free: {
+    maxCharacters: '10',
+    maxChats: '30',
+    dailyAiGenerationLimit: '3',
+    batchCharacterGenerationLimit: '3',
+    officialProviderAccessText: 'deepseek',
+    aiBillingDiscount: '1',
+  },
+  basic: {
+    maxCharacters: '50',
+    maxChats: '200',
+    dailyAiGenerationLimit: '20',
+    batchCharacterGenerationLimit: '10',
+    officialProviderAccessText: 'deepseek\nmoacode',
+    aiBillingDiscount: '0.95',
+  },
+  pro: {
+    maxCharacters: '500',
+    maxChats: '2000',
+    dailyAiGenerationLimit: '100',
+    batchCharacterGenerationLimit: '30',
+    officialProviderAccessText: 'deepseek\nmoacode',
+    aiBillingDiscount: '0.9',
+  },
+  premium: {
+    maxCharacters: '500',
+    maxChats: '2000',
+    dailyAiGenerationLimit: '100',
+    batchCharacterGenerationLimit: '30',
+    officialProviderAccessText: 'deepseek\nmoacode',
+    aiBillingDiscount: '0.9',
+  },
+};
 const EMPTY_MEMBERSHIP_CONFIG_FORM: MembershipConfigForm = {
   title: 'VIP 会员',
   subtitle: '解锁完整体验并获得 AI 点数',
@@ -148,6 +192,7 @@ const EMPTY_MEMBERSHIP_CONFIG_FORM: MembershipConfigForm = {
   benefitsText: '解锁会员功能权益\n会员专属体验\n优先使用新功能',
   fulfillmentNote: '支付完成后自动履约',
   tiers: DEFAULT_VIP_TIERS,
+  entitlements: DEFAULT_VIP_ENTITLEMENTS,
 };
 const BILLING_TAB_STORAGE_KEY = 'admin.billing.tab';
 const EMPTY_ORDER_SUMMARY = { total: 0, pending: 0, paid: 0, cancelled: 0, partiallyRefunded: 0, refunded: 0, failed: 0 };
@@ -343,6 +388,45 @@ function toNumber(value: string, fallback: number) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function limitText(value: unknown, fallback: string) {
+  if (value == null) return '';
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? String(Math.floor(parsed)) : fallback;
+}
+
+function toEntitlementForm(value: unknown, fallback: VipEntitlementForm): VipEntitlementForm {
+  const record = asRecord(value);
+  const providerAccess = Array.isArray(record.officialProviderAccess)
+    ? record.officialProviderAccess.map((item) => String(item || '').trim()).filter(Boolean).join('\n')
+    : fallback.officialProviderAccessText;
+  return {
+    maxCharacters: hasOwnRecordValue(record, 'maxCharacters') ? limitText(record.maxCharacters, fallback.maxCharacters) : fallback.maxCharacters,
+    maxChats: hasOwnRecordValue(record, 'maxChats') ? limitText(record.maxChats, fallback.maxChats) : fallback.maxChats,
+    dailyAiGenerationLimit: hasOwnRecordValue(record, 'dailyAiGenerationLimit') ? limitText(record.dailyAiGenerationLimit, fallback.dailyAiGenerationLimit) : fallback.dailyAiGenerationLimit,
+    batchCharacterGenerationLimit: hasOwnRecordValue(record, 'batchCharacterGenerationLimit') ? limitText(record.batchCharacterGenerationLimit, fallback.batchCharacterGenerationLimit) : fallback.batchCharacterGenerationLimit,
+    officialProviderAccessText: providerAccess,
+    aiBillingDiscount: numberText(record.aiBillingDiscount, fallback.aiBillingDiscount),
+  };
+}
+
+function parseLimitValue(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : null;
+}
+
+function buildEntitlementPayload(form: VipEntitlementForm) {
+  return {
+    maxCharacters: parseLimitValue(form.maxCharacters),
+    maxChats: parseLimitValue(form.maxChats),
+    dailyAiGenerationLimit: parseLimitValue(form.dailyAiGenerationLimit),
+    batchCharacterGenerationLimit: parseLimitValue(form.batchCharacterGenerationLimit),
+    officialProviderAccess: form.officialProviderAccessText.split('\n').map((item) => item.trim().toLowerCase()).filter(Boolean),
+    aiBillingDiscount: Math.max(0, Math.min(1, toNumber(form.aiBillingDiscount, 1))),
+  };
+}
+
 function buildPlanPayload(form: PlanForm, tiers: VipTierForm[] = DEFAULT_VIP_TIERS) {
   const isVip = form.vipEnabled;
   const pointsEnabled = form.pointsEnabled;
@@ -408,6 +492,12 @@ function toMembershipConfigForm(config: Record<string, unknown>): MembershipConf
     benefitsText: (benefits.length ? benefits : EMPTY_MEMBERSHIP_CONFIG_FORM.benefitsText.split('\n')).join('\n'),
     fulfillmentNote: String(config.fulfillmentNote || EMPTY_MEMBERSHIP_CONFIG_FORM.fulfillmentNote),
     tiers: tiers.length ? tiers : DEFAULT_VIP_TIERS,
+    entitlements: {
+      free: toEntitlementForm(asRecord(config.entitlements).free, DEFAULT_VIP_ENTITLEMENTS.free),
+      basic: toEntitlementForm(asRecord(config.entitlements).basic, DEFAULT_VIP_ENTITLEMENTS.basic),
+      pro: toEntitlementForm(asRecord(config.entitlements).pro, DEFAULT_VIP_ENTITLEMENTS.pro),
+      premium: toEntitlementForm(asRecord(config.entitlements).premium, DEFAULT_VIP_ENTITLEMENTS.premium),
+    },
   };
 }
 
@@ -427,6 +517,7 @@ function buildMembershipConfigPayload(form: MembershipConfigForm) {
       conversionRatio: Math.max(0, toNumber(tier.conversionRatio, 1)),
       benefitsMarkdown: tier.benefitsMarkdown,
     })).filter((tier) => tier.code && tier.name),
+    entitlements: Object.fromEntries(Object.entries(form.entitlements).map(([code, entitlement]) => [code, buildEntitlementPayload(entitlement)])),
   };
 }
 
@@ -1339,6 +1430,19 @@ export default function AdminBillingPage() {
     }));
   };
 
+  const updateMembershipEntitlementForm = <K extends keyof VipEntitlementForm>(tierCode: string, key: K, value: VipEntitlementForm[K]) => {
+    setMembershipConfigForm((prev) => ({
+      ...prev,
+      entitlements: {
+        ...prev.entitlements,
+        [tierCode]: {
+          ...(prev.entitlements[tierCode] || DEFAULT_VIP_ENTITLEMENTS[tierCode] || DEFAULT_VIP_ENTITLEMENTS.free),
+          [key]: value,
+        },
+      },
+    }));
+  };
+
   const openCreatePlanDialog = () => {
     setTab(0);
     writePersistentUiValue(BILLING_TAB_STORAGE_KEY, 0);
@@ -1573,7 +1677,7 @@ export default function AdminBillingPage() {
               </Button>
             </DialogActions>
           </Dialog>
-          <Dialog open={membershipConfigDialogOpen} onClose={() => setMembershipConfigDialogOpen(false)} maxWidth="sm" fullWidth>
+          <Dialog open={membershipConfigDialogOpen} onClose={() => setMembershipConfigDialogOpen(false)} maxWidth="md" fullWidth>
             <DialogTitle>编辑会员展示配置</DialogTitle>
             <DialogContent>
               <Stack spacing={1.25} sx={{ pt: 1 }}>
@@ -1586,6 +1690,29 @@ export default function AdminBillingPage() {
                 <Typography variant="subtitle2" sx={{ fontWeight: 900 }}>VIP 等级权益</Typography>
                 <Typography variant="caption" color="text.secondary">权益支持简单 Markdown，使用 **加粗** 高亮与其他等级的不同点；转换比例表示低级剩余时长升级到该等级时的折算比例。</Typography>
                 {!hasEnabledMembershipTier ? <Alert severity="warning">至少需要启用一个 VIP 等级，否则前台无法展示会员套餐。</Alert> : null}
+                {(() => {
+                  const entitlement = membershipConfigForm.entitlements.free || DEFAULT_VIP_ENTITLEMENTS.free;
+                  return (
+                    <Paper variant="outlined" sx={{ p: 1.25, borderRadius: 2 }}>
+                      <Stack spacing={1}>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 900 }}>免费用户限制</Typography>
+                        <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 800 }}>留空表示不限制，0 表示不可用。</Typography>
+                        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                          <TextField label="角色上限" value={entitlement.maxCharacters} onChange={(event) => updateMembershipEntitlementForm('free', 'maxCharacters', event.target.value)} fullWidth />
+                          <TextField label="聊天上限" value={entitlement.maxChats} onChange={(event) => updateMembershipEntitlementForm('free', 'maxChats', event.target.value)} fullWidth />
+                        </Stack>
+                        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                          <TextField label="每日生成次数" value={entitlement.dailyAiGenerationLimit} onChange={(event) => updateMembershipEntitlementForm('free', 'dailyAiGenerationLimit', event.target.value)} fullWidth />
+                          <TextField label="批量角色单次上限" value={entitlement.batchCharacterGenerationLimit} onChange={(event) => updateMembershipEntitlementForm('free', 'batchCharacterGenerationLimit', event.target.value)} fullWidth />
+                        </Stack>
+                        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                          <TextField label="官方 AI 平台（每行一个ID）" value={entitlement.officialProviderAccessText} onChange={(event) => updateMembershipEntitlementForm('free', 'officialProviderAccessText', event.target.value)} fullWidth multiline minRows={2} />
+                          <TextField label="点数扣费折扣" value={entitlement.aiBillingDiscount} onChange={(event) => updateMembershipEntitlementForm('free', 'aiBillingDiscount', event.target.value)} helperText="免费用户通常为 1" fullWidth />
+                        </Stack>
+                      </Stack>
+                    </Paper>
+                  );
+                })()}
                 {membershipConfigForm.tiers.map((tier, index) => (
                   <Paper key={tier.code || index} variant="outlined" sx={{ p: 1.25, borderRadius: 2 }}>
                     <Stack spacing={1}>
@@ -1606,6 +1733,30 @@ export default function AdminBillingPage() {
                       </Stack>
                       <TextField label="等级说明" value={tier.description} onChange={(event) => updateMembershipTierForm(index, 'description', event.target.value)} fullWidth />
                       <TextField label="等级权益 Markdown" value={tier.benefitsMarkdown} onChange={(event) => updateMembershipTierForm(index, 'benefitsMarkdown', event.target.value)} fullWidth multiline minRows={4} />
+                      {(() => {
+                        const entitlement = membershipConfigForm.entitlements[tier.code] || DEFAULT_VIP_ENTITLEMENTS[tier.code] || DEFAULT_VIP_ENTITLEMENTS.free;
+                        return (
+                          <Box sx={{ borderTop: '1px solid', borderColor: 'divider', pt: 1 }}>
+                            <Stack spacing={1}>
+                              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 800 }}>
+                                用量限制：留空表示不限制，0 表示不可用。
+                              </Typography>
+                              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                                <TextField label="角色上限" value={entitlement.maxCharacters} onChange={(event) => updateMembershipEntitlementForm(tier.code, 'maxCharacters', event.target.value)} fullWidth />
+                                <TextField label="聊天上限" value={entitlement.maxChats} onChange={(event) => updateMembershipEntitlementForm(tier.code, 'maxChats', event.target.value)} fullWidth />
+                              </Stack>
+                              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                                <TextField label="每日生成次数" value={entitlement.dailyAiGenerationLimit} onChange={(event) => updateMembershipEntitlementForm(tier.code, 'dailyAiGenerationLimit', event.target.value)} fullWidth />
+                                <TextField label="批量角色单次上限" value={entitlement.batchCharacterGenerationLimit} onChange={(event) => updateMembershipEntitlementForm(tier.code, 'batchCharacterGenerationLimit', event.target.value)} fullWidth />
+                              </Stack>
+                              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                                <TextField label="官方 AI 平台（每行一个ID）" value={entitlement.officialProviderAccessText} onChange={(event) => updateMembershipEntitlementForm(tier.code, 'officialProviderAccessText', event.target.value)} fullWidth multiline minRows={2} />
+                                <TextField label="点数扣费折扣" value={entitlement.aiBillingDiscount} onChange={(event) => updateMembershipEntitlementForm(tier.code, 'aiBillingDiscount', event.target.value)} helperText="1=无折扣，0.95=95折，0.9=9折" fullWidth />
+                              </Stack>
+                            </Stack>
+                          </Box>
+                        );
+                      })()}
                     </Stack>
                   </Paper>
                 ))}
