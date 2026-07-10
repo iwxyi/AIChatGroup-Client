@@ -788,16 +788,21 @@ export default function MembershipPage() {
                               animationDelay: `${Math.min(lineIndex * 55, 220)}ms`,
                             }}
                           >
-                            <CheckCircleIcon
+                            <Box
                               className="tierBenefitMark"
                               sx={{
-                                fontSize: 16,
-                                mt: 0.2,
-                                color: active ? 'primary.main' : 'success.main',
+                                width: 18,
+                                height: '1.5em',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
                                 flex: '0 0 auto',
+                                color: active ? 'primary.main' : 'success.main',
                                 transition: transition(['color', 'transform'], motion.durations.base, motion.gentleSpring),
                               }}
-                            />
+                            >
+                              <CheckCircleIcon sx={{ fontSize: 16 }} />
+                            </Box>
                             <Typography variant="body2" sx={{ lineHeight: 1.5 }}>{renderInlineMarkdown(line)}</Typography>
                           </Stack>
                         ))}
