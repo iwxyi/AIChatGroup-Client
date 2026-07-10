@@ -332,12 +332,25 @@ export default function MembershipPage() {
   const vipPlans = sortedPlans.filter((plan) => planDisplayGroup(plan) === 'vip' || planIsVip(plan));
   const pointPlans = sortedPlans.filter((plan) => planDisplayGroup(plan) === 'points' || (!planIsVip(plan) && planGrantPoints(plan) > 0));
   const purchasableVipTierCodes = new Set(vipPlans.map((plan) => planVipTierCode(plan)));
-  const vipTiers = [...(membershipConfig.tiers || DEFAULT_MEMBERSHIP_CONFIG.tiers || [])]
+  const enabledConfigTiers = [...(membershipConfig.tiers || DEFAULT_MEMBERSHIP_CONFIG.tiers || [])]
     .filter(membershipTierEnabled)
-    .filter((tier) => purchasableVipTierCodes.has(tier.code))
     .sort((a, b) => toNumber(a.rank) - toNumber(b.rank));
+  const vipTiers = enabledConfigTiers
+    .filter((tier) => purchasableVipTierCodes.has(tier.code));
+  const tierOptions = [
+    {
+      code: 'free',
+      name: isZh ? '免费用户' : 'Free',
+      rank: 0,
+      enabled: true,
+      description: isZh ? '基础体验，适合先试用。' : 'Basic access for trying the product.',
+      benefitsMarkdown: isZh ? '- 基础聊天体验\n- 每日/每月免费点数\n- 本地数据可用' : '- Basic chat experience\n- Daily/monthly free points\n- Local data',
+    },
+    ...enabledConfigTiers,
+  ];
   const selectedVipTier = vipTiers.find((tier) => tier.code === selectedVipTierCode) || vipTiers[0];
-  const selectedTierPlans = vipPlans.filter((plan) => planVipTierCode(plan) === (selectedVipTier?.code || 'basic'));
+  const selectedTierOption = tierOptions.find((tier) => tier.code === selectedVipTierCode) || selectedVipTier || tierOptions[0];
+  const selectedTierPlans = vipPlans.filter((plan) => planVipTierCode(plan) === (selectedTierOption?.code || 'basic'));
   const visibleVipPlans = selectedTierPlans;
   const activeSubscription = membership?.activeSubscription || null;
   const latestSubscription = membership?.latestSubscription || null;
@@ -489,6 +502,8 @@ export default function MembershipPage() {
                 borderColor: (theme) => alpha(theme.palette.divider, 0.8),
                 borderRadius: 2,
                 p: 1.5,
+                width: { xs: 'min(100%, 360px)', md: '100%' },
+                justifySelf: { xs: 'start', md: 'stretch' },
                 bgcolor: (theme) => alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.62 : 0.74),
                 backdropFilter: 'blur(16px)',
               }}
@@ -550,60 +565,63 @@ export default function MembershipPage() {
                 <Chip size="small" color="primary" label="1" sx={{ fontWeight: 900, width: 24 }} />
                 <Typography variant="subtitle2" sx={{ fontWeight: 900 }}>{isZh ? '选择会员等级' : 'Choose membership tier'}</Typography>
               </Stack>
-              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 260px), 320px))', gap: 1.25, justifyContent: 'start' }}>
-                {vipTiers.map((tier) => {
-                  const active = tier.code === selectedVipTier?.code;
+              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 164px), 1fr))', gap: 1, alignItems: 'stretch' }}>
+                {tierOptions.map((tier) => {
+                  const active = tier.code === selectedTierOption?.code;
                   const tierPlans = vipPlans.filter((plan) => planVipTierCode(plan) === tier.code);
                   const tierMinPlan = [...tierPlans].sort((a, b) => toNumber(a.price_amount) - toNumber(b.price_amount))[0];
                   const durationCount = new Set(tierPlans.map((plan) => Number(plan.duration_days || 0)).filter((days) => days > 0)).size;
+                  const isFree = tier.code === 'free';
                   return (
-                    <Card
+                    <Box
                       key={tier.code}
-                      variant="outlined"
                       onClick={() => setSelectedVipTierCode(tier.code)}
                       sx={{
                         borderRadius: 2,
+                        border: '1px solid',
                         cursor: 'pointer',
                         width: '100%',
-                        borderColor: (theme) => active ? alpha(theme.palette.primary.main, 0.7) : theme.palette.divider,
-                        bgcolor: (theme) => active ? alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.14 : 0.07) : 'background.paper',
-                        boxShadow: (theme) => active ? `0 14px 30px ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.18 : 0.10)}` : 'none',
-                        transition: 'border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease',
+                        minHeight: 188,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 1,
+                        p: 1.25,
+                        borderColor: (theme) => active ? alpha(theme.palette.primary.main, 0.72) : alpha(theme.palette.divider, 0.86),
+                        bgcolor: (theme) => active ? alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.13 : 0.055) : alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.72 : 0.96),
+                        boxShadow: (theme) => active ? `0 12px 28px ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.16 : 0.10)}` : 'none',
+                        transition: 'border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease, background-color 160ms ease',
                         '&:hover': {
                           transform: 'translateY(-2px)',
-                          boxShadow: (theme) => `0 14px 34px ${alpha(theme.palette.common.black, theme.palette.mode === 'dark' ? 0.28 : 0.09)}`,
+                          borderColor: (theme) => alpha(theme.palette.primary.main, 0.62),
+                          boxShadow: (theme) => `0 14px 30px ${alpha(theme.palette.common.black, theme.palette.mode === 'dark' ? 0.24 : 0.08)}`,
                         },
                       }}
                     >
-                      <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 1.15, height: '100%', p: 1.75 }}>
-                        <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
-                          <Typography variant="h6" sx={{ fontWeight: 950 }}>{tier.name}</Typography>
-                          <Chip size="small" color={active ? 'primary' : 'default'} variant={active ? 'filled' : 'outlined'} label={active ? (isZh ? '已选择' : 'Selected') : (isZh ? '可选' : 'Available')} sx={{ fontWeight: 800 }} />
-                        </Stack>
+                      <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+                        <Typography sx={{ fontSize: 18, fontWeight: 950, minWidth: 0 }} noWrap>{tier.name}</Typography>
+                        {active ? <CheckCircleIcon color="primary" sx={{ fontSize: 20, flex: '0 0 auto' }} /> : null}
+                      </Stack>
+                      <Box>
                         {String(tier.description || '').trim() ? (
-                          <Typography variant="body2" color="text.secondary">{String(tier.description || '').trim()}</Typography>
+                          <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.55 }}>{String(tier.description || '').trim()}</Typography>
                         ) : null}
-                        <Box
-                          sx={{
-                            p: 1,
-                            borderRadius: 1.5,
-                            bgcolor: (theme) => alpha(active ? theme.palette.primary.main : theme.palette.action.hover, theme.palette.mode === 'dark' ? 0.16 : 0.08),
-                            flex: 1,
-                          }}
-                        >
-                          <Stack spacing={0.65}>
+                      </Box>
+                      <Stack spacing={0.55} sx={{ flex: 1 }}>
                           {markdownLines(tier.benefitsMarkdown).slice(0, 5).map((line) => (
                             <Stack key={line} direction="row" spacing={0.8} sx={{ alignItems: 'flex-start' }}>
-                              <CheckCircleIcon color="success" sx={{ fontSize: 18, mt: 0.15 }} />
-                              <Typography variant="body2">{renderInlineMarkdown(line)}</Typography>
+                              <CheckCircleIcon color="success" sx={{ fontSize: 16, mt: 0.2 }} />
+                              <Typography variant="body2" sx={{ lineHeight: 1.45 }}>{renderInlineMarkdown(line)}</Typography>
                             </Stack>
                           ))}
-                          </Stack>
-                        </Box>
-                        <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+                      </Stack>
+                      <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', justifyContent: 'space-between', gap: 1, pt: 0.25 }}>
+                        {isFree ? (
+                          <Typography sx={{ fontWeight: 950, color: active ? 'primary.main' : 'text.primary' }}>{isZh ? '免费' : 'Free'}</Typography>
+                        ) : (
                           <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 800 }}>
                             {isZh ? `${durationCount || tierPlans.length} 个时长` : `${durationCount || tierPlans.length} durations`}
                           </Typography>
+                        )}
                           {tierMinPlan ? (
                             <Typography sx={{ fontWeight: 950, color: active ? 'primary.main' : 'text.primary' }}>
                               {isZh ? (
@@ -619,18 +637,24 @@ export default function MembershipPage() {
                               )}
                             </Typography>
                           ) : null}
-                        </Stack>
-                      </CardContent>
-                    </Card>
+                      </Stack>
+                    </Box>
                   );
                 })}
               </Box>
-              <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', mt: 0.5 }}>
-                <Chip size="small" color="primary" label="2" sx={{ fontWeight: 900, width: 24 }} />
-                <Typography variant="subtitle2" sx={{ fontWeight: 900 }}>
-                  {isZh ? `为 ${selectedVipTier?.name || '当前会员'} 选择会员时长` : `Choose duration for ${selectedVipTier?.name || 'selected tier'}`}
-                </Typography>
-              </Stack>
+              {selectedTierOption?.code === 'free' ? (
+                <Alert severity="info" sx={{ borderRadius: 2 }}>
+                  {isZh ? '免费用户无需购买会员，可直接领取可用点数包。' : 'Free tier does not require a purchase. Claim available point packs below.'}
+                </Alert>
+              ) : (
+                <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', mt: 0.5 }}>
+                  <Chip size="small" color="primary" label="2" sx={{ fontWeight: 900, width: 24 }} />
+                  <Typography variant="subtitle2" sx={{ fontWeight: 900 }}>
+                    {isZh ? `为 ${selectedTierOption?.name || '当前会员'} 选择会员时长` : `Choose duration for ${selectedTierOption?.name || 'selected tier'}`}
+                  </Typography>
+                </Stack>
+              )}
+              {selectedTierOption?.code !== 'free' ? (
               <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 270px))', gap: 1.25, justifyContent: 'start' }}>
                 {visibleVipPlans.map((plan) => {
                   const featured = toBoolean(plan.featured);
@@ -664,6 +688,12 @@ export default function MembershipPage() {
                         '&:hover': {
                           transform: 'translateY(-2px)',
                           boxShadow: (theme) => `0 14px 32px ${alpha(featured ? theme.palette.primary.main : theme.palette.common.black, theme.palette.mode === 'dark' ? 0.22 : 0.09)}`,
+                          '& .purchaseAction': {
+                            bgcolor: 'primary.main',
+                            borderColor: 'primary.main',
+                            color: 'primary.contrastText',
+                            boxShadow: (theme) => `0 12px 24px ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.26 : 0.20)}`,
+                          },
                         },
                       }}
                     >
@@ -710,18 +740,14 @@ export default function MembershipPage() {
                           </Stack>
                         ) : <Box sx={{ flex: 1 }} />}
                         <Button
-                          variant="contained"
+                          className="purchaseAction"
+                          variant="outlined"
                           startIcon={<PaymentIcon />}
                           disabled={Boolean(purchasingPlanCode)}
                           onClick={() => void handlePurchase(plan)}
                           sx={{
                             fontWeight: 900,
-                            boxShadow: (theme) => `0 10px 22px ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.24 : 0.16)}`,
-                            transition: 'box-shadow 160ms ease, transform 160ms ease',
-                            '&:hover': {
-                              transform: 'translateY(-1px)',
-                              boxShadow: (theme) => `0 12px 24px ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.26 : 0.20)}`,
-                            },
+                            transition: 'background-color 160ms ease, border-color 160ms ease, color 160ms ease, box-shadow 160ms ease',
                           }}
                         >
                           {purchasing ? (isZh ? '正在发起支付' : 'Starting payment') : (
@@ -749,6 +775,7 @@ export default function MembershipPage() {
                   );
                 })}
               </Box>
+              ) : null}
             </Stack>
           ) : null}
 
@@ -785,7 +812,24 @@ export default function MembershipPage() {
                   const purchasing = purchasingPlanCode === plan.code;
                   const description = String(plan.description || '').trim();
                   return (
-                    <Card key={plan.code} variant="outlined" sx={{ borderRadius: 2 }}>
+                    <Card
+                      key={plan.code}
+                      variant="outlined"
+                      sx={{
+                        borderRadius: 2,
+                        transition: 'box-shadow 160ms ease, transform 160ms ease',
+                        '&:hover': {
+                          transform: 'translateY(-2px)',
+                          boxShadow: (theme) => `0 12px 24px ${alpha(theme.palette.common.black, theme.palette.mode === 'dark' ? 0.22 : 0.08)}`,
+                          '& .purchaseAction': {
+                            bgcolor: 'primary.main',
+                            borderColor: 'primary.main',
+                            color: 'primary.contrastText',
+                            boxShadow: (theme) => `0 12px 24px ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.26 : 0.20)}`,
+                          },
+                        },
+                      }}
+                    >
                       <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 0.9, height: '100%', p: 1.25, '&:last-child': { pb: 1.25 } }}>
                         <Stack direction="row" spacing={0.6} sx={{ alignItems: 'center', justifyContent: 'space-between', gap: 0.75 }}>
                           <Typography sx={{ fontWeight: 900, minWidth: 0 }} noWrap>{plan.name}</Typography>
@@ -794,7 +838,14 @@ export default function MembershipPage() {
                         {description ? (
                           <Typography variant="body2" color="text.secondary" sx={{ flex: 1 }}>{description}</Typography>
                         ) : null}
-                        <Button variant="contained" startIcon={<PaymentIcon />} disabled={Boolean(purchasingPlanCode)} onClick={() => void handlePurchase(plan)} sx={{ fontWeight: 900 }}>
+                        <Button
+                          className="purchaseAction"
+                          variant="outlined"
+                          startIcon={<PaymentIcon />}
+                          disabled={Boolean(purchasingPlanCode)}
+                          onClick={() => void handlePurchase(plan)}
+                          sx={{ fontWeight: 900, transition: 'background-color 160ms ease, border-color 160ms ease, color 160ms ease, box-shadow 160ms ease' }}
+                        >
                           {purchasing ? (isZh ? '正在发起支付' : 'Starting payment') : formatMoney(plan.price_amount, plan.currency)}
                         </Button>
                       </CardContent>
