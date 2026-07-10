@@ -408,7 +408,9 @@ export default function MembershipPage() {
             <Stack spacing={1.75} sx={{ justifyContent: 'center' }}>
               <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
                 <Chip icon={<WorkspacePremiumIcon />} label={isZh ? '会员中心' : 'Membership'} color="primary" size="small" />
-                <Chip icon={<BoltIcon />} label={isZh ? '支付后自动到账' : 'Instant fulfillment'} size="small" />
+                {membershipConfig.fulfillmentNote ? (
+                  <Chip icon={<BoltIcon />} label={membershipConfig.fulfillmentNote} size="small" />
+                ) : null}
               </Stack>
               <Box>
                 <Typography variant="h4" sx={{ fontWeight: 950, letterSpacing: 0, fontSize: { xs: 28, sm: 38 }, lineHeight: 1.12 }}>
