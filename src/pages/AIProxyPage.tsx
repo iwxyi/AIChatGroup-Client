@@ -9,7 +9,6 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  Divider,
   FormControl,
   Collapse,
   IconButton,
@@ -22,6 +21,7 @@ import {
   TableCell,
   TableContainer,
   TableHead,
+  TablePagination,
   TableRow,
   TextField,
   Tooltip,
@@ -86,6 +86,8 @@ const initialEditDialog: EditKeyDialogState = {
   rawKey: '',
 };
 
+const USAGE_PAGE_SIZE = 10;
+
 function formatDateTime(value: number | null | undefined) {
   if (!value) return '-';
   return new Intl.DateTimeFormat('zh-CN', {
@@ -130,8 +132,8 @@ function StatusChip({ status }: { status: string }) {
 }
 
 function getAiProxyBaseUrl() {
-  if (typeof window === 'undefined') return '/ai';
-  return `${window.location.origin}/ai`;
+  if (typeof window === 'undefined') return '';
+  return window.location.origin;
 }
 
 function buildCurlExamples(apiKey: string, baseUrl: string, model: string) {
@@ -169,6 +171,12 @@ export default function AIProxyPage() {
   const [records, setRecords] = useState<AiProxyUsageRecordItem[]>([]);
   const [daily, setDaily] = useState<AiProxyUsageGroupItem[]>([]);
   const [monthly, setMonthly] = useState<AiProxyUsageGroupItem[]>([]);
+  const [recordsPage, setRecordsPage] = useState(0);
+  const [dailyPage, setDailyPage] = useState(0);
+  const [monthlyPage, setMonthlyPage] = useState(0);
+  const [recordsTotal, setRecordsTotal] = useState(0);
+  const [dailyTotal, setDailyTotal] = useState(0);
+  const [monthlyTotal, setMonthlyTotal] = useState(0);
   const [selectedKeyId, setSelectedKeyId] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [dialog, setDialog] = useState<NewKeyDialogState>(initialDialog);
@@ -202,6 +210,13 @@ export default function AIProxyPage() {
   const canCreateKey = dialog.name.trim().length > 0;
   const canSaveKey = editDialog.name.trim().length > 0;
 
+  const handleSelectKey = useCallback((keyId: string) => {
+    setSelectedKeyId(keyId);
+    setRecordsPage(0);
+    setDailyPage(0);
+    setMonthlyPage(0);
+  }, []);
+
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
@@ -209,9 +224,9 @@ export default function AIProxyPage() {
         api.getAiProxyKeys(),
         api.getAiProxyBalance(),
         api.getAiProxyUsageSummary(),
-        api.getAiProxyUsageRecords({ keyId: selectedKeyId || null, limit: 30 }),
-        api.getAiProxyUsageGroups('daily', { keyId: selectedKeyId || null, limit: 14 }),
-        api.getAiProxyUsageGroups('monthly', { keyId: selectedKeyId || null, limit: 6 }),
+        api.getAiProxyUsageRecords({ keyId: selectedKeyId || null, page: recordsPage + 1, limit: USAGE_PAGE_SIZE }),
+        api.getAiProxyUsageGroups('daily', { keyId: selectedKeyId || null, page: dailyPage + 1, limit: USAGE_PAGE_SIZE }),
+        api.getAiProxyUsageGroups('monthly', { keyId: selectedKeyId || null, page: monthlyPage + 1, limit: USAGE_PAGE_SIZE }),
       ]);
       setKeys(keyResult.items);
       setBalance(balanceResult);
@@ -219,12 +234,15 @@ export default function AIProxyPage() {
       setRecords(recordResult.items);
       setDaily(dailyResult.items);
       setMonthly(monthlyResult.items);
+      setRecordsTotal(recordResult.total || recordResult.items.length);
+      setDailyTotal(dailyResult.total || dailyResult.items.length);
+      setMonthlyTotal(monthlyResult.total || monthlyResult.items.length);
     } catch (error) {
       setSnackbar({ open: true, message: error instanceof Error ? error.message : '加载中转数据失败', severity: 'error' });
     } finally {
       setLoading(false);
     }
-  }, [selectedKeyId]);
+  }, [dailyPage, monthlyPage, recordsPage, selectedKeyId]);
 
   useEffect(() => {
     setHeaderTitle('中转');
@@ -364,7 +382,7 @@ export default function AIProxyPage() {
   const deleteKey = async (key: AiProxyKeyItem) => {
     try {
       await api.deleteAiProxyKey(key.id);
-      if (selectedKeyId === key.id) setSelectedKeyId('');
+      if (selectedKeyId === key.id) handleSelectKey('');
       await loadData();
     } catch (error) {
       setSnackbar({ open: true, message: error instanceof Error ? error.message : '删除 Key 失败', severity: 'error' });
@@ -434,7 +452,7 @@ export default function AIProxyPage() {
               </TableHead>
               <TableBody>
                 {keys.map((key) => (
-                  <TableRow key={key.id} hover selected={selectedKeyId === key.id} onClick={() => setSelectedKeyId(key.id)}>
+                  <TableRow key={key.id} hover selected={selectedKeyId === key.id} onClick={() => handleSelectKey(key.id)}>
                     <TableCell>{key.name}</TableCell>
                     <TableCell sx={{ fontFamily: 'monospace' }}>{key.keyMask}</TableCell>
                     <TableCell><StatusChip status={key.status} /></TableCell>
@@ -538,67 +556,129 @@ export default function AIProxyPage() {
             </Box>
             <FormControl size="small" sx={{ minWidth: 220 }}>
               <InputLabel>Key</InputLabel>
-              <Select label="Key" value={selectedKeyId} onChange={(event) => setSelectedKeyId(event.target.value)}>
+              <Select label="Key" value={selectedKeyId} onChange={(event) => handleSelectKey(event.target.value)}>
                 <MenuItem value="">全部 Key</MenuItem>
                 {keys.map((key) => <MenuItem key={key.id} value={key.id}>{key.name}</MenuItem>)}
               </Select>
             </FormControl>
           </Stack>
-          <Divider sx={{ my: 1.5 }} />
-          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: 'minmax(0, 7fr) minmax(0, 5fr)' }, gap: 1.5 }}>
-            <Box>
-              <Typography variant="subtitle2" sx={{ fontWeight: 800, mb: 1 }}>消耗记录</Typography>
-              <TableContainer>
-                <Table size="small">
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>时间</TableCell>
-                      <TableCell>模型</TableCell>
-                      <TableCell>状态</TableCell>
-                      <TableCell align="right">Tokens</TableCell>
-                      <TableCell align="right">扣点</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {records.map((item) => (
-                      <TableRow key={item.id}>
-                        <TableCell>{formatDateTime(item.createdAt)}</TableCell>
-                        <TableCell>{item.model || '-'}</TableCell>
-                        <TableCell>{item.status === 'success' ? '成功' : '失败'}</TableCell>
-                        <TableCell align="right">{item.totalTokens || 0}</TableCell>
-                        <TableCell align="right">{formatNumber(item.chargedAmount)} P</TableCell>
-                      </TableRow>
-                    ))}
-                    {!records.length && <TableRow><TableCell colSpan={5}>暂无记录</TableCell></TableRow>}
-                  </TableBody>
-                </Table>
-              </TableContainer>
-            </Box>
-            <Box>
-              <Typography variant="subtitle2" sx={{ fontWeight: 800, mb: 1 }}>每日统计</Typography>
-              <Stack spacing={0.75}>
-                {daily.slice(0, 7).map((item) => (
-                  <Stack key={item.groupKey} direction="row" sx={{ justifyContent: 'space-between', fontSize: 14 }}>
-                    <span>{item.groupKey}</span>
-                    <span>{item.requestCount} 次 / {formatNumber(item.chargedAmount)} P</span>
-                  </Stack>
-                ))}
-                {!daily.length && <Typography variant="body2" color="text.secondary">暂无每日统计</Typography>}
-              </Stack>
-              <Divider sx={{ my: 1.5 }} />
-              <Typography variant="subtitle2" sx={{ fontWeight: 800, mb: 1 }}>每月统计</Typography>
-              <Stack spacing={0.75}>
-                {monthly.map((item) => (
-                  <Stack key={item.groupKey} direction="row" sx={{ justifyContent: 'space-between', fontSize: 14 }}>
-                    <span>{item.groupKey}</span>
-                    <span>{item.requestCount} 次 / {formatNumber(item.chargedAmount)} P</span>
-                  </Stack>
-                ))}
-                {!monthly.length && <Typography variant="body2" color="text.secondary">暂无每月统计</Typography>}
-              </Stack>
-            </Box>
-          </Box>
         </SurfaceCard>
+
+        <SurfaceCard>
+          <Typography variant="h6" sx={{ fontWeight: 800, mb: 1 }}>消耗记录</Typography>
+          <TableContainer>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>时间</TableCell>
+                  <TableCell>模型</TableCell>
+                  <TableCell>状态</TableCell>
+                  <TableCell align="right">Tokens</TableCell>
+                  <TableCell align="right">扣点</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {records.map((item) => (
+                  <TableRow key={item.id}>
+                    <TableCell>{formatDateTime(item.createdAt)}</TableCell>
+                    <TableCell>{item.model || '-'}</TableCell>
+                    <TableCell>{item.status === 'success' ? '成功' : '失败'}</TableCell>
+                    <TableCell align="right">{item.totalTokens || 0}</TableCell>
+                    <TableCell align="right">{formatNumber(item.chargedAmount)} P</TableCell>
+                  </TableRow>
+                ))}
+                {!records.length && <TableRow><TableCell colSpan={5}>暂无记录</TableCell></TableRow>}
+              </TableBody>
+            </Table>
+          </TableContainer>
+          <TablePagination
+            component="div"
+            count={recordsTotal}
+            page={recordsPage}
+            rowsPerPage={USAGE_PAGE_SIZE}
+            rowsPerPageOptions={[USAGE_PAGE_SIZE]}
+            onPageChange={(_event, page) => setRecordsPage(page)}
+            labelRowsPerPage="每页"
+          />
+        </SurfaceCard>
+
+        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: 'repeat(2, minmax(0, 1fr))' }, gap: 2 }}>
+          <SurfaceCard>
+            <Typography variant="h6" sx={{ fontWeight: 800, mb: 1 }}>每日统计</Typography>
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>日期</TableCell>
+                    <TableCell align="right">请求</TableCell>
+                    <TableCell align="right">Tokens</TableCell>
+                    <TableCell align="right">扣点</TableCell>
+                    <TableCell>最近使用</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {daily.map((item) => (
+                    <TableRow key={item.groupKey}>
+                      <TableCell>{item.groupKey}</TableCell>
+                      <TableCell align="right">{item.requestCount}</TableCell>
+                      <TableCell align="right">{item.totalTokens || 0}</TableCell>
+                      <TableCell align="right">{formatNumber(item.chargedAmount)} P</TableCell>
+                      <TableCell>{formatDateTime(item.lastUsedAt)}</TableCell>
+                    </TableRow>
+                  ))}
+                  {!daily.length && <TableRow><TableCell colSpan={5}>暂无每日统计</TableCell></TableRow>}
+                </TableBody>
+              </Table>
+            </TableContainer>
+            <TablePagination
+              component="div"
+              count={dailyTotal}
+              page={dailyPage}
+              rowsPerPage={USAGE_PAGE_SIZE}
+              rowsPerPageOptions={[USAGE_PAGE_SIZE]}
+              onPageChange={(_event, page) => setDailyPage(page)}
+              labelRowsPerPage="每页"
+            />
+          </SurfaceCard>
+
+          <SurfaceCard>
+            <Typography variant="h6" sx={{ fontWeight: 800, mb: 1 }}>每月统计</Typography>
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>月份</TableCell>
+                    <TableCell align="right">请求</TableCell>
+                    <TableCell align="right">Tokens</TableCell>
+                    <TableCell align="right">扣点</TableCell>
+                    <TableCell>最近使用</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {monthly.map((item) => (
+                    <TableRow key={item.groupKey}>
+                      <TableCell>{item.groupKey}</TableCell>
+                      <TableCell align="right">{item.requestCount}</TableCell>
+                      <TableCell align="right">{item.totalTokens || 0}</TableCell>
+                      <TableCell align="right">{formatNumber(item.chargedAmount)} P</TableCell>
+                      <TableCell>{formatDateTime(item.lastUsedAt)}</TableCell>
+                    </TableRow>
+                  ))}
+                  {!monthly.length && <TableRow><TableCell colSpan={5}>暂无每月统计</TableCell></TableRow>}
+                </TableBody>
+              </Table>
+            </TableContainer>
+            <TablePagination
+              component="div"
+              count={monthlyTotal}
+              page={monthlyPage}
+              rowsPerPage={USAGE_PAGE_SIZE}
+              rowsPerPageOptions={[USAGE_PAGE_SIZE]}
+              onPageChange={(_event, page) => setMonthlyPage(page)}
+              labelRowsPerPage="每页"
+            />
+          </SurfaceCard>
+        </Box>
       </PageSection>
 
       <Dialog open={dialog.open} onClose={() => setDialog(initialDialog)} fullWidth maxWidth="sm">
