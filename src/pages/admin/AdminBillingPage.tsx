@@ -78,6 +78,8 @@ type VipTierForm = {
 };
 
 type VipEntitlementForm = {
+  description: string;
+  benefitsMarkdown: string;
   maxCharacters: string;
   maxChats: string;
   dailyAiGenerationLimit: string;
@@ -156,6 +158,8 @@ const DEFAULT_VIP_TIERS: VipTierForm[] = [
 ];
 const DEFAULT_VIP_ENTITLEMENTS: Record<string, VipEntitlementForm> = {
   free: {
+    description: '基础体验，适合先试用。',
+    benefitsMarkdown: '- 基础聊天体验\n- 每日/每月免费点数\n- 本地数据可用',
     maxCharacters: '10',
     maxChats: '30',
     dailyAiGenerationLimit: '3',
@@ -167,6 +171,8 @@ const DEFAULT_VIP_ENTITLEMENTS: Record<string, VipEntitlementForm> = {
     cloudSyncEnabled: false,
   },
   basic: {
+    description: '',
+    benefitsMarkdown: '',
     maxCharacters: '50',
     maxChats: '200',
     dailyAiGenerationLimit: '20',
@@ -178,6 +184,8 @@ const DEFAULT_VIP_ENTITLEMENTS: Record<string, VipEntitlementForm> = {
     cloudSyncEnabled: true,
   },
   pro: {
+    description: '',
+    benefitsMarkdown: '',
     maxCharacters: '500',
     maxChats: '2000',
     dailyAiGenerationLimit: '100',
@@ -189,6 +197,8 @@ const DEFAULT_VIP_ENTITLEMENTS: Record<string, VipEntitlementForm> = {
     cloudSyncEnabled: true,
   },
   premium: {
+    description: '',
+    benefitsMarkdown: '',
     maxCharacters: '500',
     maxChats: '2000',
     dailyAiGenerationLimit: '100',
@@ -415,6 +425,8 @@ function toEntitlementForm(value: unknown, fallback: VipEntitlementForm): VipEnt
     ? record.officialProviderAccess.map((item) => String(item || '').trim()).filter(Boolean).join('\n')
     : fallback.officialProviderAccessText;
   return {
+    description: hasOwnRecordValue(record, 'description') ? String(record.description || '') : fallback.description,
+    benefitsMarkdown: hasOwnRecordValue(record, 'benefitsMarkdown') ? String(record.benefitsMarkdown || '') : fallback.benefitsMarkdown,
     maxCharacters: hasOwnRecordValue(record, 'maxCharacters') ? limitText(record.maxCharacters, fallback.maxCharacters) : fallback.maxCharacters,
     maxChats: hasOwnRecordValue(record, 'maxChats') ? limitText(record.maxChats, fallback.maxChats) : fallback.maxChats,
     dailyAiGenerationLimit: hasOwnRecordValue(record, 'dailyAiGenerationLimit') ? limitText(record.dailyAiGenerationLimit, fallback.dailyAiGenerationLimit) : fallback.dailyAiGenerationLimit,
@@ -436,6 +448,8 @@ function parseLimitValue(value: string) {
 
 function buildEntitlementPayload(form: VipEntitlementForm) {
   return {
+    description: form.description.trim(),
+    benefitsMarkdown: form.benefitsMarkdown,
     maxCharacters: parseLimitValue(form.maxCharacters),
     maxChats: parseLimitValue(form.maxChats),
     dailyAiGenerationLimit: parseLimitValue(form.dailyAiGenerationLimit),
@@ -1718,6 +1732,8 @@ export default function AdminBillingPage() {
                       <Stack spacing={1}>
                         <Typography variant="subtitle2" sx={{ fontWeight: 900 }}>免费用户限制</Typography>
                         <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 800 }}>留空表示不限制，0 表示不可用。</Typography>
+                        <TextField label="等级说明" value={entitlement.description} onChange={(event) => updateMembershipEntitlementForm('free', 'description', event.target.value)} fullWidth />
+                        <TextField label="等级权益 Markdown" value={entitlement.benefitsMarkdown} onChange={(event) => updateMembershipEntitlementForm('free', 'benefitsMarkdown', event.target.value)} fullWidth multiline minRows={4} />
                         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
                           <TextField label="角色上限" value={entitlement.maxCharacters} onChange={(event) => updateMembershipEntitlementForm('free', 'maxCharacters', event.target.value)} fullWidth />
                           <TextField label="聊天上限" value={entitlement.maxChats} onChange={(event) => updateMembershipEntitlementForm('free', 'maxChats', event.target.value)} fullWidth />

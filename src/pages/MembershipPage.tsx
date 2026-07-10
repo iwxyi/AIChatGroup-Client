@@ -97,6 +97,13 @@ function formatPoints(value: unknown) {
   return `${Number.isInteger(amount) ? amount : Number(amount.toFixed(2))}P`;
 }
 
+function formatLimitValue(value: unknown, isZh: boolean) {
+  if (value === null || value === undefined || value === '') return isZh ? '不限' : 'Unlimited';
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return isZh ? '不限' : 'Unlimited';
+  return String(Math.max(0, Math.floor(parsed)));
+}
+
 function formatDateTime(value: unknown) {
   const parsed = toNumber(value);
   return parsed > 0 ? new Date(parsed).toLocaleString() : '-';
@@ -337,14 +344,16 @@ export default function MembershipPage() {
     .sort((a, b) => toNumber(a.rank) - toNumber(b.rank));
   const vipTiers = enabledConfigTiers
     .filter((tier) => purchasableVipTierCodes.has(tier.code));
+  const entitlementForTier = (code: string) => membershipConfig.entitlements?.[code] || membershipConfig.entitlements?.free;
+  const freeEntitlement = entitlementForTier('free');
   const tierOptions = [
     {
       code: 'free',
       name: isZh ? '免费用户' : 'Free',
       rank: 0,
       enabled: true,
-      description: isZh ? '基础体验，适合先试用。' : 'Basic access for trying the product.',
-      benefitsMarkdown: isZh ? '- 基础聊天体验\n- 每日/每月免费点数\n- 本地数据可用' : '- Basic chat experience\n- Daily/monthly free points\n- Local data',
+      description: String(freeEntitlement?.description || (isZh ? '基础体验，适合先试用。' : 'Basic access for trying the product.')),
+      benefitsMarkdown: String(freeEntitlement?.benefitsMarkdown || (isZh ? '- 基础聊天体验\n- 每日/每月免费点数\n- 本地数据可用' : '- Basic chat experience\n- Daily/monthly free points\n- Local data')),
     },
     ...enabledConfigTiers,
   ];
@@ -572,6 +581,14 @@ export default function MembershipPage() {
                   const tierMinPlan = [...tierPlans].sort((a, b) => toNumber(a.price_amount) - toNumber(b.price_amount))[0];
                   const durationCount = new Set(tierPlans.map((plan) => Number(plan.duration_days || 0)).filter((days) => days > 0)).size;
                   const isFree = tier.code === 'free';
+                  const entitlement = entitlementForTier(tier.code);
+                  const metricChips = entitlement ? [
+                    { key: 'characters', label: isZh ? '角色' : 'Characters', value: formatLimitValue(entitlement.maxCharacters, isZh) },
+                    { key: 'chats', label: isZh ? '聊天' : 'Chats', value: formatLimitValue(entitlement.maxChats, isZh) },
+                    { key: 'daily-generation', label: isZh ? '每日生成' : 'Daily gen', value: formatLimitValue(entitlement.dailyAiGenerationLimit, isZh) },
+                    { key: 'daily-points', label: isZh ? '每日点数' : 'Daily points', value: formatPoints(entitlement.dailyPointGrant) },
+                    { key: 'monthly-points', label: isZh ? '每月点数' : 'Monthly points', value: formatPoints(entitlement.monthlyPointGrant) },
+                  ] : [];
                   return (
                     <Box
                       key={tier.code}
@@ -614,6 +631,22 @@ export default function MembershipPage() {
                             </Stack>
                           ))}
                       </Stack>
+                      {metricChips.length > 0 ? (
+                        <Stack direction="row" spacing={0.55} sx={{ flexWrap: 'wrap', gap: 0.55 }}>
+                          {metricChips.map((item) => (
+                            <Chip
+                              key={item.key}
+                              size="small"
+                              label={`${item.label} ${item.value}`}
+                              sx={{
+                                height: 24,
+                                fontWeight: 800,
+                                bgcolor: (theme) => alpha(theme.palette.action.selected, theme.palette.mode === 'dark' ? 0.22 : 0.55),
+                              }}
+                            />
+                          ))}
+                        </Stack>
+                      ) : null}
                       <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', justifyContent: 'space-between', gap: 1, pt: 0.25 }}>
                         {isFree ? (
                           <Typography sx={{ fontWeight: 950, color: active ? 'primary.main' : 'text.primary' }}>{isZh ? '免费' : 'Free'}</Typography>

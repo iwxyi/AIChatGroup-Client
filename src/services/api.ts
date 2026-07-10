@@ -57,6 +57,8 @@ export interface OfficialAiProviderInfo {
 }
 
 export interface VipEntitlementInfo {
+  description?: string;
+  benefitsMarkdown?: string;
   maxCharacters: number | null;
   maxChats: number | null;
   dailyAiGenerationLimit: number | null;
