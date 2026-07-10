@@ -66,22 +66,6 @@ const membershipSectionSx = {
   },
 };
 
-function centerRevealLineSx(color = 'primary.main', inset = 14) {
-  return {
-    content: '""',
-    position: 'absolute',
-    left: inset,
-    right: inset,
-    bottom: 0,
-    height: 2,
-    borderRadius: 999,
-    bgcolor: color,
-    transform: 'scaleX(0)',
-    transformOrigin: 'center',
-    transition: `transform 520ms ${motion.emphasized}`,
-  };
-}
-
 const DEFAULT_MEMBERSHIP_CONFIG: BillingMembershipConfig = {
   title: 'VIP 会员',
   subtitle: '解锁完整体验并获得 AI 点数',
@@ -527,13 +511,6 @@ export default function MembershipPage() {
               : `linear-gradient(135deg, ${alpha(theme.palette.primary.light, 0.20)}, ${alpha(theme.palette.background.paper, 0.96)} 56%, ${alpha(theme.palette.success.light, 0.16)}), ${theme.palette.background.paper}`,
             boxShadow: (theme) => `0 20px 52px ${alpha(theme.palette.common.black, theme.palette.mode === 'dark' ? 0.30 : 0.08)}`,
             position: 'relative',
-            '&::after': {
-              ...centerRevealLineSx('primary.main', 24),
-              height: 3,
-              bottom: 0,
-              transform: 'scaleX(1)',
-              opacity: 0.72,
-            },
           }}
         >
           <CardContent sx={{ p: { xs: 2, sm: 3 }, display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1.25fr 0.75fr' }, gap: 2.25, alignItems: 'stretch' }}>
@@ -585,9 +562,6 @@ export default function MembershipPage() {
                   transform: 'translateY(-1px)',
                 },
                 ...refinedHoverSx,
-                '&:hover .benefitLine::after': {
-                  transform: 'scaleX(1)',
-                },
                 '&:hover .benefitRefresh': {
                   transform: 'rotate(28deg)',
                 },
@@ -611,15 +585,30 @@ export default function MembershipPage() {
                 </Stack>
                 <Box sx={{ display: 'grid', gridTemplateColumns: '1fr', gap: 1 }}>
                   <Box
-                    className="benefitLine"
                     sx={{
                       p: 1.25,
                       borderRadius: membershipRadius.panel,
                       bgcolor: (theme) => alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.13 : 0.07),
                       position: 'relative',
                       overflow: 'hidden',
-                      '&::after': {
-                        ...centerRevealLineSx('primary.main', 12),
+                      transition: transition(['background-color', 'transform', 'box-shadow'], motion.durations.slow, motion.gentleSpring),
+                      '&::before': {
+                        content: '""',
+                        position: 'absolute',
+                        inset: 0,
+                        pointerEvents: 'none',
+                        background: (theme) => `radial-gradient(circle at 82% 20%, ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.18 : 0.11)}, transparent 42%)`,
+                        opacity: 0,
+                        transform: 'scale(0.96)',
+                        transition: transition(['opacity', 'transform'], motion.durations.slow, motion.emphasized),
+                      },
+                      '&:hover': {
+                        transform: 'translateY(-1px)',
+                        boxShadow: (theme) => `0 10px 22px ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.13 : 0.08)}`,
+                        '&::before': {
+                          opacity: 1,
+                          transform: 'scale(1)',
+                        },
                       },
                     }}
                   >
@@ -631,7 +620,6 @@ export default function MembershipPage() {
                   </Box>
                   <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
                     <Box
-                      className="benefitLine"
                       sx={{
                         p: 1.1,
                         borderRadius: membershipRadius.panel,
@@ -639,8 +627,11 @@ export default function MembershipPage() {
                         borderColor: 'divider',
                         position: 'relative',
                         overflow: 'hidden',
-                        '&::after': {
-                          ...centerRevealLineSx('primary.main', 10),
+                        transition: transition(['border-color', 'background-color', 'transform'], motion.durations.slow, motion.gentleSpring),
+                        '&:hover': {
+                          transform: 'translateY(-1px)',
+                          borderColor: (theme) => alpha(theme.palette.primary.main, 0.36),
+                          bgcolor: (theme) => alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.08 : 0.035),
                         },
                       }}
                     >
@@ -648,7 +639,6 @@ export default function MembershipPage() {
                       <Typography sx={{ mt: 0.25, fontWeight: 900 }}>{formatDate(activeSubscription?.currentPeriodEnd)}</Typography>
                     </Box>
                     <Box
-                      className="benefitLine"
                       sx={{
                         p: 1.1,
                         borderRadius: membershipRadius.panel,
@@ -656,8 +646,11 @@ export default function MembershipPage() {
                         borderColor: 'divider',
                         position: 'relative',
                         overflow: 'hidden',
-                        '&::after': {
-                          ...centerRevealLineSx('primary.main', 10),
+                        transition: transition(['border-color', 'background-color', 'transform'], motion.durations.slow, motion.gentleSpring),
+                        '&:hover': {
+                          transform: 'translateY(-1px)',
+                          borderColor: (theme) => alpha(theme.palette.primary.main, 0.36),
+                          bgcolor: (theme) => alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.08 : 0.035),
                         },
                       }}
                     >
