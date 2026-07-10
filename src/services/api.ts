@@ -65,6 +65,7 @@ export interface VipEntitlementInfo {
   aiBillingDiscount: number;
   dailyPointGrant: number;
   monthlyPointGrant: number;
+  cloudSyncEnabled: boolean;
 }
 
 export interface AiUsageRecordItem {

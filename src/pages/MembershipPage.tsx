@@ -526,9 +526,6 @@ export default function MembershipPage() {
                       <Typography sx={{ mt: 0.25, fontWeight: 950 }}>{loggedInCloud ? formatAiPoints(aiBalance, aiBalanceLoading, isZh) : (isZh ? '登录后查看' : 'Sign in')}</Typography>
                     </Box>
                   </Box>
-                  <Button size="small" variant="text" onClick={() => navigate('/account')} sx={{ alignSelf: 'flex-start', fontWeight: 800 }}>
-                    {isZh ? '云同步设置' : 'Cloud sync settings'}
-                  </Button>
                 </Box>
               </Stack>
             </Box>
@@ -713,23 +710,17 @@ export default function MembershipPage() {
                           </Stack>
                         ) : <Box sx={{ flex: 1 }} />}
                         <Button
-                          variant="outlined"
+                          variant="contained"
                           startIcon={<PaymentIcon />}
                           disabled={Boolean(purchasingPlanCode)}
                           onClick={() => void handlePurchase(plan)}
                           sx={{
-                            borderColor: (theme) => alpha(theme.palette.primary.main, featured ? 0.58 : 0.34),
-                            bgcolor: 'transparent',
-                            color: 'primary.main',
                             fontWeight: 900,
-                            transition: 'background-color 160ms ease, color 160ms ease, box-shadow 160ms ease, transform 160ms ease',
+                            boxShadow: (theme) => `0 10px 22px ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.24 : 0.16)}`,
+                            transition: 'box-shadow 160ms ease, transform 160ms ease',
                             '&:hover': {
-                              bgcolor: 'primary.main',
-                              borderColor: 'primary.main',
-                              color: 'primary.contrastText',
                               transform: 'translateY(-1px)',
                               boxShadow: (theme) => `0 12px 24px ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.26 : 0.20)}`,
-                              '& .MuiSvgIcon-root': { color: 'inherit' },
                             },
                           }}
                         >
@@ -764,7 +755,7 @@ export default function MembershipPage() {
           {showPointPacks ? (
             <Stack spacing={1} sx={{ pt: 0.5 }}>
               <Typography variant="h6" sx={{ fontWeight: 950 }}>{isZh ? '点数包' : 'Point packs'}</Typography>
-              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 280px))', gap: 1.25, justifyContent: 'start' }}>
+              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 188px), 238px))', gap: 1, justifyContent: 'start' }}>
                 {availablePointClaimItems.map((item) => {
                   const claiming = claimingPointKind === item.kind;
                   return (
@@ -777,15 +768,14 @@ export default function MembershipPage() {
                         bgcolor: (theme) => alpha(theme.palette.success.main, theme.palette.mode === 'dark' ? 0.12 : 0.06),
                       }}
                     >
-                      <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 1.2, height: '100%' }}>
-                        <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
-                          <Typography sx={{ fontWeight: 900 }}>{item.title}</Typography>
+                      <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 0.9, height: '100%', p: 1.25, '&:last-child': { pb: 1.25 } }}>
+                        <Stack direction="row" spacing={0.6} sx={{ alignItems: 'center', justifyContent: 'space-between', gap: 0.75 }}>
+                          <Typography sx={{ fontWeight: 900, minWidth: 0 }} noWrap>{item.title}</Typography>
                           <Chip icon={<BoltIcon />} label={formatPoints(item.claim.amount)} size="small" color="success" />
                         </Stack>
                         <Typography variant="body2" color="text.secondary" sx={{ flex: 1 }}>{item.description}</Typography>
-                        <Typography sx={{ fontSize: 26, fontWeight: 950 }}>{isZh ? '免费' : 'Free'}</Typography>
-                        <Button variant="contained" startIcon={<BoltIcon />} disabled={Boolean(claimingPointKind)} onClick={() => void handleClaimPoints(item.kind)}>
-                          {claiming ? (isZh ? '领取中' : 'Claiming') : (isZh ? '立即领取' : 'Claim now')}
+                        <Button variant="contained" startIcon={<BoltIcon />} disabled={Boolean(claimingPointKind)} onClick={() => void handleClaimPoints(item.kind)} sx={{ fontWeight: 900 }}>
+                          {claiming ? (isZh ? '领取中' : 'Claiming') : (isZh ? '免费领取' : 'Claim free')}
                         </Button>
                       </CardContent>
                     </Card>
@@ -796,17 +786,16 @@ export default function MembershipPage() {
                   const description = String(plan.description || '').trim();
                   return (
                     <Card key={plan.code} variant="outlined" sx={{ borderRadius: 2 }}>
-                      <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 1.2, height: '100%' }}>
-                        <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
-                          <Typography sx={{ fontWeight: 900 }}>{plan.name}</Typography>
+                      <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 0.9, height: '100%', p: 1.25, '&:last-child': { pb: 1.25 } }}>
+                        <Stack direction="row" spacing={0.6} sx={{ alignItems: 'center', justifyContent: 'space-between', gap: 0.75 }}>
+                          <Typography sx={{ fontWeight: 900, minWidth: 0 }} noWrap>{plan.name}</Typography>
                           <Chip icon={<BoltIcon />} label={formatPoints(planGrantPoints(plan))} size="small" color="success" />
                         </Stack>
                         {description ? (
                           <Typography variant="body2" color="text.secondary" sx={{ flex: 1 }}>{description}</Typography>
                         ) : null}
-                        <Typography sx={{ fontSize: 26, fontWeight: 950 }}>{formatMoney(plan.price_amount, plan.currency)}</Typography>
-                        <Button variant="outlined" startIcon={<PaymentIcon />} disabled={Boolean(purchasingPlanCode)} onClick={() => void handlePurchase(plan)}>
-                          {purchasing ? (isZh ? '正在发起支付' : 'Starting payment') : (isZh ? '购买点数' : 'Buy points')}
+                        <Button variant="contained" startIcon={<PaymentIcon />} disabled={Boolean(purchasingPlanCode)} onClick={() => void handlePurchase(plan)} sx={{ fontWeight: 900 }}>
+                          {purchasing ? (isZh ? '正在发起支付' : 'Starting payment') : formatMoney(plan.price_amount, plan.currency)}
                         </Button>
                       </CardContent>
                     </Card>
@@ -822,13 +811,12 @@ export default function MembershipPage() {
                       bgcolor: (theme) => alpha(theme.palette.action.disabledBackground, theme.palette.mode === 'dark' ? 0.16 : 0.28),
                     }}
                   >
-                    <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 1.2, height: '100%' }}>
-                      <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
-                        <Typography sx={{ fontWeight: 900 }}>{item.title}</Typography>
+                    <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 0.9, height: '100%', p: 1.25, '&:last-child': { pb: 1.25 } }}>
+                      <Stack direction="row" spacing={0.6} sx={{ alignItems: 'center', justifyContent: 'space-between', gap: 0.75 }}>
+                        <Typography sx={{ fontWeight: 900, minWidth: 0 }} noWrap>{item.title}</Typography>
                         <Chip icon={<BoltIcon />} label={formatPoints(item.claim.amount)} size="small" />
                       </Stack>
                       <Typography variant="body2" color="text.secondary" sx={{ flex: 1 }}>{item.description}</Typography>
-                      <Typography sx={{ fontSize: 26, fontWeight: 950 }}>{isZh ? '免费' : 'Free'}</Typography>
                       <Button variant="outlined" disabled>
                         {isZh ? '已领取' : 'Claimed'}
                       </Button>

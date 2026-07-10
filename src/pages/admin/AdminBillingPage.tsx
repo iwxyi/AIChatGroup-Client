@@ -86,6 +86,7 @@ type VipEntitlementForm = {
   aiBillingDiscount: string;
   dailyPointGrant: string;
   monthlyPointGrant: string;
+  cloudSyncEnabled: boolean;
 };
 
 type MembershipConfigForm = {
@@ -163,6 +164,7 @@ const DEFAULT_VIP_ENTITLEMENTS: Record<string, VipEntitlementForm> = {
     aiBillingDiscount: '1',
     dailyPointGrant: '30',
     monthlyPointGrant: '100',
+    cloudSyncEnabled: false,
   },
   basic: {
     maxCharacters: '50',
@@ -173,6 +175,7 @@ const DEFAULT_VIP_ENTITLEMENTS: Record<string, VipEntitlementForm> = {
     aiBillingDiscount: '0.95',
     dailyPointGrant: '30',
     monthlyPointGrant: '300',
+    cloudSyncEnabled: true,
   },
   pro: {
     maxCharacters: '500',
@@ -183,6 +186,7 @@ const DEFAULT_VIP_ENTITLEMENTS: Record<string, VipEntitlementForm> = {
     aiBillingDiscount: '0.9',
     dailyPointGrant: '30',
     monthlyPointGrant: '500',
+    cloudSyncEnabled: true,
   },
   premium: {
     maxCharacters: '500',
@@ -193,6 +197,7 @@ const DEFAULT_VIP_ENTITLEMENTS: Record<string, VipEntitlementForm> = {
     aiBillingDiscount: '0.9',
     dailyPointGrant: '30',
     monthlyPointGrant: '500',
+    cloudSyncEnabled: true,
   },
 };
 const EMPTY_MEMBERSHIP_CONFIG_FORM: MembershipConfigForm = {
@@ -418,6 +423,7 @@ function toEntitlementForm(value: unknown, fallback: VipEntitlementForm): VipEnt
     aiBillingDiscount: numberText(record.aiBillingDiscount, fallback.aiBillingDiscount),
     dailyPointGrant: hasOwnRecordValue(record, 'dailyPointGrant') ? numberText(record.dailyPointGrant, fallback.dailyPointGrant) : fallback.dailyPointGrant,
     monthlyPointGrant: hasOwnRecordValue(record, 'monthlyPointGrant') ? numberText(record.monthlyPointGrant, fallback.monthlyPointGrant) : fallback.monthlyPointGrant,
+    cloudSyncEnabled: hasOwnRecordValue(record, 'cloudSyncEnabled') ? toBoolean(record.cloudSyncEnabled, fallback.cloudSyncEnabled) : fallback.cloudSyncEnabled,
   };
 }
 
@@ -438,6 +444,7 @@ function buildEntitlementPayload(form: VipEntitlementForm) {
     aiBillingDiscount: Math.max(0, Math.min(1, toNumber(form.aiBillingDiscount, 1))),
     dailyPointGrant: Math.max(0, toNumber(form.dailyPointGrant, 0)),
     monthlyPointGrant: Math.max(0, toNumber(form.monthlyPointGrant, 0)),
+    cloudSyncEnabled: form.cloudSyncEnabled,
   };
 }
 
@@ -1723,6 +1730,10 @@ export default function AdminBillingPage() {
                           <TextField label="每日领取点数" value={entitlement.dailyPointGrant} onChange={(event) => updateMembershipEntitlementForm('free', 'dailyPointGrant', event.target.value)} fullWidth />
                           <TextField label="每月领取点数" value={entitlement.monthlyPointGrant} onChange={(event) => updateMembershipEntitlementForm('free', 'monthlyPointGrant', event.target.value)} fullWidth />
                         </Stack>
+                        <FormControlLabel
+                          control={<Switch checked={entitlement.cloudSyncEnabled} onChange={(event) => updateMembershipEntitlementForm('free', 'cloudSyncEnabled', event.target.checked)} />}
+                          label="允许云同步"
+                        />
                         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
                           <TextField label="官方 AI 平台（每行一个ID）" value={entitlement.officialProviderAccessText} onChange={(event) => updateMembershipEntitlementForm('free', 'officialProviderAccessText', event.target.value)} fullWidth multiline minRows={2} />
                           <TextField label="点数扣费折扣" value={entitlement.aiBillingDiscount} onChange={(event) => updateMembershipEntitlementForm('free', 'aiBillingDiscount', event.target.value)} helperText="免费用户通常为 1" fullWidth />
@@ -1771,6 +1782,10 @@ export default function AdminBillingPage() {
                                 <TextField label="每日领取点数" value={entitlement.dailyPointGrant} onChange={(event) => updateMembershipEntitlementForm(tier.code, 'dailyPointGrant', event.target.value)} fullWidth />
                                 <TextField label="每月领取点数" value={entitlement.monthlyPointGrant} onChange={(event) => updateMembershipEntitlementForm(tier.code, 'monthlyPointGrant', event.target.value)} fullWidth />
                               </Stack>
+                              <FormControlLabel
+                                control={<Switch checked={entitlement.cloudSyncEnabled} onChange={(event) => updateMembershipEntitlementForm(tier.code, 'cloudSyncEnabled', event.target.checked)} />}
+                                label="允许云同步"
+                              />
                               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
                                 <TextField label="官方 AI 平台（每行一个ID）" value={entitlement.officialProviderAccessText} onChange={(event) => updateMembershipEntitlementForm(tier.code, 'officialProviderAccessText', event.target.value)} fullWidth multiline minRows={2} />
                                 <TextField label="点数扣费折扣" value={entitlement.aiBillingDiscount} onChange={(event) => updateMembershipEntitlementForm(tier.code, 'aiBillingDiscount', event.target.value)} helperText="1=无折扣，0.95=95折，0.9=9折" fullWidth />
