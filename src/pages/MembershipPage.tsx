@@ -490,11 +490,6 @@ export default function MembershipPage() {
           '0%': { opacity: 0, transform: 'translateY(8px) scale(0.985)' },
           '100%': { opacity: 1, transform: 'translateY(0) scale(1)' },
         },
-        '@keyframes membershipPointArrive': {
-          '0%': { transform: 'translateY(0) scale(1)' },
-          '36%': { transform: 'translateY(-3px) scale(1.055)' },
-          '100%': { transform: 'translateY(-1px) scale(1.035)' },
-        },
       }}
     >
       <Stack spacing={2.25}>
@@ -599,7 +594,8 @@ export default function MembershipPage() {
                         pointerEvents: 'none',
                         background: (theme) => `radial-gradient(circle at 82% 20%, ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.18 : 0.11)}, transparent 42%)`,
                         opacity: 0,
-                        transform: 'scale(0.96)',
+                        transform: 'translate(14px, -10px) scale(0.72)',
+                        transformOrigin: '82% 20%',
                         transition: transition(['opacity', 'transform'], motion.durations.slow, motion.emphasized),
                       },
                       '&:hover': {
@@ -607,7 +603,7 @@ export default function MembershipPage() {
                         boxShadow: (theme) => `0 10px 22px ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.13 : 0.08)}`,
                         '&::before': {
                           opacity: 1,
-                          transform: 'scale(1)',
+                          transform: 'translate(0, 0) scale(1)',
                         },
                       },
                     }}
@@ -904,7 +900,8 @@ export default function MembershipPage() {
                           pointerEvents: 'none',
                           background: (theme) => `radial-gradient(circle at 76% 18%, ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.18 : 0.12)}, transparent 34%), linear-gradient(135deg, transparent 0%, ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.10 : 0.055)} 100%)`,
                           opacity: 0,
-                          transform: 'scale(0.985)',
+                          transform: 'translate(18px, -14px) scale(0.86)',
+                          transformOrigin: '76% 18%',
                           transition: transition(['opacity', 'transform'], motion.durations.slow, motion.emphasized),
                         },
                         '&:hover': {
@@ -913,7 +910,7 @@ export default function MembershipPage() {
                           boxShadow: (theme) => `0 14px 28px ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.22 : 0.13)}`,
                           '&::before': {
                             opacity: 1,
-                            transform: 'scale(1)',
+                            transform: 'translate(0, 0) scale(1)',
                           },
                           '& .purchaseAction': {
                             borderColor: 'primary.main',
@@ -1078,19 +1075,20 @@ export default function MembershipPage() {
                           borderRadius: 999,
                           pointerEvents: 'none',
                           background: (theme) => `radial-gradient(circle, ${alpha(theme.palette.success.main, theme.palette.mode === 'dark' ? 0.28 : 0.18)}, transparent 66%)`,
-                          opacity: 0.72,
-                          transform: 'scale(0.78)',
-                          transition: transition(['opacity', 'transform'], motion.durations.slow, motion.gentleSpring),
+                          opacity: 0,
+                          transform: 'translate(22px, -18px) scale(0.58)',
+                          transformOrigin: '100% 0%',
+                          transition: transition(['opacity', 'transform'], motion.durations.slow, motion.emphasized),
                         },
                         '&:hover': {
                           transform: 'translateY(-2px)',
                           boxShadow: (theme) => `0 12px 24px ${alpha(theme.palette.success.main, theme.palette.mode === 'dark' ? 0.16 : 0.10)}`,
                           '&::before': {
                             opacity: 1,
-                            transform: 'scale(1)',
+                            transform: 'translate(0, 0) scale(1)',
                           },
                           '& .pointValue': {
-                            animation: `membershipPointArrive 520ms ${motion.gentleSpring} both`,
+                            transform: 'translateY(-1px) scale(1.035)',
                           },
                         },
                         ...refinedHoverSx,
@@ -1134,8 +1132,9 @@ export default function MembershipPage() {
                           pointerEvents: 'none',
                           background: (theme) => `radial-gradient(circle, ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.20 : 0.11)}, transparent 68%)`,
                           opacity: 0,
-                          transform: 'scale(0.76)',
-                          transition: transition(['opacity', 'transform'], motion.durations.slow, motion.gentleSpring),
+                          transform: 'translate(22px, -18px) scale(0.58)',
+                          transformOrigin: '100% 0%',
+                          transition: transition(['opacity', 'transform'], motion.durations.slow, motion.emphasized),
                         },
                         '&:hover': {
                           transform: 'translateY(-2px)',
@@ -1143,10 +1142,10 @@ export default function MembershipPage() {
                           boxShadow: (theme) => `0 12px 24px ${alpha(theme.palette.common.black, theme.palette.mode === 'dark' ? 0.22 : 0.08)}`,
                           '&::before': {
                             opacity: 1,
-                            transform: 'scale(1)',
+                            transform: 'translate(0, 0) scale(1)',
                           },
                           '& .pointValue': {
-                            animation: `membershipPointArrive 520ms ${motion.gentleSpring} both`,
+                            transform: 'translateY(-1px) scale(1.035)',
                           },
                           '& .purchaseAction': {
                             bgcolor: 'primary.main',
