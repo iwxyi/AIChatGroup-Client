@@ -1516,16 +1516,6 @@ export default function AdminBillingPage() {
           <AdminSection
             title="套餐概览"
             subtitle="套餐可以单独售卖 VIP、点数，也可以同时包含多种权益。"
-            action={(
-              <Button
-                variant="contained"
-                startIcon={<AddIcon />}
-                onClick={openCreatePlanDialog}
-                sx={{ flex: '0 0 auto' }}
-              >
-                新建套餐
-              </Button>
-            )}
           >
             <AdminMetricGrid items={planMetrics} compact minWidth={132} />
           </AdminSection>
@@ -1556,7 +1546,21 @@ export default function AdminBillingPage() {
             </Stack>
           </AdminSection>
 
-          <AdminSection title="套餐列表" subtitle="点击套餐行可以进入编辑。" bodySx={{ p: 0 }}>
+          <AdminSection
+            title="套餐列表"
+            subtitle="点击套餐行可以进入编辑。"
+            bodySx={{ p: 0 }}
+            action={(
+              <Button
+                variant="contained"
+                startIcon={<AddIcon />}
+                onClick={openCreatePlanDialog}
+                sx={{ flex: '0 0 auto' }}
+              >
+                新建套餐
+              </Button>
+            )}
+          >
             <AdminTableFrame minWidth={900}>
               <Table>
                 <TableHead>
