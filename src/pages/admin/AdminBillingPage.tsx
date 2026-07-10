@@ -84,6 +84,8 @@ type VipEntitlementForm = {
   batchCharacterGenerationLimit: string;
   officialProviderAccessText: string;
   aiBillingDiscount: string;
+  dailyPointGrant: string;
+  monthlyPointGrant: string;
 };
 
 type MembershipConfigForm = {
@@ -159,6 +161,8 @@ const DEFAULT_VIP_ENTITLEMENTS: Record<string, VipEntitlementForm> = {
     batchCharacterGenerationLimit: '3',
     officialProviderAccessText: 'deepseek',
     aiBillingDiscount: '1',
+    dailyPointGrant: '30',
+    monthlyPointGrant: '100',
   },
   basic: {
     maxCharacters: '50',
@@ -167,6 +171,8 @@ const DEFAULT_VIP_ENTITLEMENTS: Record<string, VipEntitlementForm> = {
     batchCharacterGenerationLimit: '10',
     officialProviderAccessText: 'deepseek\nmoacode',
     aiBillingDiscount: '0.95',
+    dailyPointGrant: '30',
+    monthlyPointGrant: '300',
   },
   pro: {
     maxCharacters: '500',
@@ -175,6 +181,8 @@ const DEFAULT_VIP_ENTITLEMENTS: Record<string, VipEntitlementForm> = {
     batchCharacterGenerationLimit: '30',
     officialProviderAccessText: 'deepseek\nmoacode',
     aiBillingDiscount: '0.9',
+    dailyPointGrant: '30',
+    monthlyPointGrant: '500',
   },
   premium: {
     maxCharacters: '500',
@@ -183,6 +191,8 @@ const DEFAULT_VIP_ENTITLEMENTS: Record<string, VipEntitlementForm> = {
     batchCharacterGenerationLimit: '30',
     officialProviderAccessText: 'deepseek\nmoacode',
     aiBillingDiscount: '0.9',
+    dailyPointGrant: '30',
+    monthlyPointGrant: '500',
   },
 };
 const EMPTY_MEMBERSHIP_CONFIG_FORM: MembershipConfigForm = {
@@ -406,6 +416,8 @@ function toEntitlementForm(value: unknown, fallback: VipEntitlementForm): VipEnt
     batchCharacterGenerationLimit: hasOwnRecordValue(record, 'batchCharacterGenerationLimit') ? limitText(record.batchCharacterGenerationLimit, fallback.batchCharacterGenerationLimit) : fallback.batchCharacterGenerationLimit,
     officialProviderAccessText: providerAccess,
     aiBillingDiscount: numberText(record.aiBillingDiscount, fallback.aiBillingDiscount),
+    dailyPointGrant: hasOwnRecordValue(record, 'dailyPointGrant') ? numberText(record.dailyPointGrant, fallback.dailyPointGrant) : fallback.dailyPointGrant,
+    monthlyPointGrant: hasOwnRecordValue(record, 'monthlyPointGrant') ? numberText(record.monthlyPointGrant, fallback.monthlyPointGrant) : fallback.monthlyPointGrant,
   };
 }
 
@@ -424,6 +436,8 @@ function buildEntitlementPayload(form: VipEntitlementForm) {
     batchCharacterGenerationLimit: parseLimitValue(form.batchCharacterGenerationLimit),
     officialProviderAccess: form.officialProviderAccessText.split('\n').map((item) => item.trim().toLowerCase()).filter(Boolean),
     aiBillingDiscount: Math.max(0, Math.min(1, toNumber(form.aiBillingDiscount, 1))),
+    dailyPointGrant: Math.max(0, toNumber(form.dailyPointGrant, 0)),
+    monthlyPointGrant: Math.max(0, toNumber(form.monthlyPointGrant, 0)),
   };
 }
 
@@ -1706,6 +1720,10 @@ export default function AdminBillingPage() {
                           <TextField label="批量角色单次上限" value={entitlement.batchCharacterGenerationLimit} onChange={(event) => updateMembershipEntitlementForm('free', 'batchCharacterGenerationLimit', event.target.value)} fullWidth />
                         </Stack>
                         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                          <TextField label="每日领取点数" value={entitlement.dailyPointGrant} onChange={(event) => updateMembershipEntitlementForm('free', 'dailyPointGrant', event.target.value)} fullWidth />
+                          <TextField label="每月领取点数" value={entitlement.monthlyPointGrant} onChange={(event) => updateMembershipEntitlementForm('free', 'monthlyPointGrant', event.target.value)} fullWidth />
+                        </Stack>
+                        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
                           <TextField label="官方 AI 平台（每行一个ID）" value={entitlement.officialProviderAccessText} onChange={(event) => updateMembershipEntitlementForm('free', 'officialProviderAccessText', event.target.value)} fullWidth multiline minRows={2} />
                           <TextField label="点数扣费折扣" value={entitlement.aiBillingDiscount} onChange={(event) => updateMembershipEntitlementForm('free', 'aiBillingDiscount', event.target.value)} helperText="免费用户通常为 1" fullWidth />
                         </Stack>
@@ -1748,6 +1766,10 @@ export default function AdminBillingPage() {
                               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
                                 <TextField label="每日生成次数" value={entitlement.dailyAiGenerationLimit} onChange={(event) => updateMembershipEntitlementForm(tier.code, 'dailyAiGenerationLimit', event.target.value)} fullWidth />
                                 <TextField label="批量角色单次上限" value={entitlement.batchCharacterGenerationLimit} onChange={(event) => updateMembershipEntitlementForm(tier.code, 'batchCharacterGenerationLimit', event.target.value)} fullWidth />
+                              </Stack>
+                              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                                <TextField label="每日领取点数" value={entitlement.dailyPointGrant} onChange={(event) => updateMembershipEntitlementForm(tier.code, 'dailyPointGrant', event.target.value)} fullWidth />
+                                <TextField label="每月领取点数" value={entitlement.monthlyPointGrant} onChange={(event) => updateMembershipEntitlementForm(tier.code, 'monthlyPointGrant', event.target.value)} fullWidth />
                               </Stack>
                               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
                                 <TextField label="官方 AI 平台（每行一个ID）" value={entitlement.officialProviderAccessText} onChange={(event) => updateMembershipEntitlementForm(tier.code, 'officialProviderAccessText', event.target.value)} fullWidth multiline minRows={2} />

@@ -8,6 +8,7 @@ import {
   Chip,
   CircularProgress,
   Divider,
+  IconButton,
   LinearProgress,
   Stack,
   Typography,
@@ -250,6 +251,7 @@ export default function MembershipPage() {
   const [aiBalanceLoading, setAiBalanceLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [purchasingPlanCode, setPurchasingPlanCode] = useState<string | null>(null);
+  const [claimingPointKind, setClaimingPointKind] = useState<'daily' | 'monthly' | null>(null);
   const [snackbar, setSnackbar] = useState<SnackbarState>({ open: false, message: '', severity: 'info' });
 
   useEffect(() => {
@@ -387,11 +389,40 @@ export default function MembershipPage() {
     }
   };
 
+  const handleClaimPoints = async (kind: 'daily' | 'monthly') => {
+    if (!loggedInCloud || claimingPointKind) {
+      if (!loggedInCloud) navigate('/login', { state: { from: { pathname: '/membership' } } });
+      return;
+    }
+    setClaimingPointKind(kind);
+    try {
+      const result = await api.claimBillingVipPoints(kind);
+      setMembership((prev) => prev ? { ...prev, pointClaimStatus: result.pointClaimStatus } : prev);
+      const balanceResult = await api.getAiBalance(undefined, { force: true });
+      setAiBalance(balanceResult);
+      setSnackbar({
+        open: true,
+        message: isZh ? `已领取 ${formatPoints(result.claim.amount)}` : `Claimed ${formatPoints(result.claim.amount)}`,
+        severity: 'success',
+      });
+    } catch (claimError) {
+      const message = claimError instanceof ApiError || claimError instanceof Error
+        ? claimError.message
+        : (isZh ? '领取点数失败' : 'Failed to claim points');
+      setSnackbar({ open: true, message, severity: 'error' });
+    } finally {
+      setClaimingPointKind(null);
+    }
+  };
+
   const heroStatus = activeSubscription
     ? (isZh ? '会员生效中' : 'Membership active')
     : latestSubscription
       ? (isZh ? '会员已到期' : 'Membership expired')
       : (isZh ? '尚未开通会员' : 'No membership yet');
+  const pointClaimStatus = membership?.pointClaimStatus || null;
+  const dailyClaim = pointClaimStatus?.daily || null;
+  const monthlyClaim = pointClaimStatus?.monthly || null;
 
   return (
     <Box sx={{ p: { xs: 2, sm: 3 }, pt: { xs: 1, sm: 2 }, pb: { xs: 12, sm: 8 }, maxWidth: 1180, mx: 'auto' }}>
@@ -427,19 +458,19 @@ export default function MembershipPage() {
                   </Typography>
                 ) : null}
               </Box>
-              <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap' }}>
-                <Button
-                  variant="contained"
-                  startIcon={<PaymentIcon />}
-                  onClick={() => document.getElementById('membership-plans')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-                  sx={{ boxShadow: (theme) => `0 12px 24px ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.28 : 0.20)}` }}
-                >
-                  {isZh ? '选择套餐' : 'Choose plan'}
-                </Button>
-                <Button variant="outlined" startIcon={<RefreshIcon />} onClick={() => void loadData(true)}>
-                  {isZh ? '刷新状态' : 'Refresh'}
-                </Button>
-              </Stack>
+              {membershipBenefits.length > 0 ? (
+                <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+                  {membershipBenefits.map((benefit) => (
+                    <Chip
+                      key={benefit}
+                      size="small"
+                      icon={<CheckCircleIcon />}
+                      label={renderInlineMarkdown(benefit)}
+                      sx={{ fontWeight: 800, maxWidth: '100%', '& .MuiChip-label': { minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' } }}
+                    />
+                  ))}
+                </Stack>
+              ) : null}
             </Stack>
             <Box
               sx={{
@@ -456,7 +487,9 @@ export default function MembershipPage() {
                   <Typography variant="overline" color="text.secondary" sx={{ letterSpacing: 0, fontWeight: 800 }}>
                     {isZh ? '当前权益' : 'Current benefits'}
                   </Typography>
-                  <Chip size="small" color={activeSubscription ? 'success' : 'default'} label={heroStatus} sx={{ fontWeight: 800 }} />
+                  <IconButton size="small" onClick={() => void loadData(true)} disabled={loading || aiBalanceLoading} aria-label={isZh ? '刷新权益状态' : 'Refresh benefits'}>
+                    <RefreshIcon fontSize="small" />
+                  </IconButton>
                 </Stack>
                 <Box sx={{ display: 'grid', gridTemplateColumns: '1fr', gap: 1 }}>
                   <Box
@@ -467,7 +500,10 @@ export default function MembershipPage() {
                     }}
                   >
                     <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 800 }}>{isZh ? '会员套餐' : 'Plan'}</Typography>
-                    <Typography sx={{ mt: 0.3, fontWeight: 950, lineHeight: 1.25 }}>{activeSubscription?.vipTierName || activeSubscription?.planName || latestSubscription?.vipTierName || latestSubscription?.planName || '-'}</Typography>
+                    <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', justifyContent: 'space-between', gap: 1, mt: 0.3 }}>
+                      <Typography sx={{ minWidth: 0, fontWeight: 950, lineHeight: 1.25 }} noWrap>{activeSubscription?.vipTierName || activeSubscription?.planName || latestSubscription?.vipTierName || latestSubscription?.planName || (isZh ? '免费用户' : 'Free user')}</Typography>
+                      <Chip size="small" color={activeSubscription ? 'success' : 'default'} label={heroStatus} sx={{ fontWeight: 800, flex: '0 0 auto' }} />
+                    </Stack>
                   </Box>
                   <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
                     <Box sx={{ p: 1.1, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
@@ -479,6 +515,33 @@ export default function MembershipPage() {
                       <Typography sx={{ mt: 0.25, fontWeight: 950 }}>{loggedInCloud ? formatAiPoints(aiBalance, aiBalanceLoading, isZh) : (isZh ? '登录后查看' : 'Sign in')}</Typography>
                     </Box>
                   </Box>
+                  <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1 }}>
+                    {dailyClaim ? (
+                      <Box sx={{ p: 1.1, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+                        <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 800 }}>{isZh ? '每日领取' : 'Daily claim'}</Typography>
+                        <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', justifyContent: 'space-between', gap: 1, mt: 0.4 }}>
+                          <Typography sx={{ fontWeight: 900 }}>{formatPoints(dailyClaim.amount)}</Typography>
+                          <Button size="small" variant="outlined" disabled={dailyClaim.claimed || Boolean(claimingPointKind)} onClick={() => void handleClaimPoints('daily')}>
+                            {claimingPointKind === 'daily' ? (isZh ? '领取中' : 'Claiming') : dailyClaim.claimed ? (isZh ? '已领取' : 'Claimed') : (isZh ? '领取' : 'Claim')}
+                          </Button>
+                        </Stack>
+                      </Box>
+                    ) : null}
+                    {monthlyClaim ? (
+                      <Box sx={{ p: 1.1, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+                        <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 800 }}>{isZh ? '每月领取' : 'Monthly claim'}</Typography>
+                        <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', justifyContent: 'space-between', gap: 1, mt: 0.4 }}>
+                          <Typography sx={{ fontWeight: 900 }}>{formatPoints(monthlyClaim.amount)}</Typography>
+                          <Button size="small" variant="outlined" disabled={monthlyClaim.claimed || Boolean(claimingPointKind)} onClick={() => void handleClaimPoints('monthly')}>
+                            {claimingPointKind === 'monthly' ? (isZh ? '领取中' : 'Claiming') : monthlyClaim.claimed ? (isZh ? '已领取' : 'Claimed') : (isZh ? '领取' : 'Claim')}
+                          </Button>
+                        </Stack>
+                      </Box>
+                    ) : null}
+                  </Box>
+                  <Button size="small" variant="text" onClick={() => navigate('/account')} sx={{ alignSelf: 'flex-start', fontWeight: 800 }}>
+                    {isZh ? '云同步设置' : 'Cloud sync settings'}
+                  </Button>
                 </Box>
               </Stack>
             </Box>
@@ -488,41 +551,17 @@ export default function MembershipPage() {
         {error ? <Alert severity="error" action={<Button color="inherit" size="small" onClick={() => void loadData(true)}>{isZh ? '重试' : 'Retry'}</Button>}>{error}</Alert> : null}
 
         <Stack id="membership-plans" spacing={1.5}>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
-            <Box>
-              <Typography variant="h6" sx={{ fontWeight: 900 }}>{isZh ? '可购买套餐' : 'Available plans'}</Typography>
+          {loading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <CircularProgress size={22} />
             </Box>
-            {loading ? <CircularProgress size={22} /> : null}
-          </Box>
+          ) : null}
 
           {plans.length === 0 && !loading ? <Alert severity="info">{isZh ? '暂无可购买套餐' : 'No plans available'}</Alert> : null}
 
           {vipPlans.length > 0 && vipTiers.length > 0 ? (
             <Stack spacing={1.2} sx={{ pt: 0.5 }}>
               <Typography variant="h6" sx={{ fontWeight: 950 }}>{isZh ? '会员套餐' : 'Membership plans'}</Typography>
-              {membershipBenefits.length > 0 ? (
-                <Card variant="outlined" sx={{ borderRadius: 2, bgcolor: (theme) => alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.10 : 0.04) }}>
-                  <CardContent sx={{ p: { xs: 1.4, sm: 1.6 }, '&:last-child': { pb: { xs: 1.4, sm: 1.6 } } }}>
-                    <Stack direction="row" spacing={1.25} sx={{ alignItems: 'flex-start', flexWrap: { xs: 'wrap', sm: 'nowrap' } }}>
-                      <WorkspacePremiumIcon color="primary" sx={{ mt: 0.15 }} />
-                      <Box sx={{ minWidth: 0 }}>
-                        <Typography variant="subtitle2" sx={{ fontWeight: 950, mb: 0.8 }}>{isZh ? '统一 VIP 权益' : 'Shared VIP benefits'}</Typography>
-                        <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
-                          {membershipBenefits.map((benefit) => (
-                            <Chip
-                              key={benefit}
-                              size="small"
-                              icon={<CheckCircleIcon />}
-                              label={renderInlineMarkdown(benefit)}
-                              sx={{ fontWeight: 800, maxWidth: '100%', '& .MuiChip-label': { minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' } }}
-                            />
-                          ))}
-                        </Stack>
-                      </Box>
-                    </Stack>
-                  </CardContent>
-                </Card>
-              ) : null}
               <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
                 <Chip size="small" color="primary" label="1" sx={{ fontWeight: 900, width: 24 }} />
                 <Typography variant="subtitle2" sx={{ fontWeight: 900 }}>{isZh ? '选择会员等级' : 'Choose membership tier'}</Typography>

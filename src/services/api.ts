@@ -63,6 +63,8 @@ export interface VipEntitlementInfo {
   batchCharacterGenerationLimit: number | null;
   officialProviderAccess: string[];
   aiBillingDiscount: number;
+  dailyPointGrant: number;
+  monthlyPointGrant: number;
 }
 
 export interface AiUsageRecordItem {
@@ -198,6 +200,24 @@ export interface BillingMembershipResponse {
     usageDate: string;
     used: number;
   };
+  pointClaimStatus?: {
+    tierCode: string;
+    daily: { period: string; amount: number; claimed: boolean; claimedAt?: number | string | null };
+    monthly: { period: string; amount: number; claimed: boolean; claimedAt?: number | string | null };
+  };
+}
+
+export interface BillingPointClaimResponse {
+  claim: {
+    id: string;
+    kind: 'daily' | 'monthly';
+    period: string;
+    amount: number;
+    balanceAfter: number;
+    tierCode: string;
+    claimedAt: number;
+  };
+  pointClaimStatus: NonNullable<BillingMembershipResponse['pointClaimStatus']>;
 }
 
 export interface BillingPaymentResponse {
@@ -462,6 +482,10 @@ class ApiClient {
 
   async getBillingMembership() {
     return this.request<BillingMembershipResponse>('GET', '/billing/membership');
+  }
+
+  async claimBillingVipPoints(kind: 'daily' | 'monthly') {
+    return this.request<BillingPointClaimResponse>('POST', `/billing/membership/point-claims/${kind}`);
   }
 
   async getBillingOrders() {
