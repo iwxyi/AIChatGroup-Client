@@ -23,6 +23,7 @@ import { DEFAULT_CHARACTER_INTERVENTION, DEFAULT_CHARACTER_MEMORY } from '../typ
 import { getTopicDerivedCharacterGroup } from '../types/character';
 import { getPreferredAIProfile, isAIProfileUsable } from '../types/settings';
 import { chooseRandomBubbleStyleId, createCharacterBubbleStyleId } from '../utils/bubbleStyle';
+import { api, type BillingMembershipResponse } from '../services/api';
 
 const BATCH_GENERATE_GROUP_SIZE = 10;
 const MOBILE_BOTTOM_NAV_FAB_OFFSET = 'calc(env(safe-area-inset-bottom, 0px) + 104px)';
@@ -775,6 +776,8 @@ export default function BatchGenerateCharactersPage() {
   const [loadingNames, setLoadingNames] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [progress, setProgress] = useState<{ current: number; total: number; currentName?: string; items: ProgressItem[] }>({ current: 0, total: 0, currentName: '', items: [] });
+  const [membership, setMembership] = useState<BillingMembershipResponse | null>(null);
+  const [membershipLoading, setMembershipLoading] = useState(false);
   const cancelGenerationRef = useRef(false);
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
     open: false,
@@ -798,6 +801,24 @@ export default function BatchGenerateCharactersPage() {
     };
   }, [i18n.language, nameFormat, navigate, setHeaderActions, setHeaderBackAction, setHeaderTitle]);
 
+  useEffect(() => {
+    let active = true;
+    setMembershipLoading(true);
+    api.getBillingMembership()
+      .then((result) => {
+        if (active) setMembership(result);
+      })
+      .catch(() => {
+        if (active) setMembership(null);
+      })
+      .finally(() => {
+        if (active) setMembershipLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const selectedSet = useMemo(() => new Set(selectedCandidateIds), [selectedCandidateIds]);
   const selectedCandidates = useMemo(() => candidateCharacters.filter((candidate) => selectedSet.has(candidate.id)), [candidateCharacters, selectedSet]);
   const selectedRelationshipSuggestionSet = useMemo(() => new Set(selectedRelationshipSuggestionIds), [selectedRelationshipSuggestionIds]);
@@ -812,14 +833,31 @@ export default function BatchGenerateCharactersPage() {
   }, [candidateCharacters, candidateCircles, candidateRelationships, nameFormat]);
   const example = useMemo(() => BATCH_GENERATE_EXAMPLES[Math.floor(Math.random() * BATCH_GENERATE_EXAMPLES.length)], []);
   const localizedExample = i18n.language.startsWith('zh') ? example.zh : example.en;
-  const canGenerateNames = Boolean(topic.trim() || description.trim()) && !loadingNames;
-  const canGenerateCharacters = selectedCandidateIds.length > 0 && !generating;
+  const entitlement = membership?.vipEntitlement?.entitlement || null;
+  const dailyGenerationLimit = entitlement?.dailyAiGenerationLimit ?? null;
+  const dailyGenerationUsed = Number(membership?.dailyAiGenerationUsage?.used || 0);
+  const dailyGenerationRemaining = dailyGenerationLimit == null ? null : Math.max(0, dailyGenerationLimit - dailyGenerationUsed);
+  const batchCharacterLimit = entitlement?.batchCharacterGenerationLimit ?? null;
+  const dailyGenerationExhausted = dailyGenerationRemaining != null && dailyGenerationRemaining <= 0;
+  const batchSelectionExceeded = batchCharacterLimit != null && selectedCandidateIds.length > batchCharacterLimit;
+  const canGenerateNames = Boolean(topic.trim() || description.trim()) && !loadingNames && !dailyGenerationExhausted;
+  const canGenerateCharacters = selectedCandidateIds.length > 0 && !generating && !batchSelectionExceeded;
+  const entitlementLimitLabel = [
+    dailyGenerationLimit == null
+      ? (i18n.language.startsWith('zh') ? '今日生成：不限' : 'Daily generation: unlimited')
+      : (i18n.language.startsWith('zh') ? `今日生成：${dailyGenerationUsed}/${dailyGenerationLimit}` : `Daily generation: ${dailyGenerationUsed}/${dailyGenerationLimit}`),
+    batchCharacterLimit == null
+      ? (i18n.language.startsWith('zh') ? '单次批量：不限' : 'Batch size: unlimited')
+      : (i18n.language.startsWith('zh') ? `单次批量：最多 ${batchCharacterLimit}` : `Batch size: max ${batchCharacterLimit}`),
+  ].join(' · ');
 
   const toggleCandidate = (candidateId: string) => {
     setSelectedCandidateIds((prev) =>
       prev.includes(candidateId)
         ? prev.filter((item) => item !== candidateId)
-        : [...prev, candidateId]
+        : (batchCharacterLimit != null && prev.length >= batchCharacterLimit)
+          ? prev
+          : [...prev, candidateId]
     );
   };
 
@@ -833,6 +871,10 @@ export default function BatchGenerateCharactersPage() {
   };
 
   const handleFetchNames = async () => {
+    if (dailyGenerationExhausted) {
+      setSnackbar({ open: true, message: i18n.language.startsWith('zh') ? '今日 AI 生成次数已用完，请升级会员或明天再试。' : 'Daily AI generation limit reached.', severity: 'error' });
+      return;
+    }
     const profile = getPreferredAIProfile(settings.aiProfiles, 'text');
     if (!isAIProfileUsable(profile)) {
       setSnackbar({ open: true, message: i18n.language.startsWith('zh') ? '请先配置AI模型' : 'Configure AI model first', severity: 'error' });
@@ -875,6 +917,10 @@ export default function BatchGenerateCharactersPage() {
   };
 
   const handleGenerateCharacters = async () => {
+    if (batchSelectionExceeded) {
+      setSnackbar({ open: true, message: i18n.language.startsWith('zh') ? `当前会员单次最多批量生成 ${batchCharacterLimit} 个角色。` : `Your membership allows up to ${batchCharacterLimit} characters per batch.`, severity: 'error' });
+      return;
+    }
     const profile = getPreferredAIProfile(settings.aiProfiles, 'text');
     if (!isAIProfileUsable(profile)) {
       setSnackbar({ open: true, message: i18n.language.startsWith('zh') ? '请先配置AI模型' : 'Configure AI model first', severity: 'error' });
@@ -1048,6 +1094,14 @@ export default function BatchGenerateCharactersPage() {
       gap: 2,
     }}>
       <Box sx={{ p: 2.5, border: 1, borderColor: 'divider', borderRadius: 4, bgcolor: 'background.paper', display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <Alert severity={dailyGenerationExhausted || batchSelectionExceeded ? 'warning' : 'info'} sx={{ alignItems: 'center' }}>
+          {membershipLoading
+            ? (i18n.language.startsWith('zh') ? '正在读取会员权益限制…' : 'Loading membership limits...')
+            : entitlementLimitLabel}
+          {batchSelectionExceeded
+            ? (i18n.language.startsWith('zh') ? `，当前已选择 ${selectedCandidateIds.length} 个。` : `, selected ${selectedCandidateIds.length}.`)
+            : ''}
+        </Alert>
         <TextField
           label={i18n.language.startsWith('zh') ? '主题/分组' : 'Theme/group'}
           placeholder={i18n.language.startsWith('zh') ? `例如：${localizedExample.topic}` : `e.g. ${localizedExample.topic}`}

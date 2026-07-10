@@ -1,7 +1,7 @@
 import { lazy, Suspense, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useLayoutHeaderActions } from '../components/layout/AppLayoutContext';
 import {
-  Box, Typography, Button, Dialog, DialogTitle, DialogContent, DialogActions, IconButton, Menu, MenuItem,
+  Alert, Box, Typography, Button, Dialog, DialogTitle, DialogContent, DialogActions, IconButton, Menu, MenuItem,
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
@@ -33,7 +33,7 @@ import {
   normalizeOperatorIdsInput,
   stripUserMemberId,
 } from '../services/chatDraftBuilder';
-import { api as apiClient } from '../services/api';
+import { api as apiClient, type BillingMembershipResponse } from '../services/api';
 import { MIN_MEMBERS, MAX_MEMBERS } from '../constants/defaults';
 import { getChatStyleOption } from '../constants/chatStyles';
 import { storageKey } from '../constants/brand';
@@ -256,6 +256,7 @@ export default function CreateChatPage() {
   const [allowPrivateThreads, setAllowPrivateThreads] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveAsChatSaving, setSaveAsChatSaving] = useState(false);
+  const [membership, setMembership] = useState<BillingMembershipResponse | null>(null);
   const [aiAutofilling, setAiAutofilling] = useState(false);
   const [hotTopicOpenSignal, setHotTopicOpenSignal] = useState(0);
   const [hotTopicDialogEnabled, setHotTopicDialogEnabled] = useState(false);
@@ -316,6 +317,20 @@ export default function CreateChatPage() {
     void prefetchChats();
     void prefetchCharacters();
   }, [markCharactersWarm, markChatsWarm, prefetchCharacters, prefetchChats]);
+
+  useEffect(() => {
+    let active = true;
+    apiClient.getBillingMembership()
+      .then((result) => {
+        if (active) setMembership(result);
+      })
+      .catch(() => {
+        if (active) setMembership(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (id && !editingChat) return;
@@ -933,6 +948,8 @@ export default function CreateChatPage() {
   const memberSummaryEmptyLabel = isZh ? '未选择AI角色' : 'No AI roles selected';
   const memberDialogConfirmLabel = t('common.confirm');
   const startChatLabel = editingChat ? t('common.save') : '开始群聊';
+  const maxChats = membership?.vipEntitlement?.entitlement.maxChats ?? null;
+  const chatLimitReached = !editingChat && maxChats != null && chats.filter((chat) => !chat.deletedAt).length >= maxChats;
   const runtimePhaseLabel = editingChat?.worldState.phase || 'idle';
   const runtimeMoodLabel = mood || '未设置';
   const runtimeFocusLabel = focus || '未设置';
@@ -1115,6 +1132,10 @@ export default function CreateChatPage() {
       showError(i18n.language.startsWith('zh') ? '正在处理中，请稍候' : 'Already processing, please wait');
       return;
     }
+    if (chatLimitReached) {
+      showError(isZh ? `聊天数量已达当前会员上限（${chats.filter((chat) => !chat.deletedAt).length}/${maxChats}）` : `Chat limit reached (${chats.filter((chat) => !chat.deletedAt).length}/${maxChats})`);
+      return;
+    }
 
     const draftContext = buildValidatedDraftContext();
 
@@ -1238,6 +1259,11 @@ export default function CreateChatPage() {
   return (
     <Box sx={{ p: 3, pt: { xs: 1, sm: 1, md: 3 }, pb: { xs: 18, sm: 14, md: 10 }, maxWidth: 860, mx: 'auto' }}>
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: { xs: 1.5, sm: 2 } }}>
+        {chatLimitReached ? (
+          <Alert severity="warning">
+            {isZh ? `聊天数量已达当前会员上限（${chats.filter((chat) => !chat.deletedAt).length}/${maxChats}），升级会员后可创建更多聊天。` : `Chat limit reached (${chats.filter((chat) => !chat.deletedAt).length}/${maxChats}). Upgrade membership to create more chats.`}
+          </Alert>
+        ) : null}
         <Box
           sx={{ ...buildFloatingTabContainerSx(), mb: 0 }}
         >
@@ -1487,7 +1513,7 @@ export default function CreateChatPage() {
           label={saving ? t('common.loading') : startChatLabel}
           ariaLabel={saving ? t('common.loading') : startChatLabel}
           onClick={handleCreateAction}
-          disabled={saving || saveAsChatSaving}
+          disabled={saving || saveAsChatSaving || chatLimitReached}
           sx={{
             position: 'fixed',
             right: { xs: 20, sm: 28, md: 36 },

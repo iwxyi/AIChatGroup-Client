@@ -247,9 +247,12 @@ function buildOnlineOfficialProviderOption(provider: OfficialAiProviderInfo): (A
   const defaultModel = provider.defaultModel || textDefault?.model || documentDefault?.model || '';
   return {
     ...catalogEntry,
-    label: provider.label || catalogEntry.label,
+    label: provider.accessAllowed === false
+      ? `${provider.label || catalogEntry.label}（当前会员不可用）`
+      : provider.label || catalogEntry.label,
     family: provider.family || catalogEntry.family,
     hidden: Boolean(provider.hidden),
+    unavailableReason: provider.accessAllowed === false ? '当前会员不可用' : undefined,
     defaults: {
       ...catalogEntry.defaults,
       ...(textDefault ? { text: { ...textDefault, model: defaultModel || textDefault.model } } : {}),

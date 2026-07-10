@@ -52,6 +52,17 @@ export interface OfficialAiProviderInfo {
   defaultForAssignment?: boolean;
   billingMode?: string;
   capabilities?: Record<string, unknown>;
+  accessAllowed?: boolean;
+  accessTierCode?: string;
+}
+
+export interface VipEntitlementInfo {
+  maxCharacters: number | null;
+  maxChats: number | null;
+  dailyAiGenerationLimit: number | null;
+  batchCharacterGenerationLimit: number | null;
+  officialProviderAccess: string[];
+  aiBillingDiscount: number;
 }
 
 export interface AiUsageRecordItem {
@@ -130,6 +141,7 @@ export interface BillingMembershipConfig {
   benefits: string[];
   fulfillmentNote: string;
   tiers?: BillingMembershipTier[];
+  entitlements?: Record<string, VipEntitlementInfo>;
 }
 
 export interface BillingOrderItem {
@@ -178,6 +190,14 @@ export interface BillingMembershipResponse {
   activeSubscription: BillingSubscriptionItem | null;
   latestSubscription: BillingSubscriptionItem | null;
   recentOrders: BillingOrderItem[];
+  vipEntitlement?: {
+    tierCode: string;
+    entitlement: VipEntitlementInfo;
+  };
+  dailyAiGenerationUsage?: {
+    usageDate: string;
+    used: number;
+  };
 }
 
 export interface BillingPaymentResponse {

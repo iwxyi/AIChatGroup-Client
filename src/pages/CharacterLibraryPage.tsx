@@ -28,6 +28,7 @@ import { createCharacterBubbleStyleId } from '../utils/bubbleStyle';
 import { getPreferredAIProfile, isAIProfileUsable } from '../types/settings';
 import { useChatStore } from '../stores/useChatStore';
 import { buildDirectChatDraft } from '../services/chatDraftBuilder';
+import { api, type BillingMembershipResponse } from '../services/api';
 import type { AICharacter } from '../types/character';
 import { readPersistentUiValue, writePersistentUiValue } from '../utils/persistentUiState';
 import { buildListGridSx } from '../styles/interaction';
@@ -127,6 +128,7 @@ export default function CharacterLibraryPage() {
     message: '',
     severity: 'success',
   });
+  const [membership, setMembership] = useState<BillingMembershipResponse | null>(null);
   const activeCharacterId = isMasterPane && !selectionMode ? getActiveCharacterId(location.pathname) : null;
   const floatingActionPositionSx = isMasterPane ? {
     position: 'fixed' as const,
@@ -165,8 +167,24 @@ export default function CharacterLibraryPage() {
     writePersistentUiValue(CHARACTER_LIBRARY_SORT_GROUP_FIRST_KEY, sortGroupFirst);
   }, [sortGroupFirst]);
 
+  useEffect(() => {
+    let active = true;
+    api.getBillingMembership()
+      .then((result) => {
+        if (active) setMembership(result);
+      })
+      .catch(() => {
+        if (active) setMembership(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const presets = useMemo(() => characters.filter((c) => c.isPreset), [characters]);
   const custom = useMemo(() => characters.filter((c) => !c.isPreset), [characters]);
+  const maxCharacters = membership?.vipEntitlement?.entitlement.maxCharacters ?? null;
+  const characterLimitReached = maxCharacters != null && custom.length >= maxCharacters;
   const customGroups = useMemo(() => getCharacterGroupList(custom), [custom]);
   const customGroupOptions = useMemo(() => customGroups.map((group) => ({
     value: group,
@@ -495,6 +513,14 @@ export default function CharacterLibraryPage() {
   }, [i18n.language, renderListMenu, renderSortMenu, setHeaderActions, setHeaderBackAction, setHeaderTitle, setHideMobileBottomNav, sortDirectionLabel, sortFieldLabel, sortGroupFirst]);
 
   const openCreateForm = () => {
+    if (characterLimitReached) {
+      setSnackbar({
+        open: true,
+        message: i18n.language.startsWith('zh') ? `角色数量已达当前会员上限（${custom.length}/${maxCharacters}）` : `Character limit reached (${custom.length}/${maxCharacters})`,
+        severity: 'error',
+      });
+      return;
+    }
     navigate('/characters/create');
   };
 
@@ -612,6 +638,11 @@ export default function CharacterLibraryPage() {
       ) : null}
 
       <Box sx={{ pr: 0.5 }}>
+      {characterLimitReached ? (
+        <Alert severity="warning" sx={{ mb: 1.5 }}>
+          {i18n.language.startsWith('zh') ? `角色数量已达当前会员上限（${custom.length}/${maxCharacters}），升级会员后可创建更多角色。` : `Character limit reached (${custom.length}/${maxCharacters}). Upgrade membership to create more characters.`}
+        </Alert>
+      ) : null}
       {isLoading && characters.length === 0 ? (
         <ListSkeletonGrid />
       ) : displayChars.length === 0 ? (
@@ -720,6 +751,7 @@ export default function CharacterLibraryPage() {
         label={t('character.create')}
         ariaLabel={t('character.create')}
         onClick={openCreateForm}
+        disabled={characterLimitReached}
         sx={floatingActionPositionSx}
       />
     </Box>
