@@ -53,7 +53,7 @@ export default function MarketUploadDialog({
 
   return (
     <Dialog open={open} onClose={saving ? undefined : onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>{draft?.marketItemId ? '更新市场模板' : '上传到市场'}</DialogTitle>
+      <DialogTitle>提交到市场</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ pt: 1 }}>
           <Box sx={{ display: 'grid', gap: 1 }}>
@@ -83,7 +83,7 @@ export default function MarketUploadDialog({
       <DialogActions>
         <Button onClick={onClose} disabled={saving}>取消</Button>
         <Button variant="contained" onClick={submit} disabled={saving || !draft}>
-          {saving ? '上传中' : '确认上传'}
+          {saving ? '提交中' : '确认提交'}
         </Button>
       </DialogActions>
     </Dialog>

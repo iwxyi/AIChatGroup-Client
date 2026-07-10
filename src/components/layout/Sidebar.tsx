@@ -11,7 +11,7 @@ import {
   Badge,
   Avatar,
 } from '@mui/material';
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import AccountIcon from '@mui/icons-material/AccountCircle';
 import CollapseIcon from '@mui/icons-material/ChevronLeft';
 import ExpandIcon from '@mui/icons-material/ChevronRight';
@@ -31,16 +31,22 @@ interface SidebarProps {
 
 type NavItem = { path: string; iconKind: AnimatedNavIconKind; labelKey: string };
 
-const navItems: NavItem[] = [
-  { path: '/', iconKind: 'home', labelKey: 'nav.home' },
-  { path: '/chats', iconKind: 'chats', labelKey: 'nav.chats' },
-  { path: '/characters', iconKind: 'characters', labelKey: 'nav.characters' },
-  { path: '/moments', iconKind: 'moments', labelKey: 'nav.moments' },
-  { path: '/market', iconKind: 'market', labelKey: 'nav.market' },
-  { path: '/calendar', iconKind: 'calendar', labelKey: 'nav.calendar' },
-  { path: '/letters', iconKind: 'letters', labelKey: 'nav.letters' },
-  { path: '/models', iconKind: 'models', labelKey: 'nav.models' },
-  { path: '/membership', iconKind: 'membership', labelKey: 'nav.membership' },
+const navSections: NavItem[][] = [
+  [
+    { path: '/', iconKind: 'home', labelKey: 'nav.home' },
+    { path: '/chats', iconKind: 'chats', labelKey: 'nav.chats' },
+    { path: '/characters', iconKind: 'characters', labelKey: 'nav.characters' },
+  ],
+  [
+    { path: '/moments', iconKind: 'moments', labelKey: 'nav.moments' },
+    { path: '/calendar', iconKind: 'calendar', labelKey: 'nav.calendar' },
+    { path: '/letters', iconKind: 'letters', labelKey: 'nav.letters' },
+  ],
+  [
+    { path: '/models', iconKind: 'models', labelKey: 'nav.models' },
+    { path: '/market', iconKind: 'market', labelKey: 'nav.market' },
+    { path: '/membership', iconKind: 'membership', labelKey: 'nav.membership' },
+  ],
 ];
 
 const introNavItem: NavItem = { path: '/intro', iconKind: 'intro', labelKey: 'nav.intro' };
@@ -336,7 +342,20 @@ export default function Sidebar({ collapsed }: SidebarProps) {
       <Divider sx={{ mx: collapsed ? 1.2 : 1.5, borderColor: 'rgba(148,163,184,0.14)' }} />
 
       <List sx={{ flex: 1, px: collapsed ? 0.65 : 1.1, pt: 1.15 }}>
-        {navItems.map(renderNavItem)}
+        {navSections.map((section, sectionIndex) => (
+          <Fragment key={section.map((item) => item.path).join('|')}>
+            {sectionIndex > 0 ? (
+              <Divider
+                sx={{
+                  mx: collapsed ? 0.65 : 0.35,
+                  my: 0.75,
+                  borderColor: 'rgba(148,163,184,0.14)',
+                }}
+              />
+            ) : null}
+            {section.map(renderNavItem)}
+          </Fragment>
+        ))}
       </List>
       <Box sx={{ px: collapsed ? 0.65 : 1.1, pb: 1.4 }}>
         <Divider sx={{ mb: 1, borderColor: 'rgba(148,163,184,0.14)' }} />

@@ -925,7 +925,7 @@ export default function CreateChatPage() {
       summary: getMarketSummaryForChat(editingChat),
       payload: isBundle ? buildBundleMarketPayload(editingChat, characters) : buildChatMarketPayload(editingChat),
       sourceEntityId: editingChat.id,
-      marketItemId: isBundle ? null : editingChat.sourceMarketItemId || null,
+      marketItemId: null,
     });
   }, [characters, editingChat]);
   const handleDeleteAction = () => {
@@ -1257,7 +1257,9 @@ export default function CreateChatPage() {
       }
       await seedOpeningTopicMessage(chat.id, topic);
       if (marketImportDraft?.item.id) {
-        await marketApi.recordImported(marketImportDraft.item.id);
+        void marketApi.recordImported(marketImportDraft.item.id).catch((error) => {
+          console.warn('[market:record-imported:error]', error);
+        });
       }
       sessionStorage.removeItem(CHAT_DRAFT_KEY);
       setChatDraftDefaults({ style, showRoleActions, runtimeEvolutionIntensity });
@@ -1653,7 +1655,7 @@ export default function CreateChatPage() {
         onClose={() => setMarketMenuAnchor(null)}
       >
         <MenuItem onClick={() => openChatMarketUpload('chat_template')}>
-          {editingChat?.sourceMarketItemId ? '更新聊天模板' : '上传聊天到市场'}
+          提交聊天到市场
         </MenuItem>
         <MenuItem onClick={() => openChatMarketUpload('bundle_template')}>
           上传组合包到市场

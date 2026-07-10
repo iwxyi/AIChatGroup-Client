@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
 import { Alert, Avatar, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Divider, Stack, Typography } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
@@ -6,8 +6,10 @@ import FloatingSegmentedTabs, { buildFloatingTabContainerSx } from '../component
 import SurfaceCard from '../components/common/SurfaceCard';
 import { buildBundledCharacterPreview, buildImportedChatDraft, getBundledCharacterEntries, remapIds } from '../services/marketImportDraft';
 import { marketApi, type MarketItem, type MarketItemKind } from '../services/marketApi';
+import { useAuthStore } from '../stores/useAuthStore';
 import { useCharacterStore } from '../stores/useCharacterStore';
 import { useChatStore } from '../stores/useChatStore';
+import type { AICharacter } from '../types/character';
 import { normalizeConversation, type ChatStyle, type ConversationMode, type ConversationType, type GroupChat, type RuntimeEvolutionIntensity } from '../types/chat';
 
 const kindLabels: Record<MarketItemKind, string> = {
@@ -526,6 +528,89 @@ function resolveUniqueName(name: unknown, usedNames: Set<string>) {
   return candidate;
 }
 
+interface MarketDuplicateInfo {
+  isOwnTemplate: boolean;
+  characterMatches: string[];
+  chatMatches: string[];
+}
+
+function buildMarketDuplicateInfo(params: {
+  item: MarketItem | null;
+  currentUserId?: string | null;
+  characters: AICharacter[];
+  chats: GroupChat[];
+}): MarketDuplicateInfo {
+  const { item, currentUserId, characters, chats } = params;
+  if (!item) return { isOwnTemplate: false, characterMatches: [], chatMatches: [] };
+  const isOwnTemplate = Boolean(currentUserId && item.ownerUserId === currentUserId);
+  const characterMatches = new Set<string>();
+  const chatMatches = new Set<string>();
+  const characterNameKeys = new Set<string>();
+  const chatNameKey = normalizeNameKey(getChatTitle(item));
+
+  if (item.kind === 'character_template') {
+    const character = getCharacterFromItem(item);
+    const nameKey = normalizeNameKey(character.name || item.title);
+    if (nameKey) characterNameKeys.add(nameKey);
+  } else if (item.kind === 'bundle_template') {
+    getMarketCharacterPreviews(item).forEach((entry) => {
+      const nameKey = normalizeNameKey(entry.name);
+      if (nameKey) characterNameKeys.add(nameKey);
+    });
+  }
+
+  characters.forEach((character) => {
+    const sameSource = character.sourceMarketItemId === item.id;
+    const sameName = characterNameKeys.has(normalizeNameKey(character.name));
+    if (sameSource || sameName) characterMatches.add(character.name || '未命名角色');
+  });
+  chats.forEach((chat) => {
+    const sameSource = chat.sourceMarketItemId === item.id;
+    const sameName = Boolean(chatNameKey && normalizeNameKey(chat.name || chat.topic) === chatNameKey);
+    if (sameSource || sameName) chatMatches.add(chat.name || chat.topic || '未命名聊天');
+  });
+
+  return {
+    isOwnTemplate,
+    characterMatches: Array.from(characterMatches).slice(0, 8),
+    chatMatches: Array.from(chatMatches).slice(0, 6),
+  };
+}
+
+function hasMarketDuplicateInfo(info: MarketDuplicateInfo) {
+  return info.isOwnTemplate || info.characterMatches.length > 0 || info.chatMatches.length > 0;
+}
+
+function DuplicateNotice({ info, kind }: { info: MarketDuplicateInfo; kind: MarketItemKind }) {
+  if (!hasMarketDuplicateInfo(info)) return null;
+  const title = info.isOwnTemplate ? '这是你提交的模板' : '检测到可能重复';
+  const actionText = kind === 'bundle_template' ? '继续导入会创建一组新的角色和聊天副本。' : '继续导入会创建新的本地副本。';
+  return (
+    <Alert severity={info.isOwnTemplate ? 'info' : 'warning'} sx={{ borderRadius: 1 }}>
+      <Stack spacing={0.75}>
+        <Typography variant="body2" sx={{ fontWeight: 800 }}>{title}</Typography>
+        <Typography variant="body2">{actionText}</Typography>
+        {info.characterMatches.length ? (
+          <Box>
+            <Typography variant="caption" color="text.secondary">已有角色</Typography>
+            <Stack direction="row" spacing={0.75} sx={{ mt: 0.5, flexWrap: 'wrap', gap: 0.75 }}>
+              {info.characterMatches.map((name) => <Chip key={name} size="small" variant="outlined" label={name} />)}
+            </Stack>
+          </Box>
+        ) : null}
+        {info.chatMatches.length ? (
+          <Box>
+            <Typography variant="caption" color="text.secondary">已有聊天</Typography>
+            <Stack direction="row" spacing={0.75} sx={{ mt: 0.5, flexWrap: 'wrap', gap: 0.75 }}>
+              {info.chatMatches.map((name) => <Chip key={name} size="small" variant="outlined" label={name} />)}
+            </Stack>
+          </Box>
+        ) : null}
+      </Stack>
+    </Alert>
+  );
+}
+
 async function importBundleTemplate(item: MarketItem) {
   const bundledEntries = getBundledCharacterEntries(item);
   const previews = buildBundledCharacterPreview(item);
@@ -583,12 +668,17 @@ async function importBundleTemplate(item: MarketItem) {
   void _updatedAt;
   void _lastMessageAt;
   const chat = await useChatStore.getState().addChat(chatDraft);
-  await marketApi.recordImported(item.id);
+  void marketApi.recordImported(item.id).catch((error) => {
+    console.warn('[market:record-imported:error]', error);
+  });
   return chat;
 }
 
 export default function MarketPage() {
   const navigate = useNavigate();
+  const currentUserId = useAuthStore((state) => state.user?.id || null);
+  const characters = useCharacterStore((state) => state.characters);
+  const chats = useChatStore((state) => state.chats);
   const [kind, setKind] = useState<MarketItemKind | ''>('');
   const [items, setItems] = useState<MarketItem[]>([]);
   const [selected, setSelected] = useState<MarketItem | null>(null);
@@ -661,7 +751,16 @@ export default function MarketPage() {
     setSelected(null);
     setDetail(null);
   };
-  const primaryActionText = detail?.kind === 'bundle_template' ? '导入' : '导入并编辑';
+  const duplicateInfo = useMemo(() => buildMarketDuplicateInfo({
+    item: detail,
+    currentUserId,
+    characters,
+    chats,
+  }), [characters, chats, currentUserId, detail]);
+  const hasDuplicateWarning = hasMarketDuplicateInfo(duplicateInfo);
+  const primaryActionText = hasDuplicateWarning
+    ? (detail?.kind === 'bundle_template' ? '创建副本' : '创建副本并编辑')
+    : (detail?.kind === 'bundle_template' ? '导入' : '导入并编辑');
   const importingText = detail?.kind === 'bundle_template' ? '导入中' : '打开中';
 
   return (
@@ -717,6 +816,7 @@ export default function MarketPage() {
         </DialogTitle>
         <DialogContent sx={{ p: 0, bgcolor: 'transparent', maxHeight: 'min(76vh, 760px)', overflowY: 'auto' }}>
           <Stack spacing={1.5} sx={{ px: { xs: 2, sm: 3 }, pt: 1, pb: 2 }}>
+            {detail ? <DuplicateNotice info={duplicateInfo} kind={detail.kind} /> : null}
             {detail ? <MarketItemDetail item={detail} /> : null}
           {detail ? <Divider /> : null}
           </Stack>

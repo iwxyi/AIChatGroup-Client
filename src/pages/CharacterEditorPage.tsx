@@ -151,7 +151,7 @@ export default function CharacterEditorPage() {
       coverImage: getMarketCoverForCharacter(editChar),
       payload: buildCharacterMarketPayload(editChar),
       sourceEntityId: editId,
-      marketItemId: editChar.sourceMarketItemId || null,
+      marketItemId: null,
     });
   }, [editChar, editId]);
 
@@ -233,7 +233,9 @@ export default function CharacterEditorPage() {
                 sourceMarketKind: importedCharacterInitial?.sourceMarketKind,
               });
               if (marketImportDraft?.item.id) {
-                await marketApi.recordImported(marketImportDraft.item.id);
+                void marketApi.recordImported(marketImportDraft.item.id).catch((error) => {
+                  console.warn('[market:record-imported:error]', error);
+                });
               }
               const profile = getPreferredAIProfile(settings.aiProfiles, 'text');
               if (isAIProfileUsable(profile)) {
@@ -273,7 +275,7 @@ export default function CharacterEditorPage() {
         onClose={() => setMarketMenuAnchor(null)}
       >
         <MenuItem onClick={openCharacterMarketUpload}>
-          {editChar?.sourceMarketItemId ? '更新角色' : '上传角色到市场'}
+          提交角色到市场
         </MenuItem>
       </Menu>
 
