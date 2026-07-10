@@ -49,6 +49,7 @@ function isMasterDetailPath(pathname: string) {
   return pathname === '/chats'
     || pathname === '/characters'
     || /^\/chats\/(create|[^/]+|[^/]+\/edit)$/.test(pathname)
+    || /^\/characters\/(create|[^/]+\/edit)$/.test(pathname)
     || pathname === '/direct/create';
 }
 

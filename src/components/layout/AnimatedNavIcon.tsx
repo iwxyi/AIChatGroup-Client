@@ -51,24 +51,24 @@ const iconSx: SystemStyleObject<Theme> = {
   },
   '& .surface': {
     fill: 'currentColor',
-    fillOpacity: 0.12,
+    fillOpacity: 0.08,
     stroke: 'none',
   },
   '& .secondary-surface': {
     fill: 'currentColor',
-    fillOpacity: 0.16,
+    fillOpacity: 0.1,
     stroke: 'none',
     opacity: 0.72,
   },
   '& .detail-fill': {
     fill: 'currentColor',
-    fillOpacity: 0.22,
+    fillOpacity: 0.14,
     stroke: 'none',
     opacity: 0.72,
   },
   '& .accent-surface': {
     fill: 'var(--nav-icon-accent)',
-    fillOpacity: 0.18,
+    fillOpacity: 0.14,
     stroke: 'none',
   },
   '& .accent': {
@@ -76,24 +76,24 @@ const iconSx: SystemStyleObject<Theme> = {
     opacity: 0.84,
   },
   '& .muted': {
-    opacity: 0.58,
+    opacity: 0.5,
   },
   '& .secondary': {
     opacity: 0.68,
   },
   '&.is-active .surface, .PneumataNavButton:hover & .surface': {
-    fillOpacity: 0.18,
+    fillOpacity: 0.13,
   },
   '&.is-active .secondary-surface, .PneumataNavButton:hover & .secondary-surface': {
-    fillOpacity: 0.2,
+    fillOpacity: 0.14,
     opacity: 0.82,
   },
   '&.is-active .detail-fill, .PneumataNavButton:hover & .detail-fill': {
-    fillOpacity: 0.28,
+    fillOpacity: 0.2,
     opacity: 0.82,
   },
   '&.is-active .accent-surface, .PneumataNavButton:hover & .accent-surface': {
-    fillOpacity: 0.24,
+    fillOpacity: 0.2,
   },
   '&.is-active .accent, .PneumataNavButton:hover & .accent': {
     opacity: 1,
@@ -128,6 +128,10 @@ const iconSx: SystemStyleObject<Theme> = {
     '0%, 100%': { transform: 'translateY(0)' },
     '50%': { transform: 'translateY(-1.4px)' },
   },
+  '@keyframes navMarketHandle': {
+    '0%, 100%': { transform: 'translateY(0)' },
+    '45%': { transform: 'translateY(-1px)' },
+  },
   '@keyframes navMarkDraw': {
     '0%, 100%': { strokeDashoffset: 8, opacity: 0.5 },
     '45%, 70%': { strokeDashoffset: 0, opacity: 1 },
@@ -156,6 +160,14 @@ const iconSx: SystemStyleObject<Theme> = {
     '0%, 100%': { transform: 'translateY(0)', opacity: 0.72 },
     '52%': { transform: 'translateY(-1.4px)', opacity: 1 },
   },
+  '@keyframes navCrownLift': {
+    '0%, 100%': { transform: 'translateY(0) scale(1)' },
+    '48%': { transform: 'translateY(-1.8px) scale(1.04)' },
+  },
+  '@keyframes navGemPulse': {
+    '0%, 100%': { transform: 'scale(1)', opacity: 0.78 },
+    '45%, 68%': { transform: 'scale(1.22)', opacity: 1 },
+  },
   '@keyframes navSliderA': {
     '0%, 100%': { transform: 'translateX(0)' },
     '36%': { transform: 'translateX(2.1px)' },
@@ -176,8 +188,13 @@ const iconSx: SystemStyleObject<Theme> = {
     '50%': { opacity: 0.76 },
   },
   '@keyframes navNeedle': {
-    '0%, 100%': { transform: 'rotate(-7deg)' },
-    '45%, 62%': { transform: 'rotate(12deg)' },
+    '0%, 100%': { transform: 'translate(0, 0) scale(1)', opacity: 0.78 },
+    '38%': { transform: 'translate(1.2px, -1.2px) scale(1.16)', opacity: 1 },
+    '70%': { transform: 'translate(-0.4px, 0.5px) scale(0.96)', opacity: 0.86 },
+  },
+  '@keyframes navIntroPath': {
+    '0%, 100%': { strokeDashoffset: 10, opacity: 0.5 },
+    '42%, 72%': { strokeDashoffset: 0, opacity: 1 },
   },
   '.PneumataNavButton:hover & .home-roof, &.is-active .home-roof': {
     animation: 'navHomeRoof 1.8s ease-in-out infinite',
@@ -196,6 +213,9 @@ const iconSx: SystemStyleObject<Theme> = {
   },
   '.PneumataNavButton:hover & .awning, &.is-active .awning': {
     animation: 'navAwning 1.55s ease-in-out infinite',
+  },
+  '.PneumataNavButton:hover & .market-handle, &.is-active .market-handle': {
+    animation: 'navMarketHandle 1.45s ease-in-out infinite',
   },
   '.PneumataNavButton:hover & .mark-draw, &.is-active .mark-draw': {
     animation: 'navMarkDraw 1.45s ease-in-out infinite',
@@ -218,6 +238,12 @@ const iconSx: SystemStyleObject<Theme> = {
   '.PneumataNavButton:hover & .crown-shine, &.is-active .crown-shine': {
     animation: 'navCrownShine 1.55s ease-in-out infinite',
   },
+  '.PneumataNavButton:hover & .crown-lift, &.is-active .crown-lift': {
+    animation: 'navCrownLift 1.45s ease-in-out infinite',
+  },
+  '.PneumataNavButton:hover & .gem-pulse, &.is-active .gem-pulse': {
+    animation: 'navGemPulse 1.2s ease-in-out infinite',
+  },
   '.PneumataNavButton:hover & .setting-track': {
     animation: 'navSettingTrack 1.45s ease-in-out infinite',
   },
@@ -232,6 +258,9 @@ const iconSx: SystemStyleObject<Theme> = {
   },
   '.PneumataNavButton:hover & .intro-needle, &.is-active .intro-needle': {
     animation: 'navNeedle 1.6s ease-in-out infinite',
+  },
+  '.PneumataNavButton:hover & .intro-path, &.is-active .intro-path': {
+    animation: 'navIntroPath 1.6s ease-in-out infinite',
   },
   '.PneumataNavButton:active & svg': {
     transform: 'scale(0.92)',
@@ -270,11 +299,11 @@ function iconPaths(kind: AnimatedNavIconKind) {
     case 'chats':
       return (
         <>
-          <path className="surface" d="M5.1 7.6c0-1 .8-1.8 1.8-1.8h10.2c1 0 1.8.8 1.8 1.8v5.8c0 1-.8 1.8-1.8 1.8H10l-4.4 3.2 1-3.5a1.8 1.8 0 0 1-1.5-1.8Z" />
-          <path d="M5.1 7.6c0-1 .8-1.8 1.8-1.8h10.2c1 0 1.8.8 1.8 1.8v5.8c0 1-.8 1.8-1.8 1.8H10l-4.4 3.2 1-3.5a1.8 1.8 0 0 1-1.5-1.8Z" />
-          <circle className="typing-a" cx="9.3" cy="10.7" r="0.72" />
-          <circle className="accent typing-b" cx="12" cy="10.7" r="0.72" />
-          <circle className="typing-c" cx="14.7" cy="10.7" r="0.72" />
+          <path className="surface" d="M5.2 8.2c0-1.3 1-2.3 2.3-2.3h9c1.3 0 2.3 1 2.3 2.3v4.7c0 1.3-1 2.3-2.3 2.3h-6.1l-4.3 3 1-3.2c-1.1-.2-1.9-1.1-1.9-2.2Z" />
+          <path d="M5.2 8.2c0-1.3 1-2.3 2.3-2.3h9c1.3 0 2.3 1 2.3 2.3v4.7c0 1.3-1 2.3-2.3 2.3h-6.1l-4.3 3 1-3.2c-1.1-.2-1.9-1.1-1.9-2.2Z" />
+          <circle className="typing-a" cx="8.7" cy="10.8" r="0.78" />
+          <circle className="accent typing-b" cx="12" cy="10.8" r="0.78" />
+          <circle className="typing-c" cx="15.3" cy="10.8" r="0.78" />
         </>
       );
     case 'characters':
@@ -301,11 +330,10 @@ function iconPaths(kind: AnimatedNavIconKind) {
     case 'market':
       return (
         <>
-          <path className="surface" d="M6.8 11.1h10.4v6.7c0 .7-.5 1.2-1.2 1.2H8c-.7 0-1.2-.5-1.2-1.2Z" />
-          <path className="accent awning" d="M5.4 10.3 7.3 6.1h9.4l1.9 4.2Z" />
-          <path className="awning" d="M5.4 10.3h13.2M9 6.2l-.6 4.1M15 6.2l.6 4.1" />
-          <path d="M6.8 12v5.8c0 .7.5 1.2 1.2 1.2h8c.7 0 1.2-.5 1.2-1.2V12" />
-          <path className="muted" d="M10 19v-4.2h4V19" />
+          <path className="surface" d="M6.4 9.5h11.2l-.8 8.3c-.1.8-.7 1.4-1.5 1.4H8.7c-.8 0-1.4-.6-1.5-1.4Z" />
+          <path d="M6.4 9.5h11.2l-.8 8.3c-.1.8-.7 1.4-1.5 1.4H8.7c-.8 0-1.4-.6-1.5-1.4Z" />
+          <path className="accent market-handle" d="M9 9.5V8.2c0-1.6 1.3-2.9 3-2.9s3 1.3 3 2.9v1.3" />
+          <path className="muted" d="M9.2 13.5h5.6" />
         </>
       );
     case 'calendar':
@@ -314,8 +342,9 @@ function iconPaths(kind: AnimatedNavIconKind) {
           <rect className="surface" x="5.1" y="6.5" width="13.8" height="12.2" rx="2.2" />
           <rect x="5.1" y="6.5" width="13.8" height="12.2" rx="2.2" />
           <path className="accent" d="M8.3 4.8v3M15.7 4.8v3M5.3 10h13.4" />
-          <rect className="detail-fill" x="8.4" y="12.4" width="2.1" height="2.1" rx="0.45" />
-          <path className="mark-draw" d="M9 14.1 10.4 15.5 15.2 12.9" strokeDasharray="8" strokeDashoffset="8" />
+          <rect className="accent-surface" x="8.1" y="12.5" width="3.2" height="3.2" rx="0.75" />
+          <path className="mark-draw accent" d="M8.8 14.1 9.6 14.9 11 13.4" strokeDasharray="8" strokeDashoffset="8" />
+          <path className="muted" d="M13.2 13.1h3.2M13.2 16h2.2" />
         </>
       );
     case 'letters':
@@ -356,9 +385,9 @@ function iconPaths(kind: AnimatedNavIconKind) {
     case 'membership':
       return (
         <>
-          <path className="accent-surface" d="M5.8 9.9 8.9 6.2l3.1 4 3.1-4 3.1 3.7-1 7H6.8Z" />
-          <path d="M5.8 9.9 8.9 6.2l3.1 4 3.1-4 3.1 3.7-1 7H6.8Z" />
-          <circle className="accent" cx="12" cy="12.6" r="0.75" />
+          <path className="accent-surface crown-lift" d="M5.8 9.9 8.9 6.2l3.1 4 3.1-4 3.1 3.7-1 7H6.8Z" />
+          <path className="crown-lift" d="M5.8 9.9 8.9 6.2l3.1 4 3.1-4 3.1 3.7-1 7H6.8Z" />
+          <circle className="accent gem-pulse" cx="12" cy="12.7" r="1.15" />
           <path className="accent crown-shine" d="M8.4 18.4h7.2" />
         </>
       );
@@ -377,11 +406,12 @@ function iconPaths(kind: AnimatedNavIconKind) {
     case 'intro':
       return (
         <>
-          <circle className="surface" cx="12" cy="12" r="6.6" />
-          <circle cx="12" cy="12" r="6.6" />
-          <path className="accent-surface intro-needle" d="M13.9 10.1 12.6 14l-3.9 1.3 1.3-3.9Z" />
-          <path className="accent intro-needle" d="M13.9 10.1 12.6 14l-3.9 1.3 1.3-3.9Z" />
-          <path className="muted" d="M12 4.4v1.2M18.8 12h-1.2M12 19.6v-1.2M5.2 12h1.2" />
+          <path className="surface" d="M6.2 7.3c0-.9.7-1.6 1.6-1.6h8.4c.9 0 1.6.7 1.6 1.6v9.4c0 .9-.7 1.6-1.6 1.6H7.8c-.9 0-1.6-.7-1.6-1.6Z" />
+          <path d="M6.2 7.3c0-.9.7-1.6 1.6-1.6h8.4c.9 0 1.6.7 1.6 1.6v9.4c0 .9-.7 1.6-1.6 1.6H7.8c-.9 0-1.6-.7-1.6-1.6Z" />
+          <path className="accent intro-path" d="M8.9 13.5c1.8-3.1 4.1-3.7 6.4-2" strokeDasharray="10" strokeDashoffset="10" />
+          <circle className="accent-surface intro-needle" cx="15.3" cy="11.5" r="1.45" />
+          <circle className="accent intro-needle" cx="15.3" cy="11.5" r="0.78" />
+          <path className="muted" d="M9 8.7h4.7M9 16h3.2" />
         </>
       );
     default:

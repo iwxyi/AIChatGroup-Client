@@ -36,7 +36,7 @@ import { buildHomeSyncOverview } from '../services/homeSyncOverview';
 import { buildLocalOutboxProjection, type LocalOutboxArtifactJobLike } from '../services/localOutboxProjection';
 import { mirrorLocalOutboxQueues } from '../services/localOutboxMirror';
 import { projectWorldCalendar, type WorldCalendarItem } from '../services/worldRuntimeProjection';
-import { api } from '../services/api';
+import { api, type OfficialAiProviderInfo } from '../services/api';
 import { getRegisteredSyncWorkerEntries } from '../stores/storeSyncScheduler';
 import { motion, transition } from '../styles/motion';
 import { formatAiAmount } from '../utils/aiPoints';
@@ -52,7 +52,7 @@ interface HomeOverviewCard {
   attention?: boolean;
 }
 
-type OfficialBalanceProvider = 'official-internal' | 'official-gpt';
+type OfficialBalanceProvider = 'official-deepseek' | 'official-moacode' | 'official-gpt';
 
 interface ArtifactHomeState {
   jobs: LocalOutboxArtifactJobLike[];
@@ -85,14 +85,22 @@ const OFFICIAL_BALANCE_PROVIDERS: Array<{
   backendProvider: 'deepseek' | 'api2d' | 'moacode';
   label: string;
 }> = [
-  { key: 'official-internal', backendProvider: 'moacode', label: 'AI点数' },
+  { key: 'official-deepseek', backendProvider: 'deepseek', label: 'DeepSeek点数' },
+  { key: 'official-moacode', backendProvider: 'moacode', label: 'Claude/GPT点数' },
   { key: 'official-gpt', backendProvider: 'api2d', label: 'GPT点数' },
 ];
 
 function normalizeOfficialBalanceProvider(provider: string): OfficialBalanceProvider | null {
-  if (provider === 'official-deepseek' || provider === 'official-moacode' || provider === 'official') return 'official-internal';
+  if (provider === 'official-deepseek') return 'official-deepseek';
+  if (provider === 'official-moacode' || provider === 'official') return 'official-moacode';
   if (provider === 'official-gpt') return 'official-gpt';
   return null;
+}
+
+function officialBalanceProviderCode(provider: OfficialBalanceProvider) {
+  if (provider === 'official-deepseek') return 'deepseek';
+  if (provider === 'official-moacode') return 'moacode';
+  return 'api2d';
 }
 
 function buildStatGridSx() {
@@ -460,6 +468,7 @@ export default function HomePage() {
   const [cloudSyncEnabled, setCloudSyncEnabledState] = useState(() => isCloudSyncEnabled());
   const [workerEntries, setWorkerEntries] = useState(() => getRegisteredSyncWorkerEntries());
   const [aiBalances, setAiBalances] = useState<Partial<Record<OfficialBalanceProvider, number | null>>>({});
+  const [officialProviderAccess, setOfficialProviderAccess] = useState<Record<string, boolean> | null>(null);
   const [companionshipSnapshot, setCompanionshipSnapshot] = useState<HomeCompanionshipSnapshot | null>(null);
   const [calendarNow, setCalendarNow] = useState(() => Date.now());
   const recentChats = useMemo(() => chats.slice(0, 10), [chats]);
@@ -522,14 +531,40 @@ export default function HomePage() {
   const recentChatsActionTab = recentChats[0]?.type === 'group' ? 0 : recentChats[0]?.type === 'ai_direct' ? 2 : 1;
   const needsAIModelSetup = !hasUsableDefaultTextAI(aiProfiles);
   const needsLogin = authMode === 'local' || !isLoggedIn;
+  useEffect(() => {
+    if (needsLogin) {
+      setOfficialProviderAccess(null);
+      return;
+    }
+    setOfficialProviderAccess(null);
+    let cancelled = false;
+    api.getOfficialAiProviders()
+      .then((result) => {
+        if (cancelled) return;
+        setOfficialProviderAccess(Object.fromEntries((result.items || []).map((provider: OfficialAiProviderInfo) => [
+          String(provider.code || '').toLowerCase(),
+          provider.accessAllowed !== false,
+        ])));
+      })
+      .catch(() => {
+        if (!cancelled) setOfficialProviderAccess(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [needsLogin]);
   const enabledOfficialBalanceProviders = useMemo(() => {
+    if (!officialProviderAccess) return [];
     const providerKeys = new Set<OfficialBalanceProvider>();
     aiProfiles.forEach((profile) => {
       const normalized = normalizeOfficialBalanceProvider(profile.provider);
-      if (normalized) providerKeys.add(normalized);
+      if (!normalized) return;
+      const providerCode = officialBalanceProviderCode(normalized);
+      if (officialProviderAccess[providerCode] === false) return;
+      providerKeys.add(normalized);
     });
     return OFFICIAL_BALANCE_PROVIDERS.filter((provider) => providerKeys.has(provider.key));
-  }, [aiProfiles]);
+  }, [aiProfiles, officialProviderAccess]);
   const canQueryAiPoints = !needsLogin && enabledOfficialBalanceProviders.length > 0;
   const needsOwnCharacter = characters.length > 0 && customCharacters.length === 0;
   const hasActiveAvatarTasks = avatarQueueSummary.active > 0;
