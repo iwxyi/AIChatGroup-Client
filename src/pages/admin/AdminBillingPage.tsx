@@ -57,6 +57,33 @@ type PlanForm = {
   sortOrder: string;
   featureUnlockEnabled: boolean;
   featuresText: string;
+  displayGroup: string;
+  displayGroupName: string;
+  durationLabel: string;
+  badgeText: string;
+  highlightReason: string;
+  originalPriceAmount: string;
+  sortOrderInGroup: string;
+  vipTierCode: string;
+};
+
+type VipTierForm = {
+  code: string;
+  name: string;
+  rank: string;
+  enabled: boolean;
+  description: string;
+  conversionRatio: string;
+  benefitsMarkdown: string;
+};
+
+type MembershipConfigForm = {
+  title: string;
+  subtitle: string;
+  description: string;
+  benefitsText: string;
+  fulfillmentNote: string;
+  tiers: VipTierForm[];
 };
 
 const EMPTY_PLAN_FORM: PlanForm = {
@@ -76,6 +103,51 @@ const EMPTY_PLAN_FORM: PlanForm = {
   sortOrder: '0',
   featureUnlockEnabled: true,
   featuresText: '',
+  displayGroup: 'points',
+  displayGroupName: '点数包',
+  durationLabel: '',
+  badgeText: '',
+  highlightReason: '',
+  originalPriceAmount: '',
+  sortOrderInGroup: '0',
+  vipTierCode: 'basic',
+};
+const DEFAULT_VIP_TIERS: VipTierForm[] = [
+  {
+    code: 'basic',
+    name: '基础会员',
+    rank: '10',
+    enabled: true,
+    description: '适合轻量体验和基础创作。',
+    conversionRatio: '1',
+    benefitsMarkdown: '- 基础角色与群聊权益\n- 标准记忆能力\n- 基础 AI 生成能力',
+  },
+  {
+    code: 'pro',
+    name: '高级会员',
+    rank: '20',
+    enabled: true,
+    description: '适合高频聊天、角色创作和长期记忆。',
+    conversionRatio: '0.5',
+    benefitsMarkdown: '- 包含基础会员权益\n- **更高角色与群聊上限**\n- **长期记忆与高级生成**',
+  },
+  {
+    code: 'premium',
+    name: '旗舰会员',
+    rank: '30',
+    enabled: true,
+    description: '适合重度创作和更高性能需求。',
+    conversionRatio: '0.5',
+    benefitsMarkdown: '- 包含高级会员权益\n- **最高使用上限**\n- **优先体验新功能**',
+  },
+];
+const EMPTY_MEMBERSHIP_CONFIG_FORM: MembershipConfigForm = {
+  title: 'VIP 会员',
+  subtitle: '解锁完整体验并获得 AI 点数',
+  description: '开通会员解锁产品能力，购买点数用于官方 AI 调用。支付成功后权益和点数会自动到账。',
+  benefitsText: '解锁会员功能权益\n会员专属体验\n优先使用新功能',
+  fulfillmentNote: '支付完成后自动履约',
+  tiers: DEFAULT_VIP_TIERS,
 };
 const BILLING_TAB_STORAGE_KEY = 'admin.billing.tab';
 const EMPTY_ORDER_SUMMARY = { total: 0, pending: 0, paid: 0, cancelled: 0, partiallyRefunded: 0, refunded: 0, failed: 0 };
@@ -117,6 +189,10 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
+function hasOwnRecordValue(value: Record<string, unknown>, key: string) {
+  return Object.prototype.hasOwnProperty.call(value, key);
+}
+
 function asArray(value: unknown): Array<Record<string, unknown>> {
   return Array.isArray(value) ? value.filter((item) => item && typeof item === 'object' && !Array.isArray(item)) as Array<Record<string, unknown>> : [];
 }
@@ -155,6 +231,7 @@ function statusLabel(value: unknown) {
   if (status === 'paid') return '已支付';
   if (status === 'pending') return '待支付';
   if (status === 'cancelled' || status === 'canceled') return '已关闭';
+  if (status === 'converted') return '已转换';
   if (status === 'failed') return '失败';
   if (status === 'partially_refunded') return '部分退款';
   if (status === 'refunded') return '已退款';
@@ -199,8 +276,8 @@ function canCancelOrder(order: Record<string, unknown> | null) {
   return status !== 'paid' && status !== 'partially_refunded' && status !== 'refunded' && status !== 'cancelled' && status !== 'canceled';
 }
 
-function parseMetadataFeatures(value: unknown) {
-  if (!value) return [];
+function parsePlanMetadata(value: unknown) {
+  if (!value) return {};
   let metadata: Record<string, unknown> = {};
   if (typeof value === 'object' && !Array.isArray(value)) metadata = value as Record<string, unknown>;
   if (typeof value === 'string') {
@@ -211,12 +288,28 @@ function parseMetadataFeatures(value: unknown) {
       metadata = {};
     }
   }
+  return metadata;
+}
+
+function parseMetadataFeatures(value: unknown) {
+  const metadata = parsePlanMetadata(value);
   return Array.isArray(metadata.features) ? metadata.features.map((item) => String(item || '').trim()).filter(Boolean) : [];
+}
+
+function metadataText(metadata: Record<string, unknown>, key: string, fallback = '') {
+  const value = metadata[key];
+  return value === null || value === undefined ? fallback : String(value);
+}
+
+function vipTierLabelFromMetadata(value: unknown, fallback = '-') {
+  const metadata = parsePlanMetadata(value);
+  return metadataText(metadata, 'vipTierName', metadataText(metadata, 'vipTierCode', fallback));
 }
 
 function toPlanForm(item: Record<string, unknown>): PlanForm {
   const planKind = String(item.plan_kind || '') === 'vip' ? 'vip' : 'points';
   const grantPoints = numberText(item.grant_points);
+  const metadata = parsePlanMetadata(item.metadata);
   return {
     id: String(item.id || ''),
     code: String(item.code || ''),
@@ -234,6 +327,14 @@ function toPlanForm(item: Record<string, unknown>): PlanForm {
     sortOrder: numberText(item.sort_order, '0'),
     featureUnlockEnabled: planKind === 'vip' ? toBoolean(item.ai_enabled, true) : false,
     featuresText: parseMetadataFeatures(item.metadata).join('\n'),
+    displayGroup: metadataText(metadata, 'displayGroup', planKind === 'vip' ? 'vip' : 'points'),
+    displayGroupName: metadataText(metadata, 'displayGroupName', planKind === 'vip' ? 'VIP 套餐' : '点数包'),
+    durationLabel: metadataText(metadata, 'durationLabel', ''),
+    badgeText: metadataText(metadata, 'badgeText', ''),
+    highlightReason: metadataText(metadata, 'highlightReason', ''),
+    originalPriceAmount: numberText(metadata.originalPriceAmount, ''),
+    sortOrderInGroup: numberText(metadata.sortOrderInGroup, '0'),
+    vipTierCode: metadataText(metadata, 'vipTierCode', 'basic'),
   };
 }
 
@@ -242,9 +343,11 @@ function toNumber(value: string, fallback: number) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function buildPlanPayload(form: PlanForm) {
+function buildPlanPayload(form: PlanForm, tiers: VipTierForm[] = DEFAULT_VIP_TIERS) {
   const isVip = form.vipEnabled;
   const pointsEnabled = form.pointsEnabled;
+  const enabledTiers = tiers.filter((tier) => tier.enabled);
+  const selectedTier = tiers.find((tier) => tier.code === form.vipTierCode) || enabledTiers[0] || tiers[0] || DEFAULT_VIP_TIERS[0];
   const benefits = [
     isVip ? 'vip' : '',
     pointsEnabled ? 'points' : '',
@@ -267,7 +370,63 @@ function buildPlanPayload(form: PlanForm) {
     sortOrder: Math.floor(toNumber(form.sortOrder, 0)),
     aiEnabled: isVip ? form.featureUnlockEnabled : false,
     featureUnlockEnabled: isVip ? form.featureUnlockEnabled : false,
-    features: isVip ? form.featuresText.split('\n').map((item) => item.trim()).filter(Boolean) : [],
+    features: form.featuresText.split('\n').map((item) => item.trim()).filter(Boolean),
+    displayGroup: form.displayGroup.trim() || (isVip ? 'vip' : 'points'),
+    displayGroupName: form.displayGroupName.trim() || (isVip ? 'VIP 套餐' : '点数包'),
+    durationLabel: form.durationLabel.trim() || null,
+    badgeText: form.badgeText.trim() || null,
+    highlightReason: form.highlightReason.trim() || null,
+    originalPriceAmount: form.originalPriceAmount.trim() ? Math.max(0, toNumber(form.originalPriceAmount, 0)) : null,
+    sortOrderInGroup: Math.floor(toNumber(form.sortOrderInGroup, 0)),
+    vipTierCode: isVip ? form.vipTierCode : 'basic',
+    vipTierName: isVip ? selectedTier.name : '基础会员',
+    vipTierRank: isVip ? Math.floor(toNumber(selectedTier.rank, 10)) : 10,
+  };
+}
+
+function toMembershipConfigForm(config: Record<string, unknown>): MembershipConfigForm {
+  const benefits = Array.isArray(config.benefits) ? config.benefits.map((item) => String(item || '').trim()).filter(Boolean) : [];
+  const tiers = Array.isArray(config.tiers)
+    ? config.tiers.map((item, index) => {
+      const record = asRecord(item);
+      const fallback = DEFAULT_VIP_TIERS[index] || DEFAULT_VIP_TIERS[0];
+      return {
+        code: String(record.code || fallback.code),
+        name: String(record.name || fallback.name),
+        rank: numberText(record.rank, fallback.rank),
+        enabled: toBoolean(record.enabled, fallback.enabled ?? true),
+        description: hasOwnRecordValue(record, 'description') ? String(record.description || '') : fallback.description,
+        conversionRatio: numberText(record.conversionRatio, fallback.conversionRatio),
+        benefitsMarkdown: String(record.benefitsMarkdown || fallback.benefitsMarkdown),
+      };
+    })
+    : DEFAULT_VIP_TIERS;
+  return {
+    title: String(config.title || EMPTY_MEMBERSHIP_CONFIG_FORM.title),
+    subtitle: String(config.subtitle || EMPTY_MEMBERSHIP_CONFIG_FORM.subtitle),
+    description: hasOwnRecordValue(config, 'description') ? String(config.description || '') : EMPTY_MEMBERSHIP_CONFIG_FORM.description,
+    benefitsText: (benefits.length ? benefits : EMPTY_MEMBERSHIP_CONFIG_FORM.benefitsText.split('\n')).join('\n'),
+    fulfillmentNote: String(config.fulfillmentNote || EMPTY_MEMBERSHIP_CONFIG_FORM.fulfillmentNote),
+    tiers: tiers.length ? tiers : DEFAULT_VIP_TIERS,
+  };
+}
+
+function buildMembershipConfigPayload(form: MembershipConfigForm) {
+  return {
+    title: form.title.trim(),
+    subtitle: form.subtitle.trim(),
+    description: form.description.trim(),
+    benefits: form.benefitsText.split('\n').map((item) => item.trim()).filter(Boolean),
+    fulfillmentNote: form.fulfillmentNote.trim(),
+    tiers: form.tiers.map((tier) => ({
+      code: tier.code.trim(),
+      name: tier.name.trim(),
+      rank: Math.floor(toNumber(tier.rank, 10)),
+      enabled: tier.enabled,
+      description: tier.description.trim(),
+      conversionRatio: Math.max(0, toNumber(tier.conversionRatio, 1)),
+      benefitsMarkdown: tier.benefitsMarkdown,
+    })).filter((tier) => tier.code && tier.name),
   };
 }
 
@@ -858,13 +1017,16 @@ export default function AdminBillingPage() {
   const [selectedOrder, setSelectedOrder] = useState<Record<string, unknown> | null>(null);
   const [selectedOrderDetail, setSelectedOrderDetail] = useState<Record<string, unknown> | null>(null);
   const [planForm, setPlanForm] = useState<PlanForm>(EMPTY_PLAN_FORM);
+  const [membershipConfigForm, setMembershipConfigForm] = useState<MembershipConfigForm>(EMPTY_MEMBERSHIP_CONFIG_FORM);
   const [planDialogOpen, setPlanDialogOpen] = useState(false);
+  const [membershipConfigDialogOpen, setMembershipConfigDialogOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Record<string, unknown> | null>(null);
   const [cancelOrderTarget, setCancelOrderTarget] = useState<Record<string, unknown> | null>(null);
   const [deleteOrderTarget, setDeleteOrderTarget] = useState<Record<string, unknown> | null>(null);
   const [plansLoading, setPlansLoading] = useState(false);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [savingPlan, setSavingPlan] = useState(false);
+  const [savingMembershipConfig, setSavingMembershipConfig] = useState(false);
   const [deletingPlanId, setDeletingPlanId] = useState<string | null>(null);
   const [cancellingOrderId, setCancellingOrderId] = useState<string | null>(null);
   const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null);
@@ -874,6 +1036,7 @@ export default function AdminBillingPage() {
   const [syncingRefundId, setSyncingRefundId] = useState<string | null>(null);
   const [closingExpiredOrders, setClosingExpiredOrders] = useState(false);
   const [plansError, setPlansError] = useState<string | null>(null);
+  const [planDialogError, setPlanDialogError] = useState<string | null>(null);
   const [ordersError, setOrdersError] = useState<string | null>(null);
   const [orderDetailLoading, setOrderDetailLoading] = useState(false);
   const [orderDetailError, setOrderDetailError] = useState<string | null>(null);
@@ -902,14 +1065,21 @@ export default function AdminBillingPage() {
   ], [orderListAmount, orderStatusSummary]);
   const planHasBenefit = planForm.vipEnabled || planForm.pointsEnabled;
   const planPointsValid = !planForm.pointsEnabled || toNumber(planForm.grantPoints, 0) > 0;
-  const canSavePlan = planHasBenefit && planPointsValid && !savingPlan;
+  const canSavePlan = planHasBenefit && planPointsValid && Boolean(planForm.code.trim()) && Boolean(planForm.name.trim()) && !savingPlan;
+  const hasEnabledMembershipTier = membershipConfigForm.tiers.some((tier) => tier.enabled);
+  const canSaveMembershipConfig = Boolean(membershipConfigForm.title.trim()) && Boolean(membershipConfigForm.benefitsText.trim()) && hasEnabledMembershipTier && !savingMembershipConfig;
+  const selectableVipTiers = membershipConfigForm.tiers.filter((tier) => tier.enabled || tier.code === planForm.vipTierCode);
 
   const loadPlans = async () => {
     setPlansLoading(true);
     setPlansError(null);
     try {
-      const result = await adminApi.getBillingPlans();
+      const [result, config] = await Promise.all([
+        adminApi.getBillingPlans(),
+        adminApi.getBillingMembershipConfig(),
+      ]);
       setPlans(result.items || []);
+      setMembershipConfigForm(toMembershipConfigForm(config));
       if (planDialogOpen && selectedPlanId) {
         const next = result.items.find((item) => String(item.id) === selectedPlanId);
         if (next) setPlanForm(toPlanForm(next));
@@ -958,17 +1128,35 @@ export default function AdminBillingPage() {
   const savePlan = async () => {
     setSavingPlan(true);
     setPlansError(null);
+    setPlanDialogError(null);
     try {
-      const payload = buildPlanPayload(planForm);
+      const payload = buildPlanPayload(planForm, membershipConfigForm.tiers);
       if (planForm.id) await adminApi.updateBillingPlan(planForm.id, payload);
       else await adminApi.createBillingPlan(payload);
       setPlanForm(EMPTY_PLAN_FORM);
       setPlanDialogOpen(false);
       await loadPlans();
     } catch (saveError) {
-      setPlansError(getAdminErrorMessage(saveError));
+      const message = getAdminErrorMessage(saveError);
+      setPlanDialogError(message);
+      setPlansError(message);
     } finally {
       setSavingPlan(false);
+    }
+  };
+
+  const saveMembershipConfig = async () => {
+    if (!canSaveMembershipConfig) return;
+    setSavingMembershipConfig(true);
+    setPlansError(null);
+    try {
+      const config = await adminApi.updateBillingMembershipConfig(buildMembershipConfigPayload(membershipConfigForm));
+      setMembershipConfigForm(toMembershipConfigForm(config));
+      setMembershipConfigDialogOpen(false);
+    } catch (saveError) {
+      setPlansError(getAdminErrorMessage(saveError));
+    } finally {
+      setSavingMembershipConfig(false);
     }
   };
 
@@ -1140,14 +1328,27 @@ export default function AdminBillingPage() {
     setPlanForm((prev) => ({ ...prev, [key]: value }));
   };
 
+  const updateMembershipConfigForm = <K extends keyof MembershipConfigForm>(key: K, value: MembershipConfigForm[K]) => {
+    setMembershipConfigForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const updateMembershipTierForm = <K extends keyof VipTierForm>(index: number, key: K, value: VipTierForm[K]) => {
+    setMembershipConfigForm((prev) => ({
+      ...prev,
+      tiers: prev.tiers.map((tier, tierIndex) => (tierIndex === index ? { ...tier, [key]: value } : tier)),
+    }));
+  };
+
   const openCreatePlanDialog = () => {
     setTab(0);
     writePersistentUiValue(BILLING_TAB_STORAGE_KEY, 0);
-    setPlanForm(EMPTY_PLAN_FORM);
+    setPlanDialogError(null);
+    setPlanForm({ ...EMPTY_PLAN_FORM });
     setPlanDialogOpen(true);
   };
 
   const openEditPlanDialog = (item: Record<string, unknown>) => {
+    setPlanDialogError(null);
     setPlanForm(toPlanForm(item));
     setPlanDialogOpen(true);
   };
@@ -1190,6 +1391,32 @@ export default function AdminBillingPage() {
             <AdminMetricGrid items={planMetrics} compact minWidth={132} />
           </AdminSection>
 
+          <AdminSection
+            title="会员展示配置"
+            subtitle="统一维护 VIP 权益介绍，前台会员页只展示一次，避免每个时长套餐重复。"
+            action={(
+              <Button variant="outlined" onClick={() => setMembershipConfigDialogOpen(true)}>
+                编辑会员权益
+              </Button>
+            )}
+          >
+            <Stack spacing={1}>
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ alignItems: { xs: 'flex-start', sm: 'center' }, justifyContent: 'space-between' }}>
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography sx={{ fontWeight: 900 }}>{membershipConfigForm.title}</Typography>
+                  <Typography variant="body2" color="text.secondary">{membershipConfigForm.subtitle}</Typography>
+                </Box>
+                <Chip size="small" color="primary" variant="outlined" label={`${membershipConfigForm.benefitsText.split('\n').filter((item) => item.trim()).length} 项权益`} />
+              </Stack>
+              <Typography variant="body2" color="text.secondary">{membershipConfigForm.description}</Typography>
+              <Stack direction="row" spacing={0.75} sx={{ flexWrap: 'wrap' }}>
+                {membershipConfigForm.benefitsText.split('\n').map((item) => item.trim()).filter(Boolean).slice(0, 6).map((item) => (
+                  <Chip key={item} size="small" label={item} />
+                ))}
+              </Stack>
+            </Stack>
+          </AdminSection>
+
           <AdminSection title="套餐列表" subtitle="点击套餐行可以进入编辑。" bodySx={{ p: 0 }}>
             <AdminTableFrame minWidth={900}>
               <Table>
@@ -1198,7 +1425,7 @@ export default function AdminBillingPage() {
                     <TableCell>套餐</TableCell>
                     <TableCell>权益</TableCell>
                     <TableCell>价格</TableCell>
-                    <TableCell>赠送点数</TableCell>
+                    <TableCell>包含点数</TableCell>
                     <TableCell>时长</TableCell>
                     <TableCell>状态</TableCell>
                     <TableCell align="right">操作</TableCell>
@@ -1220,7 +1447,10 @@ export default function AdminBillingPage() {
                         </Stack>
                       </TableCell>
                       <TableCell>
-                        <Chip size="small" label={planBenefitsLabel(item.plan_kind, item.grant_points)} color={String(item.plan_kind || '') === 'vip' ? 'primary' : 'default'} />
+                        <Stack direction="row" spacing={0.5} sx={{ flexWrap: 'wrap' }}>
+                          <Chip size="small" label={planBenefitsLabel(item.plan_kind, item.grant_points)} color={String(item.plan_kind || '') === 'vip' ? 'primary' : 'default'} />
+                          {String(item.plan_kind || '') === 'vip' ? <Chip size="small" label={vipTierLabelFromMetadata(item.metadata)} variant="outlined" /> : null}
+                        </Stack>
                       </TableCell>
                       <TableCell>{formatMoney(item.price_amount, item.currency)}</TableCell>
                       <TableCell>{formatPoints(item.grant_points)}</TableCell>
@@ -1260,47 +1490,76 @@ export default function AdminBillingPage() {
             <DialogTitle>{planForm.id ? '编辑套餐' : '新增套餐'}</DialogTitle>
             <DialogContent>
               <Stack spacing={1.25} sx={{ pt: 1 }}>
-                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25}>
-                  <TextField label="套餐编码" value={planForm.code} onChange={(event) => updateForm('code', event.target.value)} fullWidth />
-                  <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', flex: '0 0 auto', flexWrap: 'wrap' }}>
-                    <FormControlLabel control={<Switch checked={planForm.vipEnabled} onChange={(event) => updateForm('vipEnabled', event.target.checked)} />} label="VIP" />
+                {planDialogError ? <Alert severity="error">{planDialogError}</Alert> : null}
+                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(180px, 0.9fr) minmax(220px, 1.1fr) auto' }, gap: 1.25, alignItems: 'center' }}>
+                  <TextField label="套餐编码" required value={planForm.code} onChange={(event) => updateForm('code', event.target.value)} fullWidth />
+                  <TextField label="套餐名称" required value={planForm.name} onChange={(event) => updateForm('name', event.target.value)} fullWidth />
+                  <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', flexWrap: 'wrap', justifyContent: { xs: 'flex-start', md: 'flex-end' } }}>
+                    <FormControlLabel control={<Switch checked={planForm.vipEnabled} onChange={(event) => {
+                      const checked = event.target.checked;
+                      setPlanForm((prev) => ({
+                        ...prev,
+                        vipEnabled: checked,
+                        displayGroup: checked ? 'vip' : (prev.pointsEnabled ? 'points' : prev.displayGroup),
+                        displayGroupName: checked ? 'VIP 套餐' : (prev.pointsEnabled ? '点数包' : prev.displayGroupName),
+                      }));
+                    }} />} label="VIP" />
                     <FormControlLabel control={<Switch checked={planForm.pointsEnabled} onChange={(event) => updateForm('pointsEnabled', event.target.checked)} />} label="点数" />
                   </Stack>
-                </Stack>
-                <TextField label="套餐名称" value={planForm.name} onChange={(event) => updateForm('name', event.target.value)} fullWidth />
+                </Box>
                 <TextField label="说明" value={planForm.description} onChange={(event) => updateForm('description', event.target.value)} fullWidth multiline minRows={2} />
-                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25}>
-                  <TextField label="价格" value={planForm.priceAmount} onChange={(event) => updateForm('priceAmount', event.target.value)} fullWidth />
-                  <TextField label="币种" value={planForm.currency} onChange={(event) => updateForm('currency', event.target.value)} sx={{ minWidth: 100 }} />
-                </Stack>
+                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'minmax(120px, 0.7fr) minmax(90px, 0.45fr) minmax(140px, 0.7fr)' }, gap: 1.25 }}>
+                  <TextField label="价格" required value={planForm.priceAmount} onChange={(event) => updateForm('priceAmount', event.target.value)} fullWidth />
+                  <TextField label="币种" value={planForm.currency} onChange={(event) => updateForm('currency', event.target.value)} fullWidth />
+                  {planForm.pointsEnabled ? (
+                    <TextField
+                      label="包含点数"
+                      value={planForm.grantPoints}
+                      onChange={(event) => updateForm('grantPoints', event.target.value)}
+                      error={!planPointsValid}
+                      helperText={!planPointsValid ? '启用点数权益时，包含点数必须大于 0' : undefined}
+                      fullWidth
+                    />
+                  ) : <Box sx={{ display: { xs: 'none', sm: 'block' } }} />}
+                </Box>
                 {!planHasBenefit ? <Alert severity="warning">至少选择一个套餐权益。</Alert> : null}
-                {planForm.pointsEnabled ? (
-                  <TextField
-                    label="赠送点数"
-                    value={planForm.grantPoints}
-                    onChange={(event) => updateForm('grantPoints', event.target.value)}
-                    error={!planPointsValid}
-                    helperText={!planPointsValid ? '启用点数权益时，赠送点数必须大于 0' : undefined}
-                    fullWidth
-                  />
-                ) : null}
                 {planForm.vipEnabled ? (
                   <>
-                    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25}>
+                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'minmax(160px, 0.8fr) minmax(120px, 0.6fr) minmax(140px, 0.7fr)' }, gap: 1.25 }}>
+                      <TextField select label="VIP 等级" value={planForm.vipTierCode} onChange={(event) => updateForm('vipTierCode', event.target.value)} fullWidth>
+                        {selectableVipTiers.map((tier) => (
+                          <MenuItem key={tier.code} value={tier.code}>
+                            {tier.name || tier.code}{tier.enabled ? '' : '（已停用）'}
+                          </MenuItem>
+                        ))}
+                      </TextField>
                       <TextField label="有效天数" value={planForm.durationDays} onChange={(event) => updateForm('durationDays', event.target.value)} fullWidth />
+                      <TextField label="时长标签" placeholder="月卡 / 季卡 / 年卡" value={planForm.durationLabel} onChange={(event) => updateForm('durationLabel', event.target.value)} fullWidth />
+                    </Box>
+                    <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', flexWrap: 'wrap', px: 0.5 }}>
                       <FormControlLabel control={<Switch checked={planForm.featureUnlockEnabled} onChange={(event) => updateForm('featureUnlockEnabled', event.target.checked)} />} label="解锁功能" />
                     </Stack>
-                    <TextField label="功能权益（每行一项）" value={planForm.featuresText} onChange={(event) => updateForm('featuresText', event.target.value)} fullWidth multiline minRows={3} />
                   </>
                 ) : null}
-                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25}>
+                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'minmax(120px, 0.7fr) minmax(120px, 0.7fr) minmax(120px, 0.6fr)' }, gap: 1.25 }}>
+                  <TextField label="展示分组" value={planForm.displayGroup} onChange={(event) => updateForm('displayGroup', event.target.value)} helperText="vip / points" fullWidth />
+                  <TextField label="分组名称" value={planForm.displayGroupName} onChange={(event) => updateForm('displayGroupName', event.target.value)} fullWidth />
+                  <TextField label="组内排序" value={planForm.sortOrderInGroup} onChange={(event) => updateForm('sortOrderInGroup', event.target.value)} fullWidth />
+                </Box>
+                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'minmax(160px, 0.8fr) minmax(140px, 0.7fr)' }, gap: 1.25 }}>
+                  <TextField label="角标文案" placeholder="推荐 / 最划算" value={planForm.badgeText} onChange={(event) => updateForm('badgeText', event.target.value)} fullWidth />
+                  <TextField label="划线价" value={planForm.originalPriceAmount} onChange={(event) => updateForm('originalPriceAmount', event.target.value)} fullWidth />
+                </Box>
+                <TextField label="推荐理由" value={planForm.highlightReason} onChange={(event) => updateForm('highlightReason', event.target.value)} fullWidth />
+                <TextField label="套餐卖点（每行一项）" value={planForm.featuresText} onChange={(event) => updateForm('featuresText', event.target.value)} fullWidth multiline minRows={3} />
+                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'minmax(140px, 0.65fr) minmax(120px, 0.55fr)' }, gap: 1.25 }}>
                   <TextField select label="状态" value={planForm.status} onChange={(event) => updateForm('status', event.target.value)} fullWidth>
                     <MenuItem value="active">启用</MenuItem>
                     <MenuItem value="inactive">停用</MenuItem>
                     <MenuItem value="archived">归档</MenuItem>
                   </TextField>
                   <TextField label="排序" value={planForm.sortOrder} onChange={(event) => updateForm('sortOrder', event.target.value)} fullWidth />
-                </Stack>
+                </Box>
                 <Stack direction={{ xs: 'column', sm: 'row' }} spacing={0.5}>
                   <FormControlLabel control={<Switch checked={planForm.visibleToUsers} onChange={(event) => updateForm('visibleToUsers', event.target.checked)} />} label="用户可见" />
                   <FormControlLabel control={<Switch checked={planForm.featured} onChange={(event) => updateForm('featured', event.target.checked)} />} label="推荐" />
@@ -1311,6 +1570,51 @@ export default function AdminBillingPage() {
               <Button onClick={() => setPlanDialogOpen(false)} disabled={savingPlan}>取消</Button>
               <Button variant="contained" startIcon={<SaveIcon />} disabled={!canSavePlan} onClick={() => void savePlan()}>
                 {planForm.id ? '保存套餐' : '添加套餐'}
+              </Button>
+            </DialogActions>
+          </Dialog>
+          <Dialog open={membershipConfigDialogOpen} onClose={() => setMembershipConfigDialogOpen(false)} maxWidth="sm" fullWidth>
+            <DialogTitle>编辑会员展示配置</DialogTitle>
+            <DialogContent>
+              <Stack spacing={1.25} sx={{ pt: 1 }}>
+                <TextField label="标题" required value={membershipConfigForm.title} onChange={(event) => updateMembershipConfigForm('title', event.target.value)} fullWidth />
+                <TextField label="副标题" value={membershipConfigForm.subtitle} onChange={(event) => updateMembershipConfigForm('subtitle', event.target.value)} fullWidth />
+                <TextField label="介绍文案" value={membershipConfigForm.description} onChange={(event) => updateMembershipConfigForm('description', event.target.value)} fullWidth multiline minRows={2} />
+                <TextField label="统一 VIP 权益（每行一项）" required value={membershipConfigForm.benefitsText} onChange={(event) => updateMembershipConfigForm('benefitsText', event.target.value)} fullWidth multiline minRows={5} />
+                <TextField label="履约说明" value={membershipConfigForm.fulfillmentNote} onChange={(event) => updateMembershipConfigForm('fulfillmentNote', event.target.value)} fullWidth />
+                <Divider />
+                <Typography variant="subtitle2" sx={{ fontWeight: 900 }}>VIP 等级权益</Typography>
+                <Typography variant="caption" color="text.secondary">权益支持简单 Markdown，使用 **加粗** 高亮与其他等级的不同点；转换比例表示低级剩余时长升级到该等级时的折算比例。</Typography>
+                {!hasEnabledMembershipTier ? <Alert severity="warning">至少需要启用一个 VIP 等级，否则前台无法展示会员套餐。</Alert> : null}
+                {membershipConfigForm.tiers.map((tier, index) => (
+                  <Paper key={tier.code || index} variant="outlined" sx={{ p: 1.25, borderRadius: 2 }}>
+                    <Stack spacing={1}>
+                      <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap' }}>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 900 }}>{tier.name || tier.code || `等级 ${index + 1}`}</Typography>
+                        <FormControlLabel
+                          control={<Switch checked={tier.enabled} onChange={(event) => updateMembershipTierForm(index, 'enabled', event.target.checked)} />}
+                          label={tier.enabled ? '启用' : '停用'}
+                        />
+                      </Stack>
+                      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                        <TextField label="等级ID" value={tier.code} onChange={(event) => updateMembershipTierForm(index, 'code', event.target.value)} fullWidth />
+                        <TextField label="等级名称" value={tier.name} onChange={(event) => updateMembershipTierForm(index, 'name', event.target.value)} fullWidth />
+                      </Stack>
+                      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                        <TextField label="等级排序" value={tier.rank} onChange={(event) => updateMembershipTierForm(index, 'rank', event.target.value)} fullWidth />
+                        <TextField label="升级折算比例" value={tier.conversionRatio} onChange={(event) => updateMembershipTierForm(index, 'conversionRatio', event.target.value)} fullWidth />
+                      </Stack>
+                      <TextField label="等级说明" value={tier.description} onChange={(event) => updateMembershipTierForm(index, 'description', event.target.value)} fullWidth />
+                      <TextField label="等级权益 Markdown" value={tier.benefitsMarkdown} onChange={(event) => updateMembershipTierForm(index, 'benefitsMarkdown', event.target.value)} fullWidth multiline minRows={4} />
+                    </Stack>
+                  </Paper>
+                ))}
+              </Stack>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setMembershipConfigDialogOpen(false)} disabled={savingMembershipConfig}>取消</Button>
+              <Button variant="contained" startIcon={<SaveIcon />} disabled={!canSaveMembershipConfig} onClick={() => void saveMembershipConfig()}>
+                保存配置
               </Button>
             </DialogActions>
           </Dialog>

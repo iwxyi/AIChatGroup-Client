@@ -1,8 +1,14 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
-import { Alert, Avatar, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, Divider, Paper, Stack, Typography } from '@mui/material';
+import { Alert, Avatar, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Divider, Stack, Typography } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
+import FloatingSegmentedTabs, { buildFloatingTabContainerSx } from '../components/common/FloatingSegmentedTabs';
+import SurfaceCard from '../components/common/SurfaceCard';
+import { buildBundledCharacterPreview, buildImportedChatDraft, getBundledCharacterEntries, remapIds } from '../services/marketImportDraft';
 import { marketApi, type MarketItem, type MarketItemKind } from '../services/marketApi';
+import { useCharacterStore } from '../stores/useCharacterStore';
+import { useChatStore } from '../stores/useChatStore';
+import { normalizeConversation, type ChatStyle, type ConversationMode, type ConversationType, type GroupChat, type RuntimeEvolutionIntensity } from '../types/chat';
 
 const kindLabels: Record<MarketItemKind, string> = {
   character_template: '角色模板',
@@ -120,6 +126,29 @@ function getPreviewCharacters(item: MarketItem | null) {
   return asArray(getPreviewPayload(item).characters).map(asRecord);
 }
 
+function normalizeMarketCharacterPreview(entry: Record<string, unknown>, index: number) {
+  const template = asRecord(entry.template);
+  const name = compactText(entry.name || template.name, 80);
+  const avatar = compactText(entry.avatar || template.avatar, 5000);
+  const localId = compactText(entry.localId || entry.id || template.id || name || `character-${index}`, 120);
+  return {
+    ...entry,
+    localId,
+    name,
+    avatar,
+  };
+}
+
+function getMarketCharacterPreviews(item: MarketItem | null) {
+  const previewCharacters = getPreviewCharacters(item);
+  const source = previewCharacters.length
+    ? previewCharacters
+    : asArray(item?.payload?.characters).map(asRecord);
+  return source
+    .map(normalizeMarketCharacterPreview)
+    .filter((entry) => entry.name || entry.avatar || entry.localId);
+}
+
 function getCharacterReferenceImages(character: Record<string, unknown>) {
   const visualIdentity = asRecord(character.visualIdentity);
   return [...asArray(visualIdentity.referenceImages), ...asArray(character.visualReferenceImages)]
@@ -168,6 +197,21 @@ function renderTextBlock(label: string, value: unknown, max?: number) {
   );
 }
 
+function DetailPanel({ title, children }: { title?: string; children: ReactNode }) {
+  return (
+    <SurfaceCard contentSx={{ p: 1.5, display: 'grid', gap: 1, alignContent: 'start', '&:last-child': { pb: 1.5 } }}>
+      {title ? <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 800 }}>{title}</Typography> : null}
+      {children}
+    </SurfaceCard>
+  );
+}
+
+function MetricChip({ label, value }: { label: string; value: unknown }) {
+  const numericValue = Number(value || 0);
+  if (!numericValue) return null;
+  return <Chip size="small" variant="outlined" label={`${label} ${numericValue}`} />;
+}
+
 function MarketItemDetail({ item }: { item: MarketItem }) {
   if (item.kind === 'character_template') {
     const character = getCharacterFromItem(item);
@@ -176,18 +220,45 @@ function MarketItemDetail({ item }: { item: MarketItem }) {
     const personality = asRecord(character.personality);
     const images = getCharacterReferenceImages(character);
     const avatar = getAvatarValue(item);
+    const expertise = asArray(character.expertise).map(String).filter(Boolean);
+    const primaryImage = images.find((image) => image.isPrimary) || images[0];
     return (
       <Stack spacing={1.5}>
-        <Stack direction="row" spacing={1.25} sx={{ alignItems: 'center' }}>
-          <Avatar src={isImageValue(avatar) ? avatar : undefined} sx={{ width: 56, height: 56, fontSize: 24 }}>
-            {isImageValue(avatar) ? undefined : avatar.slice(0, 2) || item.title.slice(0, 1)}
-          </Avatar>
-          <Box sx={{ minWidth: 0 }}>
-            <Typography variant="subtitle1" sx={{ fontWeight: 900 }} noWrap>{item.title}</Typography>
-            <Chip size="small" label={kindLabels[item.kind]} />
-          </Box>
-        </Stack>
-        {images.length ? (
+        <SurfaceCard
+          contentSx={{
+            p: 1.5,
+            display: 'grid',
+            gridTemplateColumns: { xs: '1fr', sm: primaryImage ? '180px minmax(0, 1fr)' : '1fr' },
+            gap: 1.5,
+            alignItems: 'stretch',
+            '&:last-child': { pb: 1.5 },
+          }}
+        >
+          {primaryImage ? (
+            <Box
+              component="img"
+              src={compactText(primaryImage.url, 5000)}
+              alt={String(primaryImage.label || item.title)}
+              sx={{ width: '100%', aspectRatio: '3 / 4', objectFit: 'cover', borderRadius: 1, border: '1px solid', borderColor: 'divider', bgcolor: 'background.paper' }}
+            />
+          ) : null}
+          <Stack spacing={1.25} sx={{ justifyContent: 'space-between', minWidth: 0 }}>
+            <Stack direction="row" spacing={1.25} sx={{ alignItems: 'center', minWidth: 0 }}>
+              <Avatar src={isImageValue(avatar) ? avatar : undefined} sx={{ width: 56, height: 56, fontSize: 24 }}>
+                {isImageValue(avatar) ? undefined : avatar.slice(0, 2) || item.title.slice(0, 1)}
+              </Avatar>
+              <Box sx={{ minWidth: 0 }}>
+                <Typography variant="h6" sx={{ fontWeight: 900, lineHeight: 1.2 }} noWrap>{item.title}</Typography>
+                <Stack direction="row" spacing={0.75} sx={{ mt: 0.75, flexWrap: 'wrap', gap: 0.75 }}>
+                  <Chip size="small" label={kindLabels[item.kind]} />
+                  {expertise.slice(0, 4).map((entry) => <Chip key={entry} size="small" variant="outlined" label={entry} />)}
+                </Stack>
+              </Box>
+            </Stack>
+            {renderTextBlock('核心画像', coreProfile.coreDesire || character.background || item.summary, 420)}
+          </Stack>
+        </SurfaceCard>
+        {images.length > 1 ? (
           <Stack direction="row" spacing={1} sx={{ overflowX: 'auto', pb: 0.5 }}>
             {images.slice(0, 8).map((image, index) => (
               <Box
@@ -195,56 +266,91 @@ function MarketItemDetail({ item }: { item: MarketItem }) {
                 component="img"
                 src={compactText(image.url, 5000)}
                 alt={String(image.label || '形象图')}
-                sx={{ width: 96, height: 128, objectFit: 'cover', borderRadius: 1, border: '1px solid', borderColor: image.isPrimary ? 'primary.main' : 'divider', flex: '0 0 auto' }}
+                sx={{ width: 80, height: 104, objectFit: 'cover', borderRadius: 1, border: '1px solid', borderColor: image.isPrimary ? 'primary.main' : 'divider', flex: '0 0 auto' }}
               />
             ))}
           </Stack>
         ) : null}
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.25 }}>
-          {renderTextBlock('视觉形象', visualIdentity.description, 420)}
-          {renderTextBlock('风格提示', visualIdentity.styleHint, 260)}
-          {renderTextBlock('核心欲望', coreProfile.coreDesire, 220)}
-          {renderTextBlock('核心恐惧', coreProfile.coreFear, 220)}
-          {renderTextBlock('社交面具', coreProfile.socialMask, 220)}
-          {renderTextBlock('说话风格', character.speakingStyle, 280)}
+          {(compactText(visualIdentity.description) || compactText(visualIdentity.styleHint)) ? (
+            <DetailPanel title="形象">
+              {renderTextBlock('视觉形象', visualIdentity.description, 420)}
+              {renderTextBlock('风格提示', visualIdentity.styleHint, 260)}
+            </DetailPanel>
+          ) : null}
+          {(compactText(coreProfile.coreDesire) || compactText(coreProfile.coreFear) || compactText(coreProfile.socialMask)) ? (
+            <DetailPanel title="内核">
+              {renderTextBlock('核心欲望', coreProfile.coreDesire, 220)}
+              {renderTextBlock('核心恐惧', coreProfile.coreFear, 220)}
+              {renderTextBlock('社交面具', coreProfile.socialMask, 220)}
+            </DetailPanel>
+          ) : null}
+          {(compactText(character.speakingStyle) || compactText(character.background || item.summary)) ? (
+            <DetailPanel title="表达">
+              {renderTextBlock('说话风格', character.speakingStyle, 280)}
+              {renderTextBlock('背景', character.background || item.summary, 420)}
+            </DetailPanel>
+          ) : null}
+          {Object.keys(personality).length ? (
+            <DetailPanel title="人格参数">
+              <Stack direction="row" spacing={0.75} sx={{ flexWrap: 'wrap', gap: 0.75 }}>
+                {Object.entries(personality).map(([key, value]) => <Chip key={key} size="small" variant="outlined" label={`${personalityLabels[key] || key} ${String(value)}`} />)}
+              </Stack>
+            </DetailPanel>
+          ) : null}
         </Box>
-        {Object.keys(personality).length ? (
-          <Stack direction="row" spacing={0.75} sx={{ flexWrap: 'wrap', gap: 0.75 }}>
-            {Object.entries(personality).map(([key, value]) => <Chip key={key} size="small" variant="outlined" label={`${personalityLabels[key] || key} ${String(value)}`} />)}
-          </Stack>
-        ) : null}
-        {renderTextBlock('背景', character.background || item.summary, 560)}
       </Stack>
     );
   }
   const chat = asRecord(item.payload?.chat);
-  const bundledCharacters = asArray(item.payload?.characters);
+  const preview = getPreviewPayload(item);
+  const bundledCharacters = getMarketCharacterPreviews(item);
   const chatTypeLabel = getLocalizedLabel(chat.type, chatTypeLabels);
   const chatModeLabel = getLocalizedLabel(chat.mode, chatModeLabels);
   const scenarioLabel = getScenarioLabel(chat.sessionKind);
+  const worldState = asRecord(chat.worldState);
+  const relationshipCount = Number(preview.relationshipCount || asArray(chat.relationshipLedger).length || 0);
+  const memoryCount = Number(preview.memoryCount || asArray(chat.layeredMemories).length || 0);
   return (
-    <Stack spacing={1.25}>
-      <Stack direction="row" spacing={0.75} sx={{ flexWrap: 'wrap', gap: 0.75 }}>
-        <Chip size="small" label={kindLabels[item.kind]} />
-        {chatTypeLabel ? <Chip size="small" variant="outlined" label={chatTypeLabel} /> : null}
-        {chatModeLabel ? <Chip size="small" variant="outlined" label={chatModeLabel} /> : null}
-        {scenarioLabel ? <Chip size="small" variant="outlined" label={scenarioLabel} /> : null}
-        {bundledCharacters.length ? <Chip size="small" variant="outlined" label={`角色 ${bundledCharacters.length}`} /> : null}
-      </Stack>
-      {renderTextBlock('主题', chat.topic || chat.topicSeed || item.summary || item.title, 520)}
-      {renderTextBlock('风格', chat.style, 260)}
-      {item.kind === 'bundle_template' && bundledCharacters.length ? (
+    <Stack spacing={1.5}>
+      <SurfaceCard contentSx={{ p: 1.5, display: 'grid', gap: 1, '&:last-child': { pb: 1.5 } }}>
         <Stack direction="row" spacing={0.75} sx={{ flexWrap: 'wrap', gap: 0.75 }}>
-          {bundledCharacters.slice(0, 12).map((entry, index) => {
-            const template = asRecord(asRecord(entry).template);
-            return <Chip key={String(asRecord(entry).localId || index)} size="small" label={String(template.name || '未命名角色')} />;
-          })}
+          <Chip size="small" label={kindLabels[item.kind]} />
+          {chatTypeLabel ? <Chip size="small" variant="outlined" label={chatTypeLabel} /> : null}
+          {chatModeLabel ? <Chip size="small" variant="outlined" label={chatModeLabel} /> : null}
+          {scenarioLabel ? <Chip size="small" variant="outlined" label={scenarioLabel} /> : null}
+          <MetricChip label="角色" value={bundledCharacters.length || preview.characterCount} />
+          <MetricChip label="关系" value={relationshipCount} />
+          <MetricChip label="记忆" value={memoryCount} />
         </Stack>
-      ) : null}
+        <Typography variant="h6" sx={{ fontWeight: 900, lineHeight: 1.25 }}>{getChatTitle(item)}</Typography>
+        {renderTextBlock('主题', chat.topic || chat.topicSeed || item.summary || item.title, 520)}
+      </SurfaceCard>
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: bundledCharacters.length ? '1.2fr 0.8fr' : '1fr' }, gap: 1.25 }}>
+        {(compactText(chat.style) || compactText(worldState.mood) || compactText(worldState.focus)) ? (
+          <DetailPanel title="聊天配置">
+            {renderTextBlock('风格', chat.style, 260)}
+            {renderTextBlock('氛围', worldState.mood, 220)}
+            {renderTextBlock('焦点', worldState.focus, 220)}
+          </DetailPanel>
+        ) : null}
+        {bundledCharacters.length ? (
+          <DetailPanel title="包含角色">
+            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' }, gap: 0.75 }}>
+              {bundledCharacters.slice(0, 12).map((entry, index) => (
+                <AvatarToken
+                  key={String(entry.localId || entry.name || index)}
+                  name={compactText(entry.name, 40) || `角色 ${index + 1}`}
+                  avatar={compactText(entry.avatar, 5000)}
+                />
+              ))}
+            </Box>
+          </DetailPanel>
+        ) : null}
+      </Box>
     </Stack>
   );
 }
-
 function AvatarToken({ name, avatar }: { name: string; avatar?: string }) {
   const avatarValue = compactText(avatar, 5000);
   return (
@@ -257,13 +363,13 @@ function AvatarToken({ name, avatar }: { name: string; avatar?: string }) {
   );
 }
 
-function MarketTemplateCard({ item, onOpen }: { item: MarketItem; onOpen: (item: MarketItem) => void }) {
+function MarketTemplateCard({ item, loading, onOpen }: { item: MarketItem; loading?: boolean; onOpen: (item: MarketItem) => void }) {
   const cardImage = getCardImage(item);
   const avatar = getAvatarValue(item);
   const description = getCardDescription(item);
   const preview = getPreviewPayload(item);
   const chat = getPreviewChat(item);
-  const bundledCharacters = getPreviewCharacters(item);
+  const bundledCharacters = getMarketCharacterPreviews(item);
   const characterCount = Number(preview.characterCount || bundledCharacters.length || 0);
   const relationshipCount = Number(preview.relationshipCount || 0);
   const memoryCount = Number(preview.memoryCount || 0);
@@ -280,20 +386,28 @@ function MarketTemplateCard({ item, onOpen }: { item: MarketItem; onOpen: (item:
   ].filter(Boolean);
 
   return (
-    <Paper
-      variant="outlined"
+    <SurfaceCard
       onClick={() => onOpen(item)}
       sx={{
+        breakInside: 'avoid',
+        mb: 1.5,
+        cursor: loading ? 'default' : 'pointer',
+        position: 'relative',
+        overflow: 'hidden',
+        '&:hover': {
+          borderColor: loading ? undefined : 'primary.main',
+          transform: loading ? undefined : 'translateY(-1px)',
+          boxShadow: (theme) => theme.palette.mode === 'light'
+            ? '0 18px 46px rgba(15,23,42,0.10)'
+            : '0 20px 52px rgba(0,0,0,0.38)',
+        },
+      }}
+      contentSx={{
         p: 1.25,
-        borderRadius: 2,
         display: 'grid',
         gap: 1,
         alignContent: 'start',
-        breakInside: 'avoid',
-        mb: 1.5,
-        cursor: 'pointer',
-        transition: 'border-color 120ms ease, transform 120ms ease, box-shadow 120ms ease',
-        '&:hover': { borderColor: 'primary.main', transform: 'translateY(-1px)', boxShadow: 2 },
+        '&:last-child': { pb: 1.25 },
       }}
     >
       <Stack direction="row" spacing={1.25} sx={{ alignItems: 'center', minWidth: 0 }}>
@@ -376,8 +490,101 @@ function MarketTemplateCard({ item, onOpen }: { item: MarketItem; onOpen: (item:
           <Typography variant="caption">{item.importedCount}</Typography>
         </Stack>
       </Stack>
-    </Paper>
+      {loading ? (
+        <Box
+          sx={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 1,
+            display: 'grid',
+            placeItems: 'center',
+            bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.48)' : 'rgba(10,10,15,0.36)',
+            backdropFilter: 'blur(8px) saturate(1.05)',
+            WebkitBackdropFilter: 'blur(8px) saturate(1.05)',
+          }}
+        >
+          <CircularProgress size={28} thickness={4} />
+        </Box>
+      ) : null}
+    </SurfaceCard>
   );
+}
+
+function normalizeNameKey(name: unknown) {
+  return compactText(name, 200).toLowerCase();
+}
+
+function resolveUniqueName(name: unknown, usedNames: Set<string>) {
+  const baseName = compactText(name, 80) || '未命名角色';
+  let candidate = baseName;
+  let suffix = 2;
+  while (usedNames.has(normalizeNameKey(candidate))) {
+    candidate = `${baseName}（${suffix}）`;
+    suffix += 1;
+  }
+  usedNames.add(normalizeNameKey(candidate));
+  return candidate;
+}
+
+async function importBundleTemplate(item: MarketItem) {
+  const bundledEntries = getBundledCharacterEntries(item);
+  const previews = buildBundledCharacterPreview(item);
+  const previewByLocalId = new Map(previews.map((character) => [character.id, character]));
+  const characterStore = useCharacterStore.getState();
+  const usedNames = new Set(characterStore.characters.map((character) => normalizeNameKey(character.name)).filter(Boolean));
+  const createdCharacters = await characterStore.addCharacters(bundledEntries.map((entry) => {
+    const preview = previewByLocalId.get(entry.localId);
+    if (!preview) {
+      throw new Error('组合包角色数据不完整');
+    }
+    const { id: _id, isPreset: _isPreset, createdAt: _createdAt, updatedAt: _updatedAt, ...draft } = preview;
+    void _id;
+    void _isPreset;
+    void _createdAt;
+    void _updatedAt;
+    return {
+      ...draft,
+      name: resolveUniqueName(draft.name, usedNames),
+      sourceMarketItemId: item.id,
+      sourceMarketItemVersion: item.payloadVersion,
+      sourceMarketKind: item.kind,
+    };
+  }));
+  const creationIdMap = new Map(bundledEntries.map((entry, index) => [entry.localId, createdCharacters[index]?.id || entry.localId]));
+  const importedChatRuntime = remapIds(buildImportedChatDraft(item), creationIdMap) as Partial<GroupChat>;
+  const memberIds = Array.isArray(importedChatRuntime.memberIds)
+    ? importedChatRuntime.memberIds.map((memberId) => creationIdMap.get(memberId) || memberId)
+    : createdCharacters.map((character) => character.id);
+  const normalizedChat = normalizeConversation({
+    ...importedChatRuntime,
+    id: 'market-import-draft',
+    createdAt: 0,
+    updatedAt: 0,
+    lastMessageAt: 0,
+    type: (importedChatRuntime.type || 'group') as ConversationType,
+    mode: (importedChatRuntime.mode || 'open_chat') as ConversationMode,
+    name: compactText(importedChatRuntime.name || getChatTitle(item), 120) || '未命名聊天',
+    topic: compactText(importedChatRuntime.topic || importedChatRuntime.topicSeed || item.summary || item.title, 1000),
+    style: (importedChatRuntime.style || 'free') as ChatStyle,
+    runtimeEvolutionIntensity: (importedChatRuntime.runtimeEvolutionIntensity || 'balanced') as RuntimeEvolutionIntensity,
+    memberIds,
+    operatorIds: Array.isArray(importedChatRuntime.operatorIds) ? importedChatRuntime.operatorIds.map((memberId) => creationIdMap.get(memberId) || memberId) : [],
+    speed: Number(importedChatRuntime.speed || 1),
+    isActive: Boolean(importedChatRuntime.isActive),
+    allowIntervention: importedChatRuntime.allowIntervention ?? true,
+    topicSeed: compactText(importedChatRuntime.topicSeed, 1000),
+    sourceMarketItemId: item.id,
+    sourceMarketItemVersion: item.payloadVersion,
+    sourceMarketKind: item.kind,
+  } as Parameters<typeof normalizeConversation>[0]);
+  const { id: _id, createdAt: _createdAt, updatedAt: _updatedAt, lastMessageAt: _lastMessageAt, ...chatDraft } = normalizedChat;
+  void _id;
+  void _createdAt;
+  void _updatedAt;
+  void _lastMessageAt;
+  const chat = await useChatStore.getState().addChat(chatDraft);
+  await marketApi.recordImported(item.id);
+  return chat;
 }
 
 export default function MarketPage() {
@@ -386,6 +593,7 @@ export default function MarketPage() {
   const [items, setItems] = useState<MarketItem[]>([]);
   const [selected, setSelected] = useState<MarketItem | null>(null);
   const [detail, setDetail] = useState<MarketItem | null>(null);
+  const [detailLoadingId, setDetailLoadingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState('');
@@ -408,14 +616,18 @@ export default function MarketPage() {
   }, [load]);
 
   const openImport = async (item: MarketItem) => {
+    if (detailLoadingId) return;
     setSelected(item);
     setDetail(null);
+    setDetailLoadingId(item.id);
     setError('');
     try {
       const result = await marketApi.detail(item.id);
       setDetail(result.item);
     } catch (detailError) {
       setError(detailError instanceof Error ? detailError.message : '加载模板详情失败');
+    } finally {
+      setDetailLoadingId(null);
     }
   };
 
@@ -424,6 +636,12 @@ export default function MarketPage() {
     setImporting(true);
     setError('');
     try {
+      if (detail.kind === 'bundle_template') {
+        const chat = await importBundleTemplate(detail);
+        setSelected(null);
+        navigate(`/chats/${chat.id}`);
+        return;
+      }
       if (detail.kind === 'character_template') {
         setSelected(null);
         navigate('/characters/create', { state: { marketImportDraft: { item: detail } } });
@@ -443,25 +661,22 @@ export default function MarketPage() {
     setSelected(null);
     setDetail(null);
   };
+  const primaryActionText = detail?.kind === 'bundle_template' ? '导入' : '导入并编辑';
+  const importingText = detail?.kind === 'bundle_template' ? '导入中' : '打开中';
 
   return (
     <Box sx={{ p: { xs: 2, md: 3 }, display: 'grid', gap: 2 }}>
-      <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
-        <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
-          {kindFilterOptions.map((option) => (
-            <Chip
-              key={option.value || 'all'}
-              clickable
-              color={kind === option.value ? 'primary' : 'default'}
-              variant={kind === option.value ? 'filled' : 'outlined'}
-              label={option.label}
-              onClick={() => setKind(option.value)}
-              sx={{ borderRadius: 999, height: 32, '& .MuiChip-label': { px: 1.25, fontWeight: 700 } }}
-            />
-          ))}
+      <Box sx={{ ...buildFloatingTabContainerSx(), mb: 0, alignItems: { xs: 'stretch', sm: 'center' } }}>
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ alignItems: { xs: 'stretch', sm: 'center' }, justifyContent: 'center', width: '100%' }}>
+          <FloatingSegmentedTabs
+            value={kind}
+            onChange={setKind}
+            equalWidth={false}
+            items={kindFilterOptions}
+          />
           <Button onClick={() => void load()} disabled={loading}>刷新</Button>
         </Stack>
-      </Paper>
+      </Box>
       {error ? <Alert severity="error">{error}</Alert> : null}
       <Box
         sx={{
@@ -470,23 +685,59 @@ export default function MarketPage() {
         }}
       >
         {items.map((item) => (
-          <MarketTemplateCard key={item.id} item={item} onOpen={(nextItem) => void openImport(nextItem)} />
+          <MarketTemplateCard key={item.id} item={item} loading={detailLoadingId === item.id} onOpen={(nextItem) => void openImport(nextItem)} />
         ))}
       </Box>
       {!items.length && !loading ? <Alert severity="info">暂无已审核市场模板</Alert> : null}
 
-      <Dialog open={Boolean(selected)} onClose={closeDialog} maxWidth="md" fullWidth>
-        <DialogTitle>{selected?.title || '模板详情'}</DialogTitle>
-        <DialogContent>
-          <Stack spacing={1.5} sx={{ pt: 1 }}>
-            {detail ? <MarketItemDetail item={detail} /> : <Typography variant="body2" color="text.secondary">加载中</Typography>}
-            {detail ? <Divider /> : null}
+      <Dialog
+        open={Boolean(selected && detail)}
+        onClose={closeDialog}
+        maxWidth="md"
+        fullWidth
+        sx={{
+          '& .MuiDialog-paper': {
+            borderRadius: 1,
+            border: '1px solid',
+            borderColor: (theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.08)' : 'rgba(226,232,240,0.10)',
+            bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.82)' : 'rgba(18,20,28,0.86)',
+            backdropFilter: 'blur(22px) saturate(1.16)',
+            WebkitBackdropFilter: 'blur(22px) saturate(1.16)',
+          },
+        }}
+      >
+        <DialogTitle sx={{ pb: 1.25 }}>
+          <Stack spacing={0.75}>
+            <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+              <Typography variant="h6" sx={{ fontWeight: 900, minWidth: 0 }} noWrap>{selected?.title || '模板详情'}</Typography>
+              {selected ? <Chip size="small" label={kindLabels[selected.kind]} /> : null}
+            </Stack>
+            {selected?.summary ? <Typography variant="body2" color="text.secondary" sx={{ wordBreak: 'break-word' }}>{compactText(selected.summary, 180)}</Typography> : null}
+          </Stack>
+        </DialogTitle>
+        <DialogContent sx={{ p: 0, bgcolor: 'transparent', maxHeight: 'min(76vh, 760px)', overflowY: 'auto' }}>
+          <Stack spacing={1.5} sx={{ px: { xs: 2, sm: 3 }, pt: 1, pb: 2 }}>
+            {detail ? <MarketItemDetail item={detail} /> : null}
+          {detail ? <Divider /> : null}
           </Stack>
         </DialogContent>
-        <DialogActions>
+        <DialogActions
+          sx={{
+            px: { xs: 2, sm: 3 },
+            py: 2,
+            justifyContent: 'flex-end',
+            gap: 1,
+            flexWrap: 'wrap',
+            borderTop: 1,
+            borderColor: (theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.08)' : 'rgba(226,232,240,0.10)',
+            bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.74)' : 'rgba(20,22,30,0.74)',
+            backdropFilter: 'blur(18px) saturate(1.08)',
+            WebkitBackdropFilter: 'blur(18px) saturate(1.08)',
+          }}
+        >
           <Button onClick={closeDialog} disabled={importing}>关闭</Button>
           <Button variant="contained" onClick={() => void importSelected()} disabled={importing || !detail}>
-            {importing ? '打开中' : '进入编辑'}
+            {importing ? importingText : primaryActionText}
           </Button>
         </DialogActions>
       </Dialog>

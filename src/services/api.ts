@@ -109,7 +109,27 @@ export interface BillingPlanItem {
   grant_points?: number | string | null;
   ai_enabled?: boolean | number | string;
   featured?: boolean | number | string;
+  sort_order?: number | string | null;
   metadata?: Record<string, unknown> | string | null;
+}
+
+export interface BillingMembershipTier {
+  code: string;
+  name: string;
+  rank: number;
+  enabled?: boolean;
+  description?: string;
+  conversionRatio?: number;
+  benefitsMarkdown?: string;
+}
+
+export interface BillingMembershipConfig {
+  title: string;
+  subtitle: string;
+  description: string;
+  benefits: string[];
+  fulfillmentNote: string;
+  tiers?: BillingMembershipTier[];
 }
 
 export interface BillingOrderItem {
@@ -148,6 +168,9 @@ export interface BillingSubscriptionItem {
   autoRenew?: boolean;
   benefits?: string[];
   features?: string[];
+  vipTierCode?: string;
+  vipTierName?: string;
+  vipTierRank?: number;
 }
 
 export interface BillingMembershipResponse {
@@ -411,6 +434,10 @@ class ApiClient {
 
   async getBillingPlans() {
     return this.request<{ items: BillingPlanItem[] }>('GET', '/billing/plans');
+  }
+
+  async getBillingMembershipConfig() {
+    return this.request<BillingMembershipConfig>('GET', '/billing/membership-config');
   }
 
   async getBillingMembership() {

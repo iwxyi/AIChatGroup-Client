@@ -471,6 +471,14 @@ class AdminApiClient {
     return this.request<{ items: Array<Record<string, unknown>> }>('GET', '/billing/plans');
   }
 
+  getBillingMembershipConfig() {
+    return this.request<Record<string, unknown>>('GET', '/billing/membership-config');
+  }
+
+  updateBillingMembershipConfig(payload: Record<string, unknown>) {
+    return this.request<Record<string, unknown>>('PUT', '/billing/membership-config', payload);
+  }
+
   createBillingPlan(payload: Record<string, unknown>) {
     return this.request<Record<string, unknown>>('POST', '/billing/plans', payload);
   }
