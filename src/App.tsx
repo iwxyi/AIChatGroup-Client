@@ -351,6 +351,7 @@ function RoutedApp() {
 
 export default function App() {
   const themeMode = useSettingsStore((s) => s.theme);
+  const themePreset = useSettingsStore((s) => s.themePreset);
   const themeColor = useSettingsStore((s) => s.themeColor);
   const prefersDark = useMediaQuery('(prefers-color-scheme: dark)');
   const [settingsHydrated, setSettingsHydrated] = useState(() => useSettingsStore.persist.hasHydrated());
@@ -369,9 +370,14 @@ export default function App() {
   const resolvedMode = themeMode === 'system' ? (prefersDark ? 'dark' : 'light') : themeMode;
 
   const theme = useMemo(
-    () => createAppTheme(resolvedMode, themeColor),
-    [resolvedMode, themeColor]
+    () => createAppTheme(resolvedMode, themeColor, themePreset),
+    [resolvedMode, themeColor, themePreset]
   );
+
+  useEffect(() => {
+    const themeColorMeta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+    if (themeColorMeta) themeColorMeta.content = theme.palette.primary.main;
+  }, [theme]);
 
   return (
     <ThemeProvider theme={theme}>

@@ -5,6 +5,7 @@ import { DEFAULT_ARTIFACT_APPEARANCE_SETTINGS } from './artifactAppearance';
 export type AIProvider = 'official' | 'official-deepseek' | 'official-gpt' | 'official-moacode' | 'openai' | 'anthropic' | 'google' | 'xai' | 'deepseek' | 'alibaba' | 'zhipu' | 'moonshot' | 'minimax' | 'bytedance' | 'microsoft' | 'custom';
 export type AIModelType = 'text' | 'image' | 'audio' | 'document';
 export type ThemeMode = 'light' | 'dark' | 'system';
+export type ThemePresetId = 'rednote' | 'jade' | 'reader' | 'imperial' | 'night' | 'mirage' | 'aurora' | 'paper' | 'sakura' | 'ember' | 'graphite' | 'dopamine' | 'morandi';
 export type Language = 'zh' | 'en';
 
 export interface APIConfig {
@@ -779,6 +780,7 @@ export interface AppSettings {
   api: APIConfig;
   aiProfiles: AIModelProfile[];
   theme: ThemeMode;
+  themePreset: ThemePresetId;
   themeColor: string;
   language: Language;
   defaultSpeed: number;
@@ -957,7 +959,8 @@ export const DEFAULT_SETTINGS: AppSettingsWithMemory = {
   api: DEFAULT_API_CONFIG,
   aiProfiles: [DEFAULT_AI_PROFILE],
   theme: 'system',
-  themeColor: '#315A9C',
+  themePreset: 'aurora',
+  themeColor: '#5B6CFF',
   language: 'zh',
   defaultSpeed: 1.0,
   compactBubbleMode: false,

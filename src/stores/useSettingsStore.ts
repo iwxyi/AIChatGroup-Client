@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { AppSettingsWithMemory, ThemeMode, Language, APIConfig, AIModelProfile, ChatDraftDefaults, DeveloperUIPrefs, AvatarGenerationSettings, AIGenerationSettings, CompanionshipSettings, UsageStats, ChatAppearanceSettings } from '../types/settings';
+import type { AppSettingsWithMemory, ThemeMode, ThemePresetId, Language, APIConfig, AIModelProfile, ChatDraftDefaults, DeveloperUIPrefs, AvatarGenerationSettings, AIGenerationSettings, CompanionshipSettings, UsageStats, ChatAppearanceSettings } from '../types/settings';
 import type { ArtifactAppearanceSettings } from '../types/artifactAppearance';
 
 type AppSettings = AppSettingsWithMemory;
@@ -41,6 +41,7 @@ interface SettingsStore extends AppSettings {
   addAIProfile: () => void;
   removeAIProfile: (id: string) => void;
   setTheme: (mode: ThemeMode) => void;
+  setThemePreset: (preset: ThemePresetId, primaryColor: string) => void;
   setThemeColor: (color: string) => void;
   setLanguage: (lang: Language) => void;
   setDefaultSpeed: (speed: number) => void;
@@ -180,6 +181,7 @@ export function buildSettingsPayload(state: AppSettings) {
     api: state.api,
     aiProfiles: state.aiProfiles,
     theme: state.theme,
+    themePreset: state.themePreset,
     themeColor: state.themeColor,
     language: state.language,
     defaultSpeed: state.defaultSpeed,
@@ -207,6 +209,7 @@ function syncState(state: Partial<AppSettings> & { api?: APIConfig; aiProfiles?:
   const legacyShowMemoryDebug = Boolean(state.memoryUI?.showDeveloperMemory);
   const normalized = {
     ...state,
+    themePreset: normalizeThemePreset(state.themePreset),
     aiProfiles,
     api: buildApiFromProfiles(aiProfiles),
     developerMode: Boolean(state.developerMode),
@@ -287,6 +290,24 @@ function syncState(state: Partial<AppSettings> & { api?: APIConfig; aiProfiles?:
   return normalized;
 }
 
+function normalizeThemePreset(preset: unknown): ThemePresetId {
+  return preset === 'rednote'
+    || preset === 'jade'
+    || preset === 'reader'
+    || preset === 'imperial'
+    || preset === 'night'
+    || preset === 'mirage'
+    || preset === 'aurora'
+    || preset === 'paper'
+    || preset === 'sakura'
+    || preset === 'ember'
+    || preset === 'graphite'
+    || preset === 'dopamine'
+    || preset === 'morandi'
+    ? preset
+    : DEFAULT_SETTINGS.themePreset;
+}
+
 function createProfile(index: number): AIModelProfile {
   return {
     ...DEFAULT_AI_PROFILE,
@@ -341,6 +362,7 @@ export const useSettingsStore = create<SettingsStore>()(
               api: settings.api as APIConfig,
               aiProfiles: settings.aiProfiles as AIModelProfile[] | undefined,
               theme: settings.theme as ThemeMode,
+              themePreset: settings.themePreset as ThemePresetId | undefined,
               themeColor: settings.themeColor,
               language: settings.language as Language,
               defaultSpeed: settings.defaultSpeed,
@@ -603,6 +625,14 @@ export const useSettingsStore = create<SettingsStore>()(
         });
       },
 
+      setThemePreset: (themePreset, primaryColor) => {
+        set((state) => {
+          const next = { ...state, themePreset: normalizeThemePreset(themePreset), themeColor: primaryColor, lastSyncedAt: Date.now() };
+          syncToServer(buildSettingsPayload(next), set);
+          return next;
+        });
+      },
+
       setThemeColor: (themeColor) => {
         set((state) => {
           const next = { ...state, themeColor, lastSyncedAt: Date.now() };
@@ -747,6 +777,7 @@ export const useSettingsStore = create<SettingsStore>()(
         api: state.api,
         aiProfiles: state.aiProfiles,
         theme: state.theme,
+        themePreset: state.themePreset,
         themeColor: state.themeColor,
         language: state.language,
         defaultSpeed: state.defaultSpeed,

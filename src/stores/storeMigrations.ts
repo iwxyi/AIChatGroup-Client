@@ -3,7 +3,7 @@ import { normalizeCharacter } from '../types/character';
 import type { GroupChat } from '../types/chat';
 import { toRelationshipLedgerRecentEvent } from '../types/runtimeEvent';
 import { DEFAULT_ARTIFACT_APPEARANCE_SETTINGS, PAPER_SURFACE_VARIANTS } from '../types/artifactAppearance';
-import { DEFAULT_CHAT_APPEARANCE_SETTINGS, DEFAULT_DEVELOPER_UI_PREFS } from '../types/settings';
+import { DEFAULT_CHAT_APPEARANCE_SETTINGS, DEFAULT_DEVELOPER_UI_PREFS, DEFAULT_SETTINGS } from '../types/settings';
 
 type VersionedPersistedState<T> = T | undefined;
 
@@ -122,6 +122,7 @@ export function migrateSettingsStoreState<T extends Record<string, unknown>>(per
   const chatAppearance = (persisted.chatAppearance as { maxContentWidth?: number; storyReader?: { fontFamily?: string; fontSize?: number; lineHeight?: number } } | undefined) || {};
   return {
     ...persisted,
+    themePreset: typeof persisted.themePreset === 'string' ? persisted.themePreset : DEFAULT_SETTINGS.themePreset,
     developerUI: {
       showMemoryDebug: Boolean(developerUI.showMemoryDebug),
       showRelationshipEvents: Boolean(developerUI.showRelationshipEvents),

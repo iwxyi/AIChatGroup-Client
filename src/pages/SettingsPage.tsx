@@ -50,6 +50,7 @@ import BubbleStylePickerDialog from '../components/bubble/BubbleStylePickerDialo
 import { DEFAULT_AI_BUBBLE_STYLE_ID } from '../constants/bubbleStyles';
 import { buildBubblePreview, resolveCharacterBubbleStyle } from '../utils/bubbleStyle';
 import { isImageAvatar } from '../utils/avatar';
+import { APP_THEME_PRESETS, POPULAR_THEME_PRESET_COUNT, resolveThemePreset, type AppThemePreset } from '../theme';
 
 function buildPageSx() {
   return { p: { xs: 2.5, sm: 3, md: 3.5 }, pt: { xs: 1, sm: 1, md: 3 }, pb: { xs: 'calc(env(safe-area-inset-bottom, 0px) + 96px)', sm: 3, md: 3.5 }, width: '100%', maxWidth: 960, mx: 'auto' };
@@ -58,14 +59,6 @@ function buildPageSx() {
 function buildToggleGroupSx() {
   return { alignItems: 'center', justifyContent: 'flex-start', overflow: 'visible', flexWrap: 'wrap' as const, gap: 0.5 };
 }
-
-const THEME_TONES = [
-  { value: '#315A9C', zh: '静海蓝', en: 'Still blue' },
-  { value: '#0F766E', zh: '深海青', en: 'Deep teal' },
-  { value: '#7C3AED', zh: '冷紫', en: 'Violet' },
-  { value: '#B45309', zh: '琥珀', en: 'Amber' },
-  { value: '#334155', zh: '石墨灰', en: 'Graphite' },
-] as const;
 
 const RITUAL_KIND_OPTIONS: Array<{ kind: CompanionshipRitualKind; zh: string; en: string }> = [
   { kind: 'daily_greeting', zh: '日常问候', en: 'Greetings' },
@@ -76,29 +69,134 @@ const RITUAL_KIND_OPTIONS: Array<{ kind: CompanionshipRitualKind; zh: string; en
   { kind: 'milestone', zh: '里程碑', en: 'Milestones' },
 ];
 
-function buildToneGridSx() {
+function buildThemePresetGridSx() {
   return {
     display: 'grid',
-    gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', sm: 'repeat(5, minmax(0, 1fr))' },
-    gap: 0.85,
+    gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', lg: 'repeat(3, minmax(0, 1fr))' },
+    gap: 1,
   };
 }
 
-function buildToneButtonSx(color: string, selected: boolean) {
+function buildThemePresetButtonSx(preset: AppThemePreset, selected: boolean) {
+  const [primary, secondary, accent] = preset.preview;
   return {
-    justifyContent: 'flex-start',
-    minHeight: 54,
+    alignItems: 'stretch',
+    justifyContent: 'stretch',
+    minHeight: 154,
     px: 1.05,
-    py: 0.9,
+    py: 1.05,
     borderRadius: 2,
     textTransform: 'none',
     whiteSpace: 'normal',
-    borderColor: selected ? color : 'divider',
-    bgcolor: selected ? `${color}14` : 'transparent',
+    overflow: 'hidden',
+    position: 'relative',
+    borderColor: selected ? primary : 'divider',
+    bgcolor: selected ? `${primary}10` : 'background.paper',
     color: 'text.primary',
+    boxShadow: selected ? `0 0 0 1px ${primary}44, 0 16px 34px ${primary}1F` : '0 1px 0 rgba(15,23,42,0.02)',
+    transition: 'transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease, background-color 180ms ease',
+    '@keyframes themeDotBob': {
+      '0%, 100%': { transform: 'translateY(0) scale(1)' },
+      '34%': { transform: 'translateY(-4px) scale(1.04)' },
+      '68%': { transform: 'translateY(2px) scale(0.98)' },
+    },
+    '@keyframes themeLineRhythmA': {
+      '0%, 100%': { transform: 'scaleX(0.72)', opacity: 0.68 },
+      '45%': { transform: 'scaleX(1)', opacity: 0.96 },
+    },
+    '@keyframes themeLineRhythmB': {
+      '0%, 100%': { transform: 'scaleX(1)', opacity: 0.88 },
+      '52%': { transform: 'scaleX(0.58)', opacity: 0.62 },
+    },
+    '@keyframes themeLineRhythmC': {
+      '0%, 100%': { transform: 'scaleX(0.52)', opacity: 0.58 },
+      '60%': { transform: 'scaleX(0.86)', opacity: 0.86 },
+    },
+    '@keyframes themePreviewDrift': {
+      '0%, 100%': { transform: 'translate3d(0, 0, 0)' },
+      '50%': { transform: 'translate3d(0, -2px, 0)' },
+    },
+    '@keyframes themeBubbleRise': {
+      '0%, 26%': { transform: 'translate3d(0, 0, 0)', opacity: 1 },
+      '54%': { transform: 'translate3d(0, -14px, 0)', opacity: 0 },
+      '55%': { transform: 'translate3d(0, 10px, 0)', opacity: 0 },
+      '78%, 100%': { transform: 'translate3d(0, 0, 0)', opacity: 1 },
+    },
+    '&::before': {
+      content: '""',
+      position: 'absolute',
+      inset: 0,
+      pointerEvents: 'none',
+      background: `linear-gradient(135deg, ${primary}10 0%, transparent 38%, ${accent}0F 100%)`,
+      opacity: selected ? 1 : 0,
+      transition: 'opacity 180ms ease',
+    },
     '&:hover': {
-      borderColor: color,
-      bgcolor: `${color}12`,
+      transform: 'translateY(-2px)',
+      borderColor: primary,
+      bgcolor: `${secondary}0F`,
+      boxShadow: `0 0 0 1px ${primary}30, 0 18px 38px ${primary}1A`,
+    },
+    '&:hover::before': {
+      opacity: 1,
+    },
+    '&:hover .theme-wave-dot': {
+      animationPlayState: 'running',
+    },
+    '&:hover .theme-rhythm-line': {
+      animationPlayState: 'running',
+    },
+    '&:hover .theme-ui-preview': {
+      animationPlayState: 'running',
+    },
+    '&:hover .theme-floating-bubble': {
+      animationPlayState: 'running',
+    },
+    ...(selected ? {
+      '& .theme-wave-dot': {
+        animationPlayState: 'running',
+      },
+      '& .theme-rhythm-line, & .theme-ui-preview, & .theme-floating-bubble': {
+        animationPlayState: 'running',
+      },
+    } : {}),
+    '@media (prefers-reduced-motion: reduce)': {
+      transition: 'none',
+      '&:hover': {
+        transform: 'none',
+      },
+      '& .theme-wave-dot, & .theme-rhythm-line, & .theme-ui-preview, & .theme-floating-bubble': {
+        animation: 'none',
+      },
+    },
+  };
+}
+
+function buildThemeMiniPreviewSx(preset: AppThemePreset) {
+  const [primary, secondary, accent] = preset.preview;
+  return {
+    display: 'grid',
+    gridTemplateRows: 'auto 1fr',
+    gap: 1,
+    minHeight: 92,
+    p: 1,
+    borderRadius: 1.5,
+    border: '1px solid',
+    borderColor: 'divider',
+    position: 'relative',
+    overflow: 'hidden',
+    background: `radial-gradient(circle at 16% 12%, ${primary}24 0, transparent 30%), radial-gradient(circle at 88% 18%, ${secondary}20 0, transparent 28%), linear-gradient(135deg, ${primary}13 0%, ${secondary}0F 52%, ${accent}15 100%)`,
+    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.28)',
+    '&::before': {
+      content: '""',
+      position: 'absolute',
+      inset: 0,
+      pointerEvents: 'none',
+      background: 'linear-gradient(135deg, rgba(255,255,255,0.34) 0%, transparent 36%, rgba(255,255,255,0.12) 100%)',
+    },
+    '& > *': {
+      position: 'relative',
+      zIndex: 1,
     },
   };
 }
@@ -264,7 +362,7 @@ function collectNodeStats(data: BackupFileShape): BackupNodeStats {
   stats['settings.api.credentials'] = settings?.api?.apiKey ? 1 : 0;
   stats['settings.aiProfiles'] = Array.isArray(settings?.aiProfiles) ? settings.aiProfiles.length : 0;
   stats['settings.aiProfiles.credentials'] = Array.isArray(settings?.aiProfiles) ? settings.aiProfiles.filter((profile) => profile.apiKey).length : 0;
-  stats['settings.appearance'] = settings && ('theme' in settings || 'themeColor' in settings || 'language' in settings || 'customBubbleStyles' in settings || 'userBubbleStyleId' in settings || 'userBubbleStyle' in settings || 'artifactAppearance' in settings) ? 1 : 0;
+  stats['settings.appearance'] = settings && ('theme' in settings || 'themePreset' in settings || 'themeColor' in settings || 'language' in settings || 'customBubbleStyles' in settings || 'userBubbleStyleId' in settings || 'userBubbleStyle' in settings || 'artifactAppearance' in settings) ? 1 : 0;
   stats['settings.generation'] = settings && ('avatarGeneration' in settings || 'aiGeneration' in settings || 'companionship' in settings) ? 1 : 0;
   stats['settings.chatDraftDefaults'] = settings && ('defaultSpeed' in settings || 'chatDraftDefaults' in settings) ? 1 : 0;
   stats['settings.developer'] = settings && ('developerMode' in settings || 'developerUI' in settings || 'memoryUI' in settings) ? 1 : 0;
@@ -810,6 +908,7 @@ function buildBackupPayload(selection: BackupSelection, source: {
     }
     if (selection['settings.appearance']) {
       settingsPayload.theme = source.settings.theme;
+      settingsPayload.themePreset = source.settings.themePreset;
       settingsPayload.themeColor = source.settings.themeColor;
       settingsPayload.language = source.settings.language;
       settingsPayload.customBubbleStyles = source.settings.customBubbleStyles;
@@ -1110,7 +1209,7 @@ function buildRestoreAvailabilityFromData(data: BackupFileShape): BackupSelectio
     'settings.api.credentials': hasCount('settings.api.credentials') || Boolean(data.settings?.api?.apiKey),
     'settings.aiProfiles': hasCount('settings.aiProfiles') || (Array.isArray(data.settings?.aiProfiles) && data.settings.aiProfiles.length > 0),
     'settings.aiProfiles.credentials': hasCount('settings.aiProfiles.credentials') || Boolean(data.settings?.aiProfiles?.some((profile) => profile.apiKey)),
-    'settings.appearance': hasCount('settings.appearance') || Boolean(data.settings && ('theme' in data.settings || 'themeColor' in data.settings || 'language' in data.settings || 'customBubbleStyles' in data.settings || 'userBubbleStyleId' in data.settings || 'userBubbleStyle' in data.settings || 'artifactAppearance' in data.settings)),
+    'settings.appearance': hasCount('settings.appearance') || Boolean(data.settings && ('theme' in data.settings || 'themePreset' in data.settings || 'themeColor' in data.settings || 'language' in data.settings || 'customBubbleStyles' in data.settings || 'userBubbleStyleId' in data.settings || 'userBubbleStyle' in data.settings || 'artifactAppearance' in data.settings)),
     'settings.generation': hasCount('settings.generation') || Boolean(data.settings && ('avatarGeneration' in data.settings || 'aiGeneration' in data.settings || 'companionship' in data.settings)),
     'settings.chatDraftDefaults': hasCount('settings.chatDraftDefaults') || Boolean(data.settings && ('defaultSpeed' in data.settings || 'chatDraftDefaults' in data.settings)),
     'settings.developer': hasCount('settings.developer') || Boolean(data.settings && ('developerMode' in data.settings || 'developerUI' in data.settings || 'memoryUI' in data.settings)),
@@ -1248,6 +1347,7 @@ function filterSettingsForRestore(data: NonNullable<BackupFileShape['settings']>
   }
   if (selection['settings.appearance']) {
     if (data.theme !== undefined) nextSettings.theme = data.theme;
+    if (data.themePreset !== undefined) nextSettings.themePreset = data.themePreset;
     if (data.themeColor !== undefined) nextSettings.themeColor = data.themeColor;
     if (data.language !== undefined) nextSettings.language = data.language;
     if (data.customBubbleStyles !== undefined) nextSettings.customBubbleStyles = data.customBubbleStyles;
@@ -1537,6 +1637,7 @@ export default function SettingsPage() {
   const [restoreEmptyHint, setRestoreEmptyHint] = useState('');
   const [expandedBackupKeys, setExpandedBackupKeys] = useState<BackupSectionKey[]>(DEFAULT_EXPANDED_KEYS);
   const [expandedRestoreKeys, setExpandedRestoreKeys] = useState<BackupSectionKey[]>(DEFAULT_EXPANDED_KEYS);
+  const [showAllThemePresets, setShowAllThemePresets] = useState(false);
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
     open: false,
     message: '',
@@ -1554,6 +1655,13 @@ export default function SettingsPage() {
   const selfAvatarValue = user?.avatar?.trim() || (user?.nickname?.trim() || '我').slice(0, 1);
   const selfAvatarIsImage = isImageAvatar(selfAvatarValue);
   const selfBubblePreviewText = i18n.language.startsWith('zh') ? '这是我发送消息时的气泡' : 'This is my chat bubble';
+  const selectedThemePreset = resolveThemePreset(settings.themePreset, settings.themeColor);
+  const popularThemePresets = APP_THEME_PRESETS.slice(0, POPULAR_THEME_PRESET_COUNT);
+  const selectedThemeIsPopular = popularThemePresets.some((preset) => preset.id === selectedThemePreset.id);
+  const visibleThemePresets = showAllThemePresets
+    ? APP_THEME_PRESETS
+    : (selectedThemeIsPopular ? popularThemePresets : [...popularThemePresets, selectedThemePreset]);
+  const hiddenThemePresetCount = Math.max(0, APP_THEME_PRESETS.length - POPULAR_THEME_PRESET_COUNT);
   const backupStats = useMemo(() => buildLiveBackupStats({
     characters: useCharacterStore.getState().characters,
     chats: useChatStore.getState().chats,
@@ -1876,27 +1984,153 @@ export default function SettingsPage() {
               </ToggleButtonGroup>
             </Box>
             <Box>
-              <Typography variant="body2" sx={{ fontWeight: 500 }} gutterBottom>{i18n.language.startsWith('zh') ? '色调' : 'Tone'}</Typography>
-              <Box sx={buildToneGridSx()}>
-                {THEME_TONES.map((tone) => {
-                  const selected = settings.themeColor.toLowerCase() === tone.value.toLowerCase();
+              <Typography variant="body2" sx={{ fontWeight: 500 }} gutterBottom>{i18n.language.startsWith('zh') ? '主题方案' : 'Theme preset'}</Typography>
+              <Box sx={buildThemePresetGridSx()}>
+                {visibleThemePresets.map((preset) => {
+                  const selected = selectedThemePreset.id === preset.id;
+                  const [primary, secondary, accent] = preset.preview;
                   return (
                     <Button
-                      key={tone.value}
+                      key={preset.id}
                       variant="outlined"
-                      onClick={() => settings.setThemeColor(tone.value)}
-                      sx={buildToneButtonSx(tone.value, selected)}
+                      onClick={() => settings.setThemePreset(preset.id, preset.schemes.light.primary)}
+                      sx={buildThemePresetButtonSx(preset, selected)}
                     >
-                      <Box sx={{ width: 24, height: 24, borderRadius: '50%', bgcolor: tone.value, mr: 1, display: 'grid', placeItems: 'center', color: '#fff', flex: '0 0 auto', boxShadow: `0 0 0 4px ${tone.value}18` }}>
-                        {selected ? <CheckIcon sx={{ fontSize: 16 }} /> : null}
+                      <Box sx={{ width: '100%', display: 'grid', gap: 1 }}>
+                        <Box sx={buildThemeMiniPreviewSx(preset)}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+                            <Box sx={{ display: 'flex', gap: 0.55 }}>
+                              {[primary, secondary, accent].map((color, index) => (
+                                <Box
+                                  key={color}
+                                  className="theme-wave-dot"
+                                  sx={{
+                                    width: 14,
+                                    height: 14,
+                                    borderRadius: '50%',
+                                    bgcolor: color,
+                                    position: 'relative',
+                                    boxShadow: `0 0 0 1px rgba(255,255,255,0.42), 0 5px 13px ${color}38`,
+                                    animation: 'themeDotBob 1150ms ease-in-out infinite',
+                                    animationDelay: `${index * 135}ms`,
+                                    animationPlayState: 'paused',
+                                  }}
+                                />
+                              ))}
+                            </Box>
+                            <Box sx={{ width: 24, height: 24, borderRadius: '50%', bgcolor: selected ? primary : 'rgba(255,255,255,0.56)', color: '#fff', display: 'grid', placeItems: 'center', border: '1px solid', borderColor: selected ? `${primary}88` : 'rgba(255,255,255,0.46)', boxShadow: selected ? `0 8px 18px ${primary}35` : 'inset 0 1px 0 rgba(255,255,255,0.4)' }}>
+                              {selected ? <CheckIcon sx={{ fontSize: 16 }} /> : null}
+                            </Box>
+                          </Box>
+                          <Box sx={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 72px', gap: 1, alignItems: 'end' }}>
+                            <Box sx={{ display: 'grid', gap: 0.8, alignSelf: 'center', pb: 0.3, transform: 'translateY(-2px)' }}>
+                              {[
+                                { color: primary, width: '96%', opacity: 0.9, animation: 'themeLineRhythmA 1200ms ease-in-out infinite' },
+                                { color: secondary, width: '74%', opacity: 0.68, animation: 'themeLineRhythmB 1480ms ease-in-out infinite' },
+                                { color: accent, width: '48%', opacity: 0.5, animation: 'themeLineRhythmC 1760ms ease-in-out infinite' },
+                              ].map((line, index) => (
+                                <Box
+                                  key={`${line.color}-${index}`}
+                                  className="theme-rhythm-line"
+                                  sx={{
+                                    height: index === 0 ? 7 : 6,
+                                    width: line.width,
+                                    borderRadius: 999,
+                                    bgcolor: line.color,
+                                    opacity: line.opacity,
+                                    transformOrigin: 'left center',
+                                    animation: line.animation,
+                                    animationPlayState: 'paused',
+                                    boxShadow: `0 4px 12px ${line.color}24`,
+                                  }}
+                                />
+                              ))}
+                            </Box>
+                            <Box
+                              className="theme-ui-preview"
+                              sx={{
+                                justifySelf: 'end',
+                                alignSelf: 'end',
+                                width: 68,
+                                height: 48,
+                                position: 'relative',
+                                animation: 'themePreviewDrift 2200ms ease-in-out infinite',
+                                animationPlayState: 'paused',
+                                borderRadius: 1.35,
+                                border: '1px solid rgba(255,255,255,0.38)',
+                                background: 'rgba(255,255,255,0.34)',
+                                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.45), 0 10px 22px rgba(15,23,42,0.08)',
+                                overflow: 'hidden',
+                              }}
+                            >
+                              <Box
+                                className="theme-floating-bubble"
+                                sx={{
+                                  position: 'absolute',
+                                  left: 8,
+                                  top: 10,
+                                  width: 34,
+                                  height: 14,
+                                  borderRadius: '7px 7px 7px 2px',
+                                  bgcolor: 'rgba(255,255,255,0.76)',
+                                  border: '1px solid rgba(255,255,255,0.44)',
+                                  animation: 'themeBubbleRise 3200ms cubic-bezier(0.4, 0, 0.2, 1) infinite',
+                                  animationDelay: '-400ms',
+                                  animationFillMode: 'both',
+                                  animationPlayState: 'paused',
+                                  boxShadow: '0 6px 13px rgba(15,23,42,0.08)',
+                                }}
+                              >
+                                <Box sx={{ position: 'absolute', left: 7, top: 5, width: 15, height: 3, borderRadius: 999, bgcolor: 'rgba(15,23,42,0.16)' }} />
+                              </Box>
+                              <Box
+                                className="theme-floating-bubble"
+                                sx={{
+                                  position: 'absolute',
+                                  right: 7,
+                                  bottom: 8,
+                                  width: 38,
+                                  height: 16,
+                                  borderRadius: '8px 8px 2px 8px',
+                                  bgcolor: primary,
+                                  animation: 'themeBubbleRise 3200ms cubic-bezier(0.4, 0, 0.2, 1) infinite',
+                                  animationDelay: '-1900ms',
+                                  animationFillMode: 'both',
+                                  animationPlayState: 'paused',
+                                  boxShadow: `0 7px 16px ${primary}28`,
+                                }}
+                              >
+                                <Box sx={{ position: 'absolute', right: 8, top: 6, width: 18, height: 4, borderRadius: 999, bgcolor: 'rgba(255,255,255,0.72)' }} />
+                              </Box>
+                            </Box>
+                          </Box>
+                        </Box>
+                        <Box sx={{ minWidth: 0, textAlign: 'left' }}>
+                          <Typography variant="body2" sx={{ fontWeight: selected ? 800 : 700, lineHeight: 1.25 }}>
+                            {i18n.language.startsWith('zh') ? preset.nameZh : preset.nameEn}
+                          </Typography>
+                          <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.4, lineHeight: 1.35 }}>
+                            {i18n.language.startsWith('zh') ? preset.descriptionZh : preset.descriptionEn}
+                          </Typography>
+                        </Box>
                       </Box>
-                      <Typography variant="caption" sx={{ fontWeight: selected ? 760 : 620, lineHeight: 1.25 }}>
-                        {i18n.language.startsWith('zh') ? tone.zh : tone.en}
-                      </Typography>
                     </Button>
                   );
                 })}
               </Box>
+              {hiddenThemePresetCount > 0 ? (
+                <Button
+                  size="small"
+                  variant="text"
+                  endIcon={<ExpandMoreIcon sx={{ transform: showAllThemePresets ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 160ms ease' }} />}
+                  onClick={() => setShowAllThemePresets((value) => !value)}
+                  sx={{ mt: 1, px: 0.5, fontWeight: 650 }}
+                >
+                  {showAllThemePresets
+                    ? (i18n.language.startsWith('zh') ? '收起主题' : 'Show fewer themes')
+                    : (i18n.language.startsWith('zh') ? `展开更多主题（${hiddenThemePresetCount}）` : `More themes (${hiddenThemePresetCount})`)}
+                </Button>
+              ) : null}
             </Box>
             <Box>
               <Typography variant="body2" sx={{ fontWeight: 500 }} gutterBottom>{t('settings.language')}</Typography>
