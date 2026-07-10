@@ -423,6 +423,17 @@ export default function MembershipPage() {
   const pointClaimStatus = membership?.pointClaimStatus || null;
   const dailyClaim = pointClaimStatus?.daily || null;
   const monthlyClaim = pointClaimStatus?.monthly || null;
+  const pointClaimItems = [
+    dailyClaim && Number(dailyClaim.amount || 0) > 0
+      ? { kind: 'daily' as const, title: isZh ? '每日点数' : 'Daily points', description: isZh ? '每天可免费领取一次' : 'Free once per day', claim: dailyClaim }
+      : null,
+    monthlyClaim && Number(monthlyClaim.amount || 0) > 0
+      ? { kind: 'monthly' as const, title: isZh ? '每月点数' : 'Monthly points', description: isZh ? '每月按当前会员等级领取一次' : 'Free once per month by membership tier', claim: monthlyClaim }
+      : null,
+  ].filter((item): item is { kind: 'daily' | 'monthly'; title: string; description: string; claim: NonNullable<typeof dailyClaim> } => Boolean(item));
+  const availablePointClaimItems = pointClaimItems.filter((item) => !item.claim.claimed);
+  const unavailablePointClaimItems = pointClaimItems.filter((item) => item.claim.claimed);
+  const showPointPacks = pointPlans.length > 0 || pointClaimItems.length > 0;
 
   return (
     <Box sx={{ p: { xs: 2, sm: 3 }, pt: { xs: 1, sm: 2 }, pb: { xs: 12, sm: 8 }, maxWidth: 1180, mx: 'auto' }}>
@@ -514,30 +525,6 @@ export default function MembershipPage() {
                       <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 800 }}>{isZh ? 'AI点数' : 'AI points'}</Typography>
                       <Typography sx={{ mt: 0.25, fontWeight: 950 }}>{loggedInCloud ? formatAiPoints(aiBalance, aiBalanceLoading, isZh) : (isZh ? '登录后查看' : 'Sign in')}</Typography>
                     </Box>
-                  </Box>
-                  <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1 }}>
-                    {dailyClaim ? (
-                      <Box sx={{ p: 1.1, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
-                        <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 800 }}>{isZh ? '每日领取' : 'Daily claim'}</Typography>
-                        <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', justifyContent: 'space-between', gap: 1, mt: 0.4 }}>
-                          <Typography sx={{ fontWeight: 900 }}>{formatPoints(dailyClaim.amount)}</Typography>
-                          <Button size="small" variant="outlined" disabled={dailyClaim.claimed || Boolean(claimingPointKind)} onClick={() => void handleClaimPoints('daily')}>
-                            {claimingPointKind === 'daily' ? (isZh ? '领取中' : 'Claiming') : dailyClaim.claimed ? (isZh ? '已领取' : 'Claimed') : (isZh ? '领取' : 'Claim')}
-                          </Button>
-                        </Stack>
-                      </Box>
-                    ) : null}
-                    {monthlyClaim ? (
-                      <Box sx={{ p: 1.1, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
-                        <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 800 }}>{isZh ? '每月领取' : 'Monthly claim'}</Typography>
-                        <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', justifyContent: 'space-between', gap: 1, mt: 0.4 }}>
-                          <Typography sx={{ fontWeight: 900 }}>{formatPoints(monthlyClaim.amount)}</Typography>
-                          <Button size="small" variant="outlined" disabled={monthlyClaim.claimed || Boolean(claimingPointKind)} onClick={() => void handleClaimPoints('monthly')}>
-                            {claimingPointKind === 'monthly' ? (isZh ? '领取中' : 'Claiming') : monthlyClaim.claimed ? (isZh ? '已领取' : 'Claimed') : (isZh ? '领取' : 'Claim')}
-                          </Button>
-                        </Stack>
-                      </Box>
-                    ) : null}
                   </Box>
                   <Button size="small" variant="text" onClick={() => navigate('/account')} sx={{ alignSelf: 'flex-start', fontWeight: 800 }}>
                     {isZh ? '云同步设置' : 'Cloud sync settings'}
@@ -774,10 +761,36 @@ export default function MembershipPage() {
             </Stack>
           ) : null}
 
-          {pointPlans.length > 0 ? (
+          {showPointPacks ? (
             <Stack spacing={1} sx={{ pt: 0.5 }}>
               <Typography variant="h6" sx={{ fontWeight: 950 }}>{isZh ? '点数包' : 'Point packs'}</Typography>
               <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 280px))', gap: 1.25, justifyContent: 'start' }}>
+                {availablePointClaimItems.map((item) => {
+                  const claiming = claimingPointKind === item.kind;
+                  return (
+                    <Card
+                      key={`claim-${item.kind}`}
+                      variant="outlined"
+                      sx={{
+                        borderRadius: 2,
+                        borderColor: (theme) => alpha(theme.palette.success.main, 0.52),
+                        bgcolor: (theme) => alpha(theme.palette.success.main, theme.palette.mode === 'dark' ? 0.12 : 0.06),
+                      }}
+                    >
+                      <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 1.2, height: '100%' }}>
+                        <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
+                          <Typography sx={{ fontWeight: 900 }}>{item.title}</Typography>
+                          <Chip icon={<BoltIcon />} label={formatPoints(item.claim.amount)} size="small" color="success" />
+                        </Stack>
+                        <Typography variant="body2" color="text.secondary" sx={{ flex: 1 }}>{item.description}</Typography>
+                        <Typography sx={{ fontSize: 26, fontWeight: 950 }}>{isZh ? '免费' : 'Free'}</Typography>
+                        <Button variant="contained" startIcon={<BoltIcon />} disabled={Boolean(claimingPointKind)} onClick={() => void handleClaimPoints(item.kind)}>
+                          {claiming ? (isZh ? '领取中' : 'Claiming') : (isZh ? '立即领取' : 'Claim now')}
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
                 {pointPlans.map((plan) => {
                   const purchasing = purchasingPlanCode === plan.code;
                   const description = String(plan.description || '').trim();
@@ -799,6 +812,29 @@ export default function MembershipPage() {
                     </Card>
                   );
                 })}
+                {unavailablePointClaimItems.map((item) => (
+                  <Card
+                    key={`claim-${item.kind}`}
+                    variant="outlined"
+                    sx={{
+                      borderRadius: 2,
+                      opacity: 0.72,
+                      bgcolor: (theme) => alpha(theme.palette.action.disabledBackground, theme.palette.mode === 'dark' ? 0.16 : 0.28),
+                    }}
+                  >
+                    <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 1.2, height: '100%' }}>
+                      <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Typography sx={{ fontWeight: 900 }}>{item.title}</Typography>
+                        <Chip icon={<BoltIcon />} label={formatPoints(item.claim.amount)} size="small" />
+                      </Stack>
+                      <Typography variant="body2" color="text.secondary" sx={{ flex: 1 }}>{item.description}</Typography>
+                      <Typography sx={{ fontSize: 26, fontWeight: 950 }}>{isZh ? '免费' : 'Free'}</Typography>
+                      <Button variant="outlined" disabled>
+                        {isZh ? '已领取' : 'Claimed'}
+                      </Button>
+                    </CardContent>
+                  </Card>
+                ))}
               </Box>
             </Stack>
           ) : null}
