@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Box, Button, Chip, Dialog, DialogContent, DialogTitle, Divider, Grid, Paper, Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography, useMediaQuery, useTheme } from '@mui/material';
+import { Alert, Box, Button, Chip, Dialog, DialogContent, DialogTitle, Divider, FormControlLabel, Grid, Paper, Stack, Switch, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography, useMediaQuery, useTheme } from '@mui/material';
 import AdminAiUserUsageDialog from '../../components/admin/AdminAiUserUsageDialog';
 import AdminRequestState, { getAdminErrorMessage } from '../../components/admin/AdminRequestState';
 import { AdminMetricGrid, AdminSection, AdminTableFrame, type AdminMetricItem } from '../../components/admin/AdminSurface';
@@ -28,6 +28,40 @@ type AdminUserListItem = {
   aiRequestCount?: unknown;
 };
 
+type AccountEntitlementDraft = {
+  developerModeEnabled: boolean;
+  cloudSyncEnabled: boolean;
+  maxCharacters: string;
+  maxChats: string;
+  dailyAiGenerationLimit: string;
+  batchCharacterGenerationLimit: string;
+  officialProviderAccess: string[];
+  aiBillingDiscount: string;
+  dailyPointGrant: string;
+  monthlyPointGrant: string;
+  note: string;
+};
+
+const EMPTY_ACCOUNT_ENTITLEMENT_DRAFT: AccountEntitlementDraft = {
+  developerModeEnabled: false,
+  cloudSyncEnabled: false,
+  maxCharacters: '',
+  maxChats: '',
+  dailyAiGenerationLimit: '',
+  batchCharacterGenerationLimit: '',
+  officialProviderAccess: [],
+  aiBillingDiscount: '',
+  dailyPointGrant: '',
+  monthlyPointGrant: '',
+  note: '',
+};
+
+const OFFICIAL_PROVIDER_OPTIONS = [
+  { value: 'deepseek', label: 'DeepSeek' },
+  { value: 'moacode', label: 'Moacode' },
+  { value: 'api2d', label: 'API2D' },
+];
+
 function formatTime(value: unknown) {
   const parsed = Number(value || 0);
   return parsed > 0 ? new Date(parsed).toLocaleString() : '-';
@@ -50,6 +84,60 @@ function numberOrNull(value: string) {
   if (!trimmed) return null;
   const parsed = Number(trimmed);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function draftText(value: unknown) {
+  return value == null ? '' : String(value);
+}
+
+function accountEntitlementToDraft(value: unknown): AccountEntitlementDraft {
+  const row = value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  const entitlement = row.entitlement && typeof row.entitlement === 'object' && !Array.isArray(row.entitlement)
+    ? row.entitlement as Record<string, unknown>
+    : {};
+  return {
+    developerModeEnabled: entitlement.developerModeEnabled === true,
+    cloudSyncEnabled: entitlement.cloudSyncEnabled === true,
+    maxCharacters: draftText(entitlement.maxCharacters),
+    maxChats: draftText(entitlement.maxChats),
+    dailyAiGenerationLimit: draftText(entitlement.dailyAiGenerationLimit),
+    batchCharacterGenerationLimit: draftText(entitlement.batchCharacterGenerationLimit),
+    officialProviderAccess: Array.isArray(entitlement.officialProviderAccess)
+      ? entitlement.officialProviderAccess.map((item) => String(item)).filter(Boolean)
+      : [],
+    aiBillingDiscount: draftText(entitlement.aiBillingDiscount),
+    dailyPointGrant: draftText(entitlement.dailyPointGrant),
+    monthlyPointGrant: draftText(entitlement.monthlyPointGrant),
+    note: String(row.note || ''),
+  };
+}
+
+function parseOptionalNumber(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function buildAccountEntitlementPayload(draft: AccountEntitlementDraft) {
+  const entitlement: Record<string, unknown> = {};
+  const numberFields: Array<keyof AccountEntitlementDraft> = [
+    'maxCharacters',
+    'maxChats',
+    'dailyAiGenerationLimit',
+    'batchCharacterGenerationLimit',
+    'aiBillingDiscount',
+    'dailyPointGrant',
+    'monthlyPointGrant',
+  ];
+  numberFields.forEach((field) => {
+    const parsed = parseOptionalNumber(String(draft[field] || ''));
+    if (parsed !== undefined) entitlement[field] = parsed;
+  });
+  if (draft.cloudSyncEnabled) entitlement.cloudSyncEnabled = true;
+  if (draft.developerModeEnabled) entitlement.developerModeEnabled = true;
+  if (draft.officialProviderAccess.length) entitlement.officialProviderAccess = draft.officialProviderAccess;
+  return { entitlement, note: draft.note.trim() };
 }
 
 function formatUserAiQuota(item: AdminUserListItem) {
@@ -122,6 +210,7 @@ export default function AdminUsersPage() {
   const [usageDialogOpen, setUsageDialogOpen] = useState(false);
   const [aiPointDraft, setAiPointDraft] = useState('');
   const [aiPointReasonDraft, setAiPointReasonDraft] = useState('');
+  const [accountEntitlementDraft, setAccountEntitlementDraft] = useState<AccountEntitlementDraft>(EMPTY_ACCOUNT_ENTITLEMENT_DRAFT);
   const [selectedRestrictions, setSelectedRestrictions] = useState<Array<Record<string, unknown>>>([]);
   const [restrictionReason, setRestrictionReason] = useState('');
   const [keyDrafts, setKeyDrafts] = useState<Record<string, KeyDraft>>({});
@@ -166,6 +255,7 @@ export default function AdminUsersPage() {
         adminApi.getUserRestrictions(userId),
       ]);
       setSelectedUser(user);
+      setAccountEntitlementDraft(accountEntitlementToDraft(user.accountEntitlement));
       setSelectedRestrictions(restrictions.items);
     } catch (loadError) {
       setDetailError(getAdminErrorMessage(loadError));
@@ -194,6 +284,25 @@ export default function AdminUsersPage() {
     try {
       await adminApi.upsertUserRestriction(selectedUserId, restrictionType, { status, reasonText: restrictionReason });
       await loadSelectedUser(selectedUserId);
+    } catch (saveError) {
+      setDetailError(getAdminErrorMessage(saveError));
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const updateAccountEntitlementDraft = (patch: Partial<AccountEntitlementDraft>) => {
+    setAccountEntitlementDraft((prev) => ({ ...prev, ...patch }));
+  };
+
+  const saveAccountEntitlement = async () => {
+    if (!selectedUserId) return;
+    setActionLoading(true);
+    setDetailError(null);
+    try {
+      const accountEntitlement = await adminApi.updateUserAccountEntitlement(selectedUserId, buildAccountEntitlementPayload(accountEntitlementDraft));
+      setSelectedUser((prev) => prev ? { ...prev, accountEntitlement } : prev);
+      setAccountEntitlementDraft(accountEntitlementToDraft(accountEntitlement));
     } catch (saveError) {
       setDetailError(getAdminErrorMessage(saveError));
     } finally {
@@ -442,6 +551,7 @@ export default function AdminUsersPage() {
     setKeyUsage({});
     setKeyBalance(null);
     setAiPointDraft('');
+    setAccountEntitlementDraft(EMPTY_ACCOUNT_ENTITLEMENT_DRAFT);
     setManualKeyDraft({ visible: false, apiKey: '', externalKeyId: '' });
     void loadSelectedUser(selectedUserId);
   }, [selectedUserId]);
@@ -532,6 +642,66 @@ export default function AdminUsersPage() {
                 </AdminSection>
 
                 <AdminMetricGrid items={statCards} compact minWidth={132} />
+
+                <AdminSection title="账号权益" subtitle="只配置该用户的独立权益；留空表示不影响会员权益。相同权益会与会员权益合并，开关取开启，数值取更高。">
+                  <Stack spacing={1.25}>
+                    <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap' }}>
+                      <FormControlLabel
+                        control={<Switch checked={accountEntitlementDraft.developerModeEnabled} onChange={(event) => updateAccountEntitlementDraft({ developerModeEnabled: event.target.checked })} />}
+                        label="开发者模式"
+                      />
+                      <FormControlLabel
+                        control={<Switch checked={accountEntitlementDraft.cloudSyncEnabled} onChange={(event) => updateAccountEntitlementDraft({ cloudSyncEnabled: event.target.checked })} />}
+                        label="云同步"
+                      />
+                    </Stack>
+                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', lg: 'repeat(4, minmax(0, 1fr))' }, gap: 1 }}>
+                      <TextField size="small" label="角色数量上限" value={accountEntitlementDraft.maxCharacters} onChange={(event) => updateAccountEntitlementDraft({ maxCharacters: event.target.value })} placeholder="留空不覆盖" />
+                      <TextField size="small" label="聊天数量上限" value={accountEntitlementDraft.maxChats} onChange={(event) => updateAccountEntitlementDraft({ maxChats: event.target.value })} placeholder="留空不覆盖" />
+                      <TextField size="small" label="每日生成上限" value={accountEntitlementDraft.dailyAiGenerationLimit} onChange={(event) => updateAccountEntitlementDraft({ dailyAiGenerationLimit: event.target.value })} placeholder="留空不覆盖" />
+                      <TextField size="small" label="批量生成上限" value={accountEntitlementDraft.batchCharacterGenerationLimit} onChange={(event) => updateAccountEntitlementDraft({ batchCharacterGenerationLimit: event.target.value })} placeholder="留空不覆盖" />
+                      <TextField size="small" label="AI 折扣率" value={accountEntitlementDraft.aiBillingDiscount} onChange={(event) => updateAccountEntitlementDraft({ aiBillingDiscount: event.target.value })} placeholder="例如 0.9" />
+                      <TextField size="small" label="每日领取点数" value={accountEntitlementDraft.dailyPointGrant} onChange={(event) => updateAccountEntitlementDraft({ dailyPointGrant: event.target.value })} placeholder="留空不覆盖" />
+                      <TextField size="small" label="每月领取点数" value={accountEntitlementDraft.monthlyPointGrant} onChange={(event) => updateAccountEntitlementDraft({ monthlyPointGrant: event.target.value })} placeholder="留空不覆盖" />
+                    </Box>
+                    <Box>
+                      <Typography variant="caption" color="text.secondary">官方模型访问</Typography>
+                      <Stack direction="row" spacing={0.75} sx={{ mt: 0.75, flexWrap: 'wrap', gap: 0.75 }}>
+                        {OFFICIAL_PROVIDER_OPTIONS.map((option) => {
+                          const selected = accountEntitlementDraft.officialProviderAccess.includes(option.value);
+                          return (
+                            <Chip
+                              key={option.value}
+                              label={option.label}
+                              color={selected ? 'primary' : 'default'}
+                              variant={selected ? 'filled' : 'outlined'}
+                              onClick={() => updateAccountEntitlementDraft({
+                                officialProviderAccess: selected
+                                  ? accountEntitlementDraft.officialProviderAccess.filter((item) => item !== option.value)
+                                  : [...accountEntitlementDraft.officialProviderAccess, option.value],
+                              })}
+                            />
+                          );
+                        })}
+                      </Stack>
+                    </Box>
+                    <TextField
+                      size="small"
+                      label="备注"
+                      value={accountEntitlementDraft.note}
+                      onChange={(event) => updateAccountEntitlementDraft({ note: event.target.value })}
+                      fullWidth
+                      multiline
+                      minRows={2}
+                      placeholder="例如：给指定用户开放开发者模式"
+                    />
+                    <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+                      <Button variant="contained" disabled={actionLoading} onClick={() => void saveAccountEntitlement()}>保存账号权益</Button>
+                      <Button variant="outlined" disabled={actionLoading} onClick={() => setAccountEntitlementDraft(EMPTY_ACCOUNT_ENTITLEMENT_DRAFT)}>清空表单</Button>
+                      <Typography variant="caption" color="text.secondary">清空并保存后，该用户不再拥有独立账号权益。</Typography>
+                    </Stack>
+                  </Stack>
+                </AdminSection>
 
                 <AdminSection
                   title={(

@@ -199,6 +199,10 @@ class AdminApiClient {
     return this.request<Record<string, unknown>>('GET', `/users/${encodeURIComponent(userId)}`);
   }
 
+  updateUserAccountEntitlement(userId: string, payload: Record<string, unknown>) {
+    return this.request<Record<string, unknown>>('PUT', `/users/${encodeURIComponent(userId)}/account-entitlement`, payload);
+  }
+
   getAiProviders() {
     return this.request<{ items: Array<Record<string, unknown>>; runtime: Array<Record<string, unknown>> }>('GET', '/ai/providers');
   }
