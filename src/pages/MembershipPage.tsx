@@ -579,14 +579,30 @@ export default function MembershipPage() {
                         flexDirection: 'column',
                         gap: 1,
                         p: 1.25,
-                        borderColor: (theme) => active ? alpha(theme.palette.primary.main, 0.72) : alpha(theme.palette.divider, 0.86),
-                        bgcolor: (theme) => active ? alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.13 : 0.055) : alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.72 : 0.96),
-                        boxShadow: (theme) => active ? `0 12px 28px ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.16 : 0.10)}` : 'none',
+                        position: 'relative',
+                        overflow: 'hidden',
+                        borderColor: (theme) => active ? alpha(theme.palette.primary.main, 0.62) : alpha(theme.palette.divider, theme.palette.mode === 'dark' ? 0.42 : 0.58),
+                        bgcolor: (theme) => active ? alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.10 : 0.035) : theme.palette.background.paper,
+                        boxShadow: (theme) => active ? `0 10px 24px ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.16 : 0.09)}` : `0 1px 0 ${alpha(theme.palette.common.black, theme.palette.mode === 'dark' ? 0.20 : 0.04)}`,
                         transition: 'border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease, background-color 160ms ease',
+                        '&::before': {
+                          content: '""',
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          height: 3,
+                          bgcolor: 'primary.main',
+                          opacity: active ? 1 : 0,
+                          transition: 'opacity 160ms ease',
+                        },
                         '&:hover': {
                           transform: 'translateY(-2px)',
                           borderColor: (theme) => alpha(theme.palette.primary.main, 0.62),
-                          boxShadow: (theme) => `0 14px 30px ${alpha(theme.palette.common.black, theme.palette.mode === 'dark' ? 0.24 : 0.08)}`,
+                          boxShadow: (theme) => `0 14px 30px ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.18 : 0.10)}`,
+                          '&::before': {
+                            opacity: 1,
+                          },
                         },
                       }}
                     >
@@ -669,7 +685,7 @@ export default function MembershipPage() {
                         bgcolor: 'background.paper',
                         boxShadow: (theme) => featured ? `0 10px 22px ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.13 : 0.08)}` : 'none',
                         transition: 'background-color 160ms ease, box-shadow 160ms ease, transform 160ms ease, border-color 160ms ease',
-                        '&::before': featured ? {
+                        '&::before': {
                           content: '""',
                           position: 'absolute',
                           top: 0,
@@ -677,16 +693,19 @@ export default function MembershipPage() {
                           right: 0,
                           height: 3,
                           bgcolor: 'primary.main',
-                        } : undefined,
+                          opacity: featured ? 1 : 0,
+                          transition: 'opacity 160ms ease',
+                        },
                         '&:hover': {
                           transform: 'translateY(-2px)',
                           borderColor: (theme) => alpha(theme.palette.primary.main, 0.72),
-                          bgcolor: (theme) => alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.12 : 0.045),
                           boxShadow: (theme) => `0 14px 28px ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.22 : 0.13)}`,
+                          '&::before': {
+                            opacity: 1,
+                          },
                           '& .purchaseAction': {
                             borderColor: 'primary.main',
                             color: 'primary.main',
-                            bgcolor: (theme) => alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.14 : 0.07),
                           },
                         },
                       }}
