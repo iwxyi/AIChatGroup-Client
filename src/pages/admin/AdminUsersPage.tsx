@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Box, Button, Chip, Dialog, DialogContent, DialogTitle, Divider, FormControlLabel, Grid, Paper, Stack, Switch, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography, useMediaQuery, useTheme } from '@mui/material';
+import { Alert, Box, Button, Chip, Dialog, DialogContent, DialogTitle, Divider, FormControlLabel, Grid, Paper, Stack, Switch, Tab, Table, TableBody, TableCell, TableHead, TableRow, Tabs, TextField, Typography, useMediaQuery, useTheme } from '@mui/material';
 import AdminAiUserUsageDialog from '../../components/admin/AdminAiUserUsageDialog';
 import AdminRequestState, { getAdminErrorMessage } from '../../components/admin/AdminRequestState';
 import { AdminMetricGrid, AdminSection, AdminTableFrame, type AdminMetricItem } from '../../components/admin/AdminSurface';
@@ -28,6 +28,13 @@ type AdminUserListItem = {
   aiRequestCount?: unknown;
 };
 
+type OfficialProviderOption = {
+  value: string;
+  label: string;
+};
+
+type UserDetailTab = 'overview' | 'ai' | 'entitlements';
+
 type AccountEntitlementDraft = {
   developerModeEnabled: boolean;
   cloudSyncEnabled: boolean;
@@ -55,12 +62,6 @@ const EMPTY_ACCOUNT_ENTITLEMENT_DRAFT: AccountEntitlementDraft = {
   monthlyPointGrant: '',
   note: '',
 };
-
-const OFFICIAL_PROVIDER_OPTIONS = [
-  { value: 'deepseek', label: 'DeepSeek' },
-  { value: 'moacode', label: 'Moacode' },
-  { value: 'api2d', label: 'API2D' },
-];
 
 function formatTime(value: unknown) {
   const parsed = Number(value || 0);
@@ -205,8 +206,10 @@ export default function AdminUsersPage() {
   const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
   const [search, setSearch] = useState('');
   const [items, setItems] = useState<AdminUserListItem[]>([]);
+  const [officialProviderOptions, setOfficialProviderOptions] = useState<OfficialProviderOption[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [selectedUser, setSelectedUser] = useState<Record<string, unknown> | null>(null);
+  const [userDetailTab, setUserDetailTab] = useState<UserDetailTab>('overview');
   const [usageDialogOpen, setUsageDialogOpen] = useState(false);
   const [aiPointDraft, setAiPointDraft] = useState('');
   const [aiPointReasonDraft, setAiPointReasonDraft] = useState('');
@@ -233,6 +236,17 @@ export default function AdminUsersPage() {
     { key: 'restrictions', label: '生效限制', value: String(selectedUser?.activeRestrictionCount || 0), tone: Number(selectedUser?.activeRestrictionCount || 0) > 0 ? 'warning' : 'default' },
   ], [selectedUser]);
 
+  const accountProviderOptions = useMemo(() => {
+    const optionMap = new Map(officialProviderOptions.map((option) => [option.value, option]));
+    accountEntitlementDraft.officialProviderAccess.forEach((code) => {
+      const normalized = String(code || '').trim().toLowerCase();
+      if (normalized && !optionMap.has(normalized)) {
+        optionMap.set(normalized, { value: normalized, label: normalized });
+      }
+    });
+    return Array.from(optionMap.values());
+  }, [accountEntitlementDraft.officialProviderAccess, officialProviderOptions]);
+
   const loadUsers = async () => {
     setLoading(true);
     setError(null);
@@ -243,6 +257,31 @@ export default function AdminUsersPage() {
       setError(getAdminErrorMessage(loadError));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadOfficialProviderOptions = async () => {
+    try {
+      const result = await adminApi.getAiProviders();
+      const runtimeCodes = new Set(
+        (Array.isArray(result.runtime) ? result.runtime : [])
+          .map((provider) => String(provider.code || '').trim().toLowerCase())
+          .filter(Boolean),
+      );
+      const options = (Array.isArray(result.items) ? result.items : [])
+        .map((provider) => {
+          const code = String(provider.code || '').trim().toLowerCase();
+          if (!code || !runtimeCodes.has(code)) return null;
+          return {
+            value: code,
+            label: String(provider.name || code),
+          };
+        })
+        .filter((option): option is OfficialProviderOption => Boolean(option));
+      setOfficialProviderOptions(options);
+    } catch (loadError) {
+      console.error('Failed to load AI provider options', loadError);
+      setOfficialProviderOptions([]);
     }
   };
 
@@ -542,6 +581,10 @@ export default function AdminUsersPage() {
   }, [search]);
 
   useEffect(() => {
+    void loadOfficialProviderOptions();
+  }, []);
+
+  useEffect(() => {
     if (!selectedUserId) return;
     setSelectedUser(null);
     setSelectedRestrictions([]);
@@ -553,6 +596,7 @@ export default function AdminUsersPage() {
     setAiPointDraft('');
     setAccountEntitlementDraft(EMPTY_ACCOUNT_ENTITLEMENT_DRAFT);
     setManualKeyDraft({ visible: false, apiKey: '', externalKeyId: '' });
+    setUserDetailTab('overview');
     void loadSelectedUser(selectedUserId);
   }, [selectedUserId]);
 
@@ -630,7 +674,24 @@ export default function AdminUsersPage() {
           <Stack spacing={2}>
             <AdminRequestState loading={detailLoading || actionLoading} error={detailError} onRetry={selectedUserId ? () => void loadSelectedUser(selectedUserId) : undefined} />
             {selectedUser ? (
+              <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
+                <Tabs
+                  value={userDetailTab}
+                  onChange={(_event, value: UserDetailTab) => setUserDetailTab(value)}
+                  variant="scrollable"
+                  scrollButtons="auto"
+                  allowScrollButtonsMobile
+                >
+                  <Tab value="overview" label="概览" />
+                  <Tab value="ai" label="AI" />
+                  <Tab value="entitlements" label="权益与限制" />
+                </Tabs>
+              </Box>
+            ) : null}
+            {selectedUser ? (
               <Stack spacing={2}>
+                {userDetailTab === 'overview' ? (
+                  <>
                 <AdminSection title="基础信息">
                   <Stack spacing={1}>
                     <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>{String(selectedUser.nickname || '')}</Typography>
@@ -643,6 +704,22 @@ export default function AdminUsersPage() {
 
                 <AdminMetricGrid items={statCards} compact minWidth={132} />
 
+                <Grid container spacing={2}>
+                  <Grid size={{ xs: 12, xl: 4 }}>
+                    <WorkspaceTable title="最近订单" rows={workspace?.recentOrders || []} columns={[{ key: 'order_no', label: '订单号' }, { key: 'status', label: '状态' }, { key: 'amount', label: '金额' }, { key: 'created_at', label: '创建时间' }]} />
+                  </Grid>
+                  <Grid size={{ xs: 12, xl: 4 }}>
+                    <WorkspaceTable title="最近聊天" rows={workspace?.recentChats || []} columns={[{ key: 'name', label: '名称' }, { key: 'type', label: '类型' }, { key: 'share_enabled', label: '分享' }, { key: 'updated_at', label: '更新时间' }]} />
+                  </Grid>
+                  <Grid size={{ xs: 12, xl: 4 }}>
+                    <WorkspaceTable title="最近角色" rows={workspace?.recentCharacters || []} columns={[{ key: 'name', label: '名称' }, { key: 'group_name', label: '分组' }, { key: 'is_preset', label: '预设' }, { key: 'updated_at', label: '更新时间' }]} />
+                  </Grid>
+                </Grid>
+                  </>
+                ) : null}
+
+                {userDetailTab === 'entitlements' ? (
+                  <>
                 <AdminSection title="账号权益" subtitle="只配置该用户的独立权益；留空表示不影响会员权益。相同权益会与会员权益合并，开关取开启，数值取更高。">
                   <Stack spacing={1.25}>
                     <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap' }}>
@@ -667,7 +744,7 @@ export default function AdminUsersPage() {
                     <Box>
                       <Typography variant="caption" color="text.secondary">官方模型访问</Typography>
                       <Stack direction="row" spacing={0.75} sx={{ mt: 0.75, flexWrap: 'wrap', gap: 0.75 }}>
-                        {OFFICIAL_PROVIDER_OPTIONS.map((option) => {
+                        {accountProviderOptions.map((option) => {
                           const selected = accountEntitlementDraft.officialProviderAccess.includes(option.value);
                           return (
                             <Chip
@@ -702,7 +779,11 @@ export default function AdminUsersPage() {
                     </Stack>
                   </Stack>
                 </AdminSection>
+                  </>
+                ) : null}
 
+                {userDetailTab === 'ai' ? (
+                  <>
                 <AdminSection
                   title={(
                     <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
@@ -750,7 +831,7 @@ export default function AdminUsersPage() {
                   </Stack>
                 </AdminSection>
 
-                {aiKey ? (
+                  {aiKey ? (
                   <AdminSection title="绑定 Key" subtitle="兼容旧 API2D 用户 Key 管理。">
                     {manualKeyDraft.visible ? (
                       <Stack direction="row" spacing={0.75} sx={{ mb: 1.25, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -916,23 +997,15 @@ export default function AdminUsersPage() {
                       })}
                     </Stack>
                   </AdminSection>
+                  ) : (
+                    <Alert severity="info">该用户当前没有兼容旧 API2D 的绑定 Key。</Alert>
+                  )}
+                  </>
                 ) : null}
 
-                <Grid container spacing={2}>
-                  <Grid size={{ xs: 12, xl: 4 }}>
-                    <WorkspaceTable title="最近订单" rows={workspace?.recentOrders || []} columns={[{ key: 'order_no', label: '订单号' }, { key: 'status', label: '状态' }, { key: 'amount', label: '金额' }, { key: 'created_at', label: '创建时间' }]} />
-                  </Grid>
-                  <Grid size={{ xs: 12, xl: 4 }}>
-                    <WorkspaceTable title="最近聊天" rows={workspace?.recentChats || []} columns={[{ key: 'name', label: '名称' }, { key: 'type', label: '类型' }, { key: 'share_enabled', label: '分享' }, { key: 'updated_at', label: '更新时间' }]} />
-                  </Grid>
-                  <Grid size={{ xs: 12, xl: 4 }}>
-                    <WorkspaceTable title="最近角色" rows={workspace?.recentCharacters || []} columns={[{ key: 'name', label: '名称' }, { key: 'group_name', label: '分组' }, { key: 'is_preset', label: '预设' }, { key: 'updated_at', label: '更新时间' }]} />
-                  </Grid>
-                </Grid>
-              </Stack>
-            ) : null}
-
-            <AdminSection title="限制项">
+                {userDetailTab === 'entitlements' ? (
+                  <>
+                <AdminSection title="限制项">
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
                 {selectedRestrictions.map((item) => (
                   <Chip
@@ -952,6 +1025,10 @@ export default function AdminUsersPage() {
                 <Button variant="outlined" disabled={actionLoading} onClick={() => void saveRestriction('sync_disabled')}>禁同步</Button>
               </Stack>
             </AdminSection>
+                  </>
+                ) : null}
+              </Stack>
+            ) : null}
           </Stack>
         </DialogContent>
       </Dialog>

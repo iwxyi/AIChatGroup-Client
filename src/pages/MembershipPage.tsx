@@ -49,21 +49,8 @@ const membershipRadius = {
   panel: 1.6,
 };
 
-const membershipSectionSx = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 1,
-  flexWrap: 'wrap',
-  '& .sectionIndex': {
-    width: 24,
-    height: 24,
-    borderRadius: 999,
-    display: 'grid',
-    placeItems: 'center',
-    fontSize: 12,
-    fontWeight: 950,
-    lineHeight: 1,
-  },
+const membershipBlockSx = {
+  scrollMarginTop: 88,
 };
 
 const DEFAULT_MEMBERSHIP_CONFIG: BillingMembershipConfig = {
@@ -219,6 +206,11 @@ function markdownLines(value: unknown) {
 }
 
 function submitPaymentForm(payment: BillingPaymentResponse, targetWindow: Window | null) {
+  if (payment.paymentUrl) {
+    if (targetWindow) targetWindow.location.href = payment.paymentUrl;
+    else window.location.href = payment.paymentUrl;
+    return;
+  }
   const action = String(payment.formAction || '').trim();
   const fields = payment.formFields || {};
   if (action && Object.keys(fields).length > 0) {
@@ -231,6 +223,8 @@ function submitPaymentForm(payment: BillingPaymentResponse, targetWindow: Window
     const form = doc.createElement('form');
     form.method = 'post';
     form.action = action;
+    form.acceptCharset = 'UTF-8';
+    form.enctype = 'application/x-www-form-urlencoded';
     form.style.display = 'none';
     Object.entries(fields).forEach(([key, value]) => {
       const input = doc.createElement('input');
@@ -243,11 +237,6 @@ function submitPaymentForm(payment: BillingPaymentResponse, targetWindow: Window
     form.submit();
     return;
   }
-  if (payment.paymentUrl) {
-    if (targetWindow) targetWindow.location.href = payment.paymentUrl;
-    else window.location.href = payment.paymentUrl;
-    return;
-  }
   throw new Error('支付参数缺失，无法跳转支付宝');
 }
 
@@ -255,6 +244,55 @@ function LoadingLine({ loading }: { loading: boolean }) {
   return (
     <Box sx={{ height: 4 }}>
       {loading ? <LinearProgress sx={{ height: 4, borderRadius: 999 }} /> : null}
+    </Box>
+  );
+}
+
+function MembershipDownCue({ sx }: { sx?: object }) {
+  return (
+    <Box
+      aria-hidden
+      sx={{
+        height: 58,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: 'primary.main',
+        pointerEvents: 'none',
+        ...sx,
+      }}
+    >
+      <Box
+        component="svg"
+        viewBox="0 0 80 58"
+        sx={{
+          width: 80,
+          height: 58,
+          overflow: 'visible',
+          filter: (theme) => `drop-shadow(0 10px 18px ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.20 : 0.13)})`,
+        }}
+      >
+        {[0, 1, 2].map((index) => {
+          const y = 8 + index * 14;
+          return (
+          <Box
+            key={index}
+            component="path"
+            d={`M22 ${y} L40 ${y + 12} L58 ${y}`}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="5.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            sx={{
+              animation: `membershipDownCue 1900ms ${motion.emphasized} infinite`,
+              animationDelay: `${index * 190}ms`,
+              transformOrigin: '40px 29px',
+            }}
+          />
+          );
+        })}
+      </Box>
     </Box>
   );
 }
@@ -375,6 +413,13 @@ export default function MembershipPage() {
   ];
   const selectedVipTier = vipTiers.find((tier) => tier.code === selectedVipTierCode) || vipTiers[0];
   const selectedTierOption = tierOptions.find((tier) => tier.code === selectedVipTierCode) || selectedVipTier || tierOptions[0];
+  const selectedTierIndex = Math.max(0, tierOptions.findIndex((tier) => tier.code === selectedTierOption?.code));
+  const durationCardsJustify = selectedTierIndex <= 0
+    ? 'start'
+    : selectedTierIndex >= tierOptions.length - 1
+      ? 'end'
+      : 'center';
+  const tierGridTemplateColumns = 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))';
   const selectedTierPlans = vipPlans.filter((plan) => planVipTierCode(plan) === (selectedTierOption?.code || 'basic'));
   const visibleVipPlans = selectedTierPlans;
   const activeSubscription = membership?.activeSubscription || null;
@@ -490,9 +535,15 @@ export default function MembershipPage() {
           '0%': { opacity: 0, transform: 'translateY(8px) scale(0.985)' },
           '100%': { opacity: 1, transform: 'translateY(0) scale(1)' },
         },
+        '@keyframes membershipDownCue': {
+          '0%': { opacity: 0.12, transform: 'translateY(-2px) scale(0.98)' },
+          '42%': { opacity: 0.88, transform: 'translateY(1px) scale(1)' },
+          '78%': { opacity: 0.36, transform: 'translateY(5px) scale(0.99)' },
+          '100%': { opacity: 0.12, transform: 'translateY(7px) scale(0.98)' },
+        },
       }}
     >
-      <Stack spacing={2.25}>
+      <Stack spacing={{ xs: 3.25, sm: 4 }}>
         <LoadingLine loading={loading} />
         <Card
           variant="outlined"
@@ -662,9 +713,9 @@ export default function MembershipPage() {
 
         {error ? <Alert severity="error" action={<Button color="inherit" size="small" onClick={() => void loadData(true)}>{isZh ? '重试' : 'Retry'}</Button>}>{error}</Alert> : null}
 
-        <Stack id="membership-plans" spacing={1.5}>
+        <Stack id="membership-plans" spacing={{ xs: 3.25, sm: 4.25 }} sx={membershipBlockSx}>
           {loading ? (
-            <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: { xs: -1.75, sm: -2 } }}>
               <CircularProgress size={22} />
             </Box>
           ) : null}
@@ -672,18 +723,14 @@ export default function MembershipPage() {
           {plans.length === 0 && !loading ? <Alert severity="info">{isZh ? '暂无可购买套餐' : 'No plans available'}</Alert> : null}
 
           {vipPlans.length > 0 && vipTiers.length > 0 ? (
-            <Stack spacing={1.2} sx={{ pt: 0.5 }}>
+            <Stack spacing={{ xs: 1.55, sm: 1.85 }} sx={{ pt: { xs: 0.25, sm: 0.5 }, ...membershipBlockSx }}>
               <Box>
                 <Typography variant="h6" sx={{ fontWeight: 950, lineHeight: 1.2 }}>{isZh ? '会员套餐' : 'Membership plans'}</Typography>
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 0.35, maxWidth: 620, lineHeight: 1.65 }}>
                   {isZh ? '从轻量体验到深度创作，选择适合当前节奏的会员权益。' : 'Pick the membership benefits that match your current creative pace.'}
                 </Typography>
               </Box>
-              <Stack sx={membershipSectionSx}>
-                <Box className="sectionIndex" sx={{ bgcolor: 'primary.main', color: 'primary.contrastText' }}>1</Box>
-                <Typography variant="subtitle2" sx={{ fontWeight: 950 }}>{isZh ? '选择会员等级' : 'Choose membership tier'}</Typography>
-              </Stack>
-              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: 1.25, alignItems: 'stretch' }}>
+              <Box sx={{ display: 'grid', gridTemplateColumns: tierGridTemplateColumns, gridAutoRows: '1fr', gap: 1.25, alignItems: 'stretch' }}>
                 {tierOptions.map((tier, tierIndex) => {
                   const active = tier.code === selectedTierOption?.code;
                   const tierPlans = vipPlans.filter((plan) => planVipTierCode(plan) === tier.code);
@@ -692,14 +739,15 @@ export default function MembershipPage() {
                   const isFree = tier.code === 'free';
                   const benefitLines = markdownLines(tier.benefitsMarkdown);
                   return (
+                    <Box key={tier.code} sx={{ position: 'relative', minWidth: 0, display: 'flex' }}>
                     <Box
-                      key={tier.code}
                       onClick={() => setSelectedVipTierCode(tier.code)}
                       sx={{
                         borderRadius: membershipRadius.card,
                         border: '1px solid',
                         cursor: 'pointer',
                         width: '100%',
+                        height: '100%',
                         minHeight: 0,
                         display: 'flex',
                         flexDirection: 'column',
@@ -860,6 +908,7 @@ export default function MembershipPage() {
                           ) : null}
                       </Stack>
                     </Box>
+                    </Box>
                   );
                 })}
               </Box>
@@ -868,15 +917,36 @@ export default function MembershipPage() {
                   {isZh ? '免费用户无需购买会员，可直接领取可用点数包。' : 'Free tier does not require a purchase. Claim available point packs below.'}
                 </Alert>
               ) : (
-                <Stack sx={{ ...membershipSectionSx, mt: 0.5 }}>
-                  <Box className="sectionIndex" sx={{ bgcolor: 'primary.main', color: 'primary.contrastText' }}>2</Box>
-                  <Typography variant="subtitle2" sx={{ fontWeight: 950 }}>
-                    {isZh ? `为 ${selectedTierOption?.name || '当前会员'} 选择会员时长` : `Choose duration for ${selectedTierOption?.name || 'selected tier'}`}
-                  </Typography>
-                </Stack>
+                <Box
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: { xs: '1fr', md: tierGridTemplateColumns },
+                    gap: { xs: 0, md: 1.25 },
+                    alignItems: 'center',
+                    my: { xs: 0.25, sm: 0.5, md: 0.1 },
+                    minHeight: { xs: 58, md: 62 },
+                  }}
+                >
+                  {tierOptions.map((tier) => {
+                    const active = tier.code === selectedTierOption?.code;
+                    return (
+                      <Box
+                        key={`cue-${tier.code}`}
+                        sx={{
+                          display: { xs: active ? 'flex' : 'none', md: 'flex' },
+                          justifyContent: 'center',
+                          minWidth: 0,
+                          visibility: active ? 'visible' : 'hidden',
+                        }}
+                      >
+                        {active ? <MembershipDownCue /> : <Box sx={{ height: 58 }} />}
+                      </Box>
+                    );
+                  })}
+                </Box>
               )}
               {selectedTierOption?.code !== 'free' ? (
-              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 188px), 238px))', gap: 1.15, justifyContent: 'start' }}>
+              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 188px), 238px))', gridAutoRows: '1fr', gap: 1.15, alignItems: 'stretch', justifyContent: { xs: 'start', md: durationCardsJustify } }}>
                 {visibleVipPlans.map((plan, planIndex) => {
                   const highlightReason = getPlanMetaText(plan, 'highlightReason');
                   const originalPrice = getPlanMetaNumber(plan, 'originalPriceAmount');
@@ -885,10 +955,14 @@ export default function MembershipPage() {
                     <Card
                       key={plan.code}
                       variant="outlined"
+                      onClick={() => {
+                        if (!purchasingPlanCode) void handlePurchase(plan);
+                      }}
                       sx={{
                         borderRadius: membershipRadius.card,
                         height: '100%',
                         width: '100%',
+                        cursor: purchasingPlanCode ? 'default' : 'pointer',
                         borderColor: (theme) => alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.20 : 0.12),
                         bgcolor: 'background.paper',
                         boxShadow: (theme) => `0 8px 18px ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.07 : 0.03)}`,
@@ -918,8 +992,17 @@ export default function MembershipPage() {
                             transform: 'translate(0, 0) scale(1)',
                           },
                           '& .purchaseAction': {
+                            bgcolor: 'primary.main',
                             borderColor: 'primary.main',
-                            color: 'primary.main',
+                            color: 'primary.contrastText',
+                            boxShadow: (theme) => `0 12px 24px ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.26 : 0.20)}`,
+                          },
+                          '& .purchasePrice': {
+                            color: 'primary.contrastText',
+                          },
+                          '& .purchaseOriginalPrice': {
+                            color: 'primary.contrastText',
+                            opacity: 0.7,
                           },
                           '& .durationPill': {
                             transform: 'translateX(2px)',
@@ -978,7 +1061,10 @@ export default function MembershipPage() {
                           variant="outlined"
                           startIcon={<PaymentIcon />}
                           disabled={Boolean(purchasingPlanCode)}
-                          onClick={() => void handlePurchase(plan)}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void handlePurchase(plan);
+                          }}
                           sx={{
                             fontWeight: 900,
                             mt: 'auto',
@@ -1047,24 +1133,29 @@ export default function MembershipPage() {
           ) : null}
 
           {showPointPacks ? (
-            <Stack spacing={1} sx={{ pt: 0.5 }}>
+            <Stack spacing={{ xs: 1.45, sm: 1.75 }} sx={{ pt: { xs: 0.5, sm: 0.75 }, ...membershipBlockSx }}>
               <Box>
                 <Typography variant="h6" sx={{ fontWeight: 950, lineHeight: 1.2 }}>{isZh ? '点数包' : 'Point packs'}</Typography>
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 0.35, maxWidth: 620, lineHeight: 1.65 }}>
                   {isZh ? '点数用于官方 AI 调用，适合在灵感集中时补充更稳定的创作余量。' : 'Points power official AI calls when you need more room for focused creation.'}
                 </Typography>
               </Box>
-              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 188px), 238px))', gap: 1, justifyContent: 'start' }}>
+              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 188px), 238px))', gridAutoRows: '1fr', gap: 1, alignItems: 'stretch', justifyContent: 'start' }}>
                 {availablePointClaimItems.map((item, claimIndex) => {
                   const claiming = claimingPointKind === item.kind;
                   return (
                     <Card
                       key={`claim-${item.kind}`}
                       variant="outlined"
+                      onClick={() => {
+                        if (!claimingPointKind) void handleClaimPoints(item.kind);
+                      }}
                       sx={{
                         borderRadius: membershipRadius.card,
+                        height: '100%',
                         borderColor: (theme) => alpha(theme.palette.success.main, 0.52),
                         bgcolor: (theme) => alpha(theme.palette.success.main, theme.palette.mode === 'dark' ? 0.12 : 0.06),
+                        cursor: claimingPointKind ? 'default' : 'pointer',
                         animation: `membershipRiseIn 420ms ${motion.softOut} both`,
                         animationDelay: `${Math.min(claimIndex * 45, 120)}ms`,
                         overflow: 'hidden',
@@ -1105,7 +1196,16 @@ export default function MembershipPage() {
                           <Chip className="pointValue" icon={<BoltIcon />} label={formatPoints(item.claim.amount)} size="small" color="success" sx={{ transition: transition(['transform'], motion.durations.base, motion.gentleSpring) }} />
                         </Stack>
                         <Typography variant="body2" color="text.secondary" sx={{ flex: 1 }}>{item.description}</Typography>
-                        <Button variant="contained" startIcon={<BoltIcon />} disabled={Boolean(claimingPointKind)} onClick={() => void handleClaimPoints(item.kind)} sx={{ fontWeight: 900 }}>
+                        <Button
+                          variant="contained"
+                          startIcon={<BoltIcon />}
+                          disabled={Boolean(claimingPointKind)}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void handleClaimPoints(item.kind);
+                          }}
+                          sx={{ fontWeight: 900 }}
+                        >
                           {claiming ? (isZh ? '领取中' : 'Claiming') : (isZh ? '免费领取' : 'Claim free')}
                         </Button>
                       </CardContent>
@@ -1119,8 +1219,13 @@ export default function MembershipPage() {
                     <Card
                       key={plan.code}
                       variant="outlined"
+                      onClick={() => {
+                        if (!purchasingPlanCode) void handlePurchase(plan);
+                      }}
                       sx={{
                         borderRadius: membershipRadius.card,
+                        height: '100%',
+                        cursor: purchasingPlanCode ? 'default' : 'pointer',
                         animation: `membershipRiseIn 420ms ${motion.softOut} both`,
                         animationDelay: `${Math.min((availablePointClaimItems.length + pointIndex) * 45, 220)}ms`,
                         overflow: 'hidden',
@@ -1175,7 +1280,10 @@ export default function MembershipPage() {
                           variant="outlined"
                           startIcon={<PaymentIcon />}
                           disabled={Boolean(purchasingPlanCode)}
-                          onClick={() => void handlePurchase(plan)}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void handlePurchase(plan);
+                          }}
                           sx={{ fontWeight: 900, transition: transition(['background-color', 'border-color', 'color', 'box-shadow'], motion.durations.base, motion.gentleSpring) }}
                         >
                           {purchasing ? (isZh ? '正在发起支付' : 'Starting payment') : formatMoney(plan.price_amount, plan.currency)}
@@ -1190,6 +1298,7 @@ export default function MembershipPage() {
                     variant="outlined"
                     sx={{
                       borderRadius: membershipRadius.card,
+                      height: '100%',
                       opacity: 0.72,
                       bgcolor: (theme) => alpha(theme.palette.action.disabledBackground, theme.palette.mode === 'dark' ? 0.16 : 0.28),
                     }}
@@ -1211,7 +1320,7 @@ export default function MembershipPage() {
           ) : null}
         </Stack>
 
-        <Card variant="outlined" sx={{ borderRadius: 2 }}>
+        <Card variant="outlined" sx={{ borderRadius: 2, mt: { xs: 0.25, sm: 0.75 }, ...membershipBlockSx }}>
           <CardContent>
             <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap', mb: 1.25 }}>
               <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
