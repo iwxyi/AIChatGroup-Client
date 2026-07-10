@@ -275,7 +275,7 @@ export default function MembershipPage() {
       const nextConfig = {
         ...DEFAULT_MEMBERSHIP_CONFIG,
         ...configResult,
-        benefits: Array.isArray(configResult.benefits) && configResult.benefits.length ? configResult.benefits : DEFAULT_MEMBERSHIP_CONFIG.benefits,
+        benefits: Array.isArray(configResult.benefits) ? configResult.benefits : DEFAULT_MEMBERSHIP_CONFIG.benefits,
         tiers: Array.isArray(configResult.tiers) && configResult.tiers.length ? configResult.tiers : DEFAULT_MEMBERSHIP_CONFIG.tiers,
       };
       setMembershipConfig(nextConfig);
@@ -341,6 +341,11 @@ export default function MembershipPage() {
   const latestSubscription = membership?.latestSubscription || null;
   const recentOrders = membership?.recentOrders || [];
   const loggedInCloud = authMode !== 'local' && isLoggedIn;
+  const heroDescription = String(membershipConfig.description || membershipConfig.subtitle || '').trim();
+  const membershipBenefits = useMemo(
+    () => (membershipConfig.benefits || []).map((item) => String(item || '').trim()).filter(Boolean),
+    [membershipConfig.benefits],
+  );
 
   const handlePurchase = async (plan: BillingPlanItem) => {
     if (!loggedInCloud) {
@@ -416,9 +421,11 @@ export default function MembershipPage() {
                 <Typography variant="h4" sx={{ fontWeight: 950, letterSpacing: 0, fontSize: { xs: 28, sm: 38 }, lineHeight: 1.12 }}>
                   {membershipConfig.title || (isZh ? '选择适合你的会员方案' : 'Choose your membership')}
                 </Typography>
-                <Typography color="text.secondary" sx={{ mt: 1, maxWidth: 680, lineHeight: 1.75 }}>
-                  {membershipConfig.description || membershipConfig.subtitle}
-                </Typography>
+                {heroDescription ? (
+                  <Typography color="text.secondary" sx={{ mt: 1, maxWidth: 680, lineHeight: 1.75 }}>
+                    {heroDescription}
+                  </Typography>
+                ) : null}
               </Box>
               <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap' }}>
                 <Button
@@ -483,7 +490,7 @@ export default function MembershipPage() {
         <Stack id="membership-plans" spacing={1.5}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
             <Box>
-              <Typography variant="h6" sx={{ fontWeight: 900 }}>{isZh ? '会员与点数套餐' : 'Membership and point plans'}</Typography>
+              <Typography variant="h6" sx={{ fontWeight: 900 }}>{isZh ? '可购买套餐' : 'Available plans'}</Typography>
             </Box>
             {loading ? <CircularProgress size={22} /> : null}
           </Box>
@@ -491,7 +498,31 @@ export default function MembershipPage() {
           {plans.length === 0 && !loading ? <Alert severity="info">{isZh ? '暂无可购买套餐' : 'No plans available'}</Alert> : null}
 
           {vipPlans.length > 0 && vipTiers.length > 0 ? (
-            <Stack spacing={1.2}>
+            <Stack spacing={1.2} sx={{ pt: 0.5 }}>
+              <Typography variant="h6" sx={{ fontWeight: 950 }}>{isZh ? '会员套餐' : 'Membership plans'}</Typography>
+              {membershipBenefits.length > 0 ? (
+                <Card variant="outlined" sx={{ borderRadius: 2, bgcolor: (theme) => alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.10 : 0.04) }}>
+                  <CardContent sx={{ p: { xs: 1.4, sm: 1.6 }, '&:last-child': { pb: { xs: 1.4, sm: 1.6 } } }}>
+                    <Stack direction="row" spacing={1.25} sx={{ alignItems: 'flex-start', flexWrap: { xs: 'wrap', sm: 'nowrap' } }}>
+                      <WorkspacePremiumIcon color="primary" sx={{ mt: 0.15 }} />
+                      <Box sx={{ minWidth: 0 }}>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 950, mb: 0.8 }}>{isZh ? '统一 VIP 权益' : 'Shared VIP benefits'}</Typography>
+                        <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+                          {membershipBenefits.map((benefit) => (
+                            <Chip
+                              key={benefit}
+                              size="small"
+                              icon={<CheckCircleIcon />}
+                              label={renderInlineMarkdown(benefit)}
+                              sx={{ fontWeight: 800, maxWidth: '100%', '& .MuiChip-label': { minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' } }}
+                            />
+                          ))}
+                        </Stack>
+                      </Box>
+                    </Stack>
+                  </CardContent>
+                </Card>
+              ) : null}
               <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
                 <Chip size="small" color="primary" label="1" sx={{ fontWeight: 900, width: 24 }} />
                 <Typography variant="subtitle2" sx={{ fontWeight: 900 }}>{isZh ? '选择会员等级' : 'Choose membership tier'}</Typography>
@@ -526,7 +557,9 @@ export default function MembershipPage() {
                           <Typography variant="h6" sx={{ fontWeight: 950 }}>{tier.name}</Typography>
                           <Chip size="small" color={active ? 'primary' : 'default'} variant={active ? 'filled' : 'outlined'} label={active ? (isZh ? '已选择' : 'Selected') : (isZh ? '可选' : 'Available')} sx={{ fontWeight: 800 }} />
                         </Stack>
-                        <Typography variant="body2" color="text.secondary">{tier.description || (isZh ? '会员权益' : 'Membership benefits')}</Typography>
+                        {String(tier.description || '').trim() ? (
+                          <Typography variant="body2" color="text.secondary">{String(tier.description || '').trim()}</Typography>
+                        ) : null}
                         <Box
                           sx={{
                             p: 1,
@@ -703,12 +736,12 @@ export default function MembershipPage() {
           ) : null}
 
           {pointPlans.length > 0 ? (
-            <Stack spacing={1}>
-              <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 800 }}>{isZh ? '点数包' : 'Point packs'}</Typography>
+            <Stack spacing={1} sx={{ pt: 0.5 }}>
+              <Typography variant="h6" sx={{ fontWeight: 950 }}>{isZh ? '点数包' : 'Point packs'}</Typography>
               <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 280px))', gap: 1.25, justifyContent: 'start' }}>
                 {pointPlans.map((plan) => {
                   const purchasing = purchasingPlanCode === plan.code;
-                  const description = String(plan.description || '').trim() || (isZh ? '补充官方 AI 调用点数' : 'Top up official AI points');
+                  const description = String(plan.description || '').trim();
                   return (
                     <Card key={plan.code} variant="outlined" sx={{ borderRadius: 2 }}>
                       <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 1.2, height: '100%' }}>
@@ -716,7 +749,9 @@ export default function MembershipPage() {
                           <Typography sx={{ fontWeight: 900 }}>{plan.name}</Typography>
                           <Chip icon={<BoltIcon />} label={formatPoints(planGrantPoints(plan))} size="small" color="success" />
                         </Stack>
-                        <Typography variant="body2" color="text.secondary" sx={{ flex: 1 }}>{description}</Typography>
+                        {description ? (
+                          <Typography variant="body2" color="text.secondary" sx={{ flex: 1 }}>{description}</Typography>
+                        ) : null}
                         <Typography sx={{ fontSize: 26, fontWeight: 950 }}>{formatMoney(plan.price_amount, plan.currency)}</Typography>
                         <Button variant="outlined" startIcon={<PaymentIcon />} disabled={Boolean(purchasingPlanCode)} onClick={() => void handlePurchase(plan)}>
                           {purchasing ? (isZh ? '正在发起支付' : 'Starting payment') : (isZh ? '购买点数' : 'Buy points')}
