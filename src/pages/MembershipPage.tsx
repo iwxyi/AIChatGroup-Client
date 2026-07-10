@@ -27,11 +27,20 @@ import { useAuthStore } from '../stores/useAuthStore';
 import { api, ApiError, type BillingMembershipConfig, type BillingMembershipResponse, type BillingOrderItem, type BillingPaymentResponse, type BillingPlanItem } from '../services/api';
 import { formatAiBalanceAmount } from '../utils/aiPoints';
 import AppSnackbar from '../components/common/AppSnackbar';
+import { motion, transition } from '../styles/motion';
 
 type SnackbarState = {
   open: boolean;
   message: string;
   severity: 'success' | 'error' | 'info' | 'warning';
+};
+
+const refinedHoverSx = {
+  '&:active': {
+    transform: 'translateY(-1px) scale(0.996)',
+    transitionTimingFunction: motion.press,
+    transitionDuration: `${motion.durations.instant}ms`,
+  },
 };
 
 const DEFAULT_MEMBERSHIP_CONFIG: BillingMembershipConfig = {
@@ -442,7 +451,15 @@ export default function MembershipPage() {
   const showPointPacks = pointPlans.length > 0 || pointClaimItems.length > 0;
 
   return (
-    <Box sx={{ p: { xs: 2, sm: 3 }, pt: { xs: 1, sm: 2 }, pb: { xs: 12, sm: 8 }, maxWidth: 1180, mx: 'auto' }}>
+    <Box
+      sx={{
+        p: { xs: 2, sm: 3 },
+        pt: { xs: 1, sm: 2 },
+        pb: { xs: 12, sm: 8 },
+        maxWidth: 1180,
+        mx: 'auto',
+      }}
+    >
       <Stack spacing={2.25}>
         <LoadingLine loading={loading} />
         <Card
@@ -455,6 +472,7 @@ export default function MembershipPage() {
             background: (theme) => theme.palette.mode === 'dark'
               ? `linear-gradient(135deg, ${alpha(theme.palette.primary.dark, 0.28)}, ${alpha(theme.palette.background.paper, 0.92)} 56%, ${alpha(theme.palette.success.dark, 0.16)}), ${theme.palette.background.paper}`
               : `linear-gradient(135deg, ${alpha(theme.palette.primary.light, 0.20)}, ${alpha(theme.palette.background.paper, 0.96)} 56%, ${alpha(theme.palette.success.light, 0.16)}), ${theme.palette.background.paper}`,
+            boxShadow: (theme) => `0 20px 52px ${alpha(theme.palette.common.black, theme.palette.mode === 'dark' ? 0.30 : 0.08)}`,
           }}
         >
           <CardContent sx={{ p: { xs: 2, sm: 3 }, display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1.25fr 0.75fr' }, gap: 2.25, alignItems: 'stretch' }}>
@@ -499,6 +517,13 @@ export default function MembershipPage() {
                 justifySelf: { xs: 'start', md: 'stretch' },
                 bgcolor: (theme) => alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.62 : 0.74),
                 backdropFilter: 'blur(16px)',
+                transition: transition(['border-color', 'box-shadow', 'transform'], motion.durations.slow, motion.softOut),
+                '&:hover': {
+                  borderColor: (theme) => alpha(theme.palette.primary.main, 0.34),
+                  boxShadow: (theme) => `0 14px 30px ${alpha(theme.palette.common.black, theme.palette.mode === 'dark' ? 0.22 : 0.07)}`,
+                  transform: 'translateY(-1px)',
+                },
+                ...refinedHoverSx,
               }}
             >
               <Stack spacing={1.25}>
@@ -585,12 +610,19 @@ export default function MembershipPage() {
                         borderColor: (theme) => active ? alpha(theme.palette.primary.main, 0.64) : alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.18 : 0.10),
                         bgcolor: (theme) => active ? alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.10 : 0.035) : theme.palette.background.paper,
                         boxShadow: (theme) => active ? `0 14px 32px ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.18 : 0.10)}` : `0 10px 26px ${alpha(theme.palette.common.black, theme.palette.mode === 'dark' ? 0.20 : 0.055)}`,
-                        transition: 'border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease, background-color 160ms ease',
+                        transition: transition(['border-color', 'box-shadow', 'transform', 'background-color'], motion.durations.slow, motion.gentleSpring),
                         '&:hover': {
                           transform: 'translateY(-2px)',
                           borderColor: (theme) => alpha(theme.palette.primary.main, 0.62),
                           boxShadow: (theme) => `0 14px 30px ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.18 : 0.10)}`,
+                          '& .tierDivider::after': {
+                            transform: 'scaleX(1)',
+                          },
+                          '& .tierIcon': {
+                            transform: 'translateY(-1px) rotate(-4deg)',
+                          },
                         },
+                        ...refinedHoverSx,
                       }}
                     >
                       <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start', justifyContent: 'space-between', gap: 1 }}>
@@ -605,7 +637,9 @@ export default function MembershipPage() {
                               flex: '0 0 auto',
                               color: 'primary.main',
                               bgcolor: (theme) => alpha(theme.palette.primary.main, active ? (theme.palette.mode === 'dark' ? 0.18 : 0.10) : (theme.palette.mode === 'dark' ? 0.08 : 0.045)),
+                              transition: transition(['background-color', 'color', 'transform'], motion.durations.base, motion.softOut),
                             }}
+                            className="tierIcon"
                           >
                             {isFree ? <CheckCircleIcon sx={{ fontSize: 19 }} /> : <WorkspacePremiumIcon sx={{ fontSize: 19 }} />}
                           </Box>
@@ -653,6 +687,7 @@ export default function MembershipPage() {
                         ))}
                       </Stack>
                       <Stack
+                        className="tierDivider"
                         direction="row"
                         spacing={0.75}
                         sx={{
@@ -663,6 +698,21 @@ export default function MembershipPage() {
                           pt: 1,
                           borderTop: '1px solid',
                           borderColor: (theme) => alpha(theme.palette.divider, theme.palette.mode === 'dark' ? 0.56 : 0.72),
+                          position: 'relative',
+                          '&::after': {
+                            content: '""',
+                            position: 'absolute',
+                            top: -1,
+                            left: 0,
+                            right: 0,
+                            height: 2,
+                            borderRadius: 999,
+                            bgcolor: 'primary.main',
+                            transform: active ? 'scaleX(1)' : 'scaleX(0)',
+                            transformOrigin: 'center',
+                            transition: `transform 520ms ${motion.emphasized}`,
+                            boxShadow: (theme) => active ? `0 0 18px ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.30 : 0.18)}` : 'none',
+                          },
                         }}
                       >
                         {isFree ? (
@@ -723,7 +773,7 @@ export default function MembershipPage() {
                         borderColor: (theme) => alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.20 : 0.12),
                         bgcolor: 'background.paper',
                         boxShadow: (theme) => `0 8px 18px ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.07 : 0.03)}`,
-                        transition: 'background-color 160ms ease, box-shadow 160ms ease, transform 160ms ease, border-color 160ms ease',
+                        transition: transition(['background-color', 'box-shadow', 'transform', 'border-color'], motion.durations.slow, motion.gentleSpring),
                         '&:hover': {
                           transform: 'translateY(-2px)',
                           borderColor: (theme) => alpha(theme.palette.primary.main, 0.72),
@@ -733,6 +783,7 @@ export default function MembershipPage() {
                             color: 'primary.main',
                           },
                         },
+                        ...refinedHoverSx,
                       }}
                     >
                       <CardContent sx={{ height: '100%', display: 'flex', flexDirection: 'column', gap: 0.9, p: 1.25, '&:last-child': { pb: 1.25 } }}>
@@ -789,7 +840,7 @@ export default function MembershipPage() {
                             mt: 'auto',
                             minHeight: 36,
                             py: 0.65,
-                            transition: 'background-color 160ms ease, border-color 160ms ease, color 160ms ease, box-shadow 160ms ease, transform 160ms ease',
+                            transition: transition(['background-color', 'border-color', 'color', 'box-shadow', 'transform'], motion.durations.base, motion.gentleSpring),
                             '&:hover': {
                               bgcolor: 'primary.main',
                               borderColor: 'primary.main',
@@ -850,6 +901,12 @@ export default function MembershipPage() {
                         borderRadius: 2,
                         borderColor: (theme) => alpha(theme.palette.success.main, 0.52),
                         bgcolor: (theme) => alpha(theme.palette.success.main, theme.palette.mode === 'dark' ? 0.12 : 0.06),
+                        transition: transition(['border-color', 'box-shadow', 'transform', 'background-color'], motion.durations.base, motion.softOut),
+                        '&:hover': {
+                          transform: 'translateY(-2px)',
+                          boxShadow: (theme) => `0 12px 24px ${alpha(theme.palette.success.main, theme.palette.mode === 'dark' ? 0.16 : 0.10)}`,
+                        },
+                        ...refinedHoverSx,
                       }}
                     >
                       <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 0.9, height: '100%', p: 1.25, '&:last-child': { pb: 1.25 } }}>
@@ -874,7 +931,7 @@ export default function MembershipPage() {
                       variant="outlined"
                       sx={{
                         borderRadius: 2,
-                        transition: 'box-shadow 160ms ease, transform 160ms ease',
+                        transition: transition(['box-shadow', 'transform', 'border-color'], motion.durations.base, motion.softOut),
                         '&:hover': {
                           transform: 'translateY(-2px)',
                           boxShadow: (theme) => `0 12px 24px ${alpha(theme.palette.common.black, theme.palette.mode === 'dark' ? 0.22 : 0.08)}`,
@@ -885,6 +942,7 @@ export default function MembershipPage() {
                             boxShadow: (theme) => `0 12px 24px ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.26 : 0.20)}`,
                           },
                         },
+                        ...refinedHoverSx,
                       }}
                     >
                       <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 0.9, height: '100%', p: 1.25, '&:last-child': { pb: 1.25 } }}>
@@ -901,7 +959,7 @@ export default function MembershipPage() {
                           startIcon={<PaymentIcon />}
                           disabled={Boolean(purchasingPlanCode)}
                           onClick={() => void handlePurchase(plan)}
-                          sx={{ fontWeight: 900, transition: 'background-color 160ms ease, border-color 160ms ease, color 160ms ease, box-shadow 160ms ease' }}
+                          sx={{ fontWeight: 900, transition: transition(['background-color', 'border-color', 'color', 'box-shadow'], motion.durations.base, motion.gentleSpring) }}
                         >
                           {purchasing ? (isZh ? '正在发起支付' : 'Starting payment') : formatMoney(plan.price_amount, plan.currency)}
                         </Button>
