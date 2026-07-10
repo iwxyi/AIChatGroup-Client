@@ -581,9 +581,9 @@ export default function MembershipPage() {
                         p: 1.25,
                         position: 'relative',
                         overflow: 'hidden',
-                        borderColor: (theme) => active ? alpha(theme.palette.primary.main, 0.62) : alpha(theme.palette.divider, theme.palette.mode === 'dark' ? 0.42 : 0.58),
-                        bgcolor: (theme) => active ? alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.10 : 0.035) : theme.palette.background.paper,
-                        boxShadow: (theme) => active ? `0 10px 24px ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.16 : 0.09)}` : `0 1px 0 ${alpha(theme.palette.common.black, theme.palette.mode === 'dark' ? 0.20 : 0.04)}`,
+                        borderColor: (theme) => active ? alpha(theme.palette.primary.main, 0.62) : alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.20 : 0.12),
+                        bgcolor: (theme) => active ? alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.10 : 0.035) : alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.86 : 0.98),
+                        boxShadow: (theme) => active ? `0 10px 24px ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.16 : 0.09)}` : `0 10px 24px ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.08 : 0.035)}`,
                         transition: 'border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease, background-color 160ms ease',
                         '&::before': {
                           content: '""',
@@ -666,8 +666,6 @@ export default function MembershipPage() {
               {selectedTierOption?.code !== 'free' ? (
               <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 188px), 238px))', gap: 1.15, justifyContent: 'start' }}>
                 {visibleVipPlans.map((plan) => {
-                  const featured = toBoolean(plan.featured);
-                  const badgeText = getPlanMetaText(plan, 'badgeText') || (featured ? (isZh ? '推荐' : 'Featured') : '');
                   const highlightReason = getPlanMetaText(plan, 'highlightReason');
                   const originalPrice = getPlanMetaNumber(plan, 'originalPriceAmount');
                   const purchasing = purchasingPlanCode === plan.code;
@@ -681,9 +679,9 @@ export default function MembershipPage() {
                         width: '100%',
                         overflow: 'hidden',
                         position: 'relative',
-                        borderColor: (theme) => featured ? alpha(theme.palette.primary.main, 0.55) : theme.palette.divider,
+                        borderColor: (theme) => alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.20 : 0.12),
                         bgcolor: 'background.paper',
-                        boxShadow: (theme) => featured ? `0 10px 22px ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.13 : 0.08)}` : 'none',
+                        boxShadow: (theme) => `0 8px 18px ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.07 : 0.03)}`,
                         transition: 'background-color 160ms ease, box-shadow 160ms ease, transform 160ms ease, border-color 160ms ease',
                         '&::before': {
                           content: '""',
@@ -693,7 +691,7 @@ export default function MembershipPage() {
                           right: 0,
                           height: 3,
                           bgcolor: 'primary.main',
-                          opacity: featured ? 1 : 0,
+                          opacity: 0,
                           transition: 'opacity 160ms ease',
                         },
                         '&:hover': {
@@ -734,7 +732,6 @@ export default function MembershipPage() {
                               ) : null}
                             </Stack>
                           </Box>
-                          {badgeText ? <Chip label={badgeText} color="primary" size="small" sx={{ height: 22, fontWeight: 800, flex: '0 0 auto' }} /> : null}
                         </Stack>
                         {highlightReason || plan.description ? (
                           <Typography
@@ -772,15 +769,23 @@ export default function MembershipPage() {
                               color: 'primary.contrastText',
                               transform: 'translateY(-1px)',
                               boxShadow: (theme) => `0 12px 24px ${alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.30 : 0.22)}`,
+                              '& .purchasePrice': {
+                                color: 'primary.contrastText',
+                              },
+                              '& .purchaseOriginalPrice': {
+                                color: 'primary.contrastText',
+                                opacity: 0.7,
+                              },
                             },
                           }}
                         >
                           {purchasing ? (isZh ? '正在发起支付' : 'Starting payment') : (
                             <Box component="span" sx={{ display: 'inline-flex', alignItems: 'baseline', gap: 0.75, minWidth: 0 }}>
-                              <Box component="span" sx={{ fontSize: 16 }}>{formatMoney(plan.price_amount, plan.currency)}</Box>
+                              <Box component="span" className="purchasePrice" sx={{ fontSize: 16 }}>{formatMoney(plan.price_amount, plan.currency)}</Box>
                               {originalPrice > 0 ? (
                                 <Box
                                   component="span"
+                                  className="purchaseOriginalPrice"
                                   sx={{
                                     color: 'text.disabled',
                                     textDecoration: 'line-through',

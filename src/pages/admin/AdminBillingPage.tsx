@@ -485,7 +485,7 @@ function buildPlanPayload(form: PlanForm, tiers: VipTierForm[] = DEFAULT_VIP_TIE
     grantPoints: pointsEnabled ? Math.max(0, toNumber(form.grantPoints, 0)) : 0,
     status: form.status,
     visibleToUsers: form.visibleToUsers,
-    featured: form.featured,
+    featured: false,
     sortOrder: Math.floor(toNumber(form.sortOrder, 0)),
     aiEnabled: isVip ? form.featureUnlockEnabled : false,
     featureUnlockEnabled: isVip ? form.featureUnlockEnabled : false,
@@ -493,7 +493,7 @@ function buildPlanPayload(form: PlanForm, tiers: VipTierForm[] = DEFAULT_VIP_TIE
     displayGroup: form.displayGroup.trim() || (isVip ? 'vip' : 'points'),
     displayGroupName: form.displayGroupName.trim() || (isVip ? 'VIP 套餐' : '点数包'),
     durationLabel: form.durationLabel.trim() || null,
-    badgeText: form.badgeText.trim() || null,
+    badgeText: null,
     highlightReason: form.highlightReason.trim() || null,
     originalPriceAmount: form.originalPriceAmount.trim() ? Math.max(0, toNumber(form.originalPriceAmount, 0)) : null,
     sortOrderInGroup: Math.floor(toNumber(form.sortOrderInGroup, 0)),
@@ -1598,7 +1598,6 @@ export default function AdminBillingPage() {
                         <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
                           <Chip size="small" label={statusLabel(item.status)} color={String(item.status || '') === 'active' ? 'success' : 'default'} />
                           {toBoolean(item.visible_to_users, true) ? null : <Chip size="small" label="隐藏" />}
-                          {toBoolean(item.featured, false) ? <Chip size="small" label="推荐" color="warning" /> : null}
                         </Stack>
                       </TableCell>
                       <TableCell align="right">
@@ -1685,11 +1684,10 @@ export default function AdminBillingPage() {
                   <TextField label="分组名称" value={planForm.displayGroupName} onChange={(event) => updateForm('displayGroupName', event.target.value)} fullWidth />
                   <TextField label="组内排序" value={planForm.sortOrderInGroup} onChange={(event) => updateForm('sortOrderInGroup', event.target.value)} fullWidth />
                 </Box>
-                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'minmax(160px, 0.8fr) minmax(140px, 0.7fr)' }, gap: 1.25 }}>
-                  <TextField label="角标文案" placeholder="推荐 / 最划算" value={planForm.badgeText} onChange={(event) => updateForm('badgeText', event.target.value)} fullWidth />
+                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'minmax(140px, 0.7fr)' }, gap: 1.25 }}>
                   <TextField label="划线价" value={planForm.originalPriceAmount} onChange={(event) => updateForm('originalPriceAmount', event.target.value)} fullWidth />
                 </Box>
-                <TextField label="推荐理由" value={planForm.highlightReason} onChange={(event) => updateForm('highlightReason', event.target.value)} fullWidth />
+                <TextField label="套餐短说明" value={planForm.highlightReason} onChange={(event) => updateForm('highlightReason', event.target.value)} fullWidth />
                 <TextField label="套餐卖点（每行一项）" value={planForm.featuresText} onChange={(event) => updateForm('featuresText', event.target.value)} fullWidth multiline minRows={3} />
                 <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'minmax(140px, 0.65fr) minmax(120px, 0.55fr)' }, gap: 1.25 }}>
                   <TextField select label="状态" value={planForm.status} onChange={(event) => updateForm('status', event.target.value)} fullWidth>
@@ -1701,7 +1699,6 @@ export default function AdminBillingPage() {
                 </Box>
                 <Stack direction={{ xs: 'column', sm: 'row' }} spacing={0.5}>
                   <FormControlLabel control={<Switch checked={planForm.visibleToUsers} onChange={(event) => updateForm('visibleToUsers', event.target.checked)} />} label="用户可见" />
-                  <FormControlLabel control={<Switch checked={planForm.featured} onChange={(event) => updateForm('featured', event.target.checked)} />} label="推荐" />
                 </Stack>
               </Stack>
             </DialogContent>
