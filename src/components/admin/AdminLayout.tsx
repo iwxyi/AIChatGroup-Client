@@ -10,8 +10,9 @@ const drawerWidth = 248;
 
 const navItems = [
   { path: '/admin', label: '总览', permissions: ADMIN_DASHBOARD_PERMISSIONS },
-  { path: '/admin/users', label: '用户', permissions: [ADMIN_PERMISSION_CODES.usersRead] },
+  { path: '/admin/users', label: '用户列表', permissions: [ADMIN_PERMISSION_CODES.usersRead] },
   { path: '/admin/admins', label: '管理员', permissions: [ADMIN_PERMISSION_CODES.adminAll] },
+  { path: '/admin/global-config', label: '全局配置', permissions: [ADMIN_PERMISSION_CODES.platformRead] },
   { path: '/admin/platform', label: '平台配置', permissions: [ADMIN_PERMISSION_CODES.platformRead, ADMIN_PERMISSION_CODES.aiRead] },
   { path: '/admin/billing', label: '套餐订单', permissions: [ADMIN_PERMISSION_CODES.billingRead] },
   { path: '/admin/moderation', label: '分享审核', permissions: [ADMIN_PERMISSION_CODES.sharesReview] },

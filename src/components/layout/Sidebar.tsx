@@ -44,6 +44,7 @@ const navSections: NavItem[][] = [
   ],
   [
     { path: '/models', iconKind: 'models', labelKey: 'nav.models' },
+    { path: '/ai-proxy', iconKind: 'models', labelKey: 'nav.aiProxy' },
     { path: '/market', iconKind: 'market', labelKey: 'nav.market' },
     { path: '/membership', iconKind: 'membership', labelKey: 'nav.membership' },
   ],

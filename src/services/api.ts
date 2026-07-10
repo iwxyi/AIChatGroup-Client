@@ -56,6 +56,12 @@ export interface OfficialAiProviderInfo {
   accessTierCode?: string;
 }
 
+export interface OfficialAiModelInfo {
+  id: string;
+  label?: string;
+  metadata?: Record<string, unknown> | null;
+}
+
 export interface VipEntitlementInfo {
   description?: string;
   benefitsMarkdown?: string;
@@ -112,6 +118,78 @@ export interface AiUsageSummaryResponse {
   items: AiUsageSummaryItem[];
 }
 
+export interface AiProxyKeyItem {
+  id: string;
+  name: string;
+  keyMask: string;
+  status: 'active' | 'disabled' | 'revoked' | string;
+  allowedModels: string[] | null;
+  dailyQuota: number | null;
+  monthlyQuota: number | null;
+  rpmLimit: number | null;
+  tpmLimit: number | null;
+  lastUsedAt: number | null;
+  createdAt: number | null;
+  updatedAt: number | null;
+  usage?: {
+    todayChargedAmount?: number;
+    monthChargedAmount?: number;
+    totalChargedAmount?: number;
+    requestCount?: number;
+    lastUsedAt?: number | null;
+  } | null;
+}
+
+export interface AiProxyKeyCreateResponse {
+  key: AiProxyKeyItem;
+  rawKey: string;
+}
+
+export interface AiProxyUsageRecordItem {
+  id: string;
+  keyId: string | null;
+  keyName: string | null;
+  model: string;
+  upstreamModel: string;
+  protocol: string | null;
+  status: string;
+  httpStatus: number | null;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  chargedAmount: number;
+  billingUnit: string | null;
+  errorCode: string | null;
+  createdAt: number;
+}
+
+export interface AiProxyUsageRecordsResponse {
+  page: number;
+  limit: number;
+  total: number;
+  items: AiProxyUsageRecordItem[];
+}
+
+export interface AiProxyUsageGroupItem {
+  groupKey: string;
+  requestCount: number;
+  successCount: number;
+  failedCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  chargedAmount: number;
+  lastUsedAt?: number | null;
+}
+
+export interface AiProxyUsageGroupsResponse {
+  groupBy: 'day' | 'month';
+  page: number;
+  limit: number;
+  total: number;
+  items: AiProxyUsageGroupItem[];
+}
+
 export interface BillingPlanItem {
   id: string;
   code: string;
@@ -147,6 +225,14 @@ export interface BillingMembershipConfig {
   fulfillmentNote: string;
   tiers?: BillingMembershipTier[];
   entitlements?: Record<string, VipEntitlementInfo>;
+}
+
+export interface SitePublicConfig {
+  siteName: string;
+  siteTitle: string;
+  siteDescription: string;
+  faviconUrl: string;
+  themeColor: string;
 }
 
 export interface BillingOrderItem {
@@ -431,6 +517,10 @@ class ApiClient {
     return this.request<{ id: string; phone: string; nickname: string; avatar: string; cloudSyncEntitled?: boolean }>('PUT', '/auth/change-phone', { phone, code });
   }
 
+  async getPlatformPublicConfig() {
+    return this.request<{ site: SitePublicConfig }>('GET', '/platform/public-config');
+  }
+
   private getAiBalanceCacheKey(provider?: string) {
     return `${this.getToken() || 'guest'}:${provider || 'default'}`;
   }
@@ -509,6 +599,57 @@ class ApiClient {
 
   async getOfficialAiProviders() {
     return this.request<{ items: OfficialAiProviderInfo[] }>('GET', '/ai/providers');
+  }
+
+  async getOfficialAiModels(provider?: string | null) {
+    const suffix = provider ? `?provider=${encodeURIComponent(provider)}` : '';
+    return this.request<{ provider?: string; items: OfficialAiModelInfo[] }>('GET', `/ai/models${suffix}`);
+  }
+
+  async getAiProxyKeys() {
+    return this.request<{ items: AiProxyKeyItem[] }>('GET', '/ai-proxy/keys');
+  }
+
+  async createAiProxyKey(data: { name?: string; dailyQuota?: number | null; monthlyQuota?: number | null; rpmLimit?: number | null; allowedModels?: string[] | null }) {
+    return this.request<AiProxyKeyCreateResponse>('POST', '/ai-proxy/keys', data);
+  }
+
+  async updateAiProxyKey(keyId: string, data: Partial<Pick<AiProxyKeyItem, 'name' | 'status' | 'dailyQuota' | 'monthlyQuota' | 'rpmLimit' | 'tpmLimit' | 'allowedModels'>>) {
+    return this.request<AiProxyKeyItem>('PATCH', `/ai-proxy/keys/${encodeURIComponent(keyId)}`, data);
+  }
+
+  async deleteAiProxyKey(keyId: string) {
+    return this.request<{ success: boolean }>('DELETE', `/ai-proxy/keys/${encodeURIComponent(keyId)}`);
+  }
+
+  async rotateAiProxyKey(keyId: string) {
+    return this.request<AiProxyKeyCreateResponse>('POST', `/ai-proxy/keys/${encodeURIComponent(keyId)}/rotate`);
+  }
+
+  async getAiProxyBalance() {
+    return this.request<Record<string, unknown>>('GET', '/ai-proxy/balance');
+  }
+
+  async getAiProxyUsageSummary() {
+    return this.request<Record<string, unknown>>('GET', '/ai-proxy/usage/summary');
+  }
+
+  async getAiProxyUsageRecords(params: { keyId?: string | null; page?: number; limit?: number } = {}) {
+    const query = new URLSearchParams();
+    if (params.keyId) query.set('keyId', params.keyId);
+    if (params.page) query.set('page', String(params.page));
+    if (params.limit) query.set('limit', String(params.limit));
+    const suffix = query.toString();
+    return this.request<AiProxyUsageRecordsResponse>('GET', `/ai-proxy/usage/records${suffix ? `?${suffix}` : ''}`);
+  }
+
+  async getAiProxyUsageGroups(groupBy: 'daily' | 'monthly', params: { keyId?: string | null; page?: number; limit?: number } = {}) {
+    const query = new URLSearchParams();
+    if (params.keyId) query.set('keyId', params.keyId);
+    if (params.page) query.set('page', String(params.page));
+    if (params.limit) query.set('limit', String(params.limit));
+    const suffix = query.toString();
+    return this.request<AiProxyUsageGroupsResponse>('GET', `/ai-proxy/usage/${groupBy}${suffix ? `?${suffix}` : ''}`);
   }
 
   async getCharacters() {

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import SaveIcon from '@mui/icons-material/Save';
 import { Alert, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, MenuItem, Stack, Tab, Table, TableBody, TableCell, TableHead, TableRow, Tabs, TextField, Switch, Tooltip, Typography } from '@mui/material';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import AdminRequestState, { getAdminErrorMessage } from '../../components/admin/AdminRequestState';
 import { AdminMetricGrid, AdminSection, AdminTableFrame, type AdminMetricItem } from '../../components/admin/AdminSurface';
 import { ADMIN_PERMISSION_CODES, adminHasPermission } from '../../constants/adminPermissions';
@@ -322,6 +322,7 @@ function comparePlatformIntegration(left: Record<string, unknown>, right: Record
 
 export default function AdminPlatformPage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const admin = useAdminAuthStore((s) => s.admin);
   const canReadAi = adminHasPermission(admin, ADMIN_PERMISSION_CODES.aiRead);
   const canReadPlatform = adminHasPermission(admin, ADMIN_PERMISSION_CODES.platformRead);
@@ -391,12 +392,16 @@ export default function AdminPlatformPage() {
   }, [canReadPlatform]);
 
   useEffect(() => {
+    if (searchParams.get('tab') === 'global') {
+      navigate('/admin/global-config', { replace: true });
+      return;
+    }
     const tab = searchParams.get('tab');
     if (visibleTabs.some((item) => item.value === tab) && tab !== category) {
       setCategory(tab as PlatformTab);
       writePersistentUiValue(PLATFORM_TAB_STORAGE_KEY, tab as PlatformTab);
     }
-  }, [category, searchParams, visibleTabs]);
+  }, [category, navigate, searchParams, visibleTabs]);
 
   useEffect(() => {
     if (!visibleTabs.length || visibleTabs.some((item) => item.value === category)) return;

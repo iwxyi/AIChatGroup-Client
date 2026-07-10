@@ -70,6 +70,7 @@ const AI_USAGE_TYPE_LABELS: Record<string, string> = {
   character_artifact: '角色产物',
   moment_generation: '朋友圈生成',
   model_test: '测试连接',
+  proxy: '中转',
   other: '其他',
   unknown: '未分类',
 };

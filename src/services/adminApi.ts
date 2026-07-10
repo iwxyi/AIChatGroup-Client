@@ -1,4 +1,5 @@
 import { ApiError } from './api';
+import type { SitePublicConfig } from './api';
 
 const ADMIN_BASE = '/api/admin';
 const ADMIN_TOKEN_KEY = 'pneumata-admin-token';
@@ -212,11 +213,19 @@ class AdminApiClient {
   }
 
   getPlatformGlobalConfig() {
-    return this.request<{ ai: Record<string, unknown> }>('GET', '/platform/global-config');
+    return this.request<{ ai: Record<string, unknown>; site: SitePublicConfig }>('GET', '/platform/global-config');
   }
 
   updatePlatformGlobalConfig(payload: Record<string, unknown>) {
-    return this.request<{ ai: Record<string, unknown> }>('PUT', '/platform/global-config', payload);
+    return this.request<{ ai: Record<string, unknown>; site: SitePublicConfig }>('PUT', '/platform/global-config', payload);
+  }
+
+  exportAdminConfig() {
+    return this.request<Record<string, unknown>>('GET', '/config/export');
+  }
+
+  importAdminConfig(payload: Record<string, unknown>) {
+    return this.request<{ version: number; results: Array<Record<string, unknown>> }>('POST', '/config/import', payload);
   }
 
   getPlatformIntegrations() {

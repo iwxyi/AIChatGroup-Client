@@ -10,7 +10,9 @@ import AdminPermissionGate from './components/admin/AdminPermissionGate';
 import { useAdminAuthStore } from './stores/useAdminAuthStore';
 import { ADMIN_DASHBOARD_PERMISSIONS, ADMIN_PERMISSION_CODES } from './constants/adminPermissions';
 import { ADMIN_LOGIN_EVENT } from './services/adminApi';
+import { api } from './services/api';
 import { AUTH_SESSION_EXPIRED_EVENT, type AuthSessionExpiredDetail } from './services/authSession';
+import { APP_DESCRIPTION, APP_TITLE } from './constants/brand';
 import DevUpdatePrompt from './components/common/DevUpdatePrompt';
 import PwaUpdatePrompt from './components/common/PwaUpdatePrompt';
 import './i18n';
@@ -26,6 +28,7 @@ const routePreloaders = [
   () => import('./pages/SettingsPage'),
   () => import('./pages/RecycleBinPage'),
   () => import('./pages/AIModelsPage'),
+  () => import('./pages/AIProxyPage'),
   () => import('./pages/MembershipPage'),
   () => import('./pages/AccountPage'),
   () => import('./pages/SyncStatusPage'),
@@ -42,6 +45,7 @@ const routePreloaders = [
   () => import('./pages/admin/AdminDashboardPage'),
   () => import('./pages/admin/AdminUsersPage'),
   () => import('./pages/admin/AdminAdminsPage'),
+  () => import('./pages/admin/AdminGlobalConfigPage'),
   () => import('./pages/admin/AdminAIProviderPage'),
   () => import('./pages/admin/AdminPlatformPage'),
   () => import('./pages/admin/AdminBillingPage'),
@@ -65,6 +69,7 @@ const [
   loadSettingsPage,
   loadRecycleBinPage,
   loadAIModelsPage,
+  loadAIProxyPage,
   loadMembershipPage,
   loadAccountPage,
   loadSyncStatusPage,
@@ -81,6 +86,7 @@ const [
   loadAdminDashboardPage,
   loadAdminUsersPage,
   loadAdminAdminsPage,
+  loadAdminGlobalConfigPage,
   loadAdminAIProviderPage,
   loadAdminPlatformPage,
   loadAdminBillingPage,
@@ -103,6 +109,7 @@ const CharacterEditorPage = lazy(loadCharacterEditorPage);
 const SettingsPage = lazy(loadSettingsPage);
 const RecycleBinPage = lazy(loadRecycleBinPage);
 const AIModelsPage = lazy(loadAIModelsPage);
+const AIProxyPage = lazy(loadAIProxyPage);
 const MembershipPage = lazy(loadMembershipPage);
 const AccountPage = lazy(loadAccountPage);
 const SyncStatusPage = lazy(loadSyncStatusPage);
@@ -119,6 +126,7 @@ const AdminLoginPage = lazy(loadAdminLoginPage);
 const AdminDashboardPage = lazy(loadAdminDashboardPage);
 const AdminUsersPage = lazy(loadAdminUsersPage);
 const AdminAdminsPage = lazy(loadAdminAdminsPage);
+const AdminGlobalConfigPage = lazy(loadAdminGlobalConfigPage);
 const AdminAIProviderPage = lazy(loadAdminAIProviderPage);
 const AdminPlatformPage = lazy(loadAdminPlatformPage);
 const AdminBillingPage = lazy(loadAdminBillingPage);
@@ -296,6 +304,50 @@ function DataLoader({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function SiteConfigBootstrap({ onThemeColor }: { onThemeColor: (value: string | null) => void }) {
+  useEffect(() => {
+    let cancelled = false;
+    const fallbackTitle = document.title || APP_TITLE;
+    const ensureMeta = (name: string) => {
+      let meta = document.querySelector<HTMLMetaElement>(`meta[name="${name}"]`);
+      if (!meta) {
+        meta = document.createElement('meta');
+        meta.name = name;
+        document.head.appendChild(meta);
+      }
+      return meta;
+    };
+    const ensureFavicon = () => {
+      let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+      if (!link) {
+        link = document.createElement('link');
+        link.rel = 'icon';
+        document.head.appendChild(link);
+      }
+      return link;
+    };
+    void api.getPlatformPublicConfig()
+      .then(({ site }) => {
+        if (cancelled) return;
+        document.title = site.siteTitle || APP_TITLE;
+        ensureMeta('description').content = site.siteDescription || APP_DESCRIPTION;
+        onThemeColor(site.themeColor || null);
+        if (site.faviconUrl) ensureFavicon().href = site.faviconUrl;
+      })
+      .catch(() => {
+        if (cancelled) return;
+        document.title = fallbackTitle;
+        ensureMeta('description').content = APP_DESCRIPTION;
+        onThemeColor(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [onThemeColor]);
+
+  return null;
+}
+
 function RoutedApp() {
   return (
     <Routes>
@@ -309,6 +361,7 @@ function RoutedApp() {
           <Route index element={<RouteElement><AdminPermissionGate permissions={ADMIN_DASHBOARD_PERMISSIONS}><AdminDashboardPage /></AdminPermissionGate></RouteElement>} />
           <Route path="users" element={<RouteElement><AdminPermissionGate permissions={[ADMIN_PERMISSION_CODES.usersRead]}><AdminUsersPage /></AdminPermissionGate></RouteElement>} />
           <Route path="admins" element={<RouteElement><AdminPermissionGate permissions={[ADMIN_PERMISSION_CODES.adminAll]}><AdminAdminsPage /></AdminPermissionGate></RouteElement>} />
+          <Route path="global-config" element={<RouteElement><AdminPermissionGate permissions={[ADMIN_PERMISSION_CODES.platformRead]}><AdminGlobalConfigPage /></AdminPermissionGate></RouteElement>} />
           <Route path="ai" element={<Navigate to="/admin/platform?tab=ai" replace />} />
           <Route path="ai/providers/:providerCode" element={<LegacyAdminAIProviderRedirect />} />
           <Route path="platform/ai/providers/:providerCode" element={<RouteElement><AdminPermissionGate permissions={[ADMIN_PERMISSION_CODES.aiRead]}><AdminAIProviderPage /></AdminPermissionGate></RouteElement>} />
@@ -318,6 +371,7 @@ function RoutedApp() {
           <Route path="market" element={<RouteElement><AdminPermissionGate permissions={[ADMIN_PERMISSION_CODES.marketRead]}><AdminMarketPage /></AdminPermissionGate></RouteElement>} />
           <Route path="notifications" element={<RouteElement><AdminPermissionGate permissions={[ADMIN_PERMISSION_CODES.notificationsRead]}><AdminNotificationsPage /></AdminPermissionGate></RouteElement>} />
           <Route path="send-records" element={<RouteElement><AdminPermissionGate permissions={[ADMIN_PERMISSION_CODES.notificationsRead]}><AdminSendRecordsPage /></AdminPermissionGate></RouteElement>} />
+          <Route path="config-migration" element={<Navigate to="/admin/global-config" replace />} />
           <Route path="risk" element={<RouteElement><AdminPermissionGate permissions={[ADMIN_PERMISSION_CODES.riskRead]}><AdminRiskPage /></AdminPermissionGate></RouteElement>} />
           <Route path="audit" element={<RouteElement><AdminPermissionGate permissions={[ADMIN_PERMISSION_CODES.auditRead]}><AdminAuditPage /></AdminPermissionGate></RouteElement>} />
           <Route path="me" element={<RouteElement><AdminProfilePage /></RouteElement>} />
@@ -339,6 +393,7 @@ function RoutedApp() {
         <Route path="/moments" element={<RouteElement><MomentsPage /></RouteElement>} />
         <Route path="/market" element={<RouteElement><MarketPage /></RouteElement>} />
         <Route path="/models" element={<RouteElement><AIModelsPage /></RouteElement>} />
+        <Route path="/ai-proxy" element={<RouteElement><AIProxyPage /></RouteElement>} />
         <Route path="/membership" element={<RouteElement><MembershipPage /></RouteElement>} />
         <Route path="/account" element={<RouteElement><AccountPage /></RouteElement>} />
         <Route path="/account/sync-status" element={<RouteElement><SyncStatusPage /></RouteElement>} />
@@ -355,6 +410,7 @@ export default function App() {
   const themeColor = useSettingsStore((s) => s.themeColor);
   const prefersDark = useMediaQuery('(prefers-color-scheme: dark)');
   const [settingsHydrated, setSettingsHydrated] = useState(() => useSettingsStore.persist.hasHydrated());
+  const [siteThemeColor, setSiteThemeColor] = useState<string | null>(null);
 
   useEffect(() => {
     if (settingsHydrated) return;
@@ -376,8 +432,8 @@ export default function App() {
 
   useEffect(() => {
     const themeColorMeta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
-    if (themeColorMeta) themeColorMeta.content = theme.palette.primary.main;
-  }, [theme]);
+    if (themeColorMeta) themeColorMeta.content = siteThemeColor || theme.palette.primary.main;
+  }, [siteThemeColor, theme]);
 
   return (
     <ThemeProvider theme={theme}>
@@ -386,6 +442,7 @@ export default function App() {
       <PwaUpdatePrompt />
       {settingsHydrated ? (
         <BrowserRouter>
+          <SiteConfigBootstrap onThemeColor={setSiteThemeColor} />
           <AuthBootstrap />
           <AuthSessionRedirectHandler />
           <AdminAuthRedirectHandler />

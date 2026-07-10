@@ -1,0 +1,713 @@
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  Alert,
+  Autocomplete,
+  Box,
+  Button,
+  Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Divider,
+  FormControl,
+  Collapse,
+  IconButton,
+  InputLabel,
+  MenuItem,
+  Select,
+  Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  TextField,
+  Tooltip,
+  Typography,
+} from '@mui/material';
+import AddIcon from '@mui/icons-material/Add';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import DeleteIcon from '@mui/icons-material/Delete';
+import EditIcon from '@mui/icons-material/EditOutlined';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import RefreshIcon from '@mui/icons-material/Refresh';
+import PowerIcon from '@mui/icons-material/PowerSettingsNew';
+import VpnKeyIcon from '@mui/icons-material/VpnKeyOutlined';
+import { useLayoutHeaderActions } from '../components/layout/AppLayoutContext';
+import AppSnackbar from '../components/common/AppSnackbar';
+import PageSection from '../components/common/PageSection';
+import SurfaceCard from '../components/common/SurfaceCard';
+import { api, type AiProxyKeyItem, type AiProxyUsageGroupItem, type AiProxyUsageRecordItem } from '../services/api';
+import { formatAiBalanceAmount, formatAiAmount } from '../utils/aiPoints';
+
+type NewKeyDialogState = {
+  open: boolean;
+  name: string;
+  dailyQuota: string;
+  monthlyQuota: string;
+  rpmLimit: string;
+  allowedModels: string[];
+  rawKey: string;
+};
+
+type EditKeyDialogState = {
+  open: boolean;
+  keyId: string;
+  name: string;
+  dailyQuota: string;
+  monthlyQuota: string;
+  rpmLimit: string;
+  allowedModels: string[];
+  status: string;
+  rawKey: string;
+};
+
+const initialDialog: NewKeyDialogState = {
+  open: false,
+  name: '',
+  dailyQuota: '',
+  monthlyQuota: '',
+  rpmLimit: '60',
+  allowedModels: [],
+  rawKey: '',
+};
+
+const initialEditDialog: EditKeyDialogState = {
+  open: false,
+  keyId: '',
+  name: '',
+  dailyQuota: '',
+  monthlyQuota: '',
+  rpmLimit: '',
+  allowedModels: [],
+  status: 'active',
+  rawKey: '',
+};
+
+function formatDateTime(value: number | null | undefined) {
+  if (!value) return '-';
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value));
+}
+
+function formatNumber(value: unknown, digits = 2) {
+  const parsed = Number(value || 0);
+  return Number.isFinite(parsed) ? parsed.toFixed(digits).replace(/\.?0+$/, '') : '0';
+}
+
+function parseOptionalNumber(value: string) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function normalizeModelList(value: string[]) {
+  const models = value.map((item) => item.trim()).filter(Boolean);
+  return models.length ? Array.from(new Set(models)) : null;
+}
+
+function getSummaryAmount(summary: Record<string, unknown> | null, scope: 'today' | 'month' | 'total') {
+  const record = summary?.[scope];
+  if (!record || typeof record !== 'object' || Array.isArray(record)) return 0;
+  return Number((record as Record<string, unknown>).chargedAmount || 0);
+}
+
+function StatusChip({ status }: { status: string }) {
+  const active = status === 'active';
+  return (
+    <Chip
+      size="small"
+      color={active ? 'success' : 'default'}
+      label={active ? '启用' : '停用'}
+      variant={active ? 'filled' : 'outlined'}
+    />
+  );
+}
+
+function getAiProxyBaseUrl() {
+  if (typeof window === 'undefined') return '/ai';
+  return `${window.location.origin}/ai`;
+}
+
+function buildCurlExamples(apiKey: string, baseUrl: string, model: string) {
+  const auth = apiKey || 'pn_xxx';
+  return [
+    {
+      label: 'OpenAI Chat',
+      code: `curl ${baseUrl}/v1/chat/completions \\
+  -H "Authorization: Bearer ${auth}" \\
+  -H "Content-Type: application/json" \\
+  -d '{"model":"${model}","messages":[{"role":"user","content":"你好"}]}'`,
+    },
+    {
+      label: 'OpenAI Responses',
+      code: `curl ${baseUrl}/v1/responses \\
+  -H "Authorization: Bearer ${auth}" \\
+  -H "Content-Type: application/json" \\
+  -d '{"model":"${model}","input":"写一个一句话简介"}'`,
+    },
+    {
+      label: 'Anthropic Messages',
+      code: `curl ${baseUrl}/anthropic/v1/messages \\
+  -H "Authorization: Bearer ${auth}" \\
+  -H "Content-Type: application/json" \\
+  -d '{"model":"${model}","max_tokens":256,"messages":[{"role":"user","content":"你好"}]}'`,
+    },
+  ];
+}
+
+export default function AIProxyPage() {
+  const { setHeaderTitle, setHeaderActions } = useLayoutHeaderActions();
+  const [keys, setKeys] = useState<AiProxyKeyItem[]>([]);
+  const [balance, setBalance] = useState<Record<string, unknown> | null>(null);
+  const [summary, setSummary] = useState<Record<string, unknown> | null>(null);
+  const [records, setRecords] = useState<AiProxyUsageRecordItem[]>([]);
+  const [daily, setDaily] = useState<AiProxyUsageGroupItem[]>([]);
+  const [monthly, setMonthly] = useState<AiProxyUsageGroupItem[]>([]);
+  const [selectedKeyId, setSelectedKeyId] = useState<string>('');
+  const [loading, setLoading] = useState(true);
+  const [dialog, setDialog] = useState<NewKeyDialogState>(initialDialog);
+  const [editDialog, setEditDialog] = useState<EditKeyDialogState>(initialEditDialog);
+  const [modelOptions, setModelOptions] = useState<string[]>([]);
+  const [examplesOpen, setExamplesOpen] = useState(false);
+  const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'info' }>({ open: false, message: '', severity: 'success' });
+
+  const selectedKeyName = useMemo(() => keys.find((item) => item.id === selectedKeyId)?.name || '全部 Key', [keys, selectedKeyId]);
+  const sampleKey = keys[0]?.keyMask || '';
+  const proxyBaseUrl = useMemo(() => getAiProxyBaseUrl(), []);
+  const exampleModel = keys[0]?.allowedModels?.[0] || modelOptions[0] || 'deepseek-chat';
+  const curlExamples = useMemo(() => buildCurlExamples(sampleKey, proxyBaseUrl, exampleModel), [exampleModel, proxyBaseUrl, sampleKey]);
+  const endpointList = useMemo(() => [
+    `${proxyBaseUrl}/v1/models`,
+    `${proxyBaseUrl}/v1/chat/completions`,
+    `${proxyBaseUrl}/v1/responses`,
+    `${proxyBaseUrl}/anthropic/v1/messages`,
+    `${proxyBaseUrl}/v1/embeddings`,
+    `${proxyBaseUrl}/v1/images/generations`,
+  ], [proxyBaseUrl]);
+  const allowedModelOptions = useMemo(() => {
+    const values = [
+      ...modelOptions,
+      ...dialog.allowedModels,
+      ...editDialog.allowedModels,
+      ...keys.flatMap((key) => key.allowedModels || []),
+    ].map((item) => item.trim()).filter(Boolean);
+    return Array.from(new Set(values)).sort((left, right) => left.localeCompare(right));
+  }, [dialog.allowedModels, editDialog.allowedModels, keys, modelOptions]);
+  const canCreateKey = dialog.name.trim().length > 0;
+  const canSaveKey = editDialog.name.trim().length > 0;
+
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [keyResult, balanceResult, summaryResult, recordResult, dailyResult, monthlyResult] = await Promise.all([
+        api.getAiProxyKeys(),
+        api.getAiProxyBalance(),
+        api.getAiProxyUsageSummary(),
+        api.getAiProxyUsageRecords({ keyId: selectedKeyId || null, limit: 30 }),
+        api.getAiProxyUsageGroups('daily', { keyId: selectedKeyId || null, limit: 14 }),
+        api.getAiProxyUsageGroups('monthly', { keyId: selectedKeyId || null, limit: 6 }),
+      ]);
+      setKeys(keyResult.items);
+      setBalance(balanceResult);
+      setSummary(summaryResult);
+      setRecords(recordResult.items);
+      setDaily(dailyResult.items);
+      setMonthly(monthlyResult.items);
+    } catch (error) {
+      setSnackbar({ open: true, message: error instanceof Error ? error.message : '加载中转数据失败', severity: 'error' });
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedKeyId]);
+
+  useEffect(() => {
+    setHeaderTitle('中转');
+    setHeaderActions(
+      <Button size="small" startIcon={<RefreshIcon />} onClick={() => void loadData()}>
+        刷新
+      </Button>,
+    );
+    return () => {
+      setHeaderTitle(null);
+      setHeaderActions(null);
+    };
+  }, [loadData, setHeaderActions, setHeaderTitle]);
+
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadModels = async () => {
+      try {
+        const result = await api.getOfficialAiModels();
+        if (cancelled) return;
+        setModelOptions(Array.from(new Set((result.items || []).map((item) => item.id || item.label || '').filter(Boolean))).sort());
+      } catch {
+        if (!cancelled) setModelOptions([]);
+      }
+    };
+    void loadModels();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleCreateKey = async () => {
+    if (!canCreateKey) {
+      setSnackbar({ open: true, message: '请填写 Key 名称', severity: 'error' });
+      return;
+    }
+    try {
+      const result = await api.createAiProxyKey({
+        name: dialog.name.trim(),
+        dailyQuota: parseOptionalNumber(dialog.dailyQuota),
+        monthlyQuota: parseOptionalNumber(dialog.monthlyQuota),
+        rpmLimit: parseOptionalNumber(dialog.rpmLimit),
+        allowedModels: normalizeModelList(dialog.allowedModels),
+      });
+      setDialog((prev) => ({ ...prev, rawKey: result.rawKey }));
+      await loadData();
+    } catch (error) {
+      setSnackbar({ open: true, message: error instanceof Error ? error.message : '创建 Key 失败', severity: 'error' });
+    }
+  };
+
+  const copyText = async (value: string) => {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(value);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = value;
+        textarea.setAttribute('readonly', 'true');
+        textarea.style.position = 'fixed';
+        textarea.style.left = '-9999px';
+        textarea.style.top = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        const copied = document.execCommand('copy');
+        document.body.removeChild(textarea);
+        if (!copied) throw new Error('copy failed');
+      }
+      setSnackbar({ open: true, message: '已复制', severity: 'success' });
+    } catch {
+      setSnackbar({ open: true, message: '复制失败，请手动复制', severity: 'error' });
+    }
+  };
+
+  const openEditKey = (key: AiProxyKeyItem) => {
+    setEditDialog({
+      open: true,
+      keyId: key.id,
+      name: key.name,
+      dailyQuota: key.dailyQuota == null ? '' : String(key.dailyQuota),
+      monthlyQuota: key.monthlyQuota == null ? '' : String(key.monthlyQuota),
+      rpmLimit: key.rpmLimit == null ? '' : String(key.rpmLimit),
+      allowedModels: key.allowedModels || [],
+      status: key.status,
+      rawKey: '',
+    });
+  };
+
+  const saveEditKey = async () => {
+    if (!canSaveKey) {
+      setSnackbar({ open: true, message: '请填写 Key 名称', severity: 'error' });
+      return;
+    }
+    try {
+      await api.updateAiProxyKey(editDialog.keyId, {
+        name: editDialog.name.trim(),
+        status: editDialog.status,
+        dailyQuota: parseOptionalNumber(editDialog.dailyQuota),
+        monthlyQuota: parseOptionalNumber(editDialog.monthlyQuota),
+        rpmLimit: parseOptionalNumber(editDialog.rpmLimit),
+        allowedModels: normalizeModelList(editDialog.allowedModels),
+      });
+      setEditDialog(initialEditDialog);
+      await loadData();
+      setSnackbar({ open: true, message: 'Key 已更新', severity: 'success' });
+    } catch (error) {
+      setSnackbar({ open: true, message: error instanceof Error ? error.message : '保存 Key 失败', severity: 'error' });
+    }
+  };
+
+  const toggleEditKey = async () => {
+    const nextStatus = editDialog.status === 'active' ? 'disabled' : 'active';
+    try {
+      await api.updateAiProxyKey(editDialog.keyId, { status: nextStatus });
+      setEditDialog((prev) => ({ ...prev, status: nextStatus }));
+      await loadData();
+      setSnackbar({ open: true, message: nextStatus === 'active' ? 'Key 已启用' : 'Key 已停用', severity: 'success' });
+    } catch (error) {
+      setSnackbar({ open: true, message: error instanceof Error ? error.message : '更新 Key 失败', severity: 'error' });
+    }
+  };
+
+  const rotateEditKey = async () => {
+    try {
+      const result = await api.rotateAiProxyKey(editDialog.keyId);
+      setEditDialog((prev) => ({ ...prev, status: result.key.status, rawKey: result.rawKey }));
+      await loadData();
+    } catch (error) {
+      setSnackbar({ open: true, message: error instanceof Error ? error.message : '轮换 Key 失败', severity: 'error' });
+    }
+  };
+
+  const deleteKey = async (key: AiProxyKeyItem) => {
+    try {
+      await api.deleteAiProxyKey(key.id);
+      if (selectedKeyId === key.id) setSelectedKeyId('');
+      await loadData();
+    } catch (error) {
+      setSnackbar({ open: true, message: error instanceof Error ? error.message : '删除 Key 失败', severity: 'error' });
+    }
+  };
+
+  return (
+    <Box sx={{ px: { xs: 1.5, sm: 2.5 }, py: { xs: 1.5, sm: 2 }, maxWidth: 1280, mx: 'auto' }}>
+      <PageSection spacing={2}>
+        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', md: 'repeat(4, minmax(0, 1fr))' }, gap: 1.5 }}>
+          {[
+            { label: '当前 AI 点数', value: formatAiBalanceAmount(balance, undefined, { empty: loading ? '加载中' : '-' }) },
+            { label: '今日 API 消耗', value: `${formatNumber(getSummaryAmount(summary, 'today'))} P` },
+            { label: '本月 API 消耗', value: `${formatNumber(getSummaryAmount(summary, 'month'))} P` },
+            { label: '活跃 Key', value: String(summary?.activeKeyCount ?? keys.filter((item) => item.status === 'active').length) },
+          ].map((item) => (
+            <Box key={item.label}>
+              <SurfaceCard contentSx={{ py: 1.6 }}>
+                <Typography variant="caption" color="text.secondary">{item.label}</Typography>
+                <Typography variant="h6" sx={{ fontWeight: 800, mt: 0.5 }}>{item.value}</Typography>
+              </SurfaceCard>
+            </Box>
+          ))}
+        </Box>
+
+        <SurfaceCard>
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} sx={{ alignItems: { xs: 'stretch', md: 'center' }, justifyContent: 'space-between' }}>
+            <Box>
+              <Typography variant="h6" sx={{ fontWeight: 800 }}>API Key</Typography>
+              <Box
+                role="button"
+                tabIndex={0}
+                onClick={() => void copyText(proxyBaseUrl)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') void copyText(proxyBaseUrl);
+                }}
+                sx={{
+                  mt: 0.5,
+                  color: 'primary.main',
+                  fontFamily: 'monospace',
+                  fontSize: 13,
+                  overflowWrap: 'anywhere',
+                  cursor: 'pointer',
+                  '&:hover': { textDecoration: 'underline' },
+                }}
+              >
+                {proxyBaseUrl}
+              </Box>
+            </Box>
+            <Button startIcon={<AddIcon />} variant="contained" onClick={() => setDialog({ ...initialDialog, open: true })}>
+              新建 Key
+            </Button>
+          </Stack>
+          <TableContainer sx={{ mt: 1.5 }}>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>名称</TableCell>
+                  <TableCell>Key</TableCell>
+                  <TableCell>状态</TableCell>
+                  <TableCell>模型限制</TableCell>
+                  <TableCell align="right">今日</TableCell>
+                  <TableCell align="right">本月</TableCell>
+                  <TableCell>最后使用</TableCell>
+                  <TableCell align="right">操作</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {keys.map((key) => (
+                  <TableRow key={key.id} hover selected={selectedKeyId === key.id} onClick={() => setSelectedKeyId(key.id)}>
+                    <TableCell>{key.name}</TableCell>
+                    <TableCell sx={{ fontFamily: 'monospace' }}>{key.keyMask}</TableCell>
+                    <TableCell><StatusChip status={key.status} /></TableCell>
+                    <TableCell>{key.allowedModels?.length ? `${key.allowedModels.length} 个模型` : '跟随账号'}</TableCell>
+                    <TableCell align="right">{formatAiAmount(key.usage?.todayChargedAmount || 0, 'moacode')}</TableCell>
+                    <TableCell align="right">{formatAiAmount(key.usage?.monthChargedAmount || 0, 'moacode')}</TableCell>
+                    <TableCell>{formatDateTime(key.lastUsedAt || key.usage?.lastUsedAt)}</TableCell>
+                    <TableCell align="right" onClick={(event) => event.stopPropagation()}>
+                      <Tooltip title="编辑"><IconButton size="small" onClick={() => openEditKey(key)}><EditIcon fontSize="small" /></IconButton></Tooltip>
+                      <Tooltip title="删除"><IconButton size="small" color="error" onClick={() => void deleteKey(key)}><DeleteIcon fontSize="small" /></IconButton></Tooltip>
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {!keys.length && (
+                  <TableRow>
+                    <TableCell colSpan={8}>
+                      <Alert severity="info" icon={<VpnKeyIcon />}>还没有 API Key。</Alert>
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </SurfaceCard>
+
+        <SurfaceCard>
+          <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+            <Box>
+              <Typography variant="h6" sx={{ fontWeight: 800 }}>调用示例</Typography>
+              <Typography variant="body2" color="text.secondary">示例里的 Key 使用脱敏值占位，真实 Key 只在创建或轮换后显示一次。</Typography>
+            </Box>
+            <Button
+              size="small"
+              endIcon={<ExpandMoreIcon sx={{ transform: examplesOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 180ms ease' }} />}
+              onClick={() => setExamplesOpen((prev) => !prev)}
+            >
+              {examplesOpen ? '收起' : '展开'}
+            </Button>
+          </Stack>
+          <Collapse in={examplesOpen} unmountOnExit>
+            <Stack spacing={1} sx={{ mt: 1.5 }}>
+              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' }, gap: 1 }}>
+                {endpointList.map((endpoint) => (
+                  <Box
+                    key={endpoint}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => void copyText(endpoint)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') void copyText(endpoint);
+                    }}
+                    sx={{
+                      px: 1,
+                      py: 0.75,
+                      borderRadius: 1,
+                      bgcolor: 'action.hover',
+                      fontFamily: 'monospace',
+                      fontSize: 12,
+                      overflowWrap: 'anywhere',
+                      cursor: 'pointer',
+                      '&:hover': { bgcolor: 'action.selected' },
+                    }}
+                  >
+                    {endpoint}
+                  </Box>
+                ))}
+              </Box>
+              {curlExamples.map((example) => (
+                <Box key={example.label} sx={{ border: 1, borderColor: 'divider', borderRadius: 1, overflow: 'hidden' }}>
+                  <Stack direction="row" sx={{ px: 1.25, py: 0.75, alignItems: 'center', justifyContent: 'space-between', bgcolor: 'action.hover' }}>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>{example.label}</Typography>
+                    <Tooltip title="复制示例">
+                      <IconButton size="small" onClick={() => void copyText(example.code)}>
+                        <ContentCopyIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  </Stack>
+                  <Box
+                    component="pre"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => void copyText(example.code)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') void copyText(example.code);
+                    }}
+                    sx={{ m: 0, p: 1.25, overflowX: 'auto', fontSize: 12, fontFamily: 'monospace', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', cursor: 'pointer' }}
+                  >
+                    {example.code}
+                  </Box>
+                </Box>
+              ))}
+            </Stack>
+          </Collapse>
+        </SurfaceCard>
+
+        <SurfaceCard>
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} sx={{ alignItems: { xs: 'stretch', md: 'center' }, justifyContent: 'space-between' }}>
+            <Box>
+              <Typography variant="h6" sx={{ fontWeight: 800 }}>用量</Typography>
+              <Typography variant="body2" color="text.secondary">当前筛选：{selectedKeyName}</Typography>
+            </Box>
+            <FormControl size="small" sx={{ minWidth: 220 }}>
+              <InputLabel>Key</InputLabel>
+              <Select label="Key" value={selectedKeyId} onChange={(event) => setSelectedKeyId(event.target.value)}>
+                <MenuItem value="">全部 Key</MenuItem>
+                {keys.map((key) => <MenuItem key={key.id} value={key.id}>{key.name}</MenuItem>)}
+              </Select>
+            </FormControl>
+          </Stack>
+          <Divider sx={{ my: 1.5 }} />
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: 'minmax(0, 7fr) minmax(0, 5fr)' }, gap: 1.5 }}>
+            <Box>
+              <Typography variant="subtitle2" sx={{ fontWeight: 800, mb: 1 }}>消耗记录</Typography>
+              <TableContainer>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>时间</TableCell>
+                      <TableCell>模型</TableCell>
+                      <TableCell>状态</TableCell>
+                      <TableCell align="right">Tokens</TableCell>
+                      <TableCell align="right">扣点</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {records.map((item) => (
+                      <TableRow key={item.id}>
+                        <TableCell>{formatDateTime(item.createdAt)}</TableCell>
+                        <TableCell>{item.model || '-'}</TableCell>
+                        <TableCell>{item.status === 'success' ? '成功' : '失败'}</TableCell>
+                        <TableCell align="right">{item.totalTokens || 0}</TableCell>
+                        <TableCell align="right">{formatNumber(item.chargedAmount)} P</TableCell>
+                      </TableRow>
+                    ))}
+                    {!records.length && <TableRow><TableCell colSpan={5}>暂无记录</TableCell></TableRow>}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </Box>
+            <Box>
+              <Typography variant="subtitle2" sx={{ fontWeight: 800, mb: 1 }}>每日统计</Typography>
+              <Stack spacing={0.75}>
+                {daily.slice(0, 7).map((item) => (
+                  <Stack key={item.groupKey} direction="row" sx={{ justifyContent: 'space-between', fontSize: 14 }}>
+                    <span>{item.groupKey}</span>
+                    <span>{item.requestCount} 次 / {formatNumber(item.chargedAmount)} P</span>
+                  </Stack>
+                ))}
+                {!daily.length && <Typography variant="body2" color="text.secondary">暂无每日统计</Typography>}
+              </Stack>
+              <Divider sx={{ my: 1.5 }} />
+              <Typography variant="subtitle2" sx={{ fontWeight: 800, mb: 1 }}>每月统计</Typography>
+              <Stack spacing={0.75}>
+                {monthly.map((item) => (
+                  <Stack key={item.groupKey} direction="row" sx={{ justifyContent: 'space-between', fontSize: 14 }}>
+                    <span>{item.groupKey}</span>
+                    <span>{item.requestCount} 次 / {formatNumber(item.chargedAmount)} P</span>
+                  </Stack>
+                ))}
+                {!monthly.length && <Typography variant="body2" color="text.secondary">暂无每月统计</Typography>}
+              </Stack>
+            </Box>
+          </Box>
+        </SurfaceCard>
+      </PageSection>
+
+      <Dialog open={dialog.open} onClose={() => setDialog(initialDialog)} fullWidth maxWidth="sm">
+        <DialogTitle>{dialog.rawKey ? '保存新 Key' : '新建 API Key'}</DialogTitle>
+        <DialogContent>
+          {dialog.rawKey ? (
+            <Stack spacing={1.5} sx={{ pt: 1 }}>
+              <Alert severity="warning">明文 Key 只显示一次，关闭后无法再次查看。</Alert>
+              <TextField value={dialog.rawKey} fullWidth slotProps={{ input: { readOnly: true, endAdornment: <IconButton onClick={() => void copyText(dialog.rawKey)}><ContentCopyIcon /></IconButton> } }} />
+            </Stack>
+          ) : (
+            <Stack spacing={1.5} sx={{ pt: 1 }}>
+              <TextField
+                label="名称"
+                required
+                value={dialog.name}
+                onChange={(event) => setDialog((prev) => ({ ...prev, name: event.target.value }))}
+                fullWidth
+              />
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
+                <TextField label="每日限额 P" value={dialog.dailyQuota} onChange={(event) => setDialog((prev) => ({ ...prev, dailyQuota: event.target.value }))} fullWidth />
+                <TextField label="每月限额 P" value={dialog.monthlyQuota} onChange={(event) => setDialog((prev) => ({ ...prev, monthlyQuota: event.target.value }))} fullWidth />
+                <TextField label="RPM" value={dialog.rpmLimit} onChange={(event) => setDialog((prev) => ({ ...prev, rpmLimit: event.target.value }))} fullWidth />
+              </Stack>
+              <Autocomplete
+                multiple
+                options={allowedModelOptions}
+                value={dialog.allowedModels}
+                onChange={(_event, value) => setDialog((prev) => ({ ...prev, allowedModels: value }))}
+                renderInput={(params) => (
+                  <TextField {...params} label="允许模型" placeholder="留空表示跟随账号" helperText="不选择时跟随账号可用模型" />
+                )}
+              />
+            </Stack>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDialog(initialDialog)}>关闭</Button>
+          {!dialog.rawKey && <Button variant="contained" disabled={!canCreateKey} onClick={() => void handleCreateKey()}>创建</Button>}
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={editDialog.open} onClose={() => setEditDialog(initialEditDialog)} fullWidth maxWidth="sm">
+        <DialogTitle>编辑 API Key</DialogTitle>
+        <DialogContent>
+          <Stack spacing={1.5} sx={{ pt: 1 }}>
+            {editDialog.rawKey && (
+              <Alert severity="warning">
+                明文 Key 只显示一次：
+                <Box
+                  component="span"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => void copyText(editDialog.rawKey)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') void copyText(editDialog.rawKey);
+                  }}
+                  sx={{ ml: 0.75, fontFamily: 'monospace', overflowWrap: 'anywhere', cursor: 'pointer' }}
+                >
+                  {editDialog.rawKey}
+                </Box>
+              </Alert>
+            )}
+            <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+              <StatusChip status={editDialog.status} />
+              <Stack direction="row" spacing={1}>
+                <Button size="small" startIcon={<PowerIcon />} onClick={() => void toggleEditKey()}>
+                  {editDialog.status === 'active' ? '停用' : '启用'}
+                </Button>
+                <Button size="small" startIcon={<RefreshIcon />} onClick={() => void rotateEditKey()}>
+                  轮换
+                </Button>
+              </Stack>
+            </Stack>
+            <TextField
+              label="名称"
+              required
+              value={editDialog.name}
+              onChange={(event) => setEditDialog((prev) => ({ ...prev, name: event.target.value }))}
+              fullWidth
+            />
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
+              <TextField label="每日限额 P" value={editDialog.dailyQuota} onChange={(event) => setEditDialog((prev) => ({ ...prev, dailyQuota: event.target.value }))} fullWidth />
+              <TextField label="每月限额 P" value={editDialog.monthlyQuota} onChange={(event) => setEditDialog((prev) => ({ ...prev, monthlyQuota: event.target.value }))} fullWidth />
+              <TextField label="RPM" value={editDialog.rpmLimit} onChange={(event) => setEditDialog((prev) => ({ ...prev, rpmLimit: event.target.value }))} fullWidth />
+            </Stack>
+            <Autocomplete
+              multiple
+              options={allowedModelOptions}
+              value={editDialog.allowedModels}
+              onChange={(_event, value) => setEditDialog((prev) => ({ ...prev, allowedModels: value }))}
+              renderInput={(params) => (
+                <TextField {...params} label="允许模型" placeholder="留空表示跟随账号" helperText="不选择时跟随账号可用模型" />
+              )}
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setEditDialog(initialEditDialog)}>取消</Button>
+          <Button variant="contained" disabled={!canSaveKey} onClick={() => void saveEditKey()}>保存</Button>
+        </DialogActions>
+      </Dialog>
+
+      <AppSnackbar
+        open={snackbar.open}
+        message={snackbar.message}
+        severity={snackbar.severity}
+        onClose={() => setSnackbar((prev) => ({ ...prev, open: false }))}
+      />
+    </Box>
+  );
+}

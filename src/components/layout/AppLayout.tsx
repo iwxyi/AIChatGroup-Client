@@ -35,6 +35,7 @@ const routeMeta = [
   { match: (pathname: string) => pathname.startsWith('/letters'), titleKey: 'nav.letters' },
   { match: (pathname: string) => pathname.startsWith('/intro'), titleKey: 'nav.intro' },
   { match: (pathname: string) => pathname.startsWith('/models'), titleKey: 'nav.models' },
+  { match: (pathname: string) => pathname.startsWith('/ai-proxy'), titleKey: 'nav.aiProxy' },
   { match: (pathname: string) => pathname.startsWith('/membership'), titleKey: 'nav.membership' },
   { match: (pathname: string) => pathname.startsWith('/account'), titleKey: 'nav.account' },
   { match: (pathname: string) => pathname.startsWith('/settings'), titleKey: 'nav.settings' },

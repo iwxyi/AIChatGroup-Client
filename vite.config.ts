@@ -83,6 +83,24 @@ export default defineConfig({
           })
         },
       },
+      '^/ai(?:/|$)': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+        configure(proxy) {
+          proxy.on('proxyReq', (proxyRequest, request) => {
+            setForwardedHeaders(proxyRequest, request)
+          })
+        },
+      },
+      '^/v1(?:/|$)': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+        configure(proxy) {
+          proxy.on('proxyReq', (proxyRequest, request) => {
+            setForwardedHeaders(proxyRequest, request)
+          })
+        },
+      },
     },
   },
   plugins: [

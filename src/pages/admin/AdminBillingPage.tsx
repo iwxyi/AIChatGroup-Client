@@ -1373,7 +1373,7 @@ export default function AdminBillingPage() {
     setClosingExpiredOrders(true);
     setOrdersError(null);
     try {
-      await adminApi.closeExpiredOrders({ olderThanMinutes: 120, limit: 100 });
+      await adminApi.closeExpiredOrders({ olderThanMinutes: 60, limit: 100 });
       await loadOrders();
       if (selectedOrder) await loadOrderDetail(String(selectedOrder.id || ''));
     } catch (closeError) {
