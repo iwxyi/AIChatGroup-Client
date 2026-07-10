@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
-import { Alert, Avatar, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Divider, Stack, Typography } from '@mui/material';
+import RefreshIcon from '@mui/icons-material/Refresh';
+import { Alert, Avatar, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Divider, IconButton, Stack, Tooltip, Typography } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import FloatingSegmentedTabs, { buildFloatingTabContainerSx } from '../components/common/FloatingSegmentedTabs';
+import { useLayoutHeaderActions } from '../components/layout/AppLayoutContext';
 import SurfaceCard from '../components/common/SurfaceCard';
 import { buildBundledCharacterPreview, buildImportedChatDraft, getBundledCharacterEntries, remapIds } from '../services/marketImportDraft';
 import { marketApi, type MarketItem, type MarketItemKind } from '../services/marketApi';
@@ -676,7 +678,10 @@ async function importBundleTemplate(item: MarketItem) {
 
 export default function MarketPage() {
   const navigate = useNavigate();
+  const { setHeaderActions, setHeaderBackAction, setHeaderTitle } = useLayoutHeaderActions();
   const currentUserId = useAuthStore((state) => state.user?.id || null);
+  const isLoggedIn = useAuthStore((state) => state.isLoggedIn);
+  const authMode = useAuthStore((state) => state.authMode);
   const characters = useCharacterStore((state) => state.characters);
   const chats = useChatStore((state) => state.chats);
   const [kind, setKind] = useState<MarketItemKind | ''>('');
@@ -705,6 +710,25 @@ export default function MarketPage() {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    setHeaderTitle('市场');
+    setHeaderBackAction(null);
+    setHeaderActions(
+      <Tooltip title="刷新">
+        <span>
+          <IconButton aria-label="刷新市场" onClick={() => void load()} disabled={loading} size="small">
+            <RefreshIcon />
+          </IconButton>
+        </span>
+      </Tooltip>
+    );
+    return () => {
+      setHeaderTitle(null);
+      setHeaderBackAction(null);
+      setHeaderActions(null);
+    };
+  }, [load, loading, setHeaderActions, setHeaderBackAction, setHeaderTitle]);
+
   const openImport = async (item: MarketItem) => {
     if (detailLoadingId) return;
     setSelected(item);
@@ -723,6 +747,10 @@ export default function MarketPage() {
 
   const importSelected = async () => {
     if (!detail?.payload) return;
+    if (authMode !== 'cloud' || !isLoggedIn) {
+      navigate('/login', { state: { from: { pathname: '/market' } } });
+      return;
+    }
     setImporting(true);
     setError('');
     try {
@@ -765,16 +793,13 @@ export default function MarketPage() {
 
   return (
     <Box sx={{ p: { xs: 2, md: 3 }, display: 'grid', gap: 2 }}>
-      <Box sx={{ ...buildFloatingTabContainerSx(), mb: 0, alignItems: { xs: 'stretch', sm: 'center' } }}>
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ alignItems: { xs: 'stretch', sm: 'center' }, justifyContent: 'center', width: '100%' }}>
-          <FloatingSegmentedTabs
-            value={kind}
-            onChange={setKind}
-            equalWidth={false}
-            items={kindFilterOptions}
-          />
-          <Button onClick={() => void load()} disabled={loading}>刷新</Button>
-        </Stack>
+      <Box sx={{ ...buildFloatingTabContainerSx(), mb: 0 }}>
+        <FloatingSegmentedTabs
+          value={kind}
+          onChange={setKind}
+          equalWidth={false}
+          items={kindFilterOptions}
+        />
       </Box>
       {error ? <Alert severity="error">{error}</Alert> : null}
       <Box

@@ -12,6 +12,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useCharacterStore } from '../stores/useCharacterStore';
 import { useSettingsStore } from '../stores/useSettingsStore';
+import { useAuthStore } from '../stores/useAuthStore';
 import CharacterCard from '../components/character/CharacterCard';
 import CharacterGroupFilterBar from '../components/character/CharacterGroupFilterBar';
 import ConfirmDialog from '../components/common/ConfirmDialog';
@@ -85,6 +86,8 @@ export default function CharacterLibraryPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { setHeaderActions, setHeaderTitle, setHeaderBackAction, setHideMobileBottomNav } = useLayoutHeaderActions();
+  const isLoggedIn = useAuthStore((state) => state.isLoggedIn);
+  const authMode = useAuthStore((state) => state.authMode);
   const { aiProfiles, avatarGeneration } = useSettingsStore(useShallow((state) => ({
     aiProfiles: state.aiProfiles,
     avatarGeneration: state.avatarGeneration,
@@ -171,6 +174,12 @@ export default function CharacterLibraryPage() {
 
   useEffect(() => {
     let active = true;
+    if (authMode !== 'cloud' || !isLoggedIn) {
+      setMembership(null);
+      return () => {
+        active = false;
+      };
+    }
     api.getBillingMembership()
       .then((result) => {
         if (active) setMembership(result);
@@ -181,7 +190,7 @@ export default function CharacterLibraryPage() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [authMode, isLoggedIn]);
 
   const presets = useMemo(() => characters.filter((c) => c.isPreset), [characters]);
   const custom = useMemo(() => characters.filter((c) => !c.isPreset), [characters]);

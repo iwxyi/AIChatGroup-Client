@@ -8,7 +8,7 @@ export function isLocalOnlyMode() {
 }
 
 export function shouldSkipCloudSync() {
-  return isLocalOnlyMode() || !isCloudSyncEnabled() || isCloudSyncBootstrapLocked();
+  return isLocalOnlyMode() || !useAuthStore.getState().isLoggedIn || !isCloudSyncEnabled() || isCloudSyncBootstrapLocked();
 }
 
 export function canAttemptOnlineSync() {

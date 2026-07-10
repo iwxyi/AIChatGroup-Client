@@ -15,6 +15,7 @@ import { useTranslation } from 'react-i18next';
 import { useLayoutHeaderActions } from '../components/layout/AppLayoutContext';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { useCharacterStore } from '../stores/useCharacterStore';
+import { useAuthStore } from '../stores/useAuthStore';
 import { isLikelyBrowserCorsError, listAvailableModels, testConnection } from '../services/aiClient';
 import { api, type OfficialAiProviderInfo } from '../services/api';
 import type { AIModelImageCapabilities, AIModelInputCapabilities, AIModelType, AIProvider } from '../types/settings';
@@ -280,6 +281,8 @@ export default function AIModelsPage() {
   const { t, i18n } = useTranslation();
   const { setHeaderActions, setHeaderTitle, setHeaderBackAction, setHideMobileBottomNav } = useLayoutHeaderActions();
   const settings = useSettingsStore();
+  const isLoggedIn = useAuthStore((state) => state.isLoggedIn);
+  const authMode = useAuthStore((state) => state.authMode);
   const characters = useCharacterStore((state) => state.characters);
   const characterLoading = useCharacterStore((state) => state.isLoading);
   const loadCharacters = useCharacterStore((state) => state.loadCharacters);
@@ -309,6 +312,7 @@ export default function AIModelsPage() {
     message: '',
     severity: 'success',
   });
+  const canUseOfficialProviders = authMode === 'cloud' && isLoggedIn;
   const saveStatusMeta = (() => {
     if (settings.syncStatus === 'saving') {
       return {
@@ -371,9 +375,17 @@ export default function AIModelsPage() {
     .sort((left, right) => left.sortOrder - right.sortOrder || left.label.localeCompare(right.label)), [officialProviders]);
   const getProviderOptionsForType = useCallback((type: AIModelType, selectedProvider?: string): AIProviderOption[] => {
     const nonOfficialOptions = getProvidersForType(type).filter((item) => !isOfficialProviderKey(item.key));
-    const visibleOfficialOptions = officialProvidersError
-      ? []
-      : onlineOfficialProviderOptions.filter((item) => item.defaults[type] && (!item.hidden || item.key === selectedProvider));
+    const visibleOfficialOptions = !canUseOfficialProviders
+      ? getProvidersForType(type)
+        .filter((item) => isOfficialProviderKey(item.key) && (!item.hidden || item.key === selectedProvider))
+        .map((item) => ({
+          ...item,
+          label: `${item.label}（登录后可用）`,
+          unavailableReason: i18n.language.startsWith('zh') ? '登录后可用' : 'sign in required',
+        }))
+      : officialProvidersError
+        ? []
+        : onlineOfficialProviderOptions.filter((item) => item.defaults[type] && (!item.hidden || item.key === selectedProvider));
     const selectedOfficialOption = selectedProvider && isOfficialProviderKey(selectedProvider)
       ? getProviderCatalogEntry(selectedProvider as AIProvider)
       : null;
@@ -383,7 +395,9 @@ export default function AIModelsPage() {
     if (selectedOfficialOption?.defaults[type] && !selectedOfficialIsListed) {
       const reason = officialProvidersLoading
         ? (i18n.language.startsWith('zh') ? '正在确认可用性' : 'checking availability')
-        : officialProvidersError
+        : !canUseOfficialProviders
+          ? (i18n.language.startsWith('zh') ? '登录后可用' : 'sign in required')
+          : officialProvidersError
           ? (i18n.language.startsWith('zh') ? '在线列表获取失败' : 'online list failed')
           : (i18n.language.startsWith('zh') ? '后台未启用' : 'disabled by backend');
       return [
@@ -401,7 +415,7 @@ export default function AIModelsPage() {
       ...visibleOfficialOptions,
       ...nonOfficialOptions,
     ];
-  }, [i18n.language, officialProvidersError, officialProvidersLoading, onlineOfficialProviderOptions]);
+  }, [canUseOfficialProviders, i18n.language, officialProvidersError, officialProvidersLoading, onlineOfficialProviderOptions]);
 
   useEffect(() => {
     setHeaderTitle(t('nav.models'));
@@ -418,6 +432,14 @@ export default function AIModelsPage() {
 
   useEffect(() => {
     let active = true;
+    if (!canUseOfficialProviders) {
+      setOfficialProviders([]);
+      setOfficialProvidersError(null);
+      setOfficialProvidersLoading(false);
+      return () => {
+        active = false;
+      };
+    }
     setOfficialProvidersLoading(true);
     setOfficialProvidersError(null);
     api.getOfficialAiProviders()
@@ -436,7 +458,7 @@ export default function AIModelsPage() {
     return () => {
       active = false;
     };
-  }, [i18n.language]);
+  }, [canUseOfficialProviders, i18n.language]);
 
   const handleModelInputChange = useCallback((profileId: string, value: string) => {
     const profile = settings.aiProfiles.find((item) => item.id === profileId);
@@ -448,6 +470,11 @@ export default function AIModelsPage() {
   }, [settings]);
 
   const refreshAiBalance = useCallback(async (providerKey: string) => {
+    if (!canUseOfficialProviders) {
+      setAiBalances((prev) => ({ ...prev, [providerKey]: null }));
+      setAiBalanceStatuses((prev) => ({ ...prev, [providerKey]: 'guest' }));
+      return;
+    }
     const backendProvider = resolveOfficialBackendProvider(providerKey);
     setAiBalanceLoadingIds((prev) => ({ ...prev, [providerKey]: true }));
     try {
@@ -465,7 +492,7 @@ export default function AIModelsPage() {
         return next;
       });
     }
-  }, []);
+  }, [canUseOfficialProviders]);
 
   useEffect(() => {
     const providers = Array.from(new Set(settings.aiProfiles.filter((profile) => isOfficialProviderKey(profile.provider)).map((profile) => profile.provider)));
@@ -482,6 +509,14 @@ export default function AIModelsPage() {
   const handleTestConnection = async (profileId: string) => {
     const profile = settings.aiProfiles.find((item) => item.id === profileId);
     if (!profile) return;
+    if (isOfficialProviderKey(profile.provider) && !canUseOfficialProviders) {
+      setSnackbar({
+        open: true,
+        message: i18n.language.startsWith('zh') ? '官方模型需要登录后使用' : 'Official models require sign-in',
+        severity: 'error',
+      });
+      return;
+    }
     setTestingId(profileId);
     try {
       const result = await testConnection(profile);
@@ -521,6 +556,14 @@ export default function AIModelsPage() {
   };
 
   const handleApplyOfficialKey = async (profileId: string, providerKey: string) => {
+    if (!canUseOfficialProviders) {
+      setSnackbar({
+        open: true,
+        message: i18n.language.startsWith('zh') ? '请先登录后申请官方模型 Key' : 'Sign in before requesting an official model key',
+        severity: 'error',
+      });
+      return;
+    }
     const backendProvider = resolveOfficialBackendProvider(providerKey);
     setApplyingKeyId(profileId);
     try {
@@ -605,6 +648,17 @@ export default function AIModelsPage() {
   const fetchAvailableModels = async (profileId: string, silent = false, force = false) => {
     const profile = settings.aiProfiles.find((item) => item.id === profileId);
     if (!profile) return false;
+    if (isOfficialProviderKey(profile.provider) && !canUseOfficialProviders) {
+      setRemoteModelOptions((prev) => ({ ...prev, [profileId]: [] }));
+      if (!silent) {
+        setSnackbar({
+          open: true,
+          message: i18n.language.startsWith('zh') ? '登录后才能获取官方模型列表' : 'Sign in to load official models',
+          severity: 'error',
+        });
+      }
+      return false;
+    }
     if (!isOfficialProviderKey(profile.provider) && !profile.apiKey) {
       setRemoteModelOptions((prev) => ({ ...prev, [profileId]: [] }));
       return false;

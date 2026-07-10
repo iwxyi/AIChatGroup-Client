@@ -323,11 +323,7 @@ function RoutedApp() {
           <Route path="me" element={<RouteElement><AdminProfilePage /></RouteElement>} />
         </Route>
       </Route>
-      <Route element={
-        <RequireAuth>
-          <AppLayout />
-        </RequireAuth>
-      }>
+      <Route element={<AppLayout />}>
         <Route path="/" element={<RouteElement><HomePage /></RouteElement>} />
         <Route path="/chats" element={<ChatMasterDetailRouteElement detail={null} fallback="master" />} />
         <Route path="/chats/create" element={<ChatMasterDetailRouteElement detail={<RouteElement><CreateChatPage /></RouteElement>} />} />

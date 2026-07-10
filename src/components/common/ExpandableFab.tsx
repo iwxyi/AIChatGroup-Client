@@ -29,9 +29,9 @@ export default function ExpandableFab({ icon, label, ariaLabel, onClick, color =
       sx={[
         {
           zIndex: 1300,
-          width: canHover ? 56 : expandedWidth,
-          minWidth: canHover ? 56 : expandedWidth,
-          maxWidth: canHover ? expandedWidth + 20 : expandedWidth,
+          width: 56,
+          minWidth: 56,
+          maxWidth: expandedWidth + 20,
           height: 56,
           minHeight: 56,
           p: 0,
@@ -84,8 +84,8 @@ export default function ExpandableFab({ icon, label, ariaLabel, onClick, color =
             justifyContent: 'flex-start',
             whiteSpace: 'nowrap',
             overflow: 'hidden',
-            opacity: canHover ? 0 : 1,
-            transform: canHover ? 'translate3d(8px, 0, 0)' : 'translate3d(0, 0, 0)',
+            opacity: 0,
+            transform: 'translate3d(8px, 0, 0)',
             transformOrigin: 'left center',
             transition: `opacity 150ms ease, transform 300ms ${fabSettle}`,
           },

@@ -15,6 +15,7 @@ import { useChatStore } from '../stores/useChatStore';
 import { useCharacterStore } from '../stores/useCharacterStore';
 import { useMessageStore } from '../stores/useMessageStore';
 import { useSettingsStore } from '../stores/useSettingsStore';
+import { useAuthStore } from '../stores/useAuthStore';
 import type { AICharacter } from '../types/character';
 import { getPreferredAIProfile, isAIProfileUsable } from '../types/settings';
 import type { ChatStyle, GroupChat, RuntimeEvolutionIntensity } from '../types/chat';
@@ -33,7 +34,7 @@ import {
   normalizeOperatorIdsInput,
   stripUserMemberId,
 } from '../services/chatDraftBuilder';
-import { api as apiClient, type BillingMembershipResponse } from '../services/api';
+import { api as apiClient, type BillingMembershipResponse, type VipEntitlementInfo } from '../services/api';
 import { MIN_MEMBERS, MAX_MEMBERS } from '../constants/defaults';
 import { getChatStyleOption } from '../constants/chatStyles';
 import { storageKey } from '../constants/brand';
@@ -205,6 +206,8 @@ export default function CreateChatPage() {
     setChatDraftDefaults: state.setChatDraftDefaults,
     loadSettings: state.loadSettings,
   })));
+  const isLoggedIn = useAuthStore((state) => state.isLoggedIn);
+  const authMode = useAuthStore((state) => state.authMode);
   const [memberDialogOpen, setMemberDialogOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [clearMessagesConfirmOpen, setClearMessagesConfirmOpen] = useState(false);
@@ -258,6 +261,7 @@ export default function CreateChatPage() {
   const [saving, setSaving] = useState(false);
   const [saveAsChatSaving, setSaveAsChatSaving] = useState(false);
   const [membership, setMembership] = useState<BillingMembershipResponse | null>(null);
+  const [freeEntitlement, setFreeEntitlement] = useState<VipEntitlementInfo | null>(null);
   const [vipLimitDialog, setVipLimitDialog] = useState<{ title: string; description: string; current?: number | null; limit?: number | null; helperText?: string } | null>(null);
   const [aiAutofilling, setAiAutofilling] = useState(false);
   const [hotTopicOpenSignal, setHotTopicOpenSignal] = useState(0);
@@ -322,6 +326,26 @@ export default function CreateChatPage() {
 
   useEffect(() => {
     let active = true;
+    apiClient.getBillingMembershipConfig()
+      .then((result) => {
+        if (active) setFreeEntitlement(result.entitlements?.free || null);
+      })
+      .catch(() => {
+        if (active) setFreeEntitlement(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    if (authMode !== 'cloud' || !isLoggedIn) {
+      setMembership(null);
+      return () => {
+        active = false;
+      };
+    }
     apiClient.getBillingMembership()
       .then((result) => {
         if (active) setMembership(result);
@@ -332,7 +356,7 @@ export default function CreateChatPage() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [authMode, isLoggedIn]);
 
   useEffect(() => {
     if (id && !editingChat) return;
@@ -950,7 +974,7 @@ export default function CreateChatPage() {
   const memberSummaryEmptyLabel = isZh ? '未选择AI角色' : 'No AI roles selected';
   const memberDialogConfirmLabel = t('common.confirm');
   const startChatLabel = editingChat ? t('common.save') : '开始群聊';
-  const maxChats = membership?.vipEntitlement?.entitlement.maxChats ?? null;
+  const maxChats = membership?.vipEntitlement?.entitlement.maxChats ?? freeEntitlement?.maxChats ?? null;
   const activeChatCount = chats.filter((chat) => !chat.deletedAt).length;
   const chatLimitReached = !editingChat && maxChats != null && activeChatCount >= maxChats;
   const showChatLimitDialog = (title = '聊天数量已达上限') => {
