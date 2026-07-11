@@ -15,6 +15,7 @@ import { useAuthStore } from '../stores/useAuthStore';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { getLastCloudPhone } from '../services/authSession';
+import { getSmsCaptchaToken } from '../services/captcha';
 
 type LoginLocationState = {
   from?: string | { pathname?: string; search?: string; hash?: string } | null;
@@ -70,7 +71,8 @@ export default function LoginPage() {
     setSendingCode(true);
     setError('');
     try {
-      const result = await sendCode(phone);
+      const captchaToken = await getSmsCaptchaToken();
+      const result = await sendCode(phone, 'login', captchaToken);
       setCodeSent(true);
       setCountdown(60);
       if (result.mock && result.code) {

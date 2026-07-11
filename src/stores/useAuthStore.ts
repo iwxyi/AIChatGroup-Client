@@ -27,7 +27,7 @@ interface AuthStore {
   authMode: AuthMode;
 
   // Actions
-  sendCode: (phone: string, purpose?: 'login' | 'register' | 'forgot-password' | 'change-phone') => Promise<{ success: boolean; mock?: boolean; code?: string }>;
+  sendCode: (phone: string, purpose?: 'login' | 'register' | 'forgot-password' | 'change-phone', captchaToken?: string) => Promise<{ success: boolean; mock?: boolean; code?: string }>;
   login: (phone: string, code: string) => Promise<void>;
   enterLocalMode: () => void;
   logout: () => void;
@@ -35,7 +35,7 @@ interface AuthStore {
   checkAuth: () => Promise<boolean>;
   setUser: (user: User) => void;
   updateProfile: (updates: Partial<User>) => Promise<void>;
-  sendChangePhoneCode: (phone: string) => Promise<{ success: boolean; mock?: boolean; code?: string }>;
+  sendChangePhoneCode: (phone: string, captchaToken?: string) => Promise<{ success: boolean; mock?: boolean; code?: string }>;
   changePhone: (phone: string, code: string) => Promise<void>;
 }
 
@@ -157,13 +157,13 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   isLoading: false,
   authMode: (getAuthModeRaw() as AuthMode | null) || (getAuthToken() ? 'cloud' : 'local'),
 
-  sendCode: async (phone: string, purpose = 'login') => {
-    const result = await api.sendCode(phone, purpose);
+  sendCode: async (phone: string, purpose = 'login', captchaToken?: string) => {
+    const result = await api.sendCode(phone, purpose, captchaToken);
     return result;
   },
 
-  sendChangePhoneCode: async (phone: string) => {
-    const result = await api.sendChangePhoneCode(phone);
+  sendChangePhoneCode: async (phone: string, captchaToken?: string) => {
+    const result = await api.sendChangePhoneCode(phone, captchaToken);
     return result;
   },
 

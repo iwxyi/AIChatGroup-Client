@@ -40,6 +40,65 @@ const operationMetricKeys = ['pendingOrders', 'stalePendingOrders', 'pendingRefu
 const aiMetricKeys = ['todayAiRequests', 'todayAiActiveUsers', 'todayAiRevenuePoints', 'todayAiEstimatedCostPoints', 'todayAiFailed'];
 const baseMetricKeys = ['users', 'activeAiEntitlements', 'queuedNotifications', 'auditEvents24h', 'failedAdminLogins24h'];
 
+type CompactSummaryKind = 'orders' | 'reviews' | 'audits';
+
+const orderStatusLabels: Record<string, string> = {
+  pending: '待支付',
+  paid: '已支付',
+  partially_refunded: '部分退款',
+  refunded: '已退款',
+  closed: '已关闭',
+  failed: '失败',
+};
+
+const reviewStatusLabels: Record<string, string> = {
+  pending: '待领取',
+  in_review: '处理中',
+  escalated: '已升级',
+  resolved: '已处理',
+  approved: '已通过',
+  rejected: '已拒绝',
+};
+
+const decisionLabels: Record<string, string> = {
+  approved: '通过',
+  rejected: '拒绝',
+  escalated: '升级',
+};
+
+const auditResultLabels: Record<string, string> = {
+  success: '成功',
+  failed: '失败',
+};
+
+const contentTypeLabels: Record<string, string> = {
+  chat_share: '聊天分享',
+  character: '角色',
+  chat: '聊天',
+};
+
+const auditActionLabels: Record<string, string> = {
+  'admin.login': '登录后台',
+  'admin.logout': '退出登录',
+  'admin.password.change': '修改密码',
+  'admin.profile.update': '更新个人信息',
+  'admin.user.create': '新建管理员',
+  'admin.user.update': '更新管理员',
+  'admin.user.reset_password': '重置管理员密码',
+  'share.case.claim': '领取审核',
+  'share.case.decision': '处理审核',
+  'market.item.review': '审核市场内容',
+  'ai.provider.update': '更新AI平台',
+  'ai.provider_user.transfer_points': '调整平台用户点数',
+  'ai.user.transfer_points': '调整用户AI点数',
+  'platform.config.update': '更新平台配置',
+  'billing.plan.create': '新建套餐',
+  'billing.plan.update': '更新套餐',
+  'billing.plan.delete': '删除套餐',
+  'billing.order.close': '关闭订单',
+  'billing.refund.create': '发起退款',
+};
+
 function formatTime(value: unknown) {
   const parsed = Number(value || 0);
   return parsed > 0 ? new Date(parsed).toLocaleString() : '-';
@@ -85,6 +144,49 @@ function buildMetricItem(metricKey: string, metrics: Record<string, number>, onN
   };
 }
 
+function compactText(value: unknown, fallback = '-', maxLength = 28) {
+  const text = String(value || '').trim();
+  if (!text) return fallback;
+  return text.length > maxLength ? `${text.slice(0, maxLength)}…` : text;
+}
+
+function displayUser(item: Record<string, unknown>) {
+  return compactText(item.user_nickname || item.user_phone || item.owner_nickname || item.owner_phone, '未知用户', 16);
+}
+
+function displayAdmin(item: Record<string, unknown>) {
+  return compactText(item.admin_display_name || item.admin_email, '系统', 16);
+}
+
+function summaryPrimary(kind: CompactSummaryKind, item: Record<string, unknown>) {
+  if (kind === 'orders') {
+    const planName = compactText(item.plan_name, '订单', 18);
+    return `${displayUser(item)} · ${planName}`;
+  }
+  if (kind === 'reviews') {
+    const contentType = contentTypeLabels[String(item.content_type || '')] || '分享内容';
+    const summary = compactText(item.summary, '', 24);
+    return summary ? `${displayUser(item)} · ${summary}` : `${displayUser(item)}的${contentType}审核`;
+  }
+  const action = auditActionLabels[String(item.action || '')] || compactText(item.action, '后台操作', 18);
+  return `${displayAdmin(item)} · ${action}`;
+}
+
+function summaryStatus(kind: CompactSummaryKind, item: Record<string, unknown>) {
+  if (kind === 'orders') {
+    const status = String(item.status || '');
+    return orderStatusLabels[status] || compactText(status);
+  }
+  if (kind === 'reviews') {
+    const decision = String(item.latest_decision || '');
+    if (decision) return decisionLabels[decision] || compactText(decision);
+    const status = String(item.status || '');
+    return reviewStatusLabels[status] || compactText(status);
+  }
+  const result = String(item.result || '');
+  return auditResultLabels[result] || compactText(result);
+}
+
 function MetricGrid({
   metricKeys,
   metrics,
@@ -104,7 +206,7 @@ function MetricGrid({
   return <AdminMetricGrid items={items} minWidth={minWidth} compact={compact} />;
 }
 
-function CompactSummaryTable({ title, empty, rows, route }: { title: string; empty: string; rows: Array<Record<string, unknown>>; route: string }) {
+function CompactSummaryTable({ title, empty, rows, route, kind }: { title: string; empty: string; rows: Array<Record<string, unknown>>; route: string; kind: CompactSummaryKind }) {
   const navigate = useNavigate();
   return (
     <AdminSection title={title} action={<Button size="small" onClick={() => navigate(route)}>查看全部</Button>} sx={{ height: '100%' }} bodySx={{ p: 0 }}>
@@ -121,8 +223,8 @@ function CompactSummaryTable({ title, empty, rows, route }: { title: string; emp
             </TableHead>
             <TableBody>
               {rows.map((item) => {
-                const primary = String(item.order_no || item.id || item.action || '-');
-                const status = String(item.status || item.result || item.latest_decision || '-');
+                const primary = summaryPrimary(kind, item);
+                const status = summaryStatus(kind, item);
                 const time = formatTime(item.created_at);
                 return (
                   <TableRow key={String(item.id || primary)} hover>
@@ -270,13 +372,13 @@ export default function AdminDashboardPage() {
 
       <Grid container spacing={1.5}>
         <Grid size={{ xs: 12, xl: 4 }}>
-          <CompactSummaryTable title="最近订单" empty="暂无订单" rows={recentOrders} route="/admin/billing" />
+          <CompactSummaryTable title="最近订单" empty="暂无订单" rows={recentOrders} route="/admin/billing" kind="orders" />
         </Grid>
         <Grid size={{ xs: 12, xl: 4 }}>
-          <CompactSummaryTable title="最近审核" empty="暂无审核" rows={recentReviews} route="/admin/moderation" />
+          <CompactSummaryTable title="最近审核" empty="暂无审核" rows={recentReviews} route="/admin/moderation" kind="reviews" />
         </Grid>
         <Grid size={{ xs: 12, xl: 4 }}>
-          <CompactSummaryTable title="最近审计" empty="暂无审计" rows={recentAudits} route="/admin/audit" />
+          <CompactSummaryTable title="最近审计" empty="暂无审计" rows={recentAudits} route="/admin/audit" kind="audits" />
         </Grid>
       </Grid>
     </Stack>

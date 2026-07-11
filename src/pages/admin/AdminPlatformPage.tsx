@@ -25,6 +25,7 @@ type FieldDef = {
 const CATEGORY_TABS = [
   { value: 'ai', label: 'AI' },
   { value: 'payment', label: '支付' },
+  { value: 'captcha', label: '验证码' },
   { value: 'sms', label: '短信' },
   { value: 'email', label: '邮箱' },
 ] as const;
@@ -44,6 +45,13 @@ const PROVIDER_POPULARITY: Record<string, number> = {
   'payment:payjs': 50,
   'payment:hupijiao': 60,
   'payment:manual': 90,
+  'captcha:local': 10,
+  'captcha:tencentcloud': 20,
+  'captcha:geetest-v4': 30,
+  'captcha:yidun': 40,
+  'captcha:turnstile': 50,
+  'captcha:hcaptcha': 60,
+  'captcha:aliyun': 70,
   'sms:aliyun': 10,
   'sms:tencentcloud': 20,
   'sms:huaweicloud': 30,
@@ -127,6 +135,43 @@ const FIELD_DEFS: Record<string, FieldDef[]> = {
     { key: 'notifyUrl', label: '异步通知地址' },
     { key: 'returnUrl', label: '支付完成返回地址' },
     { key: 'appSecret', label: 'App Secret', secret: true, required: true },
+  ],
+  'captcha:local': [
+    { key: 'note', label: '说明' },
+  ],
+  'captcha:turnstile': [
+    { key: 'siteKey', label: 'Site Key', required: true },
+    { key: 'verifyUrl', label: '服务端校验地址' },
+    { key: 'secretKey', label: 'Secret Key', secret: true, required: true },
+  ],
+  'captcha:hcaptcha': [
+    { key: 'siteKey', label: 'Site Key', required: true },
+    { key: 'verifyUrl', label: '服务端校验地址' },
+    { key: 'secretKey', label: 'Secret Key', secret: true, required: true },
+  ],
+  'captcha:geetest-v4': [
+    { key: 'captchaId', label: 'Captcha ID', required: true },
+    { key: 'verifyUrl', label: '服务端校验地址' },
+    { key: 'captchaKey', label: 'Captcha Key', secret: true, required: true },
+  ],
+  'captcha:tencentcloud': [
+    { key: 'captchaAppId', label: 'CaptchaAppId', required: true },
+    { key: 'verifyUrl', label: '服务端校验地址' },
+    { key: 'appSecretKey', label: 'App Secret Key', secret: true, required: true },
+  ],
+  'captcha:yidun': [
+    { key: 'captchaId', label: 'Captcha ID', required: true },
+    { key: 'verifyUrl', label: '服务端校验地址' },
+    { key: 'version', label: '协议版本' },
+    { key: 'secretId', label: 'Secret ID', secret: true, required: true },
+    { key: 'secretKey', label: 'Secret Key', secret: true, required: true },
+  ],
+  'captcha:aliyun': [
+    { key: 'sceneId', label: '场景 ID', required: true },
+    { key: 'regionId', label: 'Region ID' },
+    { key: 'endpoint', label: 'Endpoint' },
+    { key: 'accessKeyId', label: 'AccessKey ID', secret: true, required: true },
+    { key: 'accessKeySecret', label: 'AccessKey Secret', secret: true, required: true },
   ],
   'sms:aliyun': [
     { key: 'endpoint', label: '接口地址' },
@@ -517,7 +562,7 @@ export default function AdminPlatformPage() {
           <AdminSection title={`${categoryLabel}概览`}>
             <AdminMetricGrid items={integrationMetrics} compact minWidth={132} />
           </AdminSection>
-          <AdminSection title={`${categoryLabel}服务商`} subtitle="点击服务商行可以编辑配置、保存并测试。" bodySx={{ p: 0 }}>
+          <AdminSection title={`${categoryLabel}服务商`} subtitle={category === 'captcha' ? '只会使用一个启用且设为默认的验证码通道，点击服务商行可以编辑配置。' : '点击服务商行可以编辑配置、保存并测试。'} bodySx={{ p: 0 }}>
             <AdminTableFrame minWidth={760}>
               <Table>
                 <TableHead>
@@ -672,6 +717,9 @@ export default function AdminPlatformPage() {
                       sx={{ minWidth: 140 }}
                     />
                   </Stack>
+                ) : null}
+                {selected.category === 'captcha' ? (
+                  <Alert severity="info">验证码服务会在用户发送短信验证码前由真实浏览器触发，请在登录页或换绑手机号流程中验证实际效果。</Alert>
                 ) : null}
                 {selected.category === 'email' ? (
                   <TextField

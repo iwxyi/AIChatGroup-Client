@@ -18,6 +18,7 @@ import { isCloudSyncEnabled, setCloudSyncEnabled } from '../services/cloudSyncPr
 import { bootstrapLocalDataToCloud, captureLocalCloudBootstrapSnapshot } from '../services/localToCloudBootstrap';
 import { runWithCloudSyncBootstrapLock } from '../services/cloudSyncBootstrapLock';
 import { api, type BillingMembershipResponse } from '../services/api';
+import { getSmsCaptchaToken } from '../services/captcha';
 import { formatAiBalanceAmount } from '../utils/aiPoints';
 import AiUsageDialog from '../components/account/AiUsageDialog';
 
@@ -411,7 +412,8 @@ export default function AccountPage() {
 
     setSendingPhoneCode(true);
     try {
-      const result = await sendChangePhoneCode(newPhone);
+      const captchaToken = await getSmsCaptchaToken();
+      const result = await sendChangePhoneCode(newPhone, captchaToken);
       setPhoneCountdown(60);
       if (result.mock && result.code) {
         setMockPhoneCode(result.code);

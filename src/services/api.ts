@@ -235,6 +235,12 @@ export interface SitePublicConfig {
   themeColor: string;
 }
 
+export interface CaptchaPublicConfig {
+  enabled: boolean;
+  provider: 'turnstile' | string;
+  siteKey: string;
+}
+
 export interface BillingOrderItem {
   id: string;
   order_no?: string;
@@ -493,12 +499,12 @@ class ApiClient {
     return this.parseJsonResponse<T>(response);
   }
 
-  async sendCode(phone: string, purpose: 'login' | 'register' | 'forgot-password' | 'change-phone' = 'login') {
-    return this.request<{ success: boolean; mock?: boolean; code?: string }>('POST', '/auth/send-code', { phone, purpose });
+  async sendCode(phone: string, purpose: 'login' | 'register' | 'forgot-password' | 'change-phone' = 'login', captchaToken?: string) {
+    return this.request<{ success: boolean; mock?: boolean; code?: string }>('POST', '/auth/send-code', { phone, purpose, captchaToken });
   }
 
-  async sendChangePhoneCode(phone: string) {
-    return this.request<{ success: boolean; mock?: boolean; code?: string }>('POST', '/auth/change-phone/send-code', { phone });
+  async sendChangePhoneCode(phone: string, captchaToken?: string) {
+    return this.request<{ success: boolean; mock?: boolean; code?: string }>('POST', '/auth/change-phone/send-code', { phone, captchaToken });
   }
 
   async login(phone: string, code: string) {
@@ -518,7 +524,11 @@ class ApiClient {
   }
 
   async getPlatformPublicConfig() {
-    return this.request<{ site: SitePublicConfig }>('GET', '/platform/public-config');
+    return this.request<{ site: SitePublicConfig; captcha?: CaptchaPublicConfig }>('GET', '/platform/public-config');
+  }
+
+  async createLocalCaptchaChallenge() {
+    return this.request<{ challengeId: string; imageSvg: string; expiresInMs: number }>('POST', '/platform/captcha/local-challenge');
   }
 
   private getAiBalanceCacheKey(provider?: string) {
