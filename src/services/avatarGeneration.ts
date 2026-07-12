@@ -1,6 +1,6 @@
 import type { AICharacter } from '../types/character';
 import type { AIModelProfile, AvatarGenerationSettings } from '../types/settings';
-import { getPreferredAIProfile } from '../types/settings';
+import { getPreferredAIProfile, isAIProfileUsable } from '../types/settings';
 import { avatarGenerationQueue } from './avatarGenerationQueue';
 
 export interface AvatarPromptCharacterInput {
@@ -147,7 +147,7 @@ export function enqueueAvatarGenerationForCharacter(
   options?: { targetKey?: string; characterId?: string | null },
 ) {
   const imageProfile = getPreferredAIProfile(aiProfiles, 'image');
-  if (!imageProfile?.apiKey || !imageProfile?.model) {
+  if (!isAIProfileUsable(imageProfile)) {
     throw new Error(language === 'zh' ? '请先配置可用的默认图片模型' : 'Configure an available default image model first.');
   }
   return avatarGenerationQueue.enqueue(

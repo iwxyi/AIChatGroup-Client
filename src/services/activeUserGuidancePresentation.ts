@@ -1,7 +1,7 @@
 import { getCharacterModelProfileId, type AICharacter } from '../types/character';
 import type { GroupChat } from '../types/chat';
 import type { Message } from '../types/message';
-import { getPreferredAIProfile, type AIModelProfile } from '../types/settings';
+import { getPreferredAIProfile, isAIProfileUsable, type AIModelProfile } from '../types/settings';
 import { collectGuidanceProgressAfterTimestamp } from './guidanceExecution';
 import { projectRuntimePressure } from './runtimeDecision';
 import { formatBeatType } from './runtimeInsightPresentation';
@@ -48,13 +48,13 @@ function resolveImageProfile(character: AICharacter | undefined, aiProfiles: AIM
   const profile = profileId
     ? aiProfiles.find((item) => item.id === profileId && item.type === 'image')
     : getPreferredAIProfile(aiProfiles, 'image');
-  return profile?.apiKey && profile.model ? profile : null;
+  return isAIProfileUsable(profile) ? profile : null;
 }
 
 function buildImageCapabilityLabel(actorIds: string[], members: AICharacter[], aiProfiles: AIModelProfile[]) {
   if (!actorIds.length) {
     const preferred = getPreferredAIProfile(aiProfiles, 'image');
-    return preferred?.apiKey && preferred.model
+    return isAIProfileUsable(preferred)
       ? { label: '图片模型可用', warning: '', tone: 'success' as const }
       : { label: '未配置图片模型', warning: '当前没有可用图片模型，角色只能文字回应，不能真正生成图片。', tone: 'warning' as const };
   }

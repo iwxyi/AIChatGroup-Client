@@ -173,6 +173,27 @@ function getOfficialModelGroupKey(model: string) {
   return 'other';
 }
 
+function isImageModelName(model: string) {
+  const normalized = model.trim().toLowerCase();
+  return normalized.includes('image') || normalized.includes('dall-e');
+}
+
+function isEmbeddingModelName(model: string) {
+  return model.trim().toLowerCase().includes('embedding');
+}
+
+function filterModelsForType(models: string[], type: AIModelType) {
+  return models.filter((model) => {
+    if (type === 'image') return isImageModelName(model);
+    if (type === 'text' || type === 'document') return !isImageModelName(model) && !isEmbeddingModelName(model);
+    if (type === 'audio') {
+      const normalized = model.trim().toLowerCase();
+      return normalized.includes('audio') || normalized.includes('voice') || normalized.includes('tts') || normalized.includes('speech');
+    }
+    return true;
+  });
+}
+
 function getOfficialModelGroupLabel(model: string, isZh: boolean) {
   const key = getOfficialModelGroupKey(model);
   if (isZh) {
@@ -255,7 +276,10 @@ function buildOnlineOfficialProviderOption(provider: OfficialAiProviderInfo): (A
   if (!provider.officialProvider?.trim()) return null;
   const providerKey = provider.officialProvider.trim() as AIProvider;
   const fallbackDefault = { baseUrl: '/api/ai', model: provider.defaultModel || '' };
-  const catalogEntry = AI_PROVIDER_CATALOG.find((item) => item.key === providerKey) || {
+  const catalogEntry = AI_PROVIDER_CATALOG.find((item) => item.key === providerKey)
+    || (providerKey === 'official-2' ? AI_PROVIDER_CATALOG.find((item) => item.key === 'official-moacode') : null)
+    || (providerKey === 'official-team' ? AI_PROVIDER_CATALOG.find((item) => item.key === 'official-moacode-team') : null)
+    || {
     key: providerKey,
     label: provider.label || providerKey,
     family: provider.family || '官方模型',
@@ -272,33 +296,33 @@ function buildOnlineOfficialProviderOption(provider: OfficialAiProviderInfo): (A
       document: provider.defaultModel ? [provider.defaultModel] : [],
     },
   };
-  const textDefault = catalogEntry.defaults.text;
-  const documentDefault = catalogEntry.defaults.document;
-  const defaultModel = provider.defaultModel
-    || textDefault?.model
-    || catalogEntry.defaults.image?.model
-    || catalogEntry.defaults.audio?.model
-    || documentDefault?.model
-    || '';
+  const remoteDefaultModel = provider.defaultModel || '';
+  const imageDefaultModel = isImageModelName(remoteDefaultModel)
+    ? remoteDefaultModel
+    : (catalogEntry.defaults.image?.model || '');
+  const textDefaultModel = !isImageModelName(remoteDefaultModel)
+    ? remoteDefaultModel
+    : (catalogEntry.defaults.text?.model || '');
   return {
     ...catalogEntry,
+    key: providerKey,
     label: provider.label || catalogEntry.label,
     family: provider.family || catalogEntry.family,
     hidden: Boolean(provider.hidden),
     unavailableReason: provider.accessAllowed === false ? '当前会员不可用' : undefined,
     defaults: {
       ...catalogEntry.defaults,
-      text: { ...(catalogEntry.defaults.text || fallbackDefault), model: defaultModel || catalogEntry.defaults.text?.model || '' },
-      image: { ...(catalogEntry.defaults.image || fallbackDefault), model: defaultModel || catalogEntry.defaults.image?.model || '' },
-      audio: { ...(catalogEntry.defaults.audio || fallbackDefault), model: defaultModel || catalogEntry.defaults.audio?.model || '' },
-      document: { ...(catalogEntry.defaults.document || fallbackDefault), model: defaultModel || catalogEntry.defaults.document?.model || '' },
+      text: { ...(catalogEntry.defaults.text || fallbackDefault), model: textDefaultModel || catalogEntry.defaults.text?.model || '' },
+      image: { ...(catalogEntry.defaults.image || fallbackDefault), model: imageDefaultModel },
+      audio: { ...(catalogEntry.defaults.audio || fallbackDefault), model: catalogEntry.defaults.audio?.model || '' },
+      document: { ...(catalogEntry.defaults.document || fallbackDefault), model: textDefaultModel || catalogEntry.defaults.document?.model || '' },
     },
     popularModels: {
       ...catalogEntry.popularModels,
-      text: catalogEntry.popularModels.text || (defaultModel ? [defaultModel] : []),
-      image: catalogEntry.popularModels.image || (defaultModel ? [defaultModel] : []),
-      audio: catalogEntry.popularModels.audio || (defaultModel ? [defaultModel] : []),
-      document: catalogEntry.popularModels.document || (defaultModel ? [defaultModel] : []),
+      text: catalogEntry.popularModels.text || (textDefaultModel ? [textDefaultModel] : []),
+      image: catalogEntry.popularModels.image || (imageDefaultModel ? [imageDefaultModel] : []),
+      audio: catalogEntry.popularModels.audio || [],
+      document: catalogEntry.popularModels.document || (textDefaultModel ? [textDefaultModel] : []),
     },
     sortOrder: typeof provider.sortOrder === 'number' ? provider.sortOrder : 999,
   };
@@ -307,6 +331,12 @@ function buildOnlineOfficialProviderOption(provider: OfficialAiProviderInfo): (A
 function getProviderDefaultsFromOptions(provider: AIProvider, type: AIModelType, providerOptions: AIProviderOption[]) {
   const entry = providerOptions.find((item) => item.key === provider) || getProviderCatalogEntry(provider);
   return entry.defaults[type] || { baseUrl: '', model: '' };
+}
+
+function providerSupportsType(option: AIProviderOption, type: AIModelType) {
+  const defaults = option.defaults[type];
+  const popularModels = option.popularModels[type] || [];
+  return Boolean(defaults?.model || popularModels.length);
 }
 
 function resolveSelectableProviderKey(provider: string, type: AIModelType, providerOptions: AIProviderOption[] = getProvidersForType(type)) {
@@ -443,7 +473,11 @@ export default function AIModelsPage() {
         }))
       : officialProvidersError
         ? []
-        : onlineOfficialProviderOptions.filter((item) => !item.hidden || item.key === selectedProvider || item.key === resolveLegacyOfficialProviderKey(selectedProvider || ''));
+        : onlineOfficialProviderOptions.filter((item) => (
+          providerSupportsType(item, type)
+          || item.key === selectedProvider
+          || item.key === resolveLegacyOfficialProviderKey(selectedProvider || '')
+        ) && (!item.hidden || item.key === selectedProvider || item.key === resolveLegacyOfficialProviderKey(selectedProvider || '')));
     const resolvedSelectedProvider = selectedProvider ? resolveLegacyOfficialProviderKey(selectedProvider) : '';
     const selectedOfficialKey = selectedProvider && (isOfficialProviderKey(selectedProvider) || onlineOfficialProviderKeySet.has(resolvedSelectedProvider as AIProvider))
       ? resolvedSelectedProvider
@@ -745,7 +779,8 @@ export default function AIModelsPage() {
     });
     try {
       const models = await listAvailableModels(profile);
-      const options = Array.from(new Set(models.map((item) => item.id).filter(Boolean)));
+      const remoteModelIds = Array.from(new Set(models.map((item) => item.id).filter((id): id is string => Boolean(id))));
+      const options = filterModelsForType(remoteModelIds, profile.type || 'text');
       if (profileUsesOfficialProxy) {
         options.sort(compareOfficialModels);
       }

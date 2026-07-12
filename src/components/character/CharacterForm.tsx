@@ -695,7 +695,7 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
     }
 
     const imageProfile = getPreferredAIProfile(settings.aiProfiles, 'image');
-    if (!imageProfile?.apiKey || !imageProfile?.model) {
+    if (!isAIProfileUsable(imageProfile)) {
       setAvatarTaskStatus('failed');
       setAvatarTaskError(i18n.language.startsWith('zh') ? '请先配置默认图片模型' : 'Configure a default image model first.');
       return;
@@ -815,7 +815,7 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
       return;
     }
     const imageProfile = getPreferredAIProfile(settings.aiProfiles, 'image');
-    if (!imageProfile?.apiKey || !imageProfile?.model) {
+    if (!isAIProfileUsable(imageProfile)) {
       setVisualImageTaskStatus('failed');
       setVisualImageTaskError(i18n.language.startsWith('zh') ? '请先配置默认图片模型' : 'Configure a default image model first.');
       return;

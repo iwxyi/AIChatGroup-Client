@@ -73,6 +73,9 @@ const OFFICIAL_MOACODE_TEXT_MODELS = [
   'gpt-5.3-codex-spark',
   ...OFFICIAL_MOACODE_CODE_MODELS,
 ];
+const OFFICIAL_MOACODE_IMAGE_MODELS = [
+  'gpt-image-2',
+];
 
 export interface ProviderTypeDefaults {
   baseUrl: string;
@@ -108,10 +111,12 @@ export const AI_PROVIDER_CATALOG: AIProviderCatalogEntry[] = [
     family: 'Pneumata Claude/GPT',
     defaults: {
       text: { baseUrl: '/api/ai', model: 'gpt-5.5' },
+      image: { baseUrl: '/api/ai', model: 'gpt-image-2' },
       document: { baseUrl: '/api/ai', model: 'gpt-5.5' },
     },
     popularModels: {
       text: OFFICIAL_MOACODE_TEXT_MODELS,
+      image: OFFICIAL_MOACODE_IMAGE_MODELS,
       document: OFFICIAL_MOACODE_TEXT_MODELS,
     },
   },
@@ -121,10 +126,12 @@ export const AI_PROVIDER_CATALOG: AIProviderCatalogEntry[] = [
     family: 'Pneumata Claude/GPT Team',
     defaults: {
       text: { baseUrl: '/api/ai', model: 'gpt-5.5' },
+      image: { baseUrl: '/api/ai', model: 'gpt-image-2' },
       document: { baseUrl: '/api/ai', model: 'gpt-5.5' },
     },
     popularModels: {
       text: OFFICIAL_MOACODE_TEXT_MODELS,
+      image: OFFICIAL_MOACODE_IMAGE_MODELS,
       document: OFFICIAL_MOACODE_TEXT_MODELS,
     },
   },

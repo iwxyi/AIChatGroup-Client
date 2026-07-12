@@ -910,6 +910,18 @@ export const DEFAULT_AI_PROFILE: AIModelProfile = {
   ...DEFAULT_API_CONFIG,
 };
 
+export const DEFAULT_IMAGE_AI_PROFILE: AIModelProfile = {
+  id: 'default-image',
+  name: '官方图片',
+  type: 'image',
+  isDefault: true,
+  provider: 'official-moacode',
+  apiKey: '',
+  baseUrl: '/api/ai',
+  model: 'gpt-image-2',
+  imageCapabilities: DEFAULT_IMAGE_CAPABILITIES,
+};
+
 export function normalizeImageCapabilities(input?: Partial<AIModelImageCapabilities> | null): AIModelImageCapabilities {
   return {
     ...DEFAULT_IMAGE_CAPABILITIES,
@@ -961,7 +973,7 @@ export const DEFAULT_CHAT_DRAFT_DEFAULTS: ChatDraftDefaults = {
 
 export const DEFAULT_SETTINGS: AppSettingsWithMemory = {
   api: DEFAULT_API_CONFIG,
-  aiProfiles: [DEFAULT_AI_PROFILE],
+  aiProfiles: [DEFAULT_AI_PROFILE, DEFAULT_IMAGE_AI_PROFILE],
   theme: 'system',
   themePreset: 'aurora',
   themeColor: '#5B6CFF',

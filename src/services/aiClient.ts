@@ -57,7 +57,11 @@ function isLegacyOfficialProvider(provider: APIConfig['provider']) {
 }
 
 function resolveOfficialBackendProvider(provider: APIConfig['provider']) {
-  return provider === 'official' ? 'official-2' : provider;
+  if (provider === 'official' || provider === 'official-moacode') return 'official-2';
+  if (provider === 'official-deepseek') return 'official-1';
+  if (provider === 'official-moacode-team') return 'official-team';
+  if (provider === 'official-gpt') return 'official-4';
+  return provider;
 }
 
 function usesOfficialProxy(config: APIConfig) {
@@ -904,9 +908,12 @@ export async function listAvailableModels(config: APIConfig): Promise<AvailableM
 }
 
 async function generateOpenAICompatibleImage(config: APIConfig, options: ImageGenerationOptions): Promise<GeneratedImage[]> {
+  const officialProxy = usesOfficialProxy(config);
+  const provider = officialProxy ? resolveOfficialBackendProvider(config.provider) : undefined;
   if (options.referenceImages?.length) {
     const formData = new FormData();
     formData.append('model', config.model);
+    if (provider) formData.append('provider', provider);
     formData.append('prompt', options.prompt);
     formData.append('n', String(options.count || 1));
     formData.append('size', options.size || '1024x1024');
@@ -919,12 +926,13 @@ async function generateOpenAICompatibleImage(config: APIConfig, options: ImageGe
 
     const response = await fetch(buildOpenAICompatibleImageEditUrl(config.baseUrl), {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${config.apiKey}`,
-      },
+      headers: officialProxy ? getAuthHeaders() : { Authorization: `Bearer ${config.apiKey}` },
       signal: options.signal,
       body: formData,
     });
+    if (officialProxy && response.status === 401) {
+      dispatchAuthSessionExpired({ status: response.status, path: buildOpenAICompatibleImageEditUrl(config.baseUrl) });
+    }
 
     const result = await parseJsonResponse<{
       data?: Array<{ b64_json?: string; revised_prompt?: string; url?: string }>;
@@ -958,10 +966,11 @@ async function generateOpenAICompatibleImage(config: APIConfig, options: ImageGe
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${config.apiKey}`,
+      ...(officialProxy ? getAuthHeaders() : { Authorization: `Bearer ${config.apiKey}` }),
     },
     signal: options.signal,
     body: JSON.stringify({
+      provider,
       model: config.model,
       prompt: options.prompt,
       n: options.count || 1,
@@ -971,6 +980,9 @@ async function generateOpenAICompatibleImage(config: APIConfig, options: ImageGe
       seed: options.seed ?? undefined,
     }),
   });
+  if (officialProxy && response.status === 401) {
+    dispatchAuthSessionExpired({ status: response.status, path: buildOpenAICompatibleImageUrl(config.baseUrl) });
+  }
 
   const result = await parseJsonResponse<{
     data?: Array<{ b64_json?: string; revised_prompt?: string; url?: string }>;

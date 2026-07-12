@@ -243,7 +243,7 @@ export default function MomentsPage() {
     let generatedImageMimeType: string | undefined;
     let imageError: string | null = null;
     const imageProfile = getPreferredAIProfile(aiProfiles, 'image');
-    const shouldGenerateImage = payload.expectedArtifacts?.some((artifact) => artifact !== 'moment_text') && imageProfile?.apiKey && imageProfile.model;
+    const shouldGenerateImage = payload.expectedArtifacts?.some((artifact) => artifact !== 'moment_text') && isAIProfileUsable(imageProfile);
     if (shouldGenerateImage) {
       try {
         const prompt = `${actor.name} posts a natural social media moment image. Context: ${payload.sourceText || payload.seedIntent}. No text, no watermark, candid composition, character-appropriate style.`;

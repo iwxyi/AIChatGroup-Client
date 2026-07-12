@@ -1,6 +1,6 @@
 import type { AICharacter } from '../types/character';
 import type { Message, MessageAttachment, MessageMetadata } from '../types/message';
-import type { AIModelProfile } from '../types/settings';
+import { isAIProfileUsable, type AIModelProfile } from '../types/settings';
 import { api } from './api';
 import { generateImageWithAdapter, synthesizeSpeechWithAdapter } from './aiGenerationAdapter';
 import { storageKey } from '../constants/brand';
@@ -9,12 +9,14 @@ import { isCloudSyncEnabled } from './cloudSyncPreference';
 
 function findProfile(profiles: AIModelProfile[], id?: string | null) {
   const profile = id ? profiles.find((item) => item.id === id) : null;
-  return profile?.apiKey && profile.model ? profile : null;
+  return isAIProfileUsable(profile) ? profile : null;
 }
 
 function findGenerationProfile(profiles: AIModelProfile[], type: 'image' | 'audio', id?: string | null) {
-  const profile = findProfile(profiles, id) || profiles.find((item) => item.type === type && item.isDefault && item.apiKey && item.model) || profiles.find((item) => item.type === type && item.apiKey && item.model);
-  return profile?.apiKey && profile.model ? profile : null;
+  const profile = findProfile(profiles, id)
+    || profiles.find((item) => item.type === type && item.isDefault && isAIProfileUsable(item))
+    || profiles.find((item) => item.type === type && isAIProfileUsable(item));
+  return isAIProfileUsable(profile) ? profile : null;
 }
 
 async function blobToDataUrl(blob: Blob) {

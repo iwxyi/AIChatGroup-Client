@@ -535,9 +535,18 @@ class ApiClient {
     return `${this.getToken() || 'guest'}:${provider || 'default'}`;
   }
 
+  private normalizeAiPublicProvider(provider?: string) {
+    if (provider === 'official' || provider === 'official-moacode') return 'official-2';
+    if (provider === 'official-deepseek') return 'official-1';
+    if (provider === 'official-moacode-team') return 'official-team';
+    if (provider === 'official-gpt') return 'official-4';
+    return provider;
+  }
+
   async getAiBalance(provider?: string, options: { force?: boolean } = {}) {
-    const query = provider ? `?provider=${encodeURIComponent(provider)}` : '';
-    const cacheKey = this.getAiBalanceCacheKey(provider);
+    const normalizedProvider = this.normalizeAiPublicProvider(provider);
+    const query = normalizedProvider ? `?provider=${encodeURIComponent(normalizedProvider)}` : '';
+    const cacheKey = this.getAiBalanceCacheKey(normalizedProvider);
     const now = Date.now();
     if (!options.force) {
       const cached = this.aiBalanceCache.get(cacheKey);

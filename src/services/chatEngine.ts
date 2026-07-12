@@ -5,7 +5,7 @@ import type { APIConfig, AIModelProfile } from '../types/settings';
 import type { MediaGenerationDecision, MessageAttachment, MessageMetadata, NarrativeBlock } from '../types/message';
 import type { SessionEngineDefinition, SessionGenerationPromptContext, SessionGenerationRuntimeBundle } from '../types/sessionEngine';
 import type { MemoryItem } from './memoryTypes';
-import { getPreferredAIProfile } from '../types/settings';
+import { getPreferredAIProfile, isAIProfileUsable } from '../types/settings';
 import type { ConflictFocusPayload, InteractionEventPayload, SocialEventHintEnvelope } from '../types/runtimeEvent';
 import { normalizeInteractionHintCollection, normalizeSocialEventHints } from '../types/runtimeEvent';
 import { generateResponse } from './aiClient';
@@ -2138,7 +2138,7 @@ function resolveProfileForCharacter(character: AICharacter, profiles: AIModelPro
   const matched = profileId
     ? profiles.find((profile) => profile.id === profileId && profile.type === type)
     : getPreferredAIProfile(profiles, type);
-  return matched?.apiKey && matched.model ? matched : null;
+  return isAIProfileUsable(matched) ? matched : null;
 }
 
 function buildMediaCapabilities(character: AICharacter, profiles?: AIModelProfile[]) {
