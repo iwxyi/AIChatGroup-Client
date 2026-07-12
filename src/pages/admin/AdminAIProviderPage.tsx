@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Alert, Box, Button, Dialog, DialogContent, DialogTitle, FormControlLabel, MenuItem, Stack, Switch, Tab, Table, TableBody, TableCell, TableHead, TablePagination, TableRow, Tabs, TextField, Typography } from '@mui/material';
+import { Alert, Autocomplete, Box, Button, Dialog, DialogContent, DialogTitle, FormControlLabel, MenuItem, Stack, Switch, Tab, Table, TableBody, TableCell, TableHead, TablePagination, TableRow, Tabs, TextField, Typography } from '@mui/material';
 import { useParams } from 'react-router-dom';
 import AdminAiUserUsageDialog from '../../components/admin/AdminAiUserUsageDialog';
 import AdminRequestState, { getAdminErrorMessage } from '../../components/admin/AdminRequestState';
@@ -190,6 +190,7 @@ function toDeepSeekPricingForm(value: unknown): DeepSeekPricingForm {
 }
 
 function buildInternalLedgerTokenPricing(providerCode: string, form: DeepSeekPricingForm) {
+  const isMoacodeProvider = providerCode === 'moacode' || providerCode === 'moacode-team';
   const modelPricing = {
     prompt: toNonNegativeNumber(form.prompt, Number(DEFAULT_DEEPSEEK_PRICING_FORM.prompt)),
     completion: toNonNegativeNumber(form.completion, Number(DEFAULT_DEEPSEEK_PRICING_FORM.completion)),
@@ -198,7 +199,7 @@ function buildInternalLedgerTokenPricing(providerCode: string, form: DeepSeekPri
   };
   return {
     unit: 'point',
-    costUnit: providerCode === 'moacode' ? 'USD' : 'CNY',
+    costUnit: isMoacodeProvider ? 'USD' : 'CNY',
     perTokens: 1000000,
     pointValueCny: toPositiveNumber(form.pointValueCny, Number(DEFAULT_DEEPSEEK_PRICING_FORM.pointValueCny)),
     billingMultiplier: toPositiveNumber(form.billingMultiplier, Number(DEFAULT_DEEPSEEK_PRICING_FORM.billingMultiplier)),
@@ -229,11 +230,31 @@ function formatDollarAmount(value: unknown, maximumFractionDigits = 2) {
   return formatCurrencyAmount(value, '$', maximumFractionDigits);
 }
 
+function toOptionalNumber(value: unknown) {
+  if (value == null || value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function formatDollarFraction(remaining: unknown, limit: unknown, maximumFractionDigits = 2) {
+  const remainingNumber = toOptionalNumber(remaining);
+  const limitNumber = toOptionalNumber(limit);
+  if (remainingNumber == null && limitNumber == null) return '-';
+  return `${formatDollarAmount(remainingNumber, maximumFractionDigits)} / ${formatDollarAmount(limitNumber, maximumFractionDigits)}`;
+}
+
+function formatDollarRemainingFromSpent(limit: unknown, spent: unknown, maximumFractionDigits = 2) {
+  const limitNumber = toOptionalNumber(limit);
+  const spentNumber = toOptionalNumber(spent);
+  const remaining = limitNumber == null || spentNumber == null ? null : Math.max(0, limitNumber - spentNumber);
+  return formatDollarFraction(remaining, limitNumber, maximumFractionDigits);
+}
+
 function formatBalance(balance: Record<string, unknown> | null, providerCode: string) {
   const raw = balance?.availableBalance ?? balance?.available_balance;
   const currencyUnit = String(balance?.currencyUnit ?? balance?.currency_unit ?? '').toLowerCase();
   const normalizedProviderCode = providerCode.trim().toLowerCase();
-  if (normalizedProviderCode === 'moacode' || currencyUnit === 'moacode_balance') {
+  if (normalizedProviderCode === 'moacode' || normalizedProviderCode === 'moacode-team' || currencyUnit === 'moacode_balance' || currencyUnit === 'moacode_team_balance') {
     return typeof raw === 'number' && Number.isFinite(raw) ? `余额 ${formatDollarAmount(raw, 2)}` : '已获取';
   }
   if (currencyUnit === 'moacode_usage' && (balance?.raw || Object.keys(balance || {}).length > 0)) {
@@ -308,10 +329,48 @@ function formatOptionalPlainNumber(value: unknown, maximumFractionDigits = 2) {
   return formatPlainNumber(parsed, maximumFractionDigits);
 }
 
+const compactTextFieldSx = {
+  '& .MuiInputBase-root': {
+    borderRadius: 1.5,
+  },
+};
+
+const configGridSx = {
+  display: 'grid',
+  gridTemplateColumns: {
+    xs: '1fr',
+    md: 'minmax(180px, 240px) minmax(120px, 150px) minmax(120px, 150px) minmax(140px, 170px)',
+  },
+  gap: 1.25,
+  alignItems: 'start',
+};
+
+const publicConfigGridSx = {
+  display: 'grid',
+  gridTemplateColumns: {
+    xs: '1fr',
+    md: 'minmax(160px, 210px) minmax(160px, 220px) minmax(160px, 220px) minmax(280px, 1fr)',
+  },
+  gap: 1.25,
+  alignItems: 'start',
+};
+
+const endpointGridSx = {
+  display: 'grid',
+  gridTemplateColumns: { xs: '1fr', md: 'minmax(320px, 1fr) minmax(320px, 1fr)' },
+  gap: 1.25,
+};
+
 type PublicModelGroup = {
   modelName: string;
   displayName: string;
   rows: Array<Record<string, unknown>>;
+};
+
+type PublicModelOption = {
+  modelName: string;
+  displayName: string;
+  providerCount: number;
 };
 
 function toPublicModelString(value: unknown, fallback = '-') {
@@ -337,7 +396,14 @@ function getPublicModelRowProviderCode(row: Record<string, unknown>) {
   return toPublicModelString(row.providerName ?? row.provider_name ?? row.providerId ?? row.provider_id, '');
 }
 
+function getPublicModelRowBillingSelected(row: Record<string, unknown>) {
+  return row.billingSelected === true || row.billing_selected === true;
+}
+
 function comparePublicModelProviderRows(left: Record<string, unknown>, right: Record<string, unknown>) {
+  const leftSelected = getPublicModelRowBillingSelected(left);
+  const rightSelected = getPublicModelRowBillingSelected(right);
+  if (leftSelected !== rightSelected) return leftSelected ? -1 : 1;
   const leftProvider = getPublicModelRowProviderLabel(left);
   const rightProvider = getPublicModelRowProviderLabel(right);
   const providerComparison = leftProvider.localeCompare(rightProvider, 'zh-CN', { numeric: true, sensitivity: 'base' });
@@ -365,6 +431,14 @@ function buildPublicModelGroups(rows: Array<Record<string, unknown>>): PublicMod
   return Array.from(groups.values()).map((group) => ({
     ...group,
     rows: [...group.rows].sort(comparePublicModelProviderRows),
+  }));
+}
+
+function buildPublicModelOptions(rows: Array<Record<string, unknown>>): PublicModelOption[] {
+  return buildPublicModelGroups(rows).map((group) => ({
+    modelName: group.modelName,
+    displayName: group.displayName,
+    providerCount: group.rows.length,
   }));
 }
 
@@ -471,14 +545,21 @@ export default function AdminAIProviderPage() {
   const providerCode = routeProviderCode || 'api2d';
   const isApi2d = providerCode === 'api2d';
   const isDeepSeek = providerCode === 'deepseek';
-  const isMoacode = providerCode === 'moacode';
-  const providerDisplayName = isApi2d ? 'API2D' : isDeepSeek ? 'DeepSeek' : isMoacode ? 'Moacode' : providerCode.toUpperCase();
+  const isMoacodeTeam = providerCode === 'moacode-team';
+  const isMoacode = providerCode === 'moacode' || providerCode === 'moacode-team';
+  const providerDisplayName = isApi2d ? 'API2D' : isDeepSeek ? 'DeepSeek' : providerCode === 'moacode' ? 'Moacode' : providerCode === 'moacode-team' ? 'Moacode Team' : providerCode.toUpperCase();
   const canQueryAccountBalance = isApi2d || isDeepSeek || isMoacode;
   const accountBalanceTitle = isMoacode ? '主账号余额与用量' : '主账号总余额';
   const [tab, setTab] = useState(0);
   const [providerConfig, setProviderConfig] = useState<Record<string, unknown> | null>(null);
   const [form, setForm] = useState({
     name: '',
+    publicId: '',
+    publicName: '',
+    publicFamily: '',
+    publicDefaultModel: '',
+    publicSortOrder: '100',
+    publicHidden: false,
     baseUrl: '',
     adminBaseUrl: '',
     status: 'active',
@@ -541,6 +622,7 @@ export default function AdminAIProviderPage() {
   const moacodeUsageSummary = isMoacode ? getMoacodeUsageSummary(accountBalance) : {};
   const moacodeUsageModels = isMoacode ? getMoacodeUsageModels(moacodeUsageSummary).slice(0, 8) : [];
   const publicModelGroups = buildPublicModelGroups(publicModels);
+  const publicModelOptions = buildPublicModelOptions(publicModels);
   const publicModelTabIndex = isMoacode ? 1 : -1;
   const userManagementTabIndex = isMoacode ? 2 : 1;
   const usageStatsTabIndex = isMoacode ? 3 : 2;
@@ -590,6 +672,12 @@ export default function AdminAIProviderPage() {
       setLoadedSecrets({ adminToken, forwardKey });
       setForm({
         name: String(config.name || ''),
+        publicId: String(config.publicId || ''),
+        publicName: String(config.publicName || ''),
+        publicFamily: String(config.publicFamily || ''),
+        publicDefaultModel: String(config.publicDefaultModel || ''),
+        publicSortOrder: String(config.publicSortOrder ?? 100),
+        publicHidden: Boolean(config.publicHidden),
         baseUrl: String(config.baseUrl || ''),
         adminBaseUrl: String(config.adminBaseUrl || ''),
         status: String(config.status || 'active'),
@@ -644,7 +732,7 @@ export default function AdminAIProviderPage() {
   }, [providerCode]);
 
   useEffect(() => {
-    if (isMoacode && tab === publicModelTabIndex) void loadPublicModels();
+    if (isMoacode && (tab === 0 || tab === publicModelTabIndex) && !publicModels.length && !publicModelLoading) void loadPublicModels();
     if (tab === userManagementTabIndex) {
       if (usesInternalLedger) void loadUserBalances();
       else void loadKeys();
@@ -658,6 +746,12 @@ export default function AdminAIProviderPage() {
     try {
       const payload: Record<string, unknown> = {
         name: form.name,
+        publicId: form.publicId,
+        publicName: form.publicName,
+        publicFamily: form.publicFamily,
+        publicDefaultModel: form.publicDefaultModel,
+        publicSortOrder: Number(form.publicSortOrder || 100),
+        publicHidden: form.publicHidden,
         baseUrl: form.baseUrl,
         adminBaseUrl: form.adminBaseUrl,
         status: form.status,
@@ -937,41 +1031,135 @@ export default function AdminAIProviderPage() {
 
       {tab === 0 ? (
         <Stack spacing={1.25}>
-          <AdminSection title="主账号配置" subtitle="配置上游调用、管理凭证和主账号余额查询。">
+          <AdminSection title="主账号配置">
             <Stack spacing={1.25}>
-              <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.25}>
-                <TextField label="名称" value={form.name} onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))} fullWidth />
-                <TextField select label="状态" value={form.status} onChange={(e) => setForm((prev) => ({ ...prev, status: e.target.value }))} sx={{ minWidth: 140 }}>
+              <Box sx={configGridSx}>
+                <TextField label="名称" value={form.name} onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))} sx={compactTextFieldSx} />
+                <TextField select label="状态" value={form.status} onChange={(e) => setForm((prev) => ({ ...prev, status: e.target.value }))} sx={compactTextFieldSx}>
                   <MenuItem value="active">启用</MenuItem>
                   <MenuItem value="inactive">停用</MenuItem>
                 </TextField>
-              </Stack>
-              <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.25}>
-                <TextField label="AI 调用 Base URL" value={form.baseUrl} onChange={(e) => setForm((prev) => ({ ...prev, baseUrl: e.target.value }))} fullWidth />
-                {isApi2d ? (
-                  <TextField
-                    label="管理 API Base URL"
-                    value={form.adminBaseUrl}
-                    onChange={(e) => setForm((prev) => ({ ...prev, adminBaseUrl: e.target.value }))}
-                    helperText="API2D 开发者计划 custom_key 管理接口，例如 https://api.api2d.com"
-                    fullWidth
-                  />
-                ) : null}
-              </Stack>
                 <TextField
-                  label={isApi2d ? 'API2D 主账号管理 Token（不是模型调用 Key）' : `${providerDisplayName} 主账号 API Key`}
-                  value={form.adminToken}
-                  onChange={(e) => setForm((prev) => ({ ...prev, adminToken: e.target.value }))}
-                  fullWidth
+                  label="排序"
+                  type="number"
+                  value={form.publicSortOrder}
+                  onChange={(e) => setForm((prev) => ({ ...prev, publicSortOrder: e.target.value }))}
+                  sx={compactTextFieldSx}
                 />
+                <Box
+                  sx={{
+                    minHeight: 56,
+                    border: 1,
+                    borderColor: 'divider',
+                    borderRadius: 1.5,
+                    px: 1.25,
+                    display: 'flex',
+                    alignItems: 'center',
+                    bgcolor: 'background.paper',
+                  }}
+                >
+                  <FormControlLabel
+                    control={<Switch checked={form.publicHidden} onChange={(e) => setForm((prev) => ({ ...prev, publicHidden: e.target.checked }))} />}
+                    label="用户侧隐藏"
+                    sx={{
+                      m: 0,
+                      '& .MuiFormControlLabel-label': {
+                        whiteSpace: 'nowrap',
+                      },
+                    }}
+                  />
+                </Box>
+              </Box>
+              <Box sx={publicConfigGridSx}>
+                <TextField
+                  label="用户侧公开 ID"
+                  value={form.publicId}
+                  onChange={(e) => setForm((prev) => ({ ...prev, publicId: e.target.value }))}
+                  sx={compactTextFieldSx}
+                />
+                <TextField
+                  label="用户侧显示名"
+                  value={form.publicName}
+                  onChange={(e) => setForm((prev) => ({ ...prev, publicName: e.target.value }))}
+                  sx={compactTextFieldSx}
+                />
+                <TextField
+                  label="用户侧分组名"
+                  value={form.publicFamily}
+                  onChange={(e) => setForm((prev) => ({ ...prev, publicFamily: e.target.value }))}
+                  sx={compactTextFieldSx}
+                />
+                <Autocomplete
+                  freeSolo
+                  options={publicModelOptions}
+                  value={form.publicDefaultModel}
+                  getOptionLabel={(option) => (typeof option === 'string' ? option : option.modelName)}
+                  isOptionEqualToValue={(option, value) => {
+                    const optionValue = typeof option === 'string' ? option : option.modelName;
+                    const valueText = typeof value === 'string' ? value : value.modelName;
+                    return optionValue === valueText;
+                  }}
+                  onChange={(_event, value) => {
+                    const model = typeof value === 'string' ? value : value?.modelName || '';
+                    setForm((prev) => ({ ...prev, publicDefaultModel: model }));
+                  }}
+                  onInputChange={(_event, value, reason) => {
+                    if (reason === 'input' || reason === 'clear') setForm((prev) => ({ ...prev, publicDefaultModel: value }));
+                  }}
+                  renderOption={(props, option) => (
+                    <Box component="li" {...props}>
+                      <Box sx={{ minWidth: 0 }}>
+                        <Typography variant="body2" sx={{ fontWeight: 700 }}>{option.modelName}</Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {option.displayName || option.modelName} · {option.providerCount} 个上游
+                        </Typography>
+                      </Box>
+                    </Box>
+                  )}
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      label="默认模型"
+                      helperText={isMoacode
+                        ? publicModelLoading
+                          ? '加载中'
+                          : publicModelError
+                            ? `模型列表加载失败：${publicModelError}`
+                            : undefined
+                        : undefined}
+                      sx={compactTextFieldSx}
+                    />
+                  )}
+                />
+              </Box>
+              <Box sx={endpointGridSx}>
+                <TextField label="AI 调用 Base URL" value={form.baseUrl} onChange={(e) => setForm((prev) => ({ ...prev, baseUrl: e.target.value }))} fullWidth sx={compactTextFieldSx} />
                 {isApi2d || isMoacode ? (
                   <TextField
-                    label={isMoacode ? 'Moacode Cookie（用于余额和用量查询）' : 'API2D 主账号 ForwardKey（用于余额查询）'}
-                    value={form.forwardKey}
-                    onChange={(e) => setForm((prev) => ({ ...prev, forwardKey: e.target.value }))}
+                    label={isMoacode ? '余额/用量 Base URL' : '管理 API Base URL'}
+                    value={form.adminBaseUrl}
+                    onChange={(e) => setForm((prev) => ({ ...prev, adminBaseUrl: e.target.value }))}
                     fullWidth
+                    sx={compactTextFieldSx}
                   />
                 ) : null}
+              </Box>
+              <TextField
+                label={isApi2d ? 'API2D 主账号管理 Token（不是模型调用 Key）' : `${providerDisplayName} 主账号 API Key`}
+                value={form.adminToken}
+                onChange={(e) => setForm((prev) => ({ ...prev, adminToken: e.target.value }))}
+                fullWidth
+                sx={compactTextFieldSx}
+              />
+              {isApi2d || isMoacode ? (
+                <TextField
+                  label={isMoacode ? `${providerDisplayName} Cookie（用于余额和用量查询）` : 'API2D 主账号 ForwardKey（用于余额查询）'}
+                  value={form.forwardKey}
+                  onChange={(e) => setForm((prev) => ({ ...prev, forwardKey: e.target.value }))}
+                  fullWidth
+                  sx={compactTextFieldSx}
+                />
+              ) : null}
               {canQueryAccountBalance ? (
                 <Stack
                   direction={{ xs: 'column', sm: 'row' }}
@@ -1004,7 +1192,37 @@ export default function AdminAIProviderPage() {
                       gap: 1,
                     }}
                   >
-                    {[
+                    {(isMoacodeTeam ? [
+                      {
+                        label: '有效可用',
+                        value: formatDollarAmount(getFirstDefinedValue(moacodeBalanceSummary, ['effectiveAvailableBalance', 'effective_available_balance']), 2),
+                      },
+                      {
+                        label: '团队日剩余 / 限额',
+                        value: formatDollarFraction(
+                          getFirstDefinedValue(moacodeBalanceSummary, ['teamDailyRemainingBalance', 'team_daily_remaining_balance', 'dailyRemainingBalance', 'daily_remaining_balance', 'userDailyRemainingBalance', 'user_daily_remaining_balance']),
+                          getFirstDefinedValue(moacodeBalanceSummary, ['teamDailyBalance', 'team_daily_balance', 'dailyBalance', 'daily_balance']),
+                          2,
+                        ),
+                      },
+                      {
+                        label: '本周剩余 / 限额',
+                        value: formatDollarRemainingFromSpent(
+                          getFirstDefinedValue(moacodeBalanceSummary, ['weeklyLimit', 'weekly_limit']),
+                          getFirstDefinedValue(moacodeBalanceSummary, ['teamWeekSpend', 'team_week_spend', 'currentWeekSpend', 'current_week_spend']),
+                          2,
+                        ),
+                      },
+                      {
+                        label: '本月剩余 / 限额',
+                        value: formatDollarRemainingFromSpent(
+                          getFirstDefinedValue(moacodeBalanceSummary, ['teamMonthlyLimit', 'team_monthly_limit', 'monthlyLimit', 'monthly_limit']),
+                          getFirstDefinedValue(moacodeBalanceSummary, ['teamMonthSpend', 'team_month_spend', 'currentMonthSpend', 'current_month_spend']),
+                          2,
+                        ),
+                      },
+                      { label: '团队', value: `${String(getFirstDefinedValue(moacodeBalanceSummary, ['teamName', 'team_name']) ?? '-')}${getFirstDefinedValue(moacodeBalanceSummary, ['hasTeam', 'has_team']) === false ? ' / 未加入' : ` / ${formatOptionalBoolean(getFirstDefinedValue(moacodeBalanceSummary, ['teamActive', 'team_active']))}`}` },
+                    ] : [
                       { label: '总余额', value: formatDollarAmount(getFirstDefinedValue(moacodeBalanceSummary, ['totalBalance', 'total_balance', 'balance']), 2) },
                       { label: '订阅余额', value: formatDollarAmount(getFirstDefinedValue(moacodeBalanceSummary, ['subscriptionBalance', 'subscription_balance']), 2) },
                       { label: 'PAYG 余额', value: formatDollarAmount(getFirstDefinedValue(moacodeBalanceSummary, ['payAsYouGoBalance', 'pay_as_you_go_balance']), 2) },
@@ -1012,65 +1230,74 @@ export default function AdminAIProviderPage() {
                       { label: '本周已用', value: formatDollarAmount(getFirstDefinedValue(moacodeBalanceSummary, ['weeklySpentBalance', 'weekly_spent_balance']), 2) },
                       { label: '扣费偏好', value: String(getFirstDefinedValue(moacodeBalanceSummary, ['balancePreference', 'balance_preference']) ?? '-') },
                       { label: '自动 PAYG', value: formatOptionalBoolean(getFirstDefinedValue(moacodeBalanceSummary, ['autoSwitchToPaygEnabled', 'auto_switch_to_payg_enabled'])) },
-                    ].map((item) => (
+                    ]).map((item) => (
                       <Box key={item.label} sx={{ border: 1, borderColor: 'divider', borderRadius: 1, p: 1 }}>
                         <Typography variant="caption" color="text.secondary">{item.label}</Typography>
                         <Typography variant="body2" sx={{ fontWeight: 800 }}>{item.value}</Typography>
                       </Box>
                     ))}
                   </Box>
-                  <Box
-                    sx={{
-                      display: 'grid',
-                      gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', md: 'repeat(4, minmax(0, 1fr))' },
-                      gap: 1,
-                    }}
-                  >
-                    {[
-                      { label: '总请求', value: formatOptionalPlainNumber(moacodeUsageSummary.totalRequests ?? moacodeUsageSummary.total_requests, 0) },
-                      { label: '输入 tokens', value: formatOptionalPlainNumber(moacodeUsageSummary.totalInputTokens ?? moacodeUsageSummary.total_input_tokens, 0) },
-                      { label: '输出 tokens', value: formatOptionalPlainNumber(moacodeUsageSummary.totalOutputTokens ?? moacodeUsageSummary.total_output_tokens, 0) },
-                      { label: '缓存读取 tokens', value: formatOptionalPlainNumber(moacodeUsageSummary.totalCacheReadTokens ?? moacodeUsageSummary.total_cache_read_tokens, 0) },
-                      { label: '总成本', value: formatDollarAmount(moacodeUsageSummary.totalCost ?? moacodeUsageSummary.total_cost, 4) },
-                    ].map((item) => (
-                      <Box key={item.label} sx={{ border: 1, borderColor: 'divider', borderRadius: 1, p: 1 }}>
-                        <Typography variant="caption" color="text.secondary">{item.label}</Typography>
-                        <Typography variant="body2" sx={{ fontWeight: 800 }}>{item.value}</Typography>
+                  {Object.keys(moacodeUsageSummary).length ? (
+                    <>
+                      <Box
+                        sx={{
+                          display: 'grid',
+                          gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', md: 'repeat(4, minmax(0, 1fr))' },
+                          gap: 1,
+                        }}
+                      >
+                        {[
+                          { label: '总请求', value: formatOptionalPlainNumber(moacodeUsageSummary.totalRequests ?? moacodeUsageSummary.total_requests, 0) },
+                          { label: '输入 tokens', value: formatOptionalPlainNumber(moacodeUsageSummary.totalInputTokens ?? moacodeUsageSummary.total_input_tokens, 0) },
+                          { label: '输出 tokens', value: formatOptionalPlainNumber(moacodeUsageSummary.totalOutputTokens ?? moacodeUsageSummary.total_output_tokens, 0) },
+                          { label: '缓存读取 tokens', value: formatOptionalPlainNumber(moacodeUsageSummary.totalCacheReadTokens ?? moacodeUsageSummary.total_cache_read_tokens, 0) },
+                          { label: '总成本', value: formatDollarAmount(moacodeUsageSummary.totalCost ?? moacodeUsageSummary.total_cost, 4) },
+                        ].map((item) => (
+                          <Box key={item.label} sx={{ border: 1, borderColor: 'divider', borderRadius: 1, p: 1 }}>
+                            <Typography variant="caption" color="text.secondary">{item.label}</Typography>
+                            <Typography variant="body2" sx={{ fontWeight: 800 }}>{item.value}</Typography>
+                          </Box>
+                        ))}
                       </Box>
-                    ))}
-                  </Box>
-                  <Typography variant="caption" color="text.secondary">
-                    首次请求：{String(moacodeUsageSummary.firstRequestAt ?? moacodeUsageSummary.first_request_at ?? '-')}；最近请求：{String(moacodeUsageSummary.lastRequestAt ?? moacodeUsageSummary.last_request_at ?? '-')}
-                  </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {isMoacodeTeam ? '团队近 1 个月' : '主账号汇总'}；首次请求：{String(moacodeUsageSummary.firstRequestAt ?? moacodeUsageSummary.first_request_at ?? '-')}；最近请求：{String(moacodeUsageSummary.lastRequestAt ?? moacodeUsageSummary.last_request_at ?? '-')}
+                      </Typography>
+                    </>
+                  ) : null}
                   {moacodeUsageModels.length ? (
-                    <AdminTableFrame minWidth={760}>
-                      <Table size="small">
-                        <TableHead>
-                          <TableRow>
-                            <TableCell>模型</TableCell>
-                            <TableCell>请求</TableCell>
-                            <TableCell>输入</TableCell>
-                            <TableCell>输出</TableCell>
-                            <TableCell>缓存创建</TableCell>
-                            <TableCell>缓存读取</TableCell>
-                            <TableCell>成本($)</TableCell>
-                          </TableRow>
-                        </TableHead>
-                        <TableBody>
-                          {moacodeUsageModels.map((row) => (
-                            <TableRow key={String(row.model || '')}>
-                              <TableCell>{String(row.model || '-')}</TableCell>
-                              <TableCell>{formatPlainNumber(row.requests)}</TableCell>
-                              <TableCell>{formatPlainNumber(row.inputTokens ?? row.input_tokens)}</TableCell>
-                              <TableCell>{formatPlainNumber(row.outputTokens ?? row.output_tokens)}</TableCell>
-                              <TableCell>{formatPlainNumber(row.cacheCreationTokens ?? row.cache_creation_tokens)}</TableCell>
-                              <TableCell>{formatPlainNumber(row.cacheReadTokens ?? row.cache_read_tokens)}</TableCell>
-                              <TableCell>{formatDollarAmount(row.cost, 4)}</TableCell>
+                    <Stack spacing={0.75}>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                        {isMoacodeTeam ? '团队模型用量（近 1 个月）' : '模型用量'}
+                      </Typography>
+                      <AdminTableFrame minWidth={760}>
+                        <Table size="small">
+                          <TableHead>
+                            <TableRow>
+                              <TableCell>模型</TableCell>
+                              <TableCell>请求</TableCell>
+                              <TableCell>输入</TableCell>
+                              <TableCell>输出</TableCell>
+                              <TableCell>缓存创建</TableCell>
+                              <TableCell>缓存读取</TableCell>
+                              <TableCell>成本($)</TableCell>
                             </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </AdminTableFrame>
+                          </TableHead>
+                          <TableBody>
+                            {moacodeUsageModels.map((row) => (
+                              <TableRow key={String(row.model || '')}>
+                                <TableCell>{String(row.model || '-')}</TableCell>
+                                <TableCell>{formatPlainNumber(row.requests)}</TableCell>
+                                <TableCell>{formatPlainNumber(row.inputTokens ?? row.input_tokens)}</TableCell>
+                                <TableCell>{formatPlainNumber(row.outputTokens ?? row.output_tokens)}</TableCell>
+                                <TableCell>{formatPlainNumber(row.cacheCreationTokens ?? row.cache_creation_tokens)}</TableCell>
+                                <TableCell>{formatPlainNumber(row.cacheReadTokens ?? row.cache_read_tokens)}</TableCell>
+                                <TableCell>{formatDollarAmount(row.cost ?? row.total_cost, 4)}</TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </AdminTableFrame>
+                    </Stack>
                   ) : null}
                 </Stack>
               ) : null}
@@ -1080,11 +1307,6 @@ export default function AdminAIProviderPage() {
           {usesInternalLedger ? (
             <AdminSection title={`${providerDisplayName} 扣费配置`}>
               <Stack spacing={1.25}>
-                <Alert severity="info">
-                  {isMoacode
-                    ? '扣费按上游美元成本价计算，再换算为用户 P。默认 1P=$0.01，计费倍率 1.5 表示成本价加 50%。'
-                    : '扣费按上游成本价计算，再换算为用户 P。默认 1P=0.01元，计费倍率 1.5 表示成本价加 50%。'}
-                </Alert>
                 <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.25}>
                   <TextField
                     label={isMoacode ? '1P 等于多少美元' : '1P 等于多少元'}
@@ -1096,94 +1318,91 @@ export default function AdminAIProviderPage() {
                     label="计费倍率"
                     value={form.deepseekPricing.billingMultiplier}
                     onChange={(e) => updateDeepSeekPricing('billingMultiplier', e.target.value)}
-                    helperText="1.5 表示成本价加 50%"
                     fullWidth
                   />
                 </Stack>
-                <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.25}>
-                  <TextField
-                    label={isMoacode ? '输入成本价（美元/百万 tokens）' : '输入成本价（元/百万 tokens）'}
-                    value={form.deepseekPricing.prompt}
-                    onChange={(e) => updateDeepSeekPricing('prompt', e.target.value)}
-                    fullWidth
-                  />
-                  <TextField
-                    label={isMoacode ? '输出成本价（美元/百万 tokens）' : '输出成本价（元/百万 tokens）'}
-                    value={form.deepseekPricing.completion}
-                    onChange={(e) => updateDeepSeekPricing('completion', e.target.value)}
-                    fullWidth
-                  />
-                </Stack>
-                <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.25}>
-                  <TextField
-                    label={isMoacode ? '缓存命中价格（美元/百万 tokens）' : '缓存命中价格（元/百万 tokens）'}
-                    value={form.deepseekPricing.cacheHit}
-                    onChange={(e) => updateDeepSeekPricing('cacheHit', e.target.value)}
-                    fullWidth
-                  />
-                  <TextField
-                    label={isMoacode ? '缓存未命中价格（美元/百万 tokens）' : '缓存未命中价格（元/百万 tokens）'}
-                    value={form.deepseekPricing.cacheMiss}
-                    onChange={(e) => updateDeepSeekPricing('cacheMiss', e.target.value)}
-                    fullWidth
-                  />
-                </Stack>
+                {!isMoacode ? (
+                  <>
+                    <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.25}>
+                      <TextField
+                        label="输入成本价（元/百万 tokens）"
+                        value={form.deepseekPricing.prompt}
+                        onChange={(e) => updateDeepSeekPricing('prompt', e.target.value)}
+                        fullWidth
+                      />
+                      <TextField
+                        label="输出成本价（元/百万 tokens）"
+                        value={form.deepseekPricing.completion}
+                        onChange={(e) => updateDeepSeekPricing('completion', e.target.value)}
+                        fullWidth
+                      />
+                    </Stack>
+                    <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.25}>
+                      <TextField
+                        label="缓存命中价格（元/百万 tokens）"
+                        value={form.deepseekPricing.cacheHit}
+                        onChange={(e) => updateDeepSeekPricing('cacheHit', e.target.value)}
+                        fullWidth
+                      />
+                      <TextField
+                        label="缓存未命中价格（元/百万 tokens）"
+                        value={form.deepseekPricing.cacheMiss}
+                        onChange={(e) => updateDeepSeekPricing('cacheMiss', e.target.value)}
+                        fullWidth
+                      />
+                    </Stack>
+                  </>
+                ) : null}
               </Stack>
             </AdminSection>
           ) : null}
 
-          <AdminSection title={isApi2d ? 'Key 分配参数' : '新用户默认额度'}>
+          {isApi2d ? (
+          <AdminSection title="Key 分配参数">
             <Stack spacing={1.25}>
-              {isApi2d ? (
+              <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.25}>
+                <TextField
+                  label="默认 Key 分组 ID"
+                  value={form.defaultKeyTypeId}
+                  onChange={(e) => setForm((prev) => ({ ...prev, defaultKeyTypeId: e.target.value }))}
+                />
+              </Stack>
+              <>
                 <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.25}>
                   <TextField
-                    label="默认 Key 分组 ID"
-                    value={form.defaultKeyTypeId}
-                    onChange={(e) => setForm((prev) => ({ ...prev, defaultKeyTypeId: e.target.value }))}
-                    helperText="填写 custom_key_type/search 返回的数字 id，例如 1219，不要带 CK 前缀"
-                  />
-                </Stack>
-              ) : null}
-              <Alert severity="info">新用户默认赠送点数、每日额度和每月额度已移动到 AI 平台列表页的“全局配置”。</Alert>
-              {isApi2d ? (
-                <>
-                  <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.25}>
-                    <TextField
-                      label="额度转入路径"
-                      value={form.quotaTransferPath}
-                      onChange={(e) => setForm((prev) => ({ ...prev, quotaTransferPath: e.target.value }))}
-                      helperText="API2D 点数转入接口路径，例如 /custom_key/transfer_point；留空则使用后端默认值"
-                      fullWidth
-                    />
-                    <TextField
-                      select
-                      label="额度转入方法"
-                      value={form.quotaTransferMethod}
-                      onChange={(e) => setForm((prev) => ({ ...prev, quotaTransferMethod: e.target.value }))}
-                      sx={{ minWidth: 140 }}
-                    >
-                      <MenuItem value="POST">POST</MenuItem>
-                      <MenuItem value="PUT">PUT</MenuItem>
-                    </TextField>
-                  </Stack>
-                  <TextField
-                    label="额度转入请求体模板"
-                    value={form.quotaTransferBodyTemplate}
-                    onChange={(e) => setForm((prev) => ({ ...prev, quotaTransferBodyTemplate: e.target.value }))}
-                    helperText='JSON 模板，可使用 {externalKeyId}、{apiKey}、{amount}；API2D 默认 body 为 {"key":"{apiKey}","direction":"to","point":"{amount}"}'
-                    minRows={4}
-                    multiline
+                    label="额度转入路径"
+                    value={form.quotaTransferPath}
+                    onChange={(e) => setForm((prev) => ({ ...prev, quotaTransferPath: e.target.value }))}
                     fullWidth
                   />
-                </>
-              ) : null}
+                  <TextField
+                    select
+                    label="额度转入方法"
+                    value={form.quotaTransferMethod}
+                    onChange={(e) => setForm((prev) => ({ ...prev, quotaTransferMethod: e.target.value }))}
+                    sx={{ minWidth: 140 }}
+                  >
+                    <MenuItem value="POST">POST</MenuItem>
+                    <MenuItem value="PUT">PUT</MenuItem>
+                  </TextField>
+                </Stack>
+                <TextField
+                  label="额度转入请求体模板"
+                  value={form.quotaTransferBodyTemplate}
+                  onChange={(e) => setForm((prev) => ({ ...prev, quotaTransferBodyTemplate: e.target.value }))}
+                  minRows={4}
+                  multiline
+                  fullWidth
+                />
+              </>
             </Stack>
           </AdminSection>
+          ) : null}
 
         </Stack>
       ) : isMoacode && tab === publicModelTabIndex ? (
         <Stack spacing={1.5}>
-          <AdminSection title="Moacode 公开价格表" subtitle="按模型合并展示不同上游的倍率和 token 价格。">
+          <AdminSection title="模型价格">
             <Stack spacing={1.25}>
               <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
                 <TextField
@@ -1212,17 +1431,9 @@ export default function AdminAIProviderPage() {
                 >
                   刷新
                 </Button>
-                <Typography variant="caption" color="text.secondary">
-                  同一模型可能有多家上游；扣费估算会按当前 token 构成取最高价。
-                </Typography>
               </Stack>
               {publicModelError ? <Alert severity="error">{publicModelError}</Alert> : null}
-              {publicModels.length ? (
-                <Alert severity="info">
-                  共 {publicModelTotal} 条价格，按 {publicModelGroups.length} 个模型分组显示。
-                </Alert>
-              ) : null}
-              {!publicModels.length && !publicModelLoading && !publicModelError ? <Alert severity="info">暂无公开价格表</Alert> : null}
+              {!publicModels.length && !publicModelLoading && !publicModelError ? <Alert severity="info">暂无模型价格</Alert> : null}
               {publicModels.length ? (
                 <AdminTableFrame minWidth={980}>
                   <Table size="small">
@@ -1239,45 +1450,76 @@ export default function AdminAIProviderPage() {
                       </TableRow>
                     </TableHead>
                     <TableBody>
-                      {publicModelGroups.flatMap((group) => group.rows.map((row, rowIndex) => (
-                        <TableRow key={String(row.id || `${group.modelName}-${getPublicModelRowProviderCode(row) || getPublicModelRowProviderLabel(row)}-${rowIndex}`)}>
-                          {rowIndex === 0 ? (
-                            <TableCell
-                              rowSpan={group.rows.length}
-                              sx={{
-                                verticalAlign: 'top',
-                                borderRight: 1,
-                                borderRightColor: 'divider',
-                                bgcolor: 'action.hover',
-                              }}
-                            >
-                              <Typography variant="body2" sx={{ fontWeight: 800, wordBreak: 'break-word' }}>
-                                {group.modelName}
-                              </Typography>
-                              {group.displayName ? (
-                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25, wordBreak: 'break-word' }}>
-                                  {group.displayName}
+                      {publicModelGroups.flatMap((group) => group.rows.map((row, rowIndex) => {
+                        const billingSelected = getPublicModelRowBillingSelected(row);
+                        return (
+                          <TableRow
+                            key={String(row.id || `${group.modelName}-${getPublicModelRowProviderCode(row) || getPublicModelRowProviderLabel(row)}-${rowIndex}`)}
+                            sx={billingSelected ? {
+                              '& > td': {
+                                bgcolor: 'rgba(46, 125, 50, 0.08)',
+                              },
+                            } : undefined}
+                          >
+                            {rowIndex === 0 ? (
+                              <TableCell
+                                rowSpan={group.rows.length}
+                                sx={{
+                                  verticalAlign: 'top',
+                                  borderRight: 1,
+                                  borderRightColor: 'divider',
+                                  bgcolor: 'action.hover',
+                                }}
+                              >
+                                <Typography variant="body2" sx={{ fontWeight: 800, wordBreak: 'break-word' }}>
+                                  {group.modelName}
                                 </Typography>
-                              ) : null}
-                              {group.rows.length > 1 ? (
-                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-                                  {group.rows.length} 家上游
+                                {group.displayName ? (
+                                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25, wordBreak: 'break-word' }}>
+                                    {group.displayName}
+                                  </Typography>
+                                ) : null}
+                                {group.rows.length > 1 ? (
+                                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                                    {group.rows.length} 家上游
+                                  </Typography>
+                                ) : null}
+                              </TableCell>
+                            ) : null}
+                            <TableCell>
+                              <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+                                <Typography variant="body2" sx={{ fontWeight: billingSelected ? 800 : 400 }}>
+                                  {getPublicModelRowProviderLabel(row)}
                                 </Typography>
-                              ) : null}
+                                {billingSelected ? (
+                                  <Box
+                                    component="span"
+                                    sx={{
+                                      px: 0.75,
+                                      py: 0.125,
+                                      borderRadius: 999,
+                                      bgcolor: 'success.main',
+                                      color: 'success.contrastText',
+                                      fontSize: 12,
+                                      fontWeight: 800,
+                                      lineHeight: 1.6,
+                                    }}
+                                  >
+                                    计费
+                                  </Box>
+                                ) : null}
+                              </Stack>
+                              <Typography variant="caption" color="text.secondary">{getPublicModelRowProviderCode(row)}</Typography>
                             </TableCell>
-                          ) : null}
-                          <TableCell>
-                            <Typography variant="body2">{getPublicModelRowProviderLabel(row)}</Typography>
-                            <Typography variant="caption" color="text.secondary">{getPublicModelRowProviderCode(row)}</Typography>
-                          </TableCell>
-                          <TableCell>{formatOptionalPlainNumber(row.rateMultiplier ?? row.rate_multiplier, 4)}</TableCell>
-                          <TableCell>{formatDollarAmount(row.inputTokenPrice ?? row.input_token_price, 6)}</TableCell>
-                          <TableCell>{formatDollarAmount(row.outputTokenPrice ?? row.output_token_price, 6)}</TableCell>
-                          <TableCell>{formatDollarAmount(row.cacheCreationTokenPrice ?? row.cache_creation_token_price, 6)}</TableCell>
-                          <TableCell>{formatDollarAmount(row.cacheReadTokenPrice ?? row.cache_read_token_price, 6)}</TableCell>
-                          <TableCell>{formatDollarAmount(row.requestPrice ?? row.request_price, 6)}</TableCell>
-                        </TableRow>
-                      )))}
+                            <TableCell>{formatOptionalPlainNumber(row.rateMultiplier ?? row.rate_multiplier, 4)}</TableCell>
+                            <TableCell>{formatDollarAmount(row.inputTokenPrice ?? row.input_token_price, 6)}</TableCell>
+                            <TableCell>{formatDollarAmount(row.outputTokenPrice ?? row.output_token_price, 6)}</TableCell>
+                            <TableCell>{formatDollarAmount(row.cacheCreationTokenPrice ?? row.cache_creation_token_price, 6)}</TableCell>
+                            <TableCell>{formatDollarAmount(row.cacheReadTokenPrice ?? row.cache_read_token_price, 6)}</TableCell>
+                            <TableCell>{formatDollarAmount(row.requestPrice ?? row.request_price, 6)}</TableCell>
+                          </TableRow>
+                        );
+                      }))}
                     </TableBody>
                   </Table>
                 </AdminTableFrame>
@@ -1292,7 +1534,7 @@ export default function AdminAIProviderPage() {
               <TextField size="small" label="搜索用户" value={userBalanceSearch} onChange={(e) => setUserBalanceSearch(e.target.value)} sx={{ width: { xs: 180, sm: 260 } }} />
               <Button variant="contained" disabled={userBalanceLoading} onClick={() => void loadUserBalances(0, userBalanceRowsPerPage)} sx={{ minWidth: 88, height: 40 }}>查询</Button>
             </Stack>
-            <AdminSection title="用户点数" subtitle="点击用户行查看额度流水和调用消耗。" bodySx={{ p: 0 }}>
+            <AdminSection title="用户点数" bodySx={{ p: 0 }}>
             <AdminTableFrame minWidth={760}>
               <Table size="small">
                 <TableHead>
@@ -1583,15 +1825,14 @@ export default function AdminAIProviderPage() {
         <DialogContent>
           <Stack spacing={1.25} sx={{ pt: 1 }}>
             <TextField
-              label="分组 ID（留空使用默认）"
+              label="分组 ID"
               value={keyCreate.typeId}
               onChange={(e) => setKeyCreate((prev) => ({ ...prev, typeId: e.target.value }))}
-              helperText={providerCode === 'api2d' ? '填写数字 id，例如 1219，不要带 CK 前缀' : undefined}
             />
-            <TextField label="备注（留空使用默认）" value={keyCreate.note} onChange={(e) => setKeyCreate((prev) => ({ ...prev, note: e.target.value }))} />
-            <TextField label="初始点数（留空使用默认）" value={keyCreate.grantAmount} onChange={(e) => setKeyCreate((prev) => ({ ...prev, grantAmount: e.target.value }))} />
-            <TextField label="每日额度（留空使用默认）" value={keyCreate.dailyQuota} onChange={(e) => setKeyCreate((prev) => ({ ...prev, dailyQuota: e.target.value }))} />
-            <TextField label="每月额度（留空使用默认）" value={keyCreate.monthlyQuota} onChange={(e) => setKeyCreate((prev) => ({ ...prev, monthlyQuota: e.target.value }))} />
+            <TextField label="备注" value={keyCreate.note} onChange={(e) => setKeyCreate((prev) => ({ ...prev, note: e.target.value }))} />
+            <TextField label="初始点数" value={keyCreate.grantAmount} onChange={(e) => setKeyCreate((prev) => ({ ...prev, grantAmount: e.target.value }))} />
+            <TextField label="每日额度" value={keyCreate.dailyQuota} onChange={(e) => setKeyCreate((prev) => ({ ...prev, dailyQuota: e.target.value }))} />
+            <TextField label="每月额度" value={keyCreate.monthlyQuota} onChange={(e) => setKeyCreate((prev) => ({ ...prev, monthlyQuota: e.target.value }))} />
             <Stack direction="row" spacing={1} sx={{ justifyContent: 'flex-end' }}>
               <Button onClick={() => setCreateDialogOpen(false)}>取消</Button>
               <Button variant="contained" disabled={keyLoading} onClick={() => void createKey()}>创建</Button>

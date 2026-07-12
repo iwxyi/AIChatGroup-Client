@@ -161,7 +161,7 @@ export default function AccountPage() {
     }
     let cancelled = false;
     setAiBalanceLoading(true);
-    api.getAiBalance('moacode')
+    api.getAiBalance('official-2')
       .then((balance) => {
         if (!cancelled) setAiBalance(balance);
       })

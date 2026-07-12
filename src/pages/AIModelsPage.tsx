@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type MouseEvent } from 'react';
 import {
   Box, Typography, TextField, Button,
-  FormControl, InputLabel, Select, MenuItem,
+  FormControl, InputLabel, Select, MenuItem, ListSubheader,
   Alert, IconButton, InputAdornment, Autocomplete, Checkbox, Tooltip, FormControlLabel, Divider,
 } from '@mui/material';
 import type { Theme } from '@mui/material/styles';
@@ -11,6 +11,7 @@ import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import CloudSyncIcon from '@mui/icons-material/CloudSyncOutlined';
 import VpnKeyIcon from '@mui/icons-material/VpnKeyOutlined';
+import WarningAmberIcon from '@mui/icons-material/WarningAmberOutlined';
 import { useTranslation } from 'react-i18next';
 import { useLayoutHeaderActions } from '../components/layout/AppLayoutContext';
 import { useSettingsStore } from '../stores/useSettingsStore';
@@ -26,7 +27,7 @@ import PageSection from '../components/common/PageSection';
 import SurfaceCard from '../components/common/SurfaceCard';
 import AppSnackbar from '../components/common/AppSnackbar';
 import ExpandableFab from '../components/common/ExpandableFab';
-import { getPopularModels, getProviderCatalogEntry, getProvidersForType, inferImageCapabilities, type AIProviderCatalogEntry } from '../constants/aiModelCatalog';
+import { AI_PROVIDER_CATALOG, getPopularModels, getProviderCatalogEntry, getProvidersForType, inferImageCapabilities, type AIProviderCatalogEntry } from '../constants/aiModelCatalog';
 import { motion, transition } from '../styles/motion';
 import { formatAiAmount } from '../utils/aiPoints';
 
@@ -129,6 +130,15 @@ function solidPopupPaperSx() {
     '& .MuiAutocomplete-groupUl': {
       py: 0,
     },
+    '& .MuiListSubheader-root': {
+      bgcolor: 'transparent',
+      color: 'text.secondary',
+      fontSize: 12,
+      fontWeight: 700,
+      lineHeight: 1.8,
+      pt: 0.5,
+      pb: 0.25,
+    },
   };
 }
 
@@ -226,38 +236,69 @@ function getAiBalanceLabel(view: AiBalanceView, providerKey: string, zh: boolean
 }
 
 function isOfficialProviderKey(provider: string) {
-  return provider === 'official' || provider === 'official-deepseek' || provider === 'official-gpt' || provider === 'official-moacode';
-}
-
-function isKnownOfficialProviderKey(provider: string): provider is AIProvider {
-  return provider === 'official-deepseek' || provider === 'official-gpt' || provider === 'official-moacode';
+  return provider === 'official' || provider.startsWith('official-');
 }
 
 function resolveOfficialBackendProvider(provider: string) {
-  if (provider === 'official-deepseek') return 'deepseek';
-  if (provider === 'official') return 'moacode';
-  if (provider === 'official-moacode') return 'moacode';
-  return 'api2d';
+  return provider === 'official' ? 'official-2' : provider;
+}
+
+function resolveLegacyOfficialProviderKey(provider: string) {
+  if (provider === 'official' || provider === 'official-moacode') return 'official-2';
+  if (provider === 'official-deepseek') return 'official-1';
+  if (provider === 'official-moacode-team') return 'official-team';
+  if (provider === 'official-gpt') return 'official-4';
+  return provider;
 }
 
 function buildOnlineOfficialProviderOption(provider: OfficialAiProviderInfo): (AIProviderOption & { sortOrder: number }) | null {
-  if (!isKnownOfficialProviderKey(provider.officialProvider)) return null;
-  const catalogEntry = getProviderCatalogEntry(provider.officialProvider);
+  if (!provider.officialProvider?.trim()) return null;
+  const providerKey = provider.officialProvider.trim() as AIProvider;
+  const fallbackDefault = { baseUrl: '/api/ai', model: provider.defaultModel || '' };
+  const catalogEntry = AI_PROVIDER_CATALOG.find((item) => item.key === providerKey) || {
+    key: providerKey,
+    label: provider.label || providerKey,
+    family: provider.family || '官方模型',
+    defaults: {
+      text: fallbackDefault,
+      image: fallbackDefault,
+      audio: fallbackDefault,
+      document: fallbackDefault,
+    },
+    popularModels: {
+      text: provider.defaultModel ? [provider.defaultModel] : [],
+      image: provider.defaultModel ? [provider.defaultModel] : [],
+      audio: provider.defaultModel ? [provider.defaultModel] : [],
+      document: provider.defaultModel ? [provider.defaultModel] : [],
+    },
+  };
   const textDefault = catalogEntry.defaults.text;
   const documentDefault = catalogEntry.defaults.document;
-  const defaultModel = provider.defaultModel || textDefault?.model || documentDefault?.model || '';
+  const defaultModel = provider.defaultModel
+    || textDefault?.model
+    || catalogEntry.defaults.image?.model
+    || catalogEntry.defaults.audio?.model
+    || documentDefault?.model
+    || '';
   return {
     ...catalogEntry,
-    label: provider.accessAllowed === false
-      ? `${provider.label || catalogEntry.label}（当前会员不可用）`
-      : provider.label || catalogEntry.label,
+    label: provider.label || catalogEntry.label,
     family: provider.family || catalogEntry.family,
     hidden: Boolean(provider.hidden),
     unavailableReason: provider.accessAllowed === false ? '当前会员不可用' : undefined,
     defaults: {
       ...catalogEntry.defaults,
-      ...(textDefault ? { text: { ...textDefault, model: defaultModel || textDefault.model } } : {}),
-      ...(documentDefault ? { document: { ...documentDefault, model: defaultModel || documentDefault.model } } : {}),
+      text: { ...(catalogEntry.defaults.text || fallbackDefault), model: defaultModel || catalogEntry.defaults.text?.model || '' },
+      image: { ...(catalogEntry.defaults.image || fallbackDefault), model: defaultModel || catalogEntry.defaults.image?.model || '' },
+      audio: { ...(catalogEntry.defaults.audio || fallbackDefault), model: defaultModel || catalogEntry.defaults.audio?.model || '' },
+      document: { ...(catalogEntry.defaults.document || fallbackDefault), model: defaultModel || catalogEntry.defaults.document?.model || '' },
+    },
+    popularModels: {
+      ...catalogEntry.popularModels,
+      text: catalogEntry.popularModels.text || (defaultModel ? [defaultModel] : []),
+      image: catalogEntry.popularModels.image || (defaultModel ? [defaultModel] : []),
+      audio: catalogEntry.popularModels.audio || (defaultModel ? [defaultModel] : []),
+      document: catalogEntry.popularModels.document || (defaultModel ? [defaultModel] : []),
     },
     sortOrder: typeof provider.sortOrder === 'number' ? provider.sortOrder : 999,
   };
@@ -269,10 +310,16 @@ function getProviderDefaultsFromOptions(provider: AIProvider, type: AIModelType,
 }
 
 function resolveSelectableProviderKey(provider: string, type: AIModelType, providerOptions: AIProviderOption[] = getProvidersForType(type)) {
+  const exactProvider = providerOptions.find((item) => item.key === provider);
+  if (exactProvider?.defaults[type]) return exactProvider.key;
+  if (isOfficialProviderKey(provider)) {
+    const legacyProvider = resolveLegacyOfficialProviderKey(provider);
+    const mappedProvider = providerOptions.find((item) => item.key === legacyProvider);
+    if (mappedProvider?.defaults[type]) return mappedProvider.key;
+  }
   const catalogProvider = getProviderCatalogEntry(provider as AIProvider);
   if (catalogProvider.defaults[type]) return catalogProvider.key;
-  return providerOptions.find((item) => item.key === provider)?.key
-    || providerOptions.find((item) => item.key === catalogProvider.key)?.key
+  return providerOptions.find((item) => item.key === catalogProvider.key)?.key
     || providerOptions[0]?.key
     || catalogProvider.key;
 }
@@ -373,8 +420,19 @@ export default function AIModelsPage() {
     .map(buildOnlineOfficialProviderOption)
     .filter((item): item is AIProviderOption & { sortOrder: number } => Boolean(item))
     .sort((left, right) => left.sortOrder - right.sortOrder || left.label.localeCompare(right.label)), [officialProviders]);
+  const onlineOfficialProviderKeySet = useMemo(
+    () => new Set(onlineOfficialProviderOptions.map((item) => item.key)),
+    [onlineOfficialProviderOptions],
+  );
+  const isOnlineOfficialProviderKey = useCallback((provider: string) => {
+    const resolved = isOfficialProviderKey(provider) ? resolveLegacyOfficialProviderKey(provider) : provider;
+    return onlineOfficialProviderKeySet.has(resolved as AIProvider);
+  }, [onlineOfficialProviderKeySet]);
+  const isOfficialProxyProviderKey = useCallback((provider: string) => (
+    isOfficialProviderKey(provider) || isOnlineOfficialProviderKey(provider)
+  ), [isOnlineOfficialProviderKey]);
   const getProviderOptionsForType = useCallback((type: AIModelType, selectedProvider?: string): AIProviderOption[] => {
-    const nonOfficialOptions = getProvidersForType(type).filter((item) => !isOfficialProviderKey(item.key));
+    const nonOfficialOptions = getProvidersForType(type).filter((item) => !isOfficialProviderKey(item.key) && !onlineOfficialProviderKeySet.has(item.key));
     const visibleOfficialOptions = !canUseOfficialProviders
       ? getProvidersForType(type)
         .filter((item) => isOfficialProviderKey(item.key) && (!item.hidden || item.key === selectedProvider))
@@ -385,14 +443,20 @@ export default function AIModelsPage() {
         }))
       : officialProvidersError
         ? []
-        : onlineOfficialProviderOptions.filter((item) => item.defaults[type] && (!item.hidden || item.key === selectedProvider));
-    const selectedOfficialOption = selectedProvider && isOfficialProviderKey(selectedProvider)
-      ? getProviderCatalogEntry(selectedProvider as AIProvider)
+        : onlineOfficialProviderOptions.filter((item) => !item.hidden || item.key === selectedProvider || item.key === resolveLegacyOfficialProviderKey(selectedProvider || ''));
+    const resolvedSelectedProvider = selectedProvider ? resolveLegacyOfficialProviderKey(selectedProvider) : '';
+    const selectedOfficialKey = selectedProvider && (isOfficialProviderKey(selectedProvider) || onlineOfficialProviderKeySet.has(resolvedSelectedProvider as AIProvider))
+      ? resolvedSelectedProvider
+      : '';
+    const selectedOfficialOption = selectedOfficialKey
+      ? onlineOfficialProviderOptions.find((item) => item.key === selectedOfficialKey)
+        || getProvidersForType(type, { includeHidden: true }).find((item) => item.key === selectedProvider)
+        || getProviderCatalogEntry(selectedProvider as AIProvider)
       : null;
-    const selectedOfficialIsListed = selectedOfficialOption
-      ? visibleOfficialOptions.some((item) => item.key === selectedOfficialOption.key)
+    const selectedOfficialIsListed = selectedOfficialKey
+      ? visibleOfficialOptions.some((item) => item.key === selectedOfficialKey || item.key === selectedProvider)
       : true;
-    if (selectedOfficialOption?.defaults[type] && !selectedOfficialIsListed) {
+    if (selectedOfficialOption && !selectedOfficialIsListed) {
       const reason = officialProvidersLoading
         ? (i18n.language.startsWith('zh') ? '正在确认可用性' : 'checking availability')
         : !canUseOfficialProviders
@@ -404,7 +468,7 @@ export default function AIModelsPage() {
         {
           ...selectedOfficialOption,
           hidden: false,
-          label: `${selectedOfficialOption.label} (${reason})`,
+          label: selectedOfficialOption.label,
           unavailableReason: reason,
         },
         ...visibleOfficialOptions,
@@ -415,7 +479,7 @@ export default function AIModelsPage() {
       ...visibleOfficialOptions,
       ...nonOfficialOptions,
     ];
-  }, [canUseOfficialProviders, i18n.language, officialProvidersError, officialProvidersLoading, onlineOfficialProviderOptions]);
+  }, [canUseOfficialProviders, i18n.language, officialProvidersError, officialProvidersLoading, onlineOfficialProviderKeySet, onlineOfficialProviderOptions]);
 
   useEffect(() => {
     setHeaderTitle(t('nav.models'));
@@ -495,9 +559,11 @@ export default function AIModelsPage() {
   }, [canUseOfficialProviders]);
 
   useEffect(() => {
-    const providers = Array.from(new Set(settings.aiProfiles.filter((profile) => isOfficialProviderKey(profile.provider)).map((profile) => profile.provider)));
+    const providers = Array.from(new Set(settings.aiProfiles
+      .filter((profile) => isOfficialProxyProviderKey(profile.provider) || profile.baseUrl.replace(/\/+$/, '') === '/api/ai')
+      .map((profile) => profile.provider)));
     providers.forEach((provider) => void refreshAiBalance(provider));
-  }, [refreshAiBalance, settings.aiProfiles]);
+  }, [isOfficialProxyProviderKey, refreshAiBalance, settings.aiProfiles]);
 
   useEffect(() => {
     if (characters.length === 0 && !characterLoading) {
@@ -509,7 +575,8 @@ export default function AIModelsPage() {
   const handleTestConnection = async (profileId: string) => {
     const profile = settings.aiProfiles.find((item) => item.id === profileId);
     if (!profile) return;
-    if (isOfficialProviderKey(profile.provider) && !canUseOfficialProviders) {
+    const profileUsesOfficialProxy = isOfficialProxyProviderKey(profile.provider) || profile.baseUrl.replace(/\/+$/, '') === '/api/ai';
+    if (profileUsesOfficialProxy && !canUseOfficialProviders) {
       setSnackbar({
         open: true,
         message: i18n.language.startsWith('zh') ? '官方模型需要登录后使用' : 'Official models require sign-in',
@@ -648,7 +715,8 @@ export default function AIModelsPage() {
   const fetchAvailableModels = async (profileId: string, silent = false, force = false) => {
     const profile = settings.aiProfiles.find((item) => item.id === profileId);
     if (!profile) return false;
-    if (isOfficialProviderKey(profile.provider) && !canUseOfficialProviders) {
+    const profileUsesOfficialProxy = isOfficialProxyProviderKey(profile.provider) || profile.baseUrl.replace(/\/+$/, '') === '/api/ai';
+    if (profileUsesOfficialProxy && !canUseOfficialProviders) {
       setRemoteModelOptions((prev) => ({ ...prev, [profileId]: [] }));
       if (!silent) {
         setSnackbar({
@@ -659,7 +727,7 @@ export default function AIModelsPage() {
       }
       return false;
     }
-    if (!isOfficialProviderKey(profile.provider) && !profile.apiKey) {
+    if (!profileUsesOfficialProxy && !profile.apiKey) {
       setRemoteModelOptions((prev) => ({ ...prev, [profileId]: [] }));
       return false;
     }
@@ -678,7 +746,7 @@ export default function AIModelsPage() {
     try {
       const models = await listAvailableModels(profile);
       const options = Array.from(new Set(models.map((item) => item.id).filter(Boolean)));
-      if (isOfficialProviderKey(profile.provider)) {
+      if (profileUsesOfficialProxy) {
         options.sort(compareOfficialModels);
       }
       setRemoteModelOptions((prev) => ({ ...prev, [profileId]: options }));
@@ -768,9 +836,20 @@ export default function AIModelsPage() {
                     const selectedProvider = providerOptions.find((item) => item.key === selectedProviderKey) || getProviderCatalogEntry(selectedProviderKey);
                     const selectedProviderUnavailable = Boolean((selectedProvider as AIProviderOption).unavailableReason);
                     const providerDefaults = getProviderDefaultsFromOptions(selectedProvider.key, activeType, providerOptions);
-                    const usesOfficialProxy = isOfficialProviderKey(selectedProvider.key);
+                    const providerGroups = providerOptions.reduce<Array<{ label: string; options: AIProviderOption[] }>>((groups, option) => {
+                      const groupLabel = option.family || (i18n.language.startsWith('zh') ? '其他服务商' : 'Other providers');
+                      const group = groups.find((item) => item.label === groupLabel);
+                      if (group) {
+                        group.options.push(option);
+                      } else {
+                        groups.push({ label: groupLabel, options: [option] });
+                      }
+                      return groups;
+                    }, []);
+                    const usesOfficialProxy = isOfficialProxyProviderKey(selectedProvider.key) || providerDefaults.baseUrl.replace(/\/+$/, '') === '/api/ai';
                     const fetchedModels = remoteModelOptions[profile.id] || [];
-                    const popularModels = usesOfficialProxy && fetchedModels.length > 0 ? [] : getPopularModels(selectedProvider.key, activeType);
+                    const providerPopularModels = selectedProvider.popularModels[activeType] || getPopularModels(selectedProvider.key, activeType);
+                    const popularModels = usesOfficialProxy && fetchedModels.length > 0 ? [] : providerPopularModels;
                     const remoteModels = fetchedModels.filter((item) => !popularModels.includes(item));
                     const fetchingModels = Boolean(fetchingModelIds[profile.id]);
                     const balanceView = usesOfficialProxy
@@ -899,9 +978,15 @@ export default function AIModelsPage() {
                         });
                       }}
                     >
-                      {providerOptions.map((option) => (
-                        <MenuItem key={option.key} value={option.key} disabled={Boolean(option.unavailableReason)}>{option.label}</MenuItem>
-                      ))}
+                      {providerGroups.flatMap((group, groupIndex) => [
+                        groupIndex > 0 ? <Divider key={`${group.label}-divider`} sx={{ my: 0.5 }} /> : null,
+                        <ListSubheader key={`${group.label}-header`} disableSticky>{group.label}</ListSubheader>,
+                        ...group.options.map((option) => (
+                          <MenuItem key={option.key} value={option.key} disabled={Boolean(option.unavailableReason)}>
+                            {option.label}
+                          </MenuItem>
+                        )),
+                      ])}
                     </Select>
                   </FormControl>
 
@@ -1069,15 +1154,11 @@ export default function AIModelsPage() {
                           {getInputCapabilityBadge(profile, i18n.language.startsWith('zh') ? 'zh' : 'en')}
                         </Typography>
                       </Box>
-                      {shouldShowInputCapabilityWarning(profile) ? (
-                        <Alert severity="warning" sx={{ py: 0 }}>
-                          {getInputCapabilityWarning(profile, i18n.language.startsWith('zh') ? 'zh' : 'en')}
-                        </Alert>
-                      ) : null}
                       <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                         {inputCapabilityLabels.map((item) => {
                           const capabilities = normalizeInputCapabilities(profile.inputCapabilities);
                           const locks = getInputCapabilityLockState(profile);
+                          const showInferenceWarning = shouldShowInputCapabilityWarning(profile) && (item.key === 'imageInput' || item.key === 'multiImageInput');
                           const disabled = item.key === 'imageInput'
                             ? locks.imageInput
                             : item.key === 'multiImageInput'
@@ -1099,7 +1180,16 @@ export default function AIModelsPage() {
                                     }}
                                   />
                                 )}
-                                label={item.label}
+                                label={(
+                                  <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.35 }}>
+                                    <span>{item.label}</span>
+                                    {showInferenceWarning ? (
+                                      <Tooltip title={getInputCapabilityWarning(profile, i18n.language.startsWith('zh') ? 'zh' : 'en')}>
+                                        <WarningAmberIcon sx={{ fontSize: 15, color: 'warning.main' }} />
+                                      </Tooltip>
+                                    ) : null}
+                                  </Box>
+                                )}
                               />
                             </Tooltip>
                           );

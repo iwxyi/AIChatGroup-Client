@@ -12,7 +12,7 @@ import {
 import PhoneIcon from '@mui/icons-material/Phone';
 import LockIcon from '@mui/icons-material/Lock';
 import { useAuthStore } from '../stores/useAuthStore';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { getLastCloudPhone } from '../services/authSession';
 import { getSmsCaptchaToken } from '../services/captcha';
@@ -34,7 +34,7 @@ export default function LoginPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
-  const { login, sendCode, enterLocalMode, isLoggedIn, isLoading } = useAuthStore();
+  const { login, sendCode, enterLocalMode, isLoggedIn, isLoading, token, authMode } = useAuthStore();
 
   const [phone, setPhone] = useState(() => getLastCloudPhone());
   const [code, setCode] = useState('');
@@ -45,13 +45,7 @@ export default function LoginPage() {
   const [sendingCode, setSendingCode] = useState(false);
   const locationState = location.state as LoginLocationState;
   const loginReason = locationState?.reason;
-
-  // Redirect if already logged in
-  useEffect(() => {
-    if (isLoggedIn) {
-      navigate('/', { replace: true });
-    }
-  }, [isLoggedIn, navigate]);
+  const redirectTarget = resolveLoginRedirect(locationState);
 
   // Countdown timer
   useEffect(() => {
@@ -95,11 +89,11 @@ export default function LoginPage() {
     setError('');
     try {
       await login(phone, code);
-      navigate(resolveLoginRedirect(locationState), { replace: true });
+      navigate(redirectTarget, { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : '登录失败');
     }
-  }, [phone, code, locationState, login, navigate]);
+  }, [phone, code, login, navigate, redirectTarget]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -113,6 +107,10 @@ export default function LoginPage() {
     },
     [codeSent, handleSendCode, handleLogin]
   );
+
+  if (isLoggedIn || (authMode === 'cloud' && Boolean(token))) {
+    return <Navigate to={redirectTarget} replace />;
+  }
 
   return (
     <Box

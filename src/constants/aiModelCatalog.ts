@@ -116,6 +116,19 @@ export const AI_PROVIDER_CATALOG: AIProviderCatalogEntry[] = [
     },
   },
   {
+    key: 'official-moacode-team',
+    label: '官方团队（Claude/GPT）',
+    family: 'Pneumata Claude/GPT Team',
+    defaults: {
+      text: { baseUrl: '/api/ai', model: 'gpt-5.5' },
+      document: { baseUrl: '/api/ai', model: 'gpt-5.5' },
+    },
+    popularModels: {
+      text: OFFICIAL_MOACODE_TEXT_MODELS,
+      document: OFFICIAL_MOACODE_TEXT_MODELS,
+    },
+  },
+  {
     key: 'official-gpt',
     label: '官方4（API2D）',
     family: 'Pneumata API2D',

@@ -150,6 +150,7 @@ function formatProviderLabel(providerCode: string) {
   if (providerCode === 'all') return '全部平台';
   if (providerCode === 'deepseek') return 'DeepSeek';
   if (providerCode === 'moacode') return 'Moacode';
+  if (providerCode === 'moacode-team') return 'Moacode Team';
   if (providerCode === 'api2d') return 'API2D';
   return providerCode.toUpperCase();
 }

@@ -52,15 +52,16 @@ export type GenerateResponseOptions = {
   aiUsage?: AiUsageMetadata;
 };
 
-function isOfficialProvider(provider: APIConfig['provider']) {
-  return provider === 'official' || provider === 'official-deepseek' || provider === 'official-gpt' || provider === 'official-moacode';
+function isLegacyOfficialProvider(provider: APIConfig['provider']) {
+  return provider === 'official' || String(provider).startsWith('official-');
 }
 
 function resolveOfficialBackendProvider(provider: APIConfig['provider']) {
-  if (provider === 'official-deepseek') return 'deepseek';
-  if (provider === 'official') return 'moacode';
-  if (provider === 'official-moacode') return 'moacode';
-  return 'api2d';
+  return provider === 'official' ? 'official-2' : provider;
+}
+
+function usesOfficialProxy(config: APIConfig) {
+  return isLegacyOfficialProvider(config.provider) || trimTrailingSlashes(config.baseUrl) === '/api/ai';
 }
 
 export interface AvailableModelInfo {
@@ -794,6 +795,7 @@ const providerHandlers: Partial<Record<APIConfig['provider'], typeof generateOpe
   'official-deepseek': generateOfficialResponse,
   'official-gpt': generateOfficialResponse,
   'official-moacode': generateOfficialResponse,
+  'official-moacode-team': generateOfficialResponse,
   openai: generateOpenAICompatibleResponse,
   anthropic: generateAnthropicResponse,
   google: generateGeminiResponse,
@@ -872,7 +874,7 @@ async function listQwenModels(config: APIConfig) {
 }
 
 export async function listAvailableModels(config: APIConfig): Promise<AvailableModelInfo[]> {
-  if (isOfficialProvider(config.provider)) {
+  if (usesOfficialProxy(config)) {
     return listOfficialModels(config);
   }
   if (config.provider === 'microsoft') {
@@ -1200,7 +1202,7 @@ export const generateResponse = async (
   onChunk?: (chunk: string) => void,
   options: GenerateResponseOptions = {},
 ): Promise<string> => {
-  if (isOfficialProvider(config.provider)) {
+  if (usesOfficialProxy(config)) {
     return generateOfficialResponse(config, systemPrompt, messages, onChunk, options);
   }
   if (isOpenAICompatibleEndpoint(config)) {
@@ -1220,7 +1222,7 @@ export const generateJsonResponse = async (
   const jsonOptions: GenerateResponseOptions = { ...options, responseFormat: 'json' };
 
   try {
-    if (isOfficialProvider(config.provider)) {
+    if (usesOfficialProxy(config)) {
       return await generateOfficialResponse(config, jsonPrompt, messages, undefined, jsonOptions);
     }
 
@@ -1244,6 +1246,9 @@ export const generateJsonResponse = async (
     if (!/response_format|json_object|json/i.test(message)) throw error;
   }
 
+  if (usesOfficialProxy(config)) {
+    return generateOfficialResponse(config, jsonPrompt, messages, undefined, options);
+  }
   const handler = providerHandlers[config.provider] || generateOpenAICompatibleResponse;
   return handler(config, jsonPrompt, messages, undefined, options);
 };

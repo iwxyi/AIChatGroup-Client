@@ -42,7 +42,7 @@ function formatBalance(result: Record<string, unknown>, providerCode: string) {
   if (!Number.isFinite(value)) return '未知';
   const normalizedProviderCode = providerCode.trim().toLowerCase();
   const unit = String(result.currencyUnit ?? result.currency_unit ?? '').trim().toLowerCase();
-  if (normalizedProviderCode === 'moacode' || unit === 'moacode_balance') return `$${formatBalanceNumber(value, 2)}`;
+  if (normalizedProviderCode === 'moacode' || normalizedProviderCode === 'moacode-team' || unit === 'moacode_balance') return `$${formatBalanceNumber(value, 2)}`;
   if (normalizedProviderCode === 'api2d') return `${formatBalanceNumber(value, 0)}P`;
   if (normalizedProviderCode === 'deepseek' || unit === 'cny' || unit === 'rmb') return `￥${formatBalanceNumber(value, 2)}`;
   const text = formatBalanceNumber(value, 4);
