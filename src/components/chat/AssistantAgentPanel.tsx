@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, Divider, IconButton, MenuItem, Select, Stack, Tooltip, Typography } from '@mui/material';
 import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined';
 import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined';
+import CloseOutlinedIcon from '@mui/icons-material/CloseOutlined';
 import CodeOutlinedIcon from '@mui/icons-material/CodeOutlined';
 import ContentCopyOutlinedIcon from '@mui/icons-material/ContentCopyOutlined';
 import DataObjectOutlinedIcon from '@mui/icons-material/DataObjectOutlined';
@@ -584,14 +585,14 @@ function AssistantArtifactList({ chatId, selectedArtifactId }: { chatId: string;
                 <IconButton onClick={() => downloadArtifact(fullscreenItem, getArtifactVersionContent(fullscreenVersion))}>
                   <DownloadOutlinedIcon />
                 </IconButton>
+                <IconButton onClick={() => setFullscreenId(null)} aria-label="关闭产物详情">
+                  <CloseOutlinedIcon />
+                </IconButton>
               </Stack>
             </DialogTitle>
             <DialogContent dividers sx={{ bgcolor: (theme) => theme.palette.mode === 'light' ? '#f8fafc' : '#020617' }}>
               <ArtifactPreview item={fullscreenItem} version={fullscreenVersion} expanded />
             </DialogContent>
-            <DialogActions>
-              <Button onClick={() => setFullscreenId(null)}>关闭</Button>
-            </DialogActions>
           </>
         ) : null}
       </Dialog>
