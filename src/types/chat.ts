@@ -590,6 +590,11 @@ export interface OpenChatModeState {
     updatedAt?: number;
     basisMessageCount?: number;
   };
+  assistantCapabilities?: {
+    agent?: boolean;
+    artifacts?: boolean;
+    updatedAt?: number;
+  };
 }
 
 export interface ParticipantInstance {

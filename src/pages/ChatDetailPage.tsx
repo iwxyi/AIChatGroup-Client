@@ -4,7 +4,7 @@ import PageSection from '../components/common/PageSection';
 import AppSnackbar from '../components/common/AppSnackbar';
 import LoadingState from '../components/common/LoadingState';
 import PeopleIcon from '@mui/icons-material/People';
-import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined';
+import ExtensionOutlinedIcon from '@mui/icons-material/ExtensionOutlined';
 import InfoIcon from '@mui/icons-material/Info';
 import PlayIcon from '@mui/icons-material/PlayArrow';
 import PauseIcon from '@mui/icons-material/Pause';
@@ -64,7 +64,7 @@ import { projectMergedChatMessages } from '../services/currentChatMessages';
 import { resolveSessionFamilyKey } from '../services/sessionEngineKeys';
 
 const ChatSidebarPanel = lazy(() => import('../components/chat/ChatSidebarPanel'));
-const AssistantArtifactsPanel = lazy(() => import('../components/chat/AssistantArtifactsPanel'));
+const AssistantAgentPanel = lazy(() => import('../components/chat/AssistantAgentPanel'));
 const SessionActionPanel = lazy(() => import('../components/session/SessionActionPanel'));
 const MessageAnalysisDialog = lazy(() => import('../components/chat/MessageAnalysisDialog').then((module) => ({ default: module.MessageAnalysisDialog })));
 const ProfilePreviewOverlay = lazy(() => import('../components/chat/ProfilePreviewOverlay'));
@@ -2683,8 +2683,8 @@ export default function ChatDetailPage() {
             <>
               {isAssistantChat ? null : headerPrimaryActionButton}
               {isAssistantChat && !isMobile ? (
-                <IconButton onClick={toggleRightPanel} aria-label="打开助手产物面板">
-                  <ArticleOutlinedIcon />
+                <IconButton onClick={toggleRightPanel} aria-label="打开助手能力面板">
+                  <ExtensionOutlinedIcon />
                 </IconButton>
               ) : null}
               {!isAssistantChat && !isMobile ? (
@@ -2821,8 +2821,8 @@ export default function ChatDetailPage() {
         </Box>}
       </Box>
 
-      {isRemoteDeletedChat ? null : <RightPanel
-        title={isAssistantChat ? '助手面板' : sidebarTitle}
+      {isRemoteDeletedChat || (isAssistantChat && !rightPanelOpen) ? null : <RightPanel
+        title={isAssistantChat ? '助手能力' : sidebarTitle}
         hideMobileTitle
         desktopMaxWidth={isSplitDetailPane ? 340 : 420}
         desktopViewportRatio={isSplitDetailPane ? 0.28 : 0.34}
@@ -2838,7 +2838,7 @@ export default function ChatDetailPage() {
             <LazyPanel>
               {isAssistantChat ? (
                 <Suspense fallback={<LoadingState title="正在加载" compact />}>
-                  <AssistantArtifactsPanel />
+                  <AssistantAgentPanel chat={chat} updateChat={updateChat} />
                 </Suspense>
               ) : runtimePanelLoading ? <LoadingState title="正在加载" compact /> : <ChatSidebarPanel
                 chat={projectedSidebarChat || { ...chat, primaryRecentEvent: projectedRuntimeState?.primaryRecentEvent }}
