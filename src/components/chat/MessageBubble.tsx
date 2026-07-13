@@ -364,46 +364,46 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
                   </Box>
                 </Tooltip>
               ) : withdrawalNoticeNode
-            ) : (
-              <Box sx={{ display: 'grid', gap: artifactRefs.length ? 0.85 : 0 }}>
-                <MessageContent message={message} onRetryMedia={onRetryMedia} onOpenImage={onOpenImage} />
-                {artifactRefs.length ? (
-                  <Box
-                    component="button"
-                    type="button"
-                    onClick={() => artifactRefs[0]?.id && onOpenArtifact?.(artifactRefs[0].id)}
-                    sx={(theme) => ({
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 0.55,
-                      width: 'fit-content',
-                      maxWidth: '100%',
-                      border: '1px solid',
-                      borderColor: theme.palette.mode === 'light' ? 'rgba(15,23,42,0.10)' : 'rgba(226,232,240,0.16)',
-                      borderRadius: 999,
-                      px: 0.85,
-                      py: 0.35,
-                      bgcolor: theme.palette.mode === 'light' ? 'rgba(255,255,255,0.52)' : 'rgba(15,23,42,0.34)',
-                      color: 'text.secondary',
-                      backdropFilter: 'blur(16px) saturate(1.12)',
-                      WebkitBackdropFilter: 'blur(16px) saturate(1.12)',
-                      cursor: onOpenArtifact ? 'pointer' : 'default',
-                      font: 'inherit',
-                      '&:hover': onOpenArtifact ? {
-                        color: 'primary.main',
-                        borderColor: 'primary.main',
-                      } : undefined,
-                    })}
-                  >
-                    <ArticleOutlinedIcon sx={{ fontSize: 15, flexShrink: 0 }} />
-                    <Typography variant="caption" sx={{ fontWeight: 700, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      产物详情{artifactRefs.length > 1 ? ` · ${artifactRefs.length} 个` : artifactRefs[0]?.title ? ` · ${artifactRefs[0].title}` : ''}
-                    </Typography>
-                  </Box>
-                ) : null}
-              </Box>
-            )}
+            ) : <MessageContent message={message} onRetryMedia={onRetryMedia} onOpenImage={onOpenImage} />}
           </Box>
+          {artifactRefs.length ? (
+            <Box
+              component="button"
+              type="button"
+              onClick={() => artifactRefs[0]?.id && onOpenArtifact?.(artifactRefs[0].id)}
+              sx={(theme) => ({
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 0.55,
+                width: 'fit-content',
+                maxWidth: '100%',
+                border: '1px solid',
+                borderColor: theme.palette.mode === 'light' ? 'rgba(15,23,42,0.10)' : 'rgba(226,232,240,0.16)',
+                borderRadius: 999,
+                px: 0.9,
+                py: 0.38,
+                ml: isUser ? 0 : 0.5,
+                mr: isUser ? 0.5 : 0,
+                bgcolor: theme.palette.mode === 'light' ? 'rgba(255,255,255,0.58)' : 'rgba(15,23,42,0.42)',
+                color: 'text.secondary',
+                boxShadow: theme.palette.mode === 'light' ? '0 10px 24px rgba(15,23,42,0.08)' : '0 12px 26px rgba(0,0,0,0.22)',
+                backdropFilter: 'blur(18px) saturate(1.14)',
+                WebkitBackdropFilter: 'blur(18px) saturate(1.14)',
+                cursor: onOpenArtifact ? 'pointer' : 'default',
+                font: 'inherit',
+                justifySelf: isUser ? 'end' : 'start',
+                '&:hover': onOpenArtifact ? {
+                  color: 'primary.main',
+                  borderColor: 'primary.main',
+                } : undefined,
+              })}
+            >
+              <ArticleOutlinedIcon sx={{ fontSize: 15, flexShrink: 0 }} />
+              <Typography variant="caption" sx={{ fontWeight: 750, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                产物详情{artifactRefs.length > 1 ? ` · ${artifactRefs.length} 个` : artifactRefs[0]?.title ? ` · ${artifactRefs[0].title}` : ''}
+              </Typography>
+            </Box>
+          ) : null}
         </Box>
 
         {isUser ? (

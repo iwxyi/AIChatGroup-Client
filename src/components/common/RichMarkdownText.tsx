@@ -1,7 +1,8 @@
 import { Box, Typography } from '@mui/material';
-import { memo } from 'react';
+import { memo, isValidElement, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import MermaidDiagram from './MermaidDiagram';
 
 type MarkdownAstNode = {
   type?: string;
@@ -34,6 +35,24 @@ function remarkSingleLineBreaks() {
       node.children.forEach(visit);
     };
     visit(tree);
+  };
+}
+
+function textFromNode(node: ReactNode): string {
+  if (typeof node === 'string' || typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(textFromNode).join('');
+  if (isValidElement<{ children?: ReactNode }>(node)) return textFromNode(node.props.children);
+  return '';
+}
+
+function extractCodeBlock(children: ReactNode) {
+  if (!isValidElement<{ className?: string; children?: ReactNode }>(children)) return null;
+  const language = children.props.className?.match(/language-([a-zA-Z0-9_-]+)/)?.[1]?.toLowerCase() || '';
+  return {
+    language,
+    source: textFromNode(children.props.children).replace(/\n$/, ''),
+    className: children.props.className,
+    children: children.props.children,
   };
 }
 
@@ -114,6 +133,11 @@ function RichMarkdownText({ text, softLineBreaks = true }: { text: string; softL
             </Box>
           ),
           p: ({ children }) => <Typography component="p" variant="body2">{children}</Typography>,
+          pre: ({ children }) => {
+            const block = extractCodeBlock(children);
+            if (block?.language === 'mermaid') return <MermaidDiagram source={block.source} />;
+            return <pre>{children}</pre>;
+          },
           code: ({ children, className, ...props }) => (
             <code className={className} {...props}>
               {children}
