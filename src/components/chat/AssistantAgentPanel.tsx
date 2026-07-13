@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Box, Chip, Divider, IconButton, Stack, Switch, Tooltip, Typography } from '@mui/material';
+import { Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, Divider, IconButton, MenuItem, Select, Stack, Switch, Tooltip, Typography } from '@mui/material';
 import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined';
 import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined';
 import CodeOutlinedIcon from '@mui/icons-material/CodeOutlined';
@@ -9,10 +9,17 @@ import DeleteOutlineOutlinedIcon from '@mui/icons-material/DeleteOutlineOutlined
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
 import ExtensionOutlinedIcon from '@mui/icons-material/ExtensionOutlined';
+import GridViewOutlinedIcon from '@mui/icons-material/GridViewOutlined';
+import KeyboardArrowDownOutlinedIcon from '@mui/icons-material/KeyboardArrowDownOutlined';
+import KeyboardArrowUpOutlinedIcon from '@mui/icons-material/KeyboardArrowUpOutlined';
 import LanguageOutlinedIcon from '@mui/icons-material/LanguageOutlined';
+import OpenInFullOutlinedIcon from '@mui/icons-material/OpenInFullOutlined';
 import TableChartOutlinedIcon from '@mui/icons-material/TableChartOutlined';
+import ViewAgendaOutlinedIcon from '@mui/icons-material/ViewAgendaOutlined';
+import ViewListOutlinedIcon from '@mui/icons-material/ViewListOutlined';
 import FloatingSegmentedTabs from '../common/FloatingSegmentedTabs';
 import MarkdownText from '../common/MarkdownText';
+import MermaidDiagram from '../common/MermaidDiagram';
 import { buildScrollableRegionSx } from '../../styles/interaction';
 import type { GroupChat } from '../../types/chat';
 import type { AssistantArtifactItem, AssistantArtifactKind } from '../../types/assistantArtifact';
@@ -115,20 +122,121 @@ function downloadArtifact(item: AssistantArtifactItem, content: string) {
   URL.revokeObjectURL(url);
 }
 
-function ArtifactPreview({ item }: { item: AssistantArtifactItem }) {
+type ArtifactViewMode = 'list' | 'icons' | 'gallery';
+type ArtifactSortMode = 'manual' | 'updated' | 'created' | 'title' | 'kind';
+
+const artifactViewItems = [
+  { value: 'list', label: <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}><ViewListOutlinedIcon fontSize="small" />列表</Box> },
+  { value: 'icons', label: <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}><GridViewOutlinedIcon fontSize="small" />图标</Box> },
+  { value: 'gallery', label: <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}><ViewAgendaOutlinedIcon fontSize="small" />画廊</Box> },
+];
+
+function artifactSortValue(item: AssistantArtifactItem) {
+  return typeof item.sortOrder === 'number' ? item.sortOrder : Number.MAX_SAFE_INTEGER;
+}
+
+function sortArtifacts(items: AssistantArtifactItem[], mode: ArtifactSortMode) {
+  return [...items].sort((a, b) => {
+    if (mode === 'manual') {
+      const order = artifactSortValue(a) - artifactSortValue(b);
+      if (order !== 0) return order;
+      return b.updatedAt - a.updatedAt;
+    }
+    if (mode === 'created') return b.createdAt - a.createdAt;
+    if (mode === 'title') return a.title.localeCompare(b.title, 'zh-CN');
+    if (mode === 'kind') {
+      const kindOrder = artifactKindLabels[a.kind].localeCompare(artifactKindLabels[b.kind], 'zh-CN');
+      return kindOrder || b.updatedAt - a.updatedAt;
+    }
+    return b.updatedAt - a.updatedAt;
+  });
+}
+
+function isRenderableMermaid(item: AssistantArtifactItem, content: string) {
+  if (item.kind !== 'diagram') return false;
+  const language = (item.language || '').toLowerCase();
+  if (language && language !== 'mermaid') return false;
+  return /^(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram|erDiagram|journey|gantt|pie|mindmap|timeline|gitGraph)\b/i.test(content.trim());
+}
+
+function artifactPreviewText(item: AssistantArtifactItem) {
+  const content = getAssistantArtifactCurrentContent(item).trim();
+  if (!content) return '当前版本为空。';
+  if (item.summary) return item.summary;
+  return content.replace(/\s+/g, ' ').slice(0, 220);
+}
+
+function ArtifactThumbnail({ item, mode }: { item: AssistantArtifactItem; mode: ArtifactViewMode }) {
+  const content = getAssistantArtifactCurrentContent(item);
+  const renderMermaid = mode === 'gallery' && isRenderableMermaid(item, content);
+
+  return (
+    <Box
+      sx={{
+        position: 'relative',
+        minHeight: mode === 'list' ? 72 : 118,
+        maxHeight: mode === 'gallery' ? 240 : 150,
+        overflow: 'hidden',
+        borderRadius: 1,
+        border: '1px solid',
+        borderColor: (theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.08)' : 'rgba(226,232,240,0.12)',
+        bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(248,250,252,0.86)' : 'rgba(15,23,42,0.46)',
+      }}
+    >
+      {renderMermaid ? (
+        <Box sx={{ p: 0.5, transform: 'scale(0.86)', transformOrigin: 'top left', width: '116%' }}>
+          <MermaidDiagram source={content} />
+        </Box>
+      ) : item.kind === 'html' ? (
+        <Box component="iframe" title={item.title} srcDoc={content} sandbox="" sx={{ width: '100%', height: mode === 'list' ? 88 : 150, border: 0, bgcolor: '#fff' }} />
+      ) : (
+        <Box sx={{ p: 1, height: '100%', display: 'grid', alignContent: 'start', gap: 0.75 }}>
+          <Box sx={{ color: 'text.secondary' }}>
+            <ArtifactKindIcon kind={item.kind} />
+          </Box>
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{
+              display: '-webkit-box',
+              WebkitLineClamp: mode === 'list' ? 3 : 5,
+              WebkitBoxOrient: 'vertical',
+              overflow: 'hidden',
+              lineHeight: 1.55,
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+            }}
+          >
+            {artifactPreviewText(item)}
+          </Typography>
+        </Box>
+      )}
+    </Box>
+  );
+}
+
+function ArtifactPreview({ item, expanded = false }: { item: AssistantArtifactItem; expanded?: boolean }) {
   const content = getAssistantArtifactCurrentContent(item);
   if (!content) {
     return <Typography variant="body2" color="text.secondary">当前版本为空。</Typography>;
   }
+  if (isRenderableMermaid(item, content)) {
+    return <MermaidDiagram source={content} />;
+  }
   if (item.kind === 'document') {
     return <MarkdownText text={content} forceRich />;
+  }
+  if (item.kind === 'html') {
+    return (
+      <Box component="iframe" title={item.title} srcDoc={content} sandbox="" sx={{ width: '100%', minHeight: expanded ? '72vh' : 360, border: 0, borderRadius: 1, bgcolor: '#fff' }} />
+    );
   }
   return (
     <Box
       component="pre"
       sx={{
         m: 0,
-        maxHeight: 320,
+        maxHeight: expanded ? 'none' : 320,
         overflow: 'auto',
         p: 1,
         borderRadius: 1,
@@ -146,11 +254,16 @@ function ArtifactPreview({ item }: { item: AssistantArtifactItem }) {
 }
 
 function AssistantArtifactList({ chatId, selectedArtifactId }: { chatId: string; selectedArtifactId?: string | null }) {
-  const artifacts = useAssistantArtifactStore((state) => state.items
-    .filter((item) => item.chatId === chatId && item.deletedAt == null)
-    .sort((a, b) => b.updatedAt - a.updatedAt));
+  const artifactItems = useAssistantArtifactStore((state) => state.items);
+  const [viewMode, setViewMode] = useState<ArtifactViewMode>('list');
+  const [sortMode, setSortMode] = useState<ArtifactSortMode>('manual');
+  const artifacts = useMemo(() => sortArtifacts(artifactItems
+    .filter((item) => item.chatId === chatId && item.deletedAt == null), sortMode), [artifactItems, chatId, sortMode]);
   const deleteArtifact = useAssistantArtifactStore((state) => state.deleteArtifact);
+  const moveArtifact = useAssistantArtifactStore((state) => state.moveArtifact);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
+  const [fullscreenId, setFullscreenId] = useState<string | null>(null);
 
   useEffect(() => {
     void ensureAssistantArtifactStoreHydrated();
@@ -169,6 +282,19 @@ function AssistantArtifactList({ chatId, selectedArtifactId }: { chatId: string;
   useEffect(() => {
     if (selectedId && !artifacts.some((item) => item.id === selectedId)) setSelectedId(null);
   }, [artifacts, selectedId]);
+
+  const fullscreenItem = useMemo(() => (
+    artifacts.find((item) => item.id === fullscreenId) || null
+  ), [artifacts, fullscreenId]);
+
+  const toggleExpanded = (artifactId: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(artifactId)) next.delete(artifactId);
+      else next.add(artifactId);
+      return next;
+    });
+  };
 
   if (!artifacts.length) {
     return (
@@ -194,84 +320,188 @@ function AssistantArtifactList({ chatId, selectedArtifactId }: { chatId: string;
     );
   }
 
+  const renderActions = (item: AssistantArtifactItem, index: number) => (
+    <Stack direction="row" spacing={0.25} sx={{ justifyContent: 'flex-end' }}>
+      {sortMode === 'manual' ? (
+        <>
+          <Tooltip title="上移">
+            <span>
+              <IconButton size="small" disabled={index === 0} onClick={(event) => { event.stopPropagation(); moveArtifact(chatId, item.id, 'up'); }}>
+                <KeyboardArrowUpOutlinedIcon fontSize="small" />
+              </IconButton>
+            </span>
+          </Tooltip>
+          <Tooltip title="下移">
+            <span>
+              <IconButton size="small" disabled={index === artifacts.length - 1} onClick={(event) => { event.stopPropagation(); moveArtifact(chatId, item.id, 'down'); }}>
+                <KeyboardArrowDownOutlinedIcon fontSize="small" />
+              </IconButton>
+            </span>
+          </Tooltip>
+        </>
+      ) : null}
+      <Tooltip title="全屏查看">
+        <IconButton size="small" onClick={(event) => { event.stopPropagation(); setFullscreenId(item.id); }}>
+          <OpenInFullOutlinedIcon fontSize="small" />
+        </IconButton>
+      </Tooltip>
+      <Tooltip title="复制当前版本">
+        <IconButton size="small" onClick={(event) => { event.stopPropagation(); void copyTextToClipboard(getAssistantArtifactCurrentContent(item)); }}>
+          <ContentCopyOutlinedIcon fontSize="small" />
+        </IconButton>
+      </Tooltip>
+      <Tooltip title="下载当前版本">
+        <IconButton size="small" onClick={(event) => { event.stopPropagation(); downloadArtifact(item, getAssistantArtifactCurrentContent(item)); }}>
+          <DownloadOutlinedIcon fontSize="small" />
+        </IconButton>
+      </Tooltip>
+      <Tooltip title="删除产物">
+        <IconButton size="small" color="error" onClick={(event) => { event.stopPropagation(); deleteArtifact(item.id); }}>
+          <DeleteOutlineOutlinedIcon fontSize="small" />
+        </IconButton>
+      </Tooltip>
+    </Stack>
+  );
+
+  const renderMeta = (item: AssistantArtifactItem) => (
+    <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 0.5 }}>
+      <Chip size="small" label={artifactKindLabels[item.kind]} sx={{ height: 20 }} />
+      {item.language ? <Chip size="small" label={item.language} variant="outlined" sx={{ height: 20 }} /> : null}
+      {item.versions.length > 1 ? <Chip size="small" label={`${item.versions.length} 版`} variant="outlined" sx={{ height: 20 }} /> : null}
+      <Typography variant="caption" color="text.secondary">{formatArtifactTime(item.updatedAt)}</Typography>
+    </Stack>
+  );
+
+  const renderArtifactCard = (item: AssistantArtifactItem, index: number) => {
+    const active = selected?.id === item.id;
+    const expanded = expandedIds.has(item.id);
+    const content = getAssistantArtifactCurrentContent(item);
+    const canExpand = content.length > 360 || item.kind === 'document' || item.kind === 'diagram' || item.kind === 'html';
+    return (
+      <Box
+        key={item.id}
+        role="button"
+        tabIndex={0}
+        onClick={() => setSelectedId(item.id)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            setSelectedId(item.id);
+          }
+        }}
+        sx={{
+          width: '100%',
+          p: 1,
+          border: '1px solid',
+          borderColor: active ? 'primary.main' : ((theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.08)' : 'rgba(226,232,240,0.12)'),
+          bgcolor: active ? 'action.selected' : 'background.paper',
+          color: 'text.primary',
+          textAlign: 'left',
+          cursor: 'pointer',
+          borderRadius: 1,
+          boxShadow: 'none',
+          '&:hover': { bgcolor: 'action.hover' },
+        }}
+      >
+        <Stack spacing={1}>
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start', minWidth: 0 }}>
+            <Box sx={{ color: active ? 'primary.main' : 'text.secondary', pt: 0.15, flexShrink: 0 }}>
+              <ArtifactKindIcon kind={item.kind} />
+            </Box>
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography variant="body2" sx={{ fontWeight: 750, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {item.title}
+              </Typography>
+              <Box sx={{ mt: 0.5 }}>{renderMeta(item)}</Box>
+            </Box>
+          </Stack>
+          <ArtifactThumbnail item={item} mode={viewMode} />
+          {viewMode !== 'icons' ? (
+            <Box>
+              {expanded ? <ArtifactPreview item={item} /> : null}
+              {canExpand ? (
+                <Button size="small" onClick={(event) => { event.stopPropagation(); toggleExpanded(item.id); }} sx={{ mt: expanded ? 1 : 0, px: 0 }}>
+                  {expanded ? '收起' : '展开'}
+                </Button>
+              ) : null}
+            </Box>
+          ) : null}
+          {renderActions(item, index)}
+        </Stack>
+      </Box>
+    );
+  };
+
   return (
     <Stack spacing={1.25}>
-      <Stack spacing={0} divider={<Divider flexItem />}>
-        {artifacts.map((item) => {
-          const active = selected?.id === item.id;
-          return (
-            <Box
-              key={item.id}
-              component="button"
-              type="button"
-              onClick={() => setSelectedId(item.id)}
-              sx={{
-                width: '100%',
-                p: 1,
-                border: 0,
-                bgcolor: active ? 'action.selected' : 'transparent',
-                color: 'text.primary',
-                textAlign: 'left',
-                cursor: 'pointer',
-                borderRadius: 1,
-                '&:hover': { bgcolor: 'action.hover' },
-              }}
-            >
-              <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start', minWidth: 0 }}>
-                <Box sx={{ color: active ? 'primary.main' : 'text.secondary', pt: 0.15 }}>
-                  <ArtifactKindIcon kind={item.kind} />
-                </Box>
-                <Box sx={{ flex: 1, minWidth: 0 }}>
-                  <Typography variant="body2" sx={{ fontWeight: 750, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {item.title}
-                  </Typography>
-                  <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', mt: 0.45, flexWrap: 'wrap', rowGap: 0.5 }}>
-                    <Chip size="small" label={artifactKindLabels[item.kind]} sx={{ height: 20 }} />
-                    {item.language ? <Chip size="small" label={item.language} variant="outlined" sx={{ height: 20 }} /> : null}
-                    {item.versions.length > 1 ? <Chip size="small" label={`${item.versions.length} 版`} variant="outlined" sx={{ height: 20 }} /> : null}
-                  </Stack>
-                  {item.summary ? (
-                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {item.summary}
-                    </Typography>
-                  ) : null}
-                </Box>
-                <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'nowrap', pt: 0.2 }}>
-                  {formatArtifactTime(item.updatedAt)}
-                </Typography>
-              </Stack>
-            </Box>
-          );
-        })}
+      <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', rowGap: 1 }}>
+        <FloatingSegmentedTabs
+          value={viewMode}
+          items={artifactViewItems}
+          onChange={(value) => setViewMode(value as ArtifactViewMode)}
+          equalWidth={false}
+          comfortable={false}
+        />
+        <Select
+          size="small"
+          value={sortMode}
+          onChange={(event) => setSortMode(event.target.value as ArtifactSortMode)}
+          sx={{ minWidth: 118, '& .MuiSelect-select': { py: 0.6, fontSize: 13 } }}
+        >
+          <MenuItem value="manual">自定义排序</MenuItem>
+          <MenuItem value="updated">最近更新</MenuItem>
+          <MenuItem value="created">创建时间</MenuItem>
+          <MenuItem value="title">标题</MenuItem>
+          <MenuItem value="kind">类型</MenuItem>
+        </Select>
       </Stack>
 
-      {selected ? (
-        <Box sx={{ display: 'grid', gap: 1 }}>
-          <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between', minWidth: 0 }}>
-            <Typography variant="subtitle2" sx={{ fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {selected.title}
-            </Typography>
-            <Stack direction="row" spacing={0.25}>
-              <Tooltip title="复制当前版本">
-                <IconButton size="small" onClick={() => void copyTextToClipboard(getAssistantArtifactCurrentContent(selected))}>
-                  <ContentCopyOutlinedIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-              <Tooltip title="下载当前版本">
-                <IconButton size="small" onClick={() => downloadArtifact(selected, getAssistantArtifactCurrentContent(selected))}>
-                  <DownloadOutlinedIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-              <Tooltip title="删除产物">
-                <IconButton size="small" color="error" onClick={() => deleteArtifact(selected.id)}>
-                  <DeleteOutlineOutlinedIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-            </Stack>
-          </Stack>
-          <ArtifactPreview item={selected} />
+      {viewMode === 'list' ? (
+        <Stack spacing={1}>
+          {artifacts.map(renderArtifactCard)}
+        </Stack>
+      ) : (
+        <Box
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: viewMode === 'gallery'
+              ? 'repeat(auto-fill, minmax(220px, 1fr))'
+              : 'repeat(auto-fill, minmax(150px, 1fr))',
+            gap: 1,
+          }}
+        >
+          {artifacts.map(renderArtifactCard)}
         </Box>
-      ) : null}
+      )}
+
+      <Dialog open={Boolean(fullscreenItem)} onClose={() => setFullscreenId(null)} fullScreen>
+        {fullscreenItem ? (
+          <>
+            <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+              <Box sx={{ minWidth: 0 }}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {fullscreenItem.title}
+                </Typography>
+                {renderMeta(fullscreenItem)}
+              </Box>
+              <Stack direction="row" spacing={0.25}>
+                <IconButton onClick={() => void copyTextToClipboard(getAssistantArtifactCurrentContent(fullscreenItem))}>
+                  <ContentCopyOutlinedIcon />
+                </IconButton>
+                <IconButton onClick={() => downloadArtifact(fullscreenItem, getAssistantArtifactCurrentContent(fullscreenItem))}>
+                  <DownloadOutlinedIcon />
+                </IconButton>
+              </Stack>
+            </DialogTitle>
+            <DialogContent dividers sx={{ bgcolor: (theme) => theme.palette.mode === 'light' ? '#f8fafc' : '#020617' }}>
+              <ArtifactPreview item={fullscreenItem} expanded />
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setFullscreenId(null)}>关闭</Button>
+            </DialogActions>
+          </>
+        ) : null}
+      </Dialog>
     </Stack>
   );
 }

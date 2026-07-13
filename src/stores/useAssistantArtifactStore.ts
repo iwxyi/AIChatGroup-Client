@@ -23,6 +23,7 @@ interface AssistantArtifactStore extends AssistantArtifactSnapshot {
     timestamp?: number;
   }) => AssistantArtifactItem[];
   getArtifactsForChat: (chatId: string) => AssistantArtifactItem[];
+  moveArtifact: (chatId: string, artifactId: string, direction: 'up' | 'down') => void;
   deleteArtifact: (artifactId: string) => void;
 }
 
@@ -71,6 +72,17 @@ function pruneChatArtifacts(items: AssistantArtifactItem[], chatId: string) {
       ? { ...item, deletedAt: Date.now(), updatedAt: Date.now() }
       : item
   ));
+}
+
+function orderedChatArtifacts(items: AssistantArtifactItem[], chatId: string) {
+  return items
+    .filter((item) => item.chatId === chatId && item.deletedAt == null)
+    .sort((a, b) => {
+      const aOrder = typeof a.sortOrder === 'number' ? a.sortOrder : Number.MAX_SAFE_INTEGER;
+      const bOrder = typeof b.sortOrder === 'number' ? b.sortOrder : Number.MAX_SAFE_INTEGER;
+      if (aOrder !== bOrder) return aOrder - bOrder;
+      return b.updatedAt - a.updatedAt;
+    });
 }
 
 export const useAssistantArtifactStore = create<AssistantArtifactStore>()(
@@ -130,6 +142,7 @@ export const useAssistantArtifactStore = create<AssistantArtifactStore>()(
               sourceMessageId: messageId,
               createdAt: now + index,
               updatedAt: now + index,
+              sortOrder: now + index,
               deletedAt: null,
             };
             nextItems.unshift(created);
@@ -147,9 +160,28 @@ export const useAssistantArtifactStore = create<AssistantArtifactStore>()(
         timestamp,
       }),
 
-      getArtifactsForChat: (chatId) => get().items
-        .filter((item) => item.chatId === chatId && item.deletedAt == null)
-        .sort((a, b) => b.updatedAt - a.updatedAt),
+      getArtifactsForChat: (chatId) => orderedChatArtifacts(get().items, chatId),
+
+      moveArtifact: (chatId, artifactId, direction) => {
+        set((state) => {
+          const ordered = orderedChatArtifacts(state.items, chatId);
+          const currentIndex = ordered.findIndex((item) => item.id === artifactId);
+          const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+          if (currentIndex < 0 || targetIndex < 0 || targetIndex >= ordered.length) return state;
+          const nextOrdered = [...ordered];
+          const [moved] = nextOrdered.splice(currentIndex, 1);
+          if (!moved) return state;
+          nextOrdered.splice(targetIndex, 0, moved);
+          const nextOrderById = new Map(nextOrdered.map((item, index) => [item.id, index + 1]));
+          return {
+            items: state.items.map((item) => (
+              item.chatId === chatId && nextOrderById.has(item.id)
+                ? { ...item, sortOrder: nextOrderById.get(item.id) }
+                : item
+            )),
+          };
+        });
+      },
 
       deleteArtifact: (artifactId) => {
         const now = Date.now();

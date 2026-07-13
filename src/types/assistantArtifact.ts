@@ -31,6 +31,7 @@ export interface AssistantArtifactItem {
   sourceMessageId: string;
   createdAt: number;
   updatedAt: number;
+  sortOrder?: number;
   deletedAt?: number | null;
 }
 
