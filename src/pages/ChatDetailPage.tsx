@@ -170,6 +170,17 @@ function ChatPageSettingsDialog({
   const agentEnabled = Boolean(capabilities.agent);
   const artifactCloudSyncEntitled = Boolean(currentUser?.assistantArtifactCloudSyncEntitled);
   const artifactCloudSyncAvailable = authMode === 'cloud' && currentUser?.cloudSyncEntitled !== false && artifactCloudSyncEntitled;
+  useEffect(() => {
+    if (!artifactCloudSyncAvailable && artifactCloudSyncEnabled) {
+      setAssistantArtifactCloudSyncEnabled(false);
+      setArtifactCloudSyncState(false);
+    }
+  }, [artifactCloudSyncAvailable, artifactCloudSyncEnabled]);
+  useEffect(() => {
+    const handler = () => setArtifactCloudSyncState(isAssistantArtifactCloudSyncEnabled());
+    window.addEventListener('pneumata-assistant-artifact-cloud-sync-preference-changed', handler);
+    return () => window.removeEventListener('pneumata-assistant-artifact-cloud-sync-preference-changed', handler);
+  }, []);
   const handleAgentToggle = (enabled: boolean) => {
     if (!chat) return;
     void updateChat(chat.id, {

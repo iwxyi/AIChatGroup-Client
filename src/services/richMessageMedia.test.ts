@@ -4,6 +4,7 @@ import type { Message } from '../types/message';
 import type { AIModelProfile } from '../types/settings';
 import { processRichMessageMedia, retryRichMessageMedia } from './richMessageMedia';
 import { generateImageWithAdapter } from './aiGenerationAdapter';
+import { api } from './api';
 
 vi.mock('./api', () => ({
   api: {
@@ -27,6 +28,22 @@ const imageProfile: AIModelProfile = {
   model: 'image-model',
   isDefault: true,
 };
+
+const chatStoreState = vi.hoisted(() => ({
+  chats: [] as Array<Record<string, unknown>>,
+}));
+
+const artifactStoreState = vi.hoisted(() => ({
+  createImageArtifactFromAttachment: vi.fn(),
+}));
+
+vi.mock('../stores/useChatStore', () => ({
+  useChatStore: { getState: () => chatStoreState },
+}));
+
+vi.mock('../stores/useAssistantArtifactStore', () => ({
+  useAssistantArtifactStore: { getState: () => artifactStoreState },
+}));
 
 const character = {
   id: 'mei',
@@ -73,8 +90,23 @@ function buildQueuedImageMessage(patch: Partial<Message> = {}): Message {
 }
 
 describe('processRichMessageMedia', () => {
+  const localStorageMock = (() => {
+    const values = new Map<string, string>();
+    return {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+      removeItem: (key: string) => values.delete(key),
+      clear: () => values.clear(),
+    };
+  })();
+
   beforeEach(() => {
+    Object.defineProperty(globalThis, 'localStorage', { value: localStorageMock, configurable: true });
     vi.clearAllMocks();
+    localStorage.clear();
+    chatStoreState.chats = [];
+    artifactStoreState.createImageArtifactFromAttachment.mockReset();
+    vi.mocked(api.updateMessageMetadata).mockResolvedValue({});
   });
 
   it('marks the message-level generation state as failed when image generation cannot run', async () => {
@@ -115,6 +147,51 @@ describe('processRichMessageMedia', () => {
       mimeType: 'image/png',
     });
     expect(upserts.at(-1)?.metadata?.generation?.status).toBe('ready');
+  });
+
+  it('registers generated assistant images as image artifacts when agent artifacts are enabled', async () => {
+    chatStoreState.chats = [{
+      id: 'chat-1',
+      type: 'assistant',
+      modeState: { assistantCapabilities: { agent: true, artifacts: true } },
+    }];
+    artifactStoreState.createImageArtifactFromAttachment.mockReturnValue({
+      id: 'artifact-image-1',
+      kind: 'image',
+      title: '灰太狼证件照',
+    });
+    vi.mocked(generateImageWithAdapter).mockResolvedValue([{
+      dataUrl: 'data:image/png;base64,cloud',
+      mimeType: 'image/png',
+    }]);
+    const { api } = await import('./api');
+    vi.mocked(api.createMediaAsset).mockResolvedValue({
+      id: 'asset-1',
+      url: '/uploads/media/u/chat/image.png',
+      mimeType: 'image/png',
+      sizeBytes: 1234,
+      checksum: 'hash',
+    });
+    localStorage.setItem('pneumata-auth-mode', 'cloud');
+    localStorage.setItem('pneumata-cloud-sync-enabled', '1');
+    const upserts: Message[] = [];
+
+    await processRichMessageMedia({
+      message: buildQueuedImageMessage(),
+      character,
+      aiProfiles: [imageProfile],
+      upsertMessage: (message) => upserts.push(message),
+    });
+
+    expect(artifactStoreState.createImageArtifactFromAttachment).toHaveBeenCalledWith(expect.objectContaining({
+      chatId: 'chat-1',
+      attachment: expect.objectContaining({ assetId: 'asset-1', status: 'ready' }),
+    }));
+    expect(upserts.at(-1)?.metadata?.assistant?.artifacts?.[0]).toMatchObject({
+      id: 'artifact-image-1',
+      kind: 'image',
+      title: '灰太狼证件照',
+    });
   });
 
   it('uses referenced subject characters for image generation instead of the sending character', async () => {

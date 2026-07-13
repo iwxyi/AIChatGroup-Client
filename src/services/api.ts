@@ -1036,11 +1036,25 @@ class ApiClient {
   }
 
   async upsertAssistantArtifact(item: AssistantArtifactItem) {
-    return this.request<AssistantArtifactItem>('PUT', `/assistant-artifacts/items/${encodeURIComponent(item.id)}`, item);
+    return this.request<{
+      accepted: boolean;
+      status: 'accepted' | 'rejected';
+      reason?: 'stale_base' | 'older_update';
+      item: AssistantArtifactItem;
+    }>('PUT', `/assistant-artifacts/items/${encodeURIComponent(item.id)}`, item);
   }
 
   async upsertAssistantArtifacts(chatId: string, items: AssistantArtifactItem[]) {
-    return this.request<{ items: AssistantArtifactItem[]; serverTime: number }>('PUT', `/assistant-artifacts/chats/${encodeURIComponent(chatId)}/bulk`, { items });
+    return this.request<{
+      results: Array<{
+        accepted: boolean;
+        status: 'accepted' | 'rejected';
+        reason?: 'stale_base' | 'older_update';
+        item: AssistantArtifactItem;
+      }>;
+      items: AssistantArtifactItem[];
+      serverTime: number;
+    }>('PUT', `/assistant-artifacts/chats/${encodeURIComponent(chatId)}/bulk`, { items });
   }
 
   async getTopicSources() {

@@ -95,6 +95,7 @@ export interface AssistantAgentPatch {
   files?: AssistantArtifactFile[];
   baseVersionId?: string | null;
   changeSummary?: string;
+  media?: AssistantArtifactMediaRef[];
 }
 
 export interface AssistantAgentPatchSet {

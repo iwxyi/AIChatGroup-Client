@@ -59,6 +59,44 @@ function updateAttachment(metadata: MessageMetadata | undefined, attachmentId: s
   };
 }
 
+async function attachAssistantImageArtifact(params: {
+  message: Message;
+  attachmentId: string;
+  upsertMessage: (message: Message) => void;
+}) {
+  const attachment = params.message.metadata?.attachments?.find((item) => item.id === params.attachmentId);
+  if (!attachment || attachment.kind !== 'image' || attachment.status !== 'ready' || !attachment.assetId) return params.message;
+  const [{ useChatStore }, { useAssistantArtifactStore }] = await Promise.all([
+    import('../stores/useChatStore'),
+    import('../stores/useAssistantArtifactStore'),
+  ]);
+  const chat = useChatStore.getState().chats.find((item) => item.id === params.message.chatId);
+  if (chat?.type !== 'assistant') return params.message;
+  const capabilities = chat.modeState.assistantCapabilities || {};
+  if (!capabilities.agent || !capabilities.artifacts) return params.message;
+  const artifact = useAssistantArtifactStore.getState().createImageArtifactFromAttachment({
+    chatId: params.message.chatId,
+    message: params.message,
+    attachment,
+    timestamp: Date.now(),
+  });
+  if (!artifact) return params.message;
+  const existingRefs = params.message.metadata?.assistant?.artifacts || [];
+  if (existingRefs.some((ref) => ref.id === artifact.id)) return params.message;
+  const metadata: MessageMetadata = {
+    ...(params.message.metadata || {}),
+    assistant: {
+      ...(params.message.metadata?.assistant || {}),
+      mode: 'general',
+      artifacts: [...existingRefs, { id: artifact.id, kind: artifact.kind, title: artifact.title }],
+    },
+  };
+  const nextMessage = { ...params.message, metadata };
+  params.upsertMessage(nextMessage);
+  if (!isLocalOnlyMediaMode()) void api.updateMessageMetadata(nextMessage.serverId || nextMessage.id, metadata).catch(() => undefined);
+  return nextMessage;
+}
+
 export async function processRichMessageMedia(params: {
   message: Message;
   character?: AICharacter | null;
@@ -72,7 +110,7 @@ export async function processRichMessageMedia(params: {
   for (const attachment of attachments) {
     if (attachment.status !== 'queued') continue;
     const generatingMetadata = updateAttachment(params.message.metadata, attachment.id, { status: 'generating' });
-    let currentMessage = { ...params.message, metadata: generatingMetadata };
+    let currentMessage: Message = { ...params.message, metadata: generatingMetadata };
     params.upsertMessage(currentMessage);
     if (!isLocalOnlyMediaMode()) void api.updateMessageMetadata(currentMessage.serverId || currentMessage.id, generatingMetadata).catch(() => undefined);
 
@@ -118,6 +156,11 @@ export async function processRichMessageMedia(params: {
         currentMessage = { ...currentMessage, metadata: readyMetadata };
         params.upsertMessage(currentMessage);
         if (!isLocalOnlyMediaMode()) void api.updateMessageMetadata(currentMessage.serverId || currentMessage.id, readyMetadata).catch(() => undefined);
+        currentMessage = await attachAssistantImageArtifact({
+          message: currentMessage,
+          attachmentId: attachment.id,
+          upsertMessage: params.upsertMessage,
+        });
       }
 
       if (attachment.kind === 'audio') {

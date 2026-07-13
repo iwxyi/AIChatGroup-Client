@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { AssistantAgentPatch, AssistantArtifactDraft, AssistantArtifactItem } from '../types/assistantArtifact';
+import type { Message, MessageAttachment } from '../types/message';
 import { scopedStorageKey, storageKey } from '../constants/brand';
 import { getLocalDataUserId } from '../services/authStorageScope';
 import { createScopedIndexedDbBufferedJsonStorage, flushBufferedPersistenceWrites } from './storePersistenceScope';
@@ -28,6 +29,12 @@ interface AssistantArtifactStore extends AssistantArtifactSnapshot {
   getArtifactsForChat: (chatId: string) => AssistantArtifactItem[];
   refreshArtifactsFromCloud: (chatId: string) => Promise<void>;
   pushArtifactsToCloud: (chatId: string, artifactIds?: string[]) => Promise<void>;
+  createImageArtifactFromAttachment: (params: {
+    chatId: string;
+    message: Message;
+    attachment: MessageAttachment;
+    timestamp?: number;
+  }) => AssistantArtifactItem | null;
   moveArtifact: (chatId: string, artifactId: string, direction: 'up' | 'down') => void;
   deleteArtifact: (artifactId: string) => void;
 }
@@ -55,6 +62,18 @@ function createVersionId(artifactId: string, now: number) {
   return `${artifactId}:v:${now}:${Math.random().toString(36).slice(2, 6)}`;
 }
 
+function createOperationId(prefix: string) {
+  return `${prefix}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function artifactPayloadForCloud(item: AssistantArtifactItem) {
+  return {
+    ...item,
+    baseRevision: item.revision || null,
+    operationId: createOperationId(item.id),
+  };
+}
+
 function findTargetArtifact(items: AssistantArtifactItem[], chatId: string, draft: AssistantArtifactDraft) {
   if (draft.action !== 'update' || !draft.targetArtifactId) return null;
   return items.find((item) => item.id === draft.targetArtifactId && item.chatId === chatId && item.deletedAt == null) || null;
@@ -72,6 +91,7 @@ function draftFromPatch(patch: AssistantAgentPatch): AssistantArtifactDraft {
     files: patch.files,
     baseVersionId: patch.baseVersionId || null,
     changeSummary: patch.changeSummary,
+    media: patch.media,
   };
 }
 
@@ -109,6 +129,11 @@ function mergeArtifactItems(localItems: AssistantArtifactItem[], incomingItems: 
   return Array.from(byId.values());
 }
 
+function mergeCloudArtifacts(incomingItems: AssistantArtifactItem[]) {
+  if (!incomingItems.length) return;
+  useAssistantArtifactStore.setState((state) => ({ items: mergeArtifactItems(state.items, incomingItems) }));
+}
+
 function scheduleArtifactCloudPush(chatId: string, artifactIds: string[]) {
   if (!shouldSyncAssistantArtifactsToCloud() || !artifactIds.length) return;
   if (typeof window === 'undefined') return;
@@ -140,6 +165,7 @@ export const useAssistantArtifactStore = create<AssistantArtifactStore>()(
               sourceMessageId: messageId,
               baseVersionId: draft.baseVersionId || existing?.currentVersionId || null,
               changeSummary: draft.changeSummary,
+              media: draft.media,
               createdAt: now + index,
             };
             if (existing) {
@@ -208,10 +234,74 @@ export const useAssistantArtifactStore = create<AssistantArtifactStore>()(
           : orderedChatArtifacts(get().items, chatId);
         if (!items.length) return;
         if (items.length === 1) {
-          await api.upsertAssistantArtifact(items[0]);
+          const result = await api.upsertAssistantArtifact(artifactPayloadForCloud(items[0]));
+          mergeCloudArtifacts([result.item]);
           return;
         }
-        await api.upsertAssistantArtifacts(chatId, items);
+        const result = await api.upsertAssistantArtifacts(chatId, items.map(artifactPayloadForCloud));
+        mergeCloudArtifacts(result.items);
+      },
+
+      createImageArtifactFromAttachment: ({ chatId, message, attachment, timestamp }) => {
+        if (attachment.kind !== 'image' || attachment.status !== 'ready' || !attachment.assetId) return null;
+        const now = timestamp || Date.now();
+        const artifactId = `assistant-image-artifact-${message.id}-${attachment.id}`;
+        const existing = get().items.find((item) => item.id === artifactId && item.chatId === chatId) || null;
+        const versionId = existing?.currentVersionId || createVersionId(artifactId, now);
+        const media = [{
+          assetId: attachment.assetId,
+          thumbnailAssetId: attachment.thumbnailAssetId,
+          url: attachment.url,
+          mimeType: attachment.mimeType,
+          sizeBytes: attachment.sizeBytes,
+          width: attachment.width,
+          height: attachment.height,
+          checksum: attachment.checksum,
+          alt: attachment.altText,
+        }];
+        const content = JSON.stringify({ media, promptText: attachment.promptText || '', alt: attachment.altText || '' }, null, 2);
+        const imageVersion = {
+          id: versionId,
+          artifactId,
+          content,
+          media,
+          language: 'json',
+          sourceMessageId: message.id,
+          baseVersionId: existing?.currentVersionId || null,
+          changeSummary: existing ? '更新图片资产引用' : '创建图片产物',
+          createdAt: now,
+        };
+        const item: AssistantArtifactItem = existing ? {
+          ...existing,
+          title: attachment.altText || existing.title || '图片产物',
+          summary: attachment.promptText || existing.summary,
+          currentVersionId: versionId,
+          versions: [imageVersion],
+          sourceMessageId: message.id,
+          updatedAt: now,
+          deletedAt: null,
+        } : {
+          id: artifactId,
+          chatId,
+          kind: 'image',
+          title: attachment.altText || '图片产物',
+          summary: attachment.promptText || undefined,
+          language: 'json',
+          currentVersionId: versionId,
+          versions: [imageVersion],
+          sourceMessageId: message.id,
+          createdAt: now,
+          updatedAt: now,
+          sortOrder: now,
+          deletedAt: null,
+        };
+        set((state) => ({
+          items: existing
+            ? state.items.map((entry) => entry.id === item.id ? item : entry)
+            : [item, ...state.items],
+        }));
+        scheduleArtifactCloudPush(chatId, [item.id]);
+        return item;
       },
 
       moveArtifact: (chatId, artifactId, direction) => {
@@ -228,11 +318,12 @@ export const useAssistantArtifactStore = create<AssistantArtifactStore>()(
           return {
             items: state.items.map((item) => (
               item.chatId === chatId && nextOrderById.has(item.id)
-                ? { ...item, sortOrder: nextOrderById.get(item.id) }
+                ? { ...item, sortOrder: nextOrderById.get(item.id), updatedAt: Date.now() }
                 : item
             )),
           };
         });
+        scheduleArtifactCloudPush(chatId, [artifactId]);
       },
 
       deleteArtifact: (artifactId) => {

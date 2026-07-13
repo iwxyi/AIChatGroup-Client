@@ -8,6 +8,7 @@ import { rememberCloudUserId } from '../services/authStorageScope';
 import { rememberLastCloudPhone } from '../services/authSession';
 import { isCloudSyncBootstrapLocked, runWithCloudSyncBootstrapLock } from '../services/cloudSyncBootstrapLock';
 import { isCloudSyncEnabled, isCloudSyncUserDisabled, setCloudSyncEnabled } from '../services/cloudSyncPreference';
+import { setAssistantArtifactCloudSyncEnabled } from '../services/assistantArtifactCloudSyncPreference';
 
 interface User {
   id: string;
@@ -147,6 +148,9 @@ function setAuthUser(user: User) {
 function applyCloudSyncEntitlement(user: User | null) {
   if (user?.cloudSyncEntitled === false) {
     setCloudSyncEnabled(false, { source: 'entitlement' });
+  }
+  if (user?.assistantArtifactCloudSyncEntitled === false) {
+    setAssistantArtifactCloudSyncEnabled(false);
   }
 }
 
