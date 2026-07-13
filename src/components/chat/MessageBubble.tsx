@@ -7,7 +7,6 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import InsightsIcon from '@mui/icons-material/Insights';
 import RateReviewIcon from '@mui/icons-material/RateReview';
-import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined';
 import { useLocation, useNavigate } from 'react-router-dom';
 import type { Message, MessageAttachment } from '../../types/message';
 import type { AICharacter } from '../../types/character';
@@ -372,35 +371,33 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
               type="button"
               onClick={() => artifactRefs[0]?.id && onOpenArtifact?.(artifactRefs[0].id)}
               sx={(theme) => ({
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 0.55,
+                display: 'inline-block',
                 width: 'fit-content',
                 maxWidth: '100%',
-                border: '1px solid',
-                borderColor: theme.palette.mode === 'light' ? 'rgba(15,23,42,0.10)' : 'rgba(226,232,240,0.16)',
-                borderRadius: 999,
-                px: 0.9,
-                py: 0.38,
+                border: 'none',
+                borderRadius: 1,
+                px: 1,
+                py: 0.35,
                 ml: isUser ? 0 : 0.5,
                 mr: isUser ? 0.5 : 0,
-                bgcolor: theme.palette.mode === 'light' ? 'rgba(255,255,255,0.58)' : 'rgba(15,23,42,0.42)',
+                bgcolor: theme.palette.mode === 'light' ? 'rgba(255,255,255,0.48)' : 'rgba(15,23,42,0.34)',
                 color: 'text.secondary',
-                boxShadow: theme.palette.mode === 'light' ? '0 10px 24px rgba(15,23,42,0.08)' : '0 12px 26px rgba(0,0,0,0.22)',
-                backdropFilter: 'blur(18px) saturate(1.14)',
-                WebkitBackdropFilter: 'blur(18px) saturate(1.14)',
+                boxShadow: 'none',
+                backdropFilter: 'blur(16px) saturate(1.08)',
+                WebkitBackdropFilter: 'blur(16px) saturate(1.08)',
                 cursor: onOpenArtifact ? 'pointer' : 'default',
                 font: 'inherit',
+                textAlign: 'left',
                 justifySelf: isUser ? 'end' : 'start',
+                lineHeight: 1.25,
                 '&:hover': onOpenArtifact ? {
-                  color: 'primary.main',
-                  borderColor: 'primary.main',
+                  color: 'text.primary',
+                  bgcolor: theme.palette.mode === 'light' ? 'rgba(255,255,255,0.62)' : 'rgba(15,23,42,0.46)',
                 } : undefined,
               })}
             >
-              <ArticleOutlinedIcon sx={{ fontSize: 15, flexShrink: 0 }} />
-              <Typography variant="caption" sx={{ fontWeight: 750, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                产物详情{artifactRefs.length > 1 ? ` · ${artifactRefs.length} 个` : artifactRefs[0]?.title ? ` · ${artifactRefs[0].title}` : ''}
+              <Typography variant="caption" sx={{ display: 'block', fontWeight: 500, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.25 }}>
+                产物详情{artifactRefs.length > 1 ? ` · ${artifactRefs.length}` : ''}
               </Typography>
             </Box>
           ) : null}
