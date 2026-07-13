@@ -68,11 +68,15 @@ function cloneJson<T>(value: T): T {
 }
 
 async function ensureLocalStoresHydrated() {
+  const rehydrateIfAvailable = (store: { persist?: { hasHydrated?: () => boolean; rehydrate?: () => void | Promise<void> } }) => {
+    if (!store.persist?.rehydrate) return Promise.resolve();
+    return store.persist.hasHydrated?.() ? Promise.resolve() : Promise.resolve(store.persist.rehydrate());
+  };
   await Promise.all([
-    useCharacterStore.persist.hasHydrated() ? Promise.resolve() : useCharacterStore.persist.rehydrate(),
-    useChatStore.persist.hasHydrated() ? Promise.resolve() : useChatStore.persist.rehydrate(),
-    useMessageStore.persist.hasHydrated() ? Promise.resolve() : useMessageStore.persist.rehydrate(),
-    useSettingsStore.persist.hasHydrated() ? Promise.resolve() : useSettingsStore.persist.rehydrate(),
+    rehydrateIfAvailable(useCharacterStore),
+    rehydrateIfAvailable(useChatStore),
+    rehydrateIfAvailable(useMessageStore),
+    rehydrateIfAvailable(useSettingsStore),
   ]);
 }
 

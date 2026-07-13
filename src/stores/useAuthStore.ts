@@ -29,8 +29,8 @@ interface AuthStore {
   // Actions
   sendCode: (phone: string, purpose?: 'login' | 'register' | 'forgot-password' | 'change-phone', captchaToken?: string) => Promise<{ success: boolean; mock?: boolean; code?: string }>;
   login: (phone: string, code: string) => Promise<void>;
-  enterLocalMode: () => void;
-  logout: () => void;
+  enterLocalMode: () => Promise<void>;
+  logout: () => Promise<void>;
   expireCloudSession: () => void;
   checkAuth: () => Promise<boolean>;
   setUser: (user: User) => void;
@@ -58,15 +58,30 @@ function canRefreshRemoteAfterAuth(user: User | null) {
   return user?.cloudSyncEntitled !== false && isCloudSyncEnabled() && !isCloudSyncBootstrapLocked();
 }
 
-async function refreshStoresAfterCloudAuth(user: User | null) {
+async function hydrateWorkspaceStoresFromCurrentScope() {
   const { useChatStore, useCharacterStore } = await loadWorkspaceStores();
+  const artifactStoreModule = await import('./useCharacterArtifactStore');
+  await Promise.allSettled([
+    useChatStore.persist.rehydrate(),
+    useCharacterStore.persist.rehydrate(),
+    artifactStoreModule.useCharacterArtifactStore.persist.rehydrate(),
+  ]);
+  return {
+    useChatStore,
+    useCharacterStore,
+  };
+}
+
+async function refreshStoresAfterCloudAuth(user: User | null, options: { deferRemoteRefresh?: boolean } = {}) {
+  const { useChatStore, useCharacterStore } = await hydrateWorkspaceStoresFromCurrentScope();
   const settingsStore = useSettingsStore.getState();
   const chatStore = useChatStore.getState();
   const characterStore = useCharacterStore.getState();
   chatStore.markChatsWarm();
   characterStore.markCharactersWarm();
+  if (options.deferRemoteRefresh) return;
   if (canRefreshRemoteAfterAuth(user)) {
-    await Promise.allSettled([
+    void Promise.allSettled([
       settingsStore.refreshSettingsFromCloud(),
       chatStore.refreshChatSummaryFromCloud(),
       characterStore.refreshCharacterSummaryFromCloud(),
@@ -78,19 +93,28 @@ async function refreshStoresAfterCloudAuth(user: User | null) {
   void characterStore.prefetchCharacters();
 }
 
-function resetLocalWorkspaceStoresForAccountBoundary() {
-  void loadWorkspaceStores().then(({
+async function refreshStoresAfterLocalAuthMode() {
+  const { useChatStore, useCharacterStore } = await hydrateWorkspaceStoresFromCurrentScope();
+  const chatStore = useChatStore.getState();
+  const characterStore = useCharacterStore.getState();
+  chatStore.markChatsWarm();
+  characterStore.markCharactersWarm();
+  void useSettingsStore.getState().loadSettings();
+  void chatStore.prefetchChats();
+  void characterStore.prefetchCharacters();
+}
+
+async function resetLocalWorkspaceStoresForAccountBoundary() {
+  const {
     resetChatStoreForAccountBoundary,
     resetCharacterStoreForAccountBoundary,
     resetMessageStoreForAccountBoundary,
-  }) => {
-    resetChatStoreForAccountBoundary();
-    resetCharacterStoreForAccountBoundary();
-    resetMessageStoreForAccountBoundary();
-  });
-  void import('./useCharacterArtifactStore').then(({ resetCharacterArtifactStoreForAccountBoundary }) => {
-    resetCharacterArtifactStoreForAccountBoundary();
-  });
+  } = await loadWorkspaceStores();
+  const { resetCharacterArtifactStoreForAccountBoundary } = await import('./useCharacterArtifactStore');
+  await resetChatStoreForAccountBoundary();
+  await resetCharacterStoreForAccountBoundary();
+  await resetMessageStoreForAccountBoundary();
+  await resetCharacterArtifactStoreForAccountBoundary();
 }
 
 const AUTH_TOKEN_KEY = storageKey('token');
@@ -169,7 +193,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
 
   login: async (phone: string, code: string) => {
     set({ isLoading: true });
-    const shouldBootstrapLocalData = get().authMode === 'local';
+    const shouldBootstrapLocalData = get().authMode === 'local' && isCloudSyncEnabled();
     const bootstrapModule = shouldBootstrapLocalData ? await import('../services/localToCloudBootstrap') : null;
     const localSnapshot = bootstrapModule ? await bootstrapModule.captureLocalCloudBootstrapSnapshot() : null;
     try {
@@ -185,11 +209,12 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
         isLoading: false,
         authMode: 'cloud',
       });
-      if (bootstrapModule && localSnapshot && bootstrapModule.hasBootstrapEntityData(localSnapshot) && result.user.cloudSyncEntitled !== false) {
+      await resetLocalWorkspaceStoresForAccountBoundary();
+      if (bootstrapModule && localSnapshot && bootstrapModule.hasBootstrapEntityData(localSnapshot) && result.user.cloudSyncEntitled !== false && isCloudSyncEnabled()) {
         try {
           await runWithCloudSyncBootstrapLock(() => bootstrapModule.bootstrapLocalDataToCloud(localSnapshot));
         } catch (error) {
-          resetLocalWorkspaceStoresForAccountBoundary();
+          await resetLocalWorkspaceStoresForAccountBoundary();
           clearAuthTokenAndUser();
           setAuthMode('local');
           set({
@@ -202,15 +227,17 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
           throw error;
         }
       }
-      await refreshStoresAfterCloudAuth(result.user);
+      const guestImportModule = await import('../services/guestDataImport');
+      const shouldDeferRemoteRefresh = guestImportModule.hasGuestImportData(await guestImportModule.readGuestImportSnapshot());
+      await refreshStoresAfterCloudAuth(result.user, { deferRemoteRefresh: shouldDeferRemoteRefresh });
     } catch (error) {
       set({ isLoading: false });
       throw error;
     }
   },
 
-  enterLocalMode: () => {
-    resetLocalWorkspaceStoresForAccountBoundary();
+  enterLocalMode: async () => {
+    await resetLocalWorkspaceStoresForAccountBoundary();
     clearAuthTokenAndUser();
     setAuthMode('local');
     set({
@@ -219,10 +246,11 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       isLoggedIn: false,
       authMode: 'local',
     });
+    await refreshStoresAfterLocalAuthMode();
   },
 
-  logout: () => {
-    resetLocalWorkspaceStoresForAccountBoundary();
+  logout: async () => {
+    await resetLocalWorkspaceStoresForAccountBoundary();
     clearAuthTokenAndUser();
     setAuthMode('local');
     set({
@@ -231,6 +259,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       isLoggedIn: false,
       authMode: 'local',
     });
+    await refreshStoresAfterLocalAuthMode();
   },
 
   expireCloudSession: () => {

@@ -8,7 +8,7 @@ import { reportRecoverableError } from '../services/diagnostics';
 import { hasLocalDataUrlMedia, scrubLocalMediaUrlsForCloud, uploadLocalMessageMediaToCloud } from '../services/richMessageMedia';
 import { useAuthStore } from './useAuthStore';
 import { CLIENT_STORE_SCHEMA_VERSION, migrateMessageStoreState } from './storeMigrations';
-import { createScopedIndexedDbBufferedJsonStorage } from './storePersistenceScope';
+import { createScopedIndexedDbBufferedJsonStorage, flushBufferedPersistenceWrites } from './storePersistenceScope';
 import { createSyncScheduler } from './storeSyncScheduler';
 import { canAttemptOnlineSync, getPendingQueueWorkerPriority, recoverInterruptedOperations, retryFailedOperations, runPendingOperationQueue } from './storeSyncHelpers';
 import { scopedStorageKey, storageKey } from '../constants/brand';
@@ -4464,9 +4464,9 @@ function getMessageStoreStorageName() {
   return scopedStorageKey('messages');
 }
 
-function createMessageStorage() {
+function createMessageStorage(key = getMessageStorageKey()) {
   return createScopedIndexedDbBufferedJsonStorage<PersistedMessageState>({
-    getScopedKey: getMessageStorageKey,
+    getScopedKey: () => key,
     storageName: getMessageStoreStorageName(),
     flushDelayMs: 64,
   });
@@ -4479,8 +4479,11 @@ export function clearPersistedMessageStore() {
   messageSyncScopes.clear();
 }
 
-export function resetMessageStoreForAccountBoundary() {
-  clearPersistedMessageStore();
+export async function resetMessageStoreForAccountBoundary() {
+  const storage = createMessageStorage(getMessageStorageKey());
+  const storageName = getMessageStoreStorageName();
+  const preservedSnapshot = await storage.getItem(storageName);
+  messageSyncScopes.clear();
   logMessageWindowDebug('reset-account-boundary', {
     existingWindows: summarizeMessageWindows(useMessageStore.getState().messageWindowsByChatId),
   });
@@ -4495,6 +4498,12 @@ export function resetMessageStoreForAccountBoundary() {
     hasMore: true,
     hasMoreNewer: false,
   });
+  flushBufferedPersistenceWrites();
+  if (preservedSnapshot != null) {
+    await storage.setItem(storageName, preservedSnapshot);
+  } else {
+    await storage.removeItem(storageName);
+  }
 }
 
 function isInlineDataUrl(value: string) {

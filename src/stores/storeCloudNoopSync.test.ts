@@ -25,6 +25,7 @@ function createStorageMock() {
 }
 
 const apiMocks = vi.hoisted(() => ({
+  login: vi.fn(),
   getMe: vi.fn(),
   getSyncChanges: vi.fn(),
   getSettings: vi.fn(),
@@ -46,6 +47,7 @@ vi.mock('../services/api', async () => {
     ...actual,
     api: {
       ...actual.api,
+      login: apiMocks.login,
       getMe: apiMocks.getMe,
       getSyncChanges: apiMocks.getSyncChanges,
       getSettings: apiMocks.getSettings,
@@ -160,6 +162,16 @@ describe('cloud no-op sync', () => {
       avatar: '🍵',
       cloudSyncEntitled: true,
     });
+    apiMocks.login.mockResolvedValue({
+      token: 'token',
+      user: {
+        id: 'local-user',
+        phone: '13500000000',
+        nickname: '测试用户',
+        avatar: '🍵',
+        cloudSyncEntitled: true,
+      },
+    });
     apiMocks.getSettings.mockResolvedValue({});
     apiMocks.syncChatPatch.mockResolvedValue({ success: true, accepted: true, revision: 1 });
     apiMocks.syncCharacterPatch.mockResolvedValue({ success: true, accepted: true, revision: 1 });
@@ -179,6 +191,118 @@ describe('cloud no-op sync', () => {
     expect(apiMocks.getSettings).not.toHaveBeenCalled();
     expect(apiMocks.getChats).not.toHaveBeenCalled();
     expect(apiMocks.getCharacters).not.toHaveBeenCalled();
+  });
+
+  it('shows local chats and characters first when cloud sync is enabled but remote sync is pending', async () => {
+    localStorage.setItem(storageKey('user'), JSON.stringify({ id: 'local-user' }));
+    localStorage.setItem(storageKey('chats-local-user'), JSON.stringify({
+      state: {
+        chats: [chat({ id: 'local-chat-first', name: '先显示本地会话' })],
+        currentChatId: null,
+        lastSyncedAt: 12,
+        pendingOperations: [],
+      },
+      version: 3,
+    }));
+    localStorage.setItem(storageKey('characters-local-user'), JSON.stringify({
+      state: {
+        characters: [character({ id: 'local-character-first', name: '先显示本地角色' })],
+        lastSyncedAt: 12,
+        pendingOperations: [],
+      },
+      version: 3,
+    }));
+    let resolveChanges: (value: unknown) => void = () => undefined;
+    apiMocks.getSyncChanges.mockImplementation(() => new Promise((resolve) => {
+      resolveChanges = resolve;
+    }));
+    const [{ useAuthStore }, { useChatStore }, { useCharacterStore }] = await Promise.all([
+      import('./useAuthStore'),
+      import('./useChatStore'),
+      import('./useCharacterStore'),
+    ]);
+
+    await useAuthStore.getState().checkAuth();
+
+    await vi.waitFor(() => {
+      expect(useChatStore.getState().chats.map((item) => item.name)).toEqual(['先显示本地会话']);
+      expect(useCharacterStore.getState().characters.map((item) => item.name)).toEqual(['先显示本地角色']);
+    });
+    expect(apiMocks.getSyncChanges).toHaveBeenCalled();
+    expect(apiMocks.getChats).not.toHaveBeenCalled();
+    expect(apiMocks.getCharacters).not.toHaveBeenCalled();
+
+    resolveChanges({
+      status: 'not_modified',
+      cursor: 'rev-1',
+      revision: 'rev-1',
+      changes: [],
+    });
+  });
+
+  it('uses the signed-in account local scope without mixing guest data when cloud sync is disabled before login', async () => {
+    const accountId = `disabled-sync-account-${Date.now()}-${Math.random()}`;
+    apiMocks.login.mockResolvedValueOnce({
+      token: 'token',
+      user: {
+        id: accountId,
+        phone: '13500000000',
+        nickname: '测试用户',
+        avatar: '🍵',
+        cloudSyncEntitled: true,
+      },
+    });
+    localStorage.setItem(storageKey('auth-mode'), 'local');
+    localStorage.setItem(storageKey('cloud-sync-enabled'), '0');
+    localStorage.setItem(storageKey('cloud-sync-user-disabled'), '1');
+    localStorage.setItem(storageKey('chats-guest'), JSON.stringify({
+      state: {
+        chats: [chat({ id: 'guest-chat-disabled-sync', name: '未登录本地会话' })],
+        currentChatId: null,
+        lastSyncedAt: 12,
+        pendingOperations: [],
+      },
+      version: 3,
+    }));
+    localStorage.setItem(storageKey('characters-guest'), JSON.stringify({
+      state: {
+        characters: [character({ id: 'guest-character-disabled-sync', name: '未登录本地角色' })],
+        lastSyncedAt: 12,
+        pendingOperations: [],
+      },
+      version: 3,
+    }));
+    localStorage.setItem(storageKey(`chats-${accountId}`), JSON.stringify({
+      state: {
+        chats: [chat({ id: 'account-chat-disabled-sync', name: '账号本地会话' })],
+        currentChatId: null,
+        lastSyncedAt: 12,
+        pendingOperations: [],
+      },
+      version: 3,
+    }));
+    localStorage.setItem(storageKey(`characters-${accountId}`), JSON.stringify({
+      state: {
+        characters: [character({ id: 'account-character-disabled-sync', name: '账号本地角色' })],
+        lastSyncedAt: 12,
+        pendingOperations: [],
+      },
+      version: 3,
+    }));
+    const [{ useAuthStore }, { useChatStore }, { useCharacterStore }] = await Promise.all([
+      import('./useAuthStore'),
+      import('./useChatStore'),
+      import('./useCharacterStore'),
+    ]);
+
+    await useAuthStore.getState().login('13500000000', '123456');
+
+    expect(apiMocks.login).toHaveBeenCalledTimes(1);
+    expect(apiMocks.getCharacters).not.toHaveBeenCalled();
+    expect(apiMocks.getChats).not.toHaveBeenCalled();
+    expect(apiMocks.getSyncChanges).not.toHaveBeenCalled();
+    expect(useChatStore.getState().chats.map((item) => item.name)).toEqual(['账号本地会话']);
+    expect(useCharacterStore.getState().characters.map((item) => item.name)).toEqual(['账号本地角色']);
   });
 
   it('prefetches chats from local persistence when cloud sync is disabled', async () => {

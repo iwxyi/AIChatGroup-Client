@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware';
 import type { AICharacter } from '../types/character';
 import type { AIModelProfile } from '../types/settings';
 import { getUsableDefaultTextAIProfile, hasUsableDefaultTextAI, isAIProfileUsable } from '../types/settings';
-import { createScopedIndexedDbBufferedJsonStorage, createScopedIndexedDbStorage } from './storePersistenceScope';
+import { createScopedIndexedDbBufferedJsonStorage, createScopedIndexedDbStorage, flushBufferedPersistenceWrites } from './storePersistenceScope';
 import { createSyncScopeMetadata, type SyncScopeSnapshot } from './syncScopeMetadata';
 import { CLIENT_STORE_SCHEMA_VERSION } from './storeMigrations';
 import { buildDiaryCompanionshipReflectionEvents, pickChatsForDiaryCompanionshipBackflow } from '../services/diaryCompanionshipBackflow';
@@ -158,14 +158,26 @@ export function clearPersistedCharacterArtifactStore() {
   artifactSyncScopes.clear();
 }
 
-export function resetCharacterArtifactStoreForAccountBoundary() {
-  clearPersistedCharacterArtifactStore();
+export async function resetCharacterArtifactStoreForAccountBoundary() {
+  const storage = createScopedIndexedDbStorage({
+    getScopedKey: getArtifactStorageKey,
+    storageName: scopedStorageKey('character-artifacts'),
+  });
+  const storageName = scopedStorageKey('character-artifacts');
+  const preservedSnapshot = await storage.getItem(storageName);
+  artifactSyncScopes.clear();
   useCharacterArtifactStore.setState({
     items: [],
     jobs: [],
     isProcessing: false,
     unreadLetterCount: 0,
   });
+  flushBufferedPersistenceWrites();
+  if (preservedSnapshot != null) {
+    await storage.setItem(storageName, preservedSnapshot);
+  } else {
+    await storage.removeItem(storageName);
+  }
 }
 
 export function ensureCharacterArtifactStoreHydrated() {

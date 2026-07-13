@@ -1,6 +1,6 @@
 import { lazy, Suspense, useMemo, useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { Box, LinearProgress, ThemeProvider, CssBaseline, useMediaQuery } from '@mui/material';
+import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, LinearProgress, ThemeProvider, CssBaseline, Typography, useMediaQuery } from '@mui/material';
 import { createAppTheme } from './theme';
 import { useSettingsStore } from './stores/useSettingsStore';
 import { useAuthStore } from './stores/useAuthStore';
@@ -15,6 +15,10 @@ import { AUTH_SESSION_EXPIRED_EVENT, type AuthSessionExpiredDetail } from './ser
 import { APP_DESCRIPTION, APP_TITLE } from './constants/brand';
 import DevUpdatePrompt from './components/common/DevUpdatePrompt';
 import PwaUpdatePrompt from './components/common/PwaUpdatePrompt';
+import { hasGuestImportData, importGuestDataToCurrentAccount, readGuestImportSnapshot, type GuestImportSnapshot } from './services/guestDataImport';
+import { isCloudSyncEnabled } from './services/cloudSyncPreference';
+import { useChatStore } from './stores/useChatStore';
+import { useCharacterStore } from './stores/useCharacterStore';
 import './i18n';
 
 const routePreloaders = [
@@ -304,6 +308,74 @@ function DataLoader({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function startPostImportCloudRefresh() {
+  if (!isCloudSyncEnabled()) return;
+  void Promise.allSettled([
+    useSettingsStore.getState().refreshSettingsFromCloud(),
+    useChatStore.getState().refreshChatSummaryFromCloud(),
+    useCharacterStore.getState().refreshCharacterSummaryFromCloud(),
+  ]);
+}
+
+function GuestImportPrompt() {
+  const authMode = useAuthStore((s) => s.authMode);
+  const isLoggedIn = useAuthStore((s) => s.isLoggedIn);
+  const userId = useAuthStore((s) => s.user?.id || null);
+  const [snapshot, setSnapshot] = useState<GuestImportSnapshot | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!isLoggedIn || authMode !== 'cloud' || !userId) {
+      setSnapshot(null);
+      return () => {
+        cancelled = true;
+      };
+    }
+    const dismissedKey = `pneumata-guest-import-dismissed:${userId}`;
+    if (sessionStorage.getItem(dismissedKey) === '1') return undefined;
+    void readGuestImportSnapshot().then((nextSnapshot) => {
+      if (cancelled) return;
+      setSnapshot(hasGuestImportData(nextSnapshot) ? nextSnapshot : null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [authMode, isLoggedIn, userId]);
+
+  const closeAndRefresh = () => {
+    if (userId) sessionStorage.setItem(`pneumata-guest-import-dismissed:${userId}`, '1');
+    setSnapshot(null);
+    startPostImportCloudRefresh();
+  };
+
+  const handleImport = async () => {
+    if (!snapshot) return;
+    setBusy(true);
+    try {
+      await importGuestDataToCurrentAccount(snapshot);
+      closeAndRefresh();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Dialog open={Boolean(snapshot)} maxWidth="xs" fullWidth>
+      <DialogTitle>导入未登录数据</DialogTitle>
+      <DialogContent>
+        <Typography variant="body2" color="text.secondary">
+          检测到此设备上有未登录时创建的本地数据。你可以导入到当前账号；不导入时，这些数据会保留在未登录本地空间，退出账号后仍可看到。
+        </Typography>
+      </DialogContent>
+      <DialogActions sx={{ px: 3, pb: 2 }}>
+        <Button onClick={closeAndRefresh} disabled={busy}>暂不导入</Button>
+        <Button variant="contained" onClick={handleImport} disabled={busy}>导入到当前账号</Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
 function SiteConfigBootstrap({ onThemeColor }: { onThemeColor: (value: string | null) => void }) {
   useEffect(() => {
     let cancelled = false;
@@ -447,6 +519,7 @@ export default function App() {
           <AuthSessionRedirectHandler />
           <AdminAuthRedirectHandler />
           <AdminAuthBootstrap />
+          <GuestImportPrompt />
           <DataLoader>
             <RoutedApp />
           </DataLoader>

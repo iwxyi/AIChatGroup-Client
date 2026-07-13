@@ -8,7 +8,7 @@ import { reportRecoverableError, reportRecoverableWarning } from '../services/di
 import { projectEntities, type SyncPatchOperation } from '../services/syncProjector';
 import { clearResolvedFieldConflicts, detectPendingFieldConflicts, type FieldConflictRecord } from '../services/syncConflictRecords';
 import { buildWarmState } from './storeWarmHelpers';
-import { createScopedIndexedDbBufferedJsonStorage, createScopedIndexedDbStorage } from './storePersistenceScope';
+import { createScopedIndexedDbBufferedJsonStorage, createScopedIndexedDbStorage, flushBufferedPersistenceWrites } from './storePersistenceScope';
 import { createSyncScheduler } from './storeSyncScheduler';
 import { createSyncScopeMetadata, type SyncScopeSnapshot } from './syncScopeMetadata';
 import { CLIENT_STORE_SCHEMA_VERSION, migrateCharacterStoreState } from './storeMigrations';
@@ -841,8 +841,11 @@ export function clearPersistedCharacterStore() {
   characterSyncScopes.clear();
 }
 
-export function resetCharacterStoreForAccountBoundary() {
-  clearPersistedCharacterStore();
+export async function resetCharacterStoreForAccountBoundary() {
+  const storage = createCharacterStorageForKey(getCharacterStorageKey());
+  const storageName = getCharacterStoreStorageName();
+  const preservedSnapshot = await storage.getItem(storageName);
+  characterSyncScopes.clear();
   useCharacterStore.setState({
     characters: [],
     lastSyncedAt: 0,
@@ -853,6 +856,12 @@ export function resetCharacterStoreForAccountBoundary() {
     fieldConflicts: [],
     isLoading: false,
   });
+  flushBufferedPersistenceWrites();
+  if (preservedSnapshot != null) {
+    await storage.setItem(storageName, preservedSnapshot);
+  } else {
+    await storage.removeItem(storageName);
+  }
 }
 
 const characterStorage = createScopedIndexedDbBufferedJsonStorage<PersistedCharacterState>({
