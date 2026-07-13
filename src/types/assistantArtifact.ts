@@ -1,4 +1,17 @@
-export type AssistantArtifactKind = 'document' | 'code' | 'diagram' | 'html' | 'table' | 'json' | 'text';
+export type AssistantArtifactKind = 'document' | 'code' | 'diagram' | 'html' | 'table' | 'json' | 'text' | 'image';
+
+export interface AssistantArtifactMediaRef {
+  assetId: string;
+  thumbnailAssetId?: string;
+  url?: string;
+  thumbnailUrl?: string;
+  mimeType?: string;
+  sizeBytes?: number;
+  width?: number;
+  height?: number;
+  checksum?: string;
+  alt?: string;
+}
 
 export interface AssistantArtifactFile {
   id: string;
@@ -16,6 +29,7 @@ export interface AssistantArtifactVersion {
   sourceMessageId: string;
   baseVersionId?: string | null;
   changeSummary?: string;
+  media?: AssistantArtifactMediaRef[];
   createdAt: number;
 }
 
@@ -33,6 +47,7 @@ export interface AssistantArtifactItem {
   updatedAt: number;
   sortOrder?: number;
   deletedAt?: number | null;
+  revision?: number;
 }
 
 export interface AssistantArtifactDraft {
@@ -46,6 +61,7 @@ export interface AssistantArtifactDraft {
   action?: 'create' | 'update';
   baseVersionId?: string | null;
   changeSummary?: string;
+  media?: AssistantArtifactMediaRef[];
 }
 
 export type AssistantAgentIntent = 'chat' | 'create' | 'update' | 'clarify';

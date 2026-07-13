@@ -38,6 +38,7 @@ type UserDetailTab = 'overview' | 'ai' | 'entitlements';
 type AccountEntitlementDraft = {
   developerModeEnabled: boolean;
   cloudSyncEnabled: boolean;
+  assistantArtifactCloudSync: boolean;
   maxCharacters: string;
   maxChats: string;
   dailyAiGenerationLimit: string;
@@ -52,6 +53,7 @@ type AccountEntitlementDraft = {
 const EMPTY_ACCOUNT_ENTITLEMENT_DRAFT: AccountEntitlementDraft = {
   developerModeEnabled: false,
   cloudSyncEnabled: false,
+  assistantArtifactCloudSync: false,
   maxCharacters: '',
   maxChats: '',
   dailyAiGenerationLimit: '',
@@ -99,6 +101,7 @@ function accountEntitlementToDraft(value: unknown): AccountEntitlementDraft {
   return {
     developerModeEnabled: entitlement.developerModeEnabled === true,
     cloudSyncEnabled: entitlement.cloudSyncEnabled === true,
+    assistantArtifactCloudSync: entitlement.assistantArtifactCloudSync === true,
     maxCharacters: draftText(entitlement.maxCharacters),
     maxChats: draftText(entitlement.maxChats),
     dailyAiGenerationLimit: draftText(entitlement.dailyAiGenerationLimit),
@@ -136,6 +139,7 @@ function buildAccountEntitlementPayload(draft: AccountEntitlementDraft) {
     if (parsed !== undefined) entitlement[field] = parsed;
   });
   if (draft.cloudSyncEnabled) entitlement.cloudSyncEnabled = true;
+  if (draft.assistantArtifactCloudSync) entitlement.assistantArtifactCloudSync = true;
   if (draft.developerModeEnabled) entitlement.developerModeEnabled = true;
   if (draft.officialProviderAccess.length) entitlement.officialProviderAccess = draft.officialProviderAccess;
   return { entitlement, note: draft.note.trim() };
@@ -730,6 +734,10 @@ export default function AdminUsersPage() {
                       <FormControlLabel
                         control={<Switch checked={accountEntitlementDraft.cloudSyncEnabled} onChange={(event) => updateAccountEntitlementDraft({ cloudSyncEnabled: event.target.checked })} />}
                         label="云同步"
+                      />
+                      <FormControlLabel
+                        control={<Switch checked={accountEntitlementDraft.assistantArtifactCloudSync} onChange={(event) => updateAccountEntitlementDraft({ assistantArtifactCloudSync: event.target.checked })} />}
+                        label="AI 产物云同步"
                       />
                     </Stack>
                     <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', lg: 'repeat(4, minmax(0, 1fr))' }, gap: 1 }}>

@@ -1,9 +1,12 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { AssistantAgentPatch, AssistantArtifactDraft, AssistantArtifactItem } from '../types/assistantArtifact';
-import { scopedStorageKey } from '../constants/brand';
+import { scopedStorageKey, storageKey } from '../constants/brand';
 import { getLocalDataUserId } from '../services/authStorageScope';
 import { createScopedIndexedDbBufferedJsonStorage, flushBufferedPersistenceWrites } from './storePersistenceScope';
+import { api } from '../services/api';
+import { isCloudSyncEnabled } from '../services/cloudSyncPreference';
+import { isAssistantArtifactCloudSyncEnabled } from '../services/assistantArtifactCloudSyncPreference';
 
 interface AssistantArtifactSnapshot {
   items: AssistantArtifactItem[];
@@ -23,6 +26,8 @@ interface AssistantArtifactStore extends AssistantArtifactSnapshot {
     timestamp?: number;
   }) => AssistantArtifactItem[];
   getArtifactsForChat: (chatId: string) => AssistantArtifactItem[];
+  refreshArtifactsFromCloud: (chatId: string) => Promise<void>;
+  pushArtifactsToCloud: (chatId: string, artifactIds?: string[]) => Promise<void>;
   moveArtifact: (chatId: string, artifactId: string, direction: 'up' | 'down') => void;
   deleteArtifact: (artifactId: string) => void;
 }
@@ -30,6 +35,13 @@ interface AssistantArtifactStore extends AssistantArtifactSnapshot {
 const MAX_ARTIFACTS_PER_CHAT = 80;
 const MAX_VERSIONS_PER_ARTIFACT = 12;
 let assistantArtifactHydrationPromise: Promise<void> | null = null;
+
+function shouldSyncAssistantArtifactsToCloud() {
+  if (typeof localStorage === 'undefined') return false;
+  return localStorage.getItem(storageKey('auth-mode')) === 'cloud'
+    && isCloudSyncEnabled()
+    && isAssistantArtifactCloudSyncEnabled();
+}
 
 function getAssistantArtifactStorageKey() {
   return scopedStorageKey(`assistant-artifacts-${getLocalDataUserId()}`);
@@ -83,6 +95,26 @@ function orderedChatArtifacts(items: AssistantArtifactItem[], chatId: string) {
       if (aOrder !== bOrder) return aOrder - bOrder;
       return b.updatedAt - a.updatedAt;
     });
+}
+
+function mergeArtifactItems(localItems: AssistantArtifactItem[], incomingItems: AssistantArtifactItem[]) {
+  if (!incomingItems.length) return localItems;
+  const byId = new Map(localItems.map((item) => [item.id, item]));
+  for (const incoming of incomingItems) {
+    const existing = byId.get(incoming.id);
+    if (!existing || (incoming.updatedAt || 0) >= (existing.updatedAt || 0)) {
+      byId.set(incoming.id, incoming);
+    }
+  }
+  return Array.from(byId.values());
+}
+
+function scheduleArtifactCloudPush(chatId: string, artifactIds: string[]) {
+  if (!shouldSyncAssistantArtifactsToCloud() || !artifactIds.length) return;
+  if (typeof window === 'undefined') return;
+  window.setTimeout(() => {
+    void useAssistantArtifactStore.getState().pushArtifactsToCloud(chatId, artifactIds).catch(() => undefined);
+  }, 0);
 }
 
 export const useAssistantArtifactStore = create<AssistantArtifactStore>()(
@@ -145,11 +177,12 @@ export const useAssistantArtifactStore = create<AssistantArtifactStore>()(
               sortOrder: now + index,
               deletedAt: null,
             };
-            nextItems.unshift(created);
-            changed.push(created);
-          });
+              nextItems.unshift(created);
+              changed.push(created);
+            });
           return { items: pruneChatArtifacts(nextItems, chatId) };
         });
+        scheduleArtifactCloudPush(chatId, changed.map((item) => item.id));
         return changed;
       },
 
@@ -161,6 +194,25 @@ export const useAssistantArtifactStore = create<AssistantArtifactStore>()(
       }),
 
       getArtifactsForChat: (chatId) => orderedChatArtifacts(get().items, chatId),
+
+      refreshArtifactsFromCloud: async (chatId) => {
+        if (!shouldSyncAssistantArtifactsToCloud()) return;
+        const result = await api.getAssistantArtifacts(chatId);
+        set((state) => ({ items: mergeArtifactItems(state.items, result.items) }));
+      },
+
+      pushArtifactsToCloud: async (chatId, artifactIds) => {
+        if (!shouldSyncAssistantArtifactsToCloud()) return;
+        const items = artifactIds
+          ? get().items.filter((item) => item.chatId === chatId && artifactIds.includes(item.id))
+          : orderedChatArtifacts(get().items, chatId);
+        if (!items.length) return;
+        if (items.length === 1) {
+          await api.upsertAssistantArtifact(items[0]);
+          return;
+        }
+        await api.upsertAssistantArtifacts(chatId, items);
+      },
 
       moveArtifact: (chatId, artifactId, direction) => {
         set((state) => {
@@ -185,9 +237,11 @@ export const useAssistantArtifactStore = create<AssistantArtifactStore>()(
 
       deleteArtifact: (artifactId) => {
         const now = Date.now();
+        const target = get().items.find((item) => item.id === artifactId);
         set((state) => ({
           items: state.items.map((item) => item.id === artifactId ? { ...item, deletedAt: now, updatedAt: now } : item),
         }));
+        if (target) scheduleArtifactCloudPush(target.chatId, [artifactId]);
       },
     }),
     {

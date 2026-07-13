@@ -41,6 +41,7 @@ const artifactKindLabels: Record<AssistantArtifactKind, string> = {
   table: '表格',
   json: 'JSON',
   text: '文本',
+  image: '图片',
 };
 
 function ArtifactKindIcon({ kind }: { kind: AssistantArtifactKind }) {
@@ -71,6 +72,7 @@ function artifactFileExtension(item: AssistantArtifactItem) {
   if (item.kind === 'html') return 'html';
   if (item.kind === 'json') return 'json';
   if (item.kind === 'table') return language === 'tsv' ? 'tsv' : 'csv';
+  if (item.kind === 'image') return 'json';
   if (item.kind === 'diagram') {
     if (language === 'plantuml') return 'puml';
     if (language === 'dot' || language === 'graphviz') return 'dot';
@@ -88,6 +90,7 @@ function artifactMimeType(item: AssistantArtifactItem) {
   if (item.kind === 'json') return 'application/json;charset=utf-8';
   if (item.kind === 'table') return 'text/csv;charset=utf-8';
   if (item.kind === 'document') return 'text/markdown;charset=utf-8';
+  if (item.kind === 'image') return 'application/json;charset=utf-8';
   return 'text/plain;charset=utf-8';
 }
 
@@ -289,6 +292,7 @@ function AssistantArtifactList({ chatId, selectedArtifactId }: { chatId: string;
     .filter((item) => item.chatId === chatId && item.deletedAt == null), sortMode), [artifactItems, chatId, sortMode]);
   const deleteArtifact = useAssistantArtifactStore((state) => state.deleteArtifact);
   const moveArtifact = useAssistantArtifactStore((state) => state.moveArtifact);
+  const refreshArtifactsFromCloud = useAssistantArtifactStore((state) => state.refreshArtifactsFromCloud);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
   const [fullscreenId, setFullscreenId] = useState<string | null>(null);
@@ -297,6 +301,12 @@ function AssistantArtifactList({ chatId, selectedArtifactId }: { chatId: string;
   useEffect(() => {
     void ensureAssistantArtifactStoreHydrated();
   }, []);
+
+  useEffect(() => {
+    void ensureAssistantArtifactStoreHydrated()
+      .then(() => refreshArtifactsFromCloud(chatId))
+      .catch(() => undefined);
+  }, [chatId, refreshArtifactsFromCloud]);
 
   useEffect(() => {
     if (selectedArtifactId && artifacts.some((item) => item.id === selectedArtifactId)) {

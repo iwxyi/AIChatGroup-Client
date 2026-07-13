@@ -62,6 +62,7 @@ import type { StoryReaderRole } from '../types/chat';
 import { attachMessageToActiveBranch, buildMessageBranchVersionInfoByMessageId, createMessageRevisionDraft, getBranchRevisionGroup, getMessageBranchVersionInfo, isMessageBranchingEnabled, projectActiveBranchMessages, resolveMessageBranchNodes } from '../services/messageBranching';
 import { projectMergedChatMessages } from '../services/currentChatMessages';
 import { resolveSessionFamilyKey } from '../services/sessionEngineKeys';
+import { isAssistantArtifactCloudSyncEnabled, setAssistantArtifactCloudSyncEnabled } from '../services/assistantArtifactCloudSyncPreference';
 
 const ChatSidebarPanel = lazy(() => import('../components/chat/ChatSidebarPanel'));
 const AssistantAgentPanel = lazy(() => import('../components/chat/AssistantAgentPanel'));
@@ -162,8 +163,13 @@ function ChatPageSettingsDialog({
 }) {
   const chatAppearance = useSettingsStore((state) => state.chatAppearance);
   const setChatAppearance = useSettingsStore((state) => state.setChatAppearance);
+  const authMode = useAuthStore((state) => state.authMode);
+  const currentUser = useAuthStore((state) => state.user);
+  const [artifactCloudSyncEnabled, setArtifactCloudSyncState] = useState(() => isAssistantArtifactCloudSyncEnabled());
   const capabilities = chat?.modeState.assistantCapabilities || {};
   const agentEnabled = Boolean(capabilities.agent);
+  const artifactCloudSyncEntitled = Boolean(currentUser?.assistantArtifactCloudSyncEntitled);
+  const artifactCloudSyncAvailable = authMode === 'cloud' && currentUser?.cloudSyncEntitled !== false && artifactCloudSyncEntitled;
   const handleAgentToggle = (enabled: boolean) => {
     if (!chat) return;
     void updateChat(chat.id, {
@@ -177,6 +183,15 @@ function ChatPageSettingsDialog({
         },
       },
     });
+  };
+  const handleArtifactCloudSyncToggle = (enabled: boolean) => {
+    setAssistantArtifactCloudSyncEnabled(enabled);
+    setArtifactCloudSyncState(enabled);
+    if (enabled && chat?.id) {
+      void import('../stores/useAssistantArtifactStore')
+        .then((module) => module.useAssistantArtifactStore.getState().pushArtifactsToCloud(chat.id))
+        .catch(() => undefined);
+    }
   };
   return (
     <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
@@ -204,6 +219,27 @@ function ChatPageSettingsDialog({
                     关闭右侧面板
                   </Button>
                 ) : null}
+              </Box>
+              <Box>
+                <Stack direction="row" spacing={1.25} sx={{ alignItems: 'center', justifyContent: 'space-between', minWidth: 0 }}>
+                  <Box sx={{ minWidth: 0 }}>
+                    <Typography variant="body2" sx={{ fontWeight: 700 }}>同步 AI 文本产物</Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.55 }}>
+                      仅同步文档、代码、图表源码、表格、JSON、纯文本和图片引用；Office、PDF、压缩包和工程文件仍走 WebDAV / 本地存储。
+                    </Typography>
+                    {!artifactCloudSyncAvailable ? (
+                      <Typography variant="caption" color="warning.main" sx={{ display: 'block', mt: 0.5 }}>
+                        当前账号未获得 AI 产物云同步权限，或未处于云端同步模式。
+                      </Typography>
+                    ) : null}
+                  </Box>
+                  <Switch
+                    checked={artifactCloudSyncEnabled && artifactCloudSyncAvailable}
+                    disabled={!artifactCloudSyncAvailable}
+                    onChange={(event) => handleArtifactCloudSyncToggle(event.target.checked)}
+                    slotProps={{ input: { 'aria-label': '同步 AI 文本产物' } }}
+                  />
+                </Stack>
               </Box>
               <Divider />
             </>

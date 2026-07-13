@@ -10,7 +10,7 @@ import type { Message } from '../types/message';
 import type { APIConfig } from '../types/settings';
 import { generateResponse } from './aiClient';
 
-const VALID_ARTIFACT_KINDS = new Set<AssistantArtifactKind>(['document', 'code', 'diagram', 'html', 'table', 'json', 'text']);
+const VALID_ARTIFACT_KINDS = new Set<AssistantArtifactKind>(['document', 'code', 'diagram', 'html', 'table', 'json', 'text', 'image']);
 const MAX_RECENT_MESSAGES = 12;
 const MAX_ARTIFACTS_IN_REGISTRY = 120;
 const MAX_PATCHES = 20;

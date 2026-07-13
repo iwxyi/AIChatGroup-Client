@@ -3,11 +3,21 @@
 import type { BubbleStyleDefinition } from '../types/bubbleStyle';
 import type { AICharacter, CharacterVisualIdentity, CharacterVisualReferenceImage } from '../types/character';
 import type { Message } from '../types/message';
+import type { AssistantArtifactItem } from '../types/assistantArtifact';
 import { storageKey } from '../constants/brand';
 import { dispatchAuthSessionExpired } from './authSession';
 
 const API_BASE = '/api';
 const AI_BALANCE_CACHE_TTL_MS = 60_000;
+
+export interface AuthUserResponse {
+  id: string;
+  phone: string;
+  nickname: string;
+  avatar: string;
+  cloudSyncEntitled?: boolean;
+  assistantArtifactCloudSyncEntitled?: boolean;
+}
 
 export interface TopicSourceSummary {
   id: string;
@@ -74,6 +84,7 @@ export interface VipEntitlementInfo {
   dailyPointGrant: number;
   monthlyPointGrant: number;
   cloudSyncEnabled: boolean;
+  assistantArtifactCloudSync: boolean;
 }
 
 export interface AiUsageRecordItem {
@@ -508,19 +519,19 @@ class ApiClient {
   }
 
   async login(phone: string, code: string) {
-    return this.request<{ token: string; user: { id: string; phone: string; nickname: string; avatar: string; cloudSyncEntitled?: boolean } }>('POST', '/auth/login', { phone, code });
+    return this.request<{ token: string; user: AuthUserResponse }>('POST', '/auth/login', { phone, code });
   }
 
   async getMe() {
-    return this.request<{ id: string; phone: string; nickname: string; avatar: string; cloudSyncEntitled?: boolean }>('GET', '/auth/me');
+    return this.request<AuthUserResponse>('GET', '/auth/me');
   }
 
   async updateMe(data: { nickname?: string; avatar?: string }) {
-    return this.request<{ id: string; phone: string; nickname: string; avatar: string; cloudSyncEntitled?: boolean }>('PUT', '/auth/me', data);
+    return this.request<AuthUserResponse>('PUT', '/auth/me', data);
   }
 
   async changePhone(phone: string, code: string) {
-    return this.request<{ id: string; phone: string; nickname: string; avatar: string; cloudSyncEntitled?: boolean }>('PUT', '/auth/change-phone', { phone, code });
+    return this.request<AuthUserResponse>('PUT', '/auth/change-phone', { phone, code });
   }
 
   async getPlatformPublicConfig() {
@@ -1009,6 +1020,27 @@ class ApiClient {
 
   async updateCharacterArtifacts(data: { items: CharacterArtifactSyncEntry[]; updatedAt: number }) {
     return this.request<{ success: boolean; updatedAt: number }>('PUT', '/character-artifacts', data);
+  }
+
+  async getAssistantArtifactEntitlement() {
+    return this.request<{
+      entitled: boolean;
+      cloudSyncEntitled: boolean;
+      assistantArtifactCloudSync: boolean;
+      tierCode: string;
+    }>('GET', '/assistant-artifacts/entitlement');
+  }
+
+  async getAssistantArtifacts(chatId: string) {
+    return this.request<{ items: AssistantArtifactItem[]; serverTime: number }>('GET', `/assistant-artifacts/chats/${encodeURIComponent(chatId)}`);
+  }
+
+  async upsertAssistantArtifact(item: AssistantArtifactItem) {
+    return this.request<AssistantArtifactItem>('PUT', `/assistant-artifacts/items/${encodeURIComponent(item.id)}`, item);
+  }
+
+  async upsertAssistantArtifacts(chatId: string, items: AssistantArtifactItem[]) {
+    return this.request<{ items: AssistantArtifactItem[]; serverTime: number }>('PUT', `/assistant-artifacts/chats/${encodeURIComponent(chatId)}/bulk`, { items });
   }
 
   async getTopicSources() {

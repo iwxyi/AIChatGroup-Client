@@ -89,6 +89,7 @@ type VipEntitlementForm = {
   dailyPointGrant: string;
   monthlyPointGrant: string;
   cloudSyncEnabled: boolean;
+  assistantArtifactCloudSync: boolean;
 };
 
 type MembershipConfigForm = {
@@ -169,6 +170,7 @@ const DEFAULT_VIP_ENTITLEMENTS: Record<string, VipEntitlementForm> = {
     dailyPointGrant: '30',
     monthlyPointGrant: '100',
     cloudSyncEnabled: false,
+    assistantArtifactCloudSync: false,
   },
   basic: {
     description: '',
@@ -182,6 +184,7 @@ const DEFAULT_VIP_ENTITLEMENTS: Record<string, VipEntitlementForm> = {
     dailyPointGrant: '30',
     monthlyPointGrant: '300',
     cloudSyncEnabled: true,
+    assistantArtifactCloudSync: false,
   },
   pro: {
     description: '',
@@ -195,6 +198,7 @@ const DEFAULT_VIP_ENTITLEMENTS: Record<string, VipEntitlementForm> = {
     dailyPointGrant: '30',
     monthlyPointGrant: '500',
     cloudSyncEnabled: true,
+    assistantArtifactCloudSync: true,
   },
   premium: {
     description: '',
@@ -208,6 +212,7 @@ const DEFAULT_VIP_ENTITLEMENTS: Record<string, VipEntitlementForm> = {
     dailyPointGrant: '30',
     monthlyPointGrant: '500',
     cloudSyncEnabled: true,
+    assistantArtifactCloudSync: true,
   },
 };
 const EMPTY_MEMBERSHIP_CONFIG_FORM: MembershipConfigForm = {
@@ -436,6 +441,7 @@ function toEntitlementForm(value: unknown, fallback: VipEntitlementForm): VipEnt
     dailyPointGrant: hasOwnRecordValue(record, 'dailyPointGrant') ? numberText(record.dailyPointGrant, fallback.dailyPointGrant) : fallback.dailyPointGrant,
     monthlyPointGrant: hasOwnRecordValue(record, 'monthlyPointGrant') ? numberText(record.monthlyPointGrant, fallback.monthlyPointGrant) : fallback.monthlyPointGrant,
     cloudSyncEnabled: hasOwnRecordValue(record, 'cloudSyncEnabled') ? toBoolean(record.cloudSyncEnabled, fallback.cloudSyncEnabled) : fallback.cloudSyncEnabled,
+    assistantArtifactCloudSync: hasOwnRecordValue(record, 'assistantArtifactCloudSync') ? toBoolean(record.assistantArtifactCloudSync, fallback.assistantArtifactCloudSync) : fallback.assistantArtifactCloudSync,
   };
 }
 
@@ -459,6 +465,7 @@ function buildEntitlementPayload(form: VipEntitlementForm) {
     dailyPointGrant: Math.max(0, toNumber(form.dailyPointGrant, 0)),
     monthlyPointGrant: Math.max(0, toNumber(form.monthlyPointGrant, 0)),
     cloudSyncEnabled: form.cloudSyncEnabled,
+    assistantArtifactCloudSync: form.assistantArtifactCloudSync,
   };
 }
 
@@ -1747,6 +1754,10 @@ export default function AdminBillingPage() {
                           control={<Switch checked={entitlement.cloudSyncEnabled} onChange={(event) => updateMembershipEntitlementForm('free', 'cloudSyncEnabled', event.target.checked)} />}
                           label="允许云同步"
                         />
+                        <FormControlLabel
+                          control={<Switch checked={entitlement.assistantArtifactCloudSync} disabled={!entitlement.cloudSyncEnabled} onChange={(event) => updateMembershipEntitlementForm('free', 'assistantArtifactCloudSync', event.target.checked)} />}
+                          label="允许 AI 产物云同步"
+                        />
                         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
                           <TextField label="官方 AI 平台（每行一个ID）" value={entitlement.officialProviderAccessText} onChange={(event) => updateMembershipEntitlementForm('free', 'officialProviderAccessText', event.target.value)} fullWidth multiline minRows={2} />
                           <TextField label="点数扣费折扣" value={entitlement.aiBillingDiscount} onChange={(event) => updateMembershipEntitlementForm('free', 'aiBillingDiscount', event.target.value)} helperText="免费用户通常为 1" fullWidth />
@@ -1798,6 +1809,10 @@ export default function AdminBillingPage() {
                               <FormControlLabel
                                 control={<Switch checked={entitlement.cloudSyncEnabled} onChange={(event) => updateMembershipEntitlementForm(tier.code, 'cloudSyncEnabled', event.target.checked)} />}
                                 label="允许云同步"
+                              />
+                              <FormControlLabel
+                                control={<Switch checked={entitlement.assistantArtifactCloudSync} disabled={!entitlement.cloudSyncEnabled} onChange={(event) => updateMembershipEntitlementForm(tier.code, 'assistantArtifactCloudSync', event.target.checked)} />}
+                                label="允许 AI 产物云同步"
                               />
                               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
                                 <TextField label="官方 AI 平台（每行一个ID）" value={entitlement.officialProviderAccessText} onChange={(event) => updateMembershipEntitlementForm(tier.code, 'officialProviderAccessText', event.target.value)} fullWidth multiline minRows={2} />
