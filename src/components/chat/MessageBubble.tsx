@@ -7,6 +7,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import InsightsIcon from '@mui/icons-material/Insights';
 import RateReviewIcon from '@mui/icons-material/RateReview';
+import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined';
 import { useLocation, useNavigate } from 'react-router-dom';
 import type { Message, MessageAttachment } from '../../types/message';
 import type { AICharacter } from '../../types/character';
@@ -39,6 +40,7 @@ interface MessageBubbleProps {
   branchVersionInfo?: { index: number; total: number; isActive: boolean } | null;
   onCreateRevision?: (message: Message, content: string) => void | Promise<void>;
   onSwitchRevision?: (message: Message, direction: -1 | 1) => void | Promise<void>;
+  onOpenArtifact?: (artifactId: string) => void;
 }
 
 interface MenuPosition {
@@ -65,7 +67,7 @@ function buildWithdrawalDebugTitle(withdrawal: NonNullable<Message['metadata']>[
   );
 }
 
-function MessageBubble({ message, character, characters = [], onDelete, onAnalyze, onExpressionFeedback, onRetryMedia, onOpenImage, onCharacterAvatarClick, pending = false, currentUser, selfMemberId = null, privateConversation = false, branchVersionInfo, onCreateRevision, onSwitchRevision }: MessageBubbleProps) {
+function MessageBubble({ message, character, characters = [], onDelete, onAnalyze, onExpressionFeedback, onRetryMedia, onOpenImage, onCharacterAvatarClick, pending = false, currentUser, selfMemberId = null, privateConversation = false, branchVersionInfo, onCreateRevision, onSwitchRevision, onOpenArtifact }: MessageBubbleProps) {
   const customBubbleStyles = useSettingsStore((state) => state.customBubbleStyles);
   const userBubbleStyleId = useSettingsStore((state) => state.userBubbleStyleId);
   const userBubbleStyle = useSettingsStore((state) => state.userBubbleStyle);
@@ -87,6 +89,7 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
   const canDelete = useMemo(() => !pending && message.type !== 'system' && Boolean(onDelete), [message.type, onDelete, pending]);
   const canFeedback = useMemo(() => !pending && message.type === 'ai' && Boolean(onExpressionFeedback), [message.type, onExpressionFeedback, pending]);
   const canEditRevision = Boolean(onCreateRevision) && !pending && message.type !== 'system' && message.type !== 'event';
+  const artifactRefs = message.metadata?.assistant?.artifacts || [];
 
   const clearPressTimer = () => {
     if (pressTimerRef.current) {
@@ -361,7 +364,45 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
                   </Box>
                 </Tooltip>
               ) : withdrawalNoticeNode
-            ) : <MessageContent message={message} onRetryMedia={onRetryMedia} onOpenImage={onOpenImage} />}
+            ) : (
+              <Box sx={{ display: 'grid', gap: artifactRefs.length ? 0.85 : 0 }}>
+                <MessageContent message={message} onRetryMedia={onRetryMedia} onOpenImage={onOpenImage} />
+                {artifactRefs.length ? (
+                  <Box
+                    component="button"
+                    type="button"
+                    onClick={() => artifactRefs[0]?.id && onOpenArtifact?.(artifactRefs[0].id)}
+                    sx={(theme) => ({
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 0.55,
+                      width: 'fit-content',
+                      maxWidth: '100%',
+                      border: '1px solid',
+                      borderColor: theme.palette.mode === 'light' ? 'rgba(15,23,42,0.10)' : 'rgba(226,232,240,0.16)',
+                      borderRadius: 999,
+                      px: 0.85,
+                      py: 0.35,
+                      bgcolor: theme.palette.mode === 'light' ? 'rgba(255,255,255,0.52)' : 'rgba(15,23,42,0.34)',
+                      color: 'text.secondary',
+                      backdropFilter: 'blur(16px) saturate(1.12)',
+                      WebkitBackdropFilter: 'blur(16px) saturate(1.12)',
+                      cursor: onOpenArtifact ? 'pointer' : 'default',
+                      font: 'inherit',
+                      '&:hover': onOpenArtifact ? {
+                        color: 'primary.main',
+                        borderColor: 'primary.main',
+                      } : undefined,
+                    })}
+                  >
+                    <ArticleOutlinedIcon sx={{ fontSize: 15, flexShrink: 0 }} />
+                    <Typography variant="caption" sx={{ fontWeight: 700, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      产物详情{artifactRefs.length > 1 ? ` · ${artifactRefs.length} 个` : artifactRefs[0]?.title ? ` · ${artifactRefs[0].title}` : ''}
+                    </Typography>
+                  </Box>
+                ) : null}
+              </Box>
+            )}
           </Box>
         </Box>
 
@@ -499,7 +540,8 @@ function areMessageBubblePropsEqual(previous: MessageBubbleProps, next: MessageB
     && previous.privateConversation === next.privateConversation
     && previous.branchVersionInfo === next.branchVersionInfo
     && previous.onCreateRevision === next.onCreateRevision
-    && previous.onSwitchRevision === next.onSwitchRevision;
+    && previous.onSwitchRevision === next.onSwitchRevision
+    && previous.onOpenArtifact === next.onOpenArtifact;
 }
 
 export default memo(MessageBubble, areMessageBubblePropsEqual);

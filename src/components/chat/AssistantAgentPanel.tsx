@@ -22,6 +22,7 @@ import { ensureAssistantArtifactStoreHydrated, getAssistantArtifactCurrentConten
 interface AssistantAgentPanelProps {
   chat: GroupChat;
   updateChat: (id: string, patch: Partial<GroupChat>) => Promise<void>;
+  selectedArtifactId?: string | null;
 }
 
 function AssistantPanelSurface({ title, children }: { title: string; children: ReactNode }) {
@@ -144,7 +145,7 @@ function ArtifactPreview({ item }: { item: AssistantArtifactItem }) {
   );
 }
 
-function AssistantArtifactList({ chatId }: { chatId: string }) {
+function AssistantArtifactList({ chatId, selectedArtifactId }: { chatId: string; selectedArtifactId?: string | null }) {
   const artifacts = useAssistantArtifactStore((state) => state.items
     .filter((item) => item.chatId === chatId && item.deletedAt == null)
     .sort((a, b) => b.updatedAt - a.updatedAt));
@@ -154,6 +155,12 @@ function AssistantArtifactList({ chatId }: { chatId: string }) {
   useEffect(() => {
     void ensureAssistantArtifactStoreHydrated();
   }, []);
+
+  useEffect(() => {
+    if (selectedArtifactId && artifacts.some((item) => item.id === selectedArtifactId)) {
+      setSelectedId(selectedArtifactId);
+    }
+  }, [artifacts, selectedArtifactId]);
 
   const selected = useMemo(() => (
     artifacts.find((item) => item.id === selectedId) || artifacts[0] || null
@@ -269,7 +276,7 @@ function AssistantArtifactList({ chatId }: { chatId: string }) {
   );
 }
 
-export default function AssistantAgentPanel({ chat, updateChat }: AssistantAgentPanelProps) {
+export default function AssistantAgentPanel({ chat, updateChat, selectedArtifactId = null }: AssistantAgentPanelProps) {
   const capabilities = chat.modeState.assistantCapabilities || {};
   const agentEnabled = Boolean(capabilities.agent);
 
@@ -324,7 +331,7 @@ export default function AssistantAgentPanel({ chat, updateChat }: AssistantAgent
 
           {agentEnabled ? (
             <AssistantPanelSurface title="产物">
-              <AssistantArtifactList chatId={chat.id} />
+              <AssistantArtifactList chatId={chat.id} selectedArtifactId={selectedArtifactId} />
             </AssistantPanelSurface>
           ) : (
             <AssistantPanelSurface title="纯聊天模式">

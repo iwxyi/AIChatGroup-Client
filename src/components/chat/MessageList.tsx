@@ -89,6 +89,7 @@ interface MessageListProps {
   onCharacterAvatarClick?: (character: AICharacter, anchorEl: HTMLElement) => void;
   onCreateRevision?: (message: Message, content: string) => void | Promise<void>;
   onSwitchRevision?: (message: Message, direction: -1 | 1) => void | Promise<void>;
+  onOpenArtifact?: (artifactId: string) => void;
   branchVersionInfoByMessageId?: Record<string, MessageBranchVersionInfo | null | undefined>;
   onReachTop?: () => void | Promise<void>;
   onReachBottom?: () => void | Promise<void>;
@@ -602,6 +603,7 @@ export default function MessageList({
   onCharacterAvatarClick,
   onCreateRevision,
   onSwitchRevision,
+  onOpenArtifact,
   branchVersionInfoByMessageId,
   onReachTop,
   onReachBottom,
@@ -757,12 +759,13 @@ export default function MessageList({
       onCharacterAvatarClick={item.pending ? undefined : onCharacterAvatarClick}
       onCreateRevision={item.pending ? undefined : onCreateRevision}
       onSwitchRevision={item.pending ? undefined : onSwitchRevision}
+      onOpenArtifact={item.pending ? undefined : onOpenArtifact}
       branchVersionInfo={branchVersionInfoByMessageId?.[options?.message?.id || item.message.id] || null}
       pending={item.pending}
       selfMemberId={selfMemberId}
       privateConversation={privateConversation}
     />
-  ), [branchVersionInfoByMessageId, characters, currentUser, onAnalyzeMessage, onCharacterAvatarClick, onCreateRevision, onDeleteMessage, onExpressionFeedback, onRetryMedia, onSwitchRevision, openChatImage, privateConversation, selfMemberId]);
+  ), [branchVersionInfoByMessageId, characters, currentUser, onAnalyzeMessage, onCharacterAvatarClick, onCreateRevision, onDeleteMessage, onExpressionFeedback, onOpenArtifact, onRetryMedia, onSwitchRevision, openChatImage, privateConversation, selfMemberId]);
 
   const renderMessageItem = useCallback((item: MessageListRenderItem) => {
     const anchorProps = {

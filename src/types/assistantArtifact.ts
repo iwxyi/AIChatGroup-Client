@@ -52,6 +52,7 @@ export type AssistantAgentTargetMode = 'single' | 'multi' | 'workspace' | 'selec
 
 export interface AssistantAgentChangePlan {
   intent: AssistantAgentIntent;
+  assistantMessage?: string;
   scope: {
     targetMode: AssistantAgentTargetMode;
     artifactIds: string[];

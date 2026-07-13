@@ -139,6 +139,11 @@ export interface MessageMetadata {
   renderText?: string;
   assistant?: {
     mode?: 'general';
+    artifacts?: Array<{
+      id: string;
+      kind: string;
+      title: string;
+    }>;
   };
   branching?: {
     nodeId?: string;

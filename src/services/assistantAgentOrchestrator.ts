@@ -96,15 +96,15 @@ function buildPlannerPrompt() {
     '必须结合交互焦点、当前可见/最近触达/当前活跃产物、产物注册表来判断。',
     '',
     '规则：',
-    '1. 普通问答输出 intent=chat。',
+    '1. 普通问答输出 intent=chat，并在 assistantMessage 中直接给出用户可见回答。',
     '2. 需要创建产物输出 intent=create。',
     '3. 需要修改一个或多个现有产物输出 intent=update，scope.artifactIds 可以是多个。',
     '4. 目标不明确且会影响多个候选时输出 intent=clarify，并给 clarificationQuestion。',
     '5. 不允许猜 target。低置信度、多候选、缺少焦点时必须 clarify。',
-    '6. Planner 不输出正文，不输出 patch，只输出 change plan。',
+    '6. Planner 不输出产物正文，不输出 patch；只有 intent=chat/clarify 时 assistantMessage 才作为用户可见回复。',
     '',
     '输出格式：',
-    '{"intent":"chat|create|update|clarify","scope":{"targetMode":"single|multi|workspace|selection|unknown","artifactIds":[]},"operations":[{"kind":"style_change|content_edit|structure_edit|create|export|review|other","instruction":"..."}],"requiresConfirmation":false,"clarificationQuestion":"","confidence":0.0,"rationale":"..."}',
+    '{"intent":"chat|create|update|clarify","assistantMessage":"普通聊天或澄清时的可见回复","scope":{"targetMode":"single|multi|workspace|selection|unknown","artifactIds":[]},"operations":[{"kind":"style_change|content_edit|structure_edit|create|export|review|other","instruction":"..."}],"requiresConfirmation":false,"clarificationQuestion":"","confidence":0.0,"rationale":"..."}',
   ].join('\n');
 }
 
@@ -113,6 +113,7 @@ function normalizePlan(raw: unknown, existingArtifacts: AssistantArtifactItem[])
   if (!isRecord(raw)) {
     return {
       intent: 'chat',
+      assistantMessage: '',
       scope: { targetMode: 'unknown', artifactIds: [] },
       operations: [],
       requiresConfirmation: false,
@@ -138,6 +139,7 @@ function normalizePlan(raw: unknown, existingArtifacts: AssistantArtifactItem[])
   const normalizedIntent = intent === 'update' && artifactIds.length === 0 ? 'clarify' : intent;
   return {
     intent: normalizedIntent,
+    assistantMessage: text(raw.assistantMessage, 8000),
     scope: { targetMode, artifactIds },
     operations,
     requiresConfirmation: Boolean(raw.requiresConfirmation) || normalizedIntent === 'clarify',

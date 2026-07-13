@@ -722,6 +722,7 @@ export default function ChatDetailPage() {
   const [narrativeRevealMessageKeys, setNarrativeRevealMessageKeys] = useState<ReadonlySet<string>>(() => new Set());
   const [chatPageSettingsOpen, setChatPageSettingsOpen] = useState(false);
   const [uiHydrated, setUiHydrated] = useState(() => useUIStore.persist.hasHydrated());
+  const [selectedAssistantArtifactId, setSelectedAssistantArtifactId] = useState<string | null>(null);
 
   const loopTokenRef = useRef<string | null>(null);
   const isRunningRef = useRef(false);
@@ -1729,6 +1730,11 @@ export default function ChatDetailPage() {
     setIsExplicitContinuationScrollFollowSuspended(false);
   }, [id, isStoryRoom]);
 
+  const handleOpenAssistantArtifact = useCallback((artifactId: string) => {
+    setSelectedAssistantArtifactId(artifactId);
+    setRightPanelOpen(true);
+  }, [setRightPanelOpen]);
+
   useEffect(() => {
     if (!id) return undefined;
     return () => {
@@ -2729,6 +2735,7 @@ export default function ChatDetailPage() {
             onExpressionFeedback={handleExpressionFeedback}
             onRetryMedia={handleRetryMedia}
             onCharacterAvatarClick={openCharacterPreview}
+            onOpenArtifact={isAssistantChat ? handleOpenAssistantArtifact : undefined}
             selfMemberId={effectiveAiDirectPerspectiveMemberId}
             onReachTop={handleNearTop}
             onReachBottom={handleNearBottom}
@@ -2838,7 +2845,7 @@ export default function ChatDetailPage() {
             <LazyPanel>
               {isAssistantChat ? (
                 <Suspense fallback={<LoadingState title="正在加载" compact />}>
-                  <AssistantAgentPanel chat={chat} updateChat={updateChat} />
+                  <AssistantAgentPanel chat={chat} updateChat={updateChat} selectedArtifactId={selectedAssistantArtifactId} />
                 </Suspense>
               ) : runtimePanelLoading ? <LoadingState title="正在加载" compact /> : <ChatSidebarPanel
                 chat={projectedSidebarChat || { ...chat, primaryRecentEvent: projectedRuntimeState?.primaryRecentEvent }}

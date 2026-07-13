@@ -1,5 +1,6 @@
 import type { GroupChat } from '../types/chat';
 import type { Message } from '../types/message';
+import type { AssistantAgentPatchSet } from '../types/assistantArtifact';
 import type { APIConfig, AIModelProfile } from '../types/settings';
 import { getUsablePreferredAIProfile } from '../types/settings';
 import { createStreamingLocalMessage, persistLocalFirstMessage } from './chatCommitMessage';
@@ -73,6 +74,21 @@ async function persistAssistantArtifactsFromReply(params: {
     existingArtifacts,
     signal: params.signal,
   });
+  if (plan.intent === 'chat' && plan.assistantMessage?.trim()) {
+    const assistantMessage = await persistAssistantFinalMessage({
+      chat: params.chat,
+      chatId: params.chatId,
+      currentMessages: params.messages,
+      content: plan.assistantMessage.trim(),
+      timestamp: params.timestamp,
+      upsertMessage: params.upsertMessage,
+    });
+    await params.updateChat(params.chatId, {
+      lastMessageAt: assistantMessage.timestamp,
+      latestMessage: assistantMessage,
+    });
+    return { message: assistantMessage, patchesCommitted: 0 };
+  }
   if (plan.intent === 'chat') return null;
 
   let content = plan.clarificationQuestion || '我需要先确认要处理哪个产物。';
@@ -87,7 +103,7 @@ async function persistAssistantArtifactsFromReply(params: {
       existingArtifacts,
       signal: params.signal,
     });
-    content = patchSet.assistantMessage;
+    content = buildAgentArtifactReplyContent(patchSet);
     if (patchSet.patches.length) {
       patchesCommitted = patchSet.patches.length;
     }
@@ -103,12 +119,37 @@ async function persistAssistantArtifactsFromReply(params: {
       upsertMessage: params.upsertMessage,
     });
     if (patchSet.patches.length) {
-      useAssistantArtifactStore.getState().commitPatchSet({
+      const changedArtifacts = useAssistantArtifactStore.getState().commitPatchSet({
         chatId: params.chatId,
         messageId: assistantMessage.id,
         patches: patchSet.patches,
         timestamp: assistantMessage.timestamp,
       });
+      if (changedArtifacts.length) {
+        const messageWithArtifacts = await persistLocalFirstMessage({
+          message: {
+            ...assistantMessage,
+            metadata: {
+              ...(assistantMessage.metadata || {}),
+              assistant: {
+                ...(assistantMessage.metadata?.assistant || {}),
+                artifacts: changedArtifacts.map((artifact) => ({
+                  id: artifact.id,
+                  kind: artifact.kind,
+                  title: artifact.title,
+                })),
+              },
+            },
+          },
+          existingLocalMessage: assistantMessage,
+          upsertMessage: params.upsertMessage,
+        });
+        await params.updateChat(params.chatId, {
+          lastMessageAt: messageWithArtifacts.timestamp,
+          latestMessage: messageWithArtifacts,
+        });
+        return { message: messageWithArtifacts, patchesCommitted };
+      }
     }
     await params.updateChat(params.chatId, {
       lastMessageAt: assistantMessage.timestamp,
@@ -130,6 +171,40 @@ async function persistAssistantArtifactsFromReply(params: {
     latestMessage: assistantMessage,
   });
   return { message: assistantMessage, patchesCommitted };
+}
+
+function artifactFenceLanguage(patch: AssistantAgentPatchSet['patches'][number]) {
+  if (patch.language) return patch.language;
+  if (patch.kind === 'diagram') return 'mermaid';
+  if (patch.kind === 'html') return 'html';
+  if (patch.kind === 'json') return 'json';
+  if (patch.kind === 'table') return 'csv';
+  return 'text';
+}
+
+function formatPatchForBubble(patch: AssistantAgentPatchSet['patches'][number]) {
+  if (patch.kind === 'document') return `\n\n## ${patch.title}\n\n${patch.content}`;
+  if (patch.files?.length) {
+    return patch.files.map((file) => [
+      `\n\n### ${file.path}`,
+      `\`\`\`${file.language || artifactFenceLanguage(patch)}`,
+      file.content,
+      '```',
+    ].join('\n')).join('');
+  }
+  return [
+    `\n\n## ${patch.title}`,
+    `\`\`\`${artifactFenceLanguage(patch)}`,
+    patch.content,
+    '```',
+  ].join('\n');
+}
+
+function buildAgentArtifactReplyContent(patchSet: AssistantAgentPatchSet) {
+  const intro = patchSet.assistantMessage.trim() || '已完成产物变更。';
+  const visiblePatches = patchSet.patches.filter((patch) => patch.content || patch.files?.length).slice(0, 3);
+  if (!visiblePatches.length) return intro;
+  return `${intro}${visiblePatches.map(formatPatchForBubble).join('')}`;
 }
 
 async function persistAssistantFinalMessage(params: {
