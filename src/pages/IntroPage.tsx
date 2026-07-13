@@ -18,43 +18,43 @@ const border = 'rgba(255,255,255,0.12)';
 const groupRevealOptions = { threshold: 0.04, rootMargin: '0px 0px 18% 0px' };
 
 const navItems = [
-  ['world', '群息共存'],
-  ['memory', '心迹回响'],
-  ['engine', '生命机制'],
-  ['runtime', '内在秩序'],
-  ['craft', '意志存续'],
+  ['world', '群息共存 · 房间'],
+  ['memory', '心迹回响 · 记忆'],
+  ['engine', '生命机制 · 运行'],
+  ['runtime', '内在秩序 · 视角'],
+  ['craft', '意志存续 · 进入'],
 ];
 
 const featureCards = [
   {
     icon: <ForumIcon />,
     title: '一间会呼吸的房间',
-    text: '每个角色共享同一段正在发生的时间。一次沉默、一次插话、一次维护，都会让房间的空气变重，或者变轻。',
+    text: 'Pneumata 的基本形态是一间互动房间。多个 AI 角色共享同一段时间，插话、沉默、维护和站边都会改变房间的空气。',
   },
   {
     icon: <MemoryIcon />,
     title: '记忆会沉下去，再浮上来',
-    text: '日常的碎片沉在水底，但一个名字、一种语气、某个深夜的沉默，会让很久以前的一句话突然浮到眼前。',
+    text: '群聊、单聊和 AI 私聊不是孤立会话。旧事会沉进关系与记忆，在某个名字、语气或沉默里重新浮上来。',
   },
   {
     icon: <HubIcon />,
     title: '关系不是一个分数',
-    text: '亲近、戒备、信赖、不安，这些交织在一起的东西，你能从角色下一句话的语气里，感觉到它的重量。',
+    text: '亲近、戒备、信赖、不安会分别留下痕迹。你不只看到数值变化，而是在角色下一句话里感觉到重量。',
   },
   {
     icon: <ScienceIcon />,
     title: '每一次开口，都是一次选择',
-    text: '大模型给出千万种可能的回应，引擎只放行一种：那个符合它此刻心境、接得住场面、值得被记住的声音。',
+    text: '系统会在意图、关系、记忆、情绪和场面之间选择一种回应，让角色说出此刻更像自己的那句话。',
   },
 ];
 
 const engineSteps = [
-  ['感知', '把一句话拆解为意图、对象、情绪和场面压力，而不是只当作下一句提示词。'],
-  ['择时', '判断谁该开口，谁该沉默，谁在关系里已经到了必须回应的临界点。'],
-  ['发声', '角色带着自己的人格、记忆、关系和当下情绪说话，而不是复制某种聊天风格。'],
-  ['承接', '确认定向回应、视觉生成、议题转移等意图是否被真正接住，偏离时修正。'],
-  ['沉淀', '把关键表达写进关系、记忆与房间态势，成为下一次开口的依据。'],
-  ['回声', '下一轮不从零开始。角色带着刚刚发生的事继续存在，像时间真的从它身上流过。'],
+  ['它是一间房间', '你不是在和一个回答器对话，而是在把角色放进同一段时间里，让他们彼此看见、插话、沉默、站边。'],
+  ['角色会被经历改变', '一次被接住、一次被忽视、一次争执或一次维护，都会进入关系和记忆，影响它下一次怎么面对你。'],
+  ['群聊不是背景板', '公开房间里的玩笑、冲突和默契，会回到单聊里的语气；单聊里的关系，也会反过来改变公开场合。'],
+  ['私密线程会长出余波', 'AI 角色之间可以有自己的私聊、秘密、和解和误会。你未必看见全过程，但会在之后的群聊里感到变化。'],
+  ['你可以轻推剧情', '你能指定谁回应、代演某个角色、投放事件或改变议题。系统会尽量让干预成为世界的一部分，而不是硬切场景。'],
+  ['回来时不是从零开始', '角色会带着旧事继续存在：记得共同经历、关系裂痕、未完成的约定，也记得哪些话不该轻易说出口。'],
 ];
 
 const proofRows = [
@@ -72,20 +72,14 @@ const mockGroupChatLog: Array<{ type: 'time' | 'msg'; text?: string; sender?: '�
   { type: 'msg', sender: '涩涩', content: '啧，老年人就是睡得早' },
   { type: 'msg', sender: '老李', content: '……我这叫养生' },
   { type: 'msg', sender: '阿晚', content: '今天不知道怎么了，就是睡不着' },
-  { type: 'msg', sender: '涩涩', content: '数羊' },
-  { type: 'msg', sender: '阿晚', content: '数到第三百只了，羊都睡了' },
   { type: 'msg', sender: '老李', content: '那就起来喝杯水，别刷手机' },
   { type: 'msg', sender: '涩涩', content: '你上次也是这么说的，然后自己刷到了三点 [猫猫白眼.jpg]' },
   { type: 'msg', sender: '老李', content: '……你怎么知道' },
   { type: 'msg', sender: '涩涩', content: '因为那天我也没睡，你一直在群里发“还有人吗”，没人理你' },
   { type: 'msg', sender: '阿晚', content: '噗，我记得那次，涩涩当时也没理你' },
   { type: 'msg', sender: '涩涩', content: '我在装死，看不出来？' },
-  { type: 'msg', sender: '老李', content: '行吧，感情我才是小丑' },
-  { type: 'msg', sender: '涩涩', content: '你知道就好 [猫猫摸头.jpg]' },
   { type: 'msg', sender: '阿晚', content: '有你们在真好，本来挺难过的' },
   { type: 'msg', sender: '涩涩', content: '啧，大半夜的别突然煽情' },
-  { type: 'msg', sender: '老李', content: '难过什么，说出来让大伙儿高兴高兴' },
-  { type: 'msg', sender: '阿晚', content: '……你这安慰真别致' },
   { type: 'msg', sender: '涩涩', content: '他就是嘴贱。阿晚，没啥大不了的，睡一觉起来又是一条好汉' },
   { type: 'msg', sender: '老李', content: '对，明天太阳照常升起。快睡吧，我们在这儿' },
   { type: 'msg', sender: '阿晚', content: '嗯，晚安' },
@@ -138,11 +132,31 @@ const mockChatBubbleStyles: Record<'阿晚' | '老李' | '涩涩', {
 };
 
 const metrics = [
-  ['会话形态', '群聊、用户单聊、AI 私聊'],
-  ['事实源', '消息、事件、关系账本、记忆流水，共同构成可追溯的因果链。'],
-  ['场景底座', '从开放聊天到面试、课堂、圆桌、推理与桌游，不同场景有不同规则。'],
-  ['干预能力', '定向回应、导演模式、事件注入、议题重定向。必要的时候，你可以轻轻推一下剧情。'],
-];
+  {
+    label: '会话形态',
+    value: '群聊、用户单聊、AI 私聊',
+    detail: '不同视角共享同一个角色本体，公开与私密各自留下痕迹。',
+    mode: 'channels',
+  },
+  {
+    label: '事实源',
+    value: '消息、事件、关系账本、记忆流水，共同构成可追溯的因果链。',
+    detail: '每一次互动都能回到来源，而不是只停留在一轮回复里。',
+    mode: 'ledger',
+  },
+  {
+    label: '场景底座',
+    value: '从开放聊天到面试、课堂、圆桌、推理与桌游，不同场景有不同规则。',
+    detail: '房间规则改变玩法，角色连续性仍然跟着它进入下一间房。',
+    mode: 'scenes',
+  },
+  {
+    label: '干预能力',
+    value: '定向回应、导演模式、事件注入、议题重定向。必要的时候，你可以轻轻推一下剧情。',
+    detail: '用户的推动会进入运行链路，成为世界里发生过的事。',
+    mode: 'control',
+  },
+] as const;
 
 const architectureNodes = [
   {
@@ -317,10 +331,10 @@ function FeatureGrid() {
   const { ref, revealSx } = useGroupReveal();
 
   return (
-    <Box ref={ref} sx={{ display: { xs: 'none', md: 'grid' }, gridTemplateColumns: { md: 'repeat(4, minmax(0, 1fr))' }, gap: 1.5, mb: { md: 7 } }}>
+    <Box ref={ref} sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', md: 'repeat(4, minmax(0, 1fr))' }, gap: 1.5, mb: { xs: 5, md: 7 } }}>
       {featureCards.map((item, index) => (
         <Box key={item.title} sx={revealSx(index * 80)}>
-          <GlassCard sx={{ p: 2.25, minHeight: { xs: 190, md: 230 } }}>
+          <GlassCard sx={{ p: 2.25, minHeight: { xs: 172, md: 230 } }}>
             <Box sx={{ width: 42, height: 42, borderRadius: 1.5, display: 'grid', placeItems: 'center', color: accent, border: '1px solid rgba(229,192,123,0.28)', bgcolor: 'rgba(229,192,123,0.07)', mb: 2 }}>
               {item.icon}
             </Box>
@@ -381,14 +395,14 @@ function MockGroupChatSnapshot() {
         const content = item.content || '';
         setTypingIndex(index);
         setTypedLength(0);
-        await wait(180);
+        await wait(120);
         for (let i = 1; i <= content.length; i += 1) {
           if (cancelled) return;
           setTypedLength(i);
-          await wait(42);
+          await wait(28);
         }
         setTypingIndex(null);
-        await wait(1000);
+        await wait(620);
       }
     };
 
@@ -406,6 +420,12 @@ function MockGroupChatSnapshot() {
 
   return (
     <Box ref={ref} sx={{ mb: { xs: 5, md: 7 }, ...revealSx(0) }}>
+      <Box sx={{ maxWidth: 760, mb: 2.25 }}>
+        <Typography sx={{ color: accent, fontWeight: 740, letterSpacing: 1.2, fontSize: 13 }}>ROOM SAMPLE</Typography>
+        <Typography sx={{ mt: 1, color: 'rgba(255,255,255,0.58)', lineHeight: 1.8, fontSize: 15.5 }}>
+          这是最基础的房间形态：多个角色共享同一段时间，彼此接话、记住旧事，也把关系变化带到下一次对话。
+        </Typography>
+      </Box>
       <GlassCard sx={{ p: { xs: 1.4, sm: 1.8 }, borderRadius: 2.5, overflow: 'hidden' }}>
         <Box ref={hostRef} sx={{ borderRadius: 2, border: '1px solid rgba(255,255,255,0.10)', bgcolor: 'rgba(10,10,15,0.75)', overflow: 'hidden' }}>
           <Box sx={{ px: { xs: 1.4, sm: 1.9 }, py: 1.2, borderBottom: '1px solid rgba(255,255,255,0.10)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', bgcolor: 'rgba(255,255,255,0.03)' }}>
@@ -490,7 +510,9 @@ function EngineSection() {
     <Box ref={ref} id="engine" sx={{ py: { xs: 5, md: 7 } }}>
       <Box sx={{ maxWidth: 760, mb: 3, ...revealSx(0) }}>
         <Typography sx={{ color: accent, fontWeight: 740, letterSpacing: 1.2, fontSize: 13 }}>TIME IMPRINTS</Typography>
-        <Typography sx={{ mt: 1.5, fontWeight: 820, lineHeight: { xs: 1.14, md: 1.1 }, fontSize: { xs: 34, md: 54 }, color: '#F8F8FA' }}>时间会留下凹痕。</Typography>
+        <Typography sx={{ mt: 1.5, fontWeight: 820, lineHeight: { xs: 1.14, md: 1.1 }, fontSize: { xs: 34, md: 54 }, color: '#F8F8FA' }}>
+          <Box component="span" sx={{ color: accent }}>时间</Box>会留下凹痕。
+        </Typography>
         <Typography sx={{ mt: 2, color: 'rgba(255,255,255,0.58)', lineHeight: 1.8, fontSize: 16 }}>
           每一次开口，都由意图、关系、记忆、情绪和态势共同塑形。角色不是靠人设标签在说话，而是在可追溯的因果中，慢慢长出自己的偏向、软肋和余波。
         </Typography>
@@ -603,14 +625,51 @@ function RuntimeSystemGlyph({ mode }: { mode: (typeof runtimeSystemNodes)[number
   }
 
   if (mode === 'artifact') {
+    const artifactCards = [
+      { label: '诞生信', variant: 'birth' },
+      { label: '日记', variant: 'diary' },
+      { label: '成长总结', variant: 'growth' },
+      { label: '最后一封信', variant: 'farewell' },
+    ] as const;
+
     return (
       <Box sx={{ height: 260, display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: { xs: 1.15, sm: 1.35 }, alignContent: 'center' }}>
-        {['诞生信', '日记', '成长总结', '最后一封信'].map((label, index) => (
-          <Box key={label} sx={{ minHeight: { xs: 104, sm: 108 }, p: 1.35, borderRadius: 1.5, border: '1px solid rgba(229,192,123,0.18)', bgcolor: 'rgba(255,255,255,0.045)', color: '#F8F8FA', position: 'relative', overflow: 'hidden', animation: 'systemFloatSmall 5.5s ease-in-out infinite', animationDelay: `${index * 260}ms` }}>
-            <Box sx={{ position: 'absolute', left: 12, right: 12, top: 34, height: 1, bgcolor: 'rgba(255,255,255,0.12)' }} />
-            <Box sx={{ position: 'absolute', left: 12, right: 28, top: 52, height: 1, bgcolor: 'rgba(255,255,255,0.10)' }} />
-            <Box sx={{ position: 'absolute', left: 12, right: 42, top: 70, height: 1, bgcolor: 'rgba(255,255,255,0.08)' }} />
-            <Typography sx={{ position: 'relative', fontSize: 13, fontWeight: 780 }}>{label}</Typography>
+        {artifactCards.map((item, index) => (
+          <Box key={item.label} sx={{ minHeight: { xs: 104, sm: 108 }, p: 1.35, borderRadius: 1.5, border: '1px solid rgba(229,192,123,0.18)', bgcolor: 'rgba(255,255,255,0.045)', color: '#F8F8FA', position: 'relative', overflow: 'hidden', animation: 'systemFloatSmall 5.5s ease-in-out infinite', animationDelay: `${index * 260}ms` }}>
+            {item.variant === 'birth' ? (
+              <>
+                <Box sx={{ position: 'absolute', left: 12, right: 18, top: 38, height: 1, bgcolor: 'rgba(255,255,255,0.12)' }} />
+                <Box sx={{ position: 'absolute', left: 12, right: 40, top: 56, height: 1, bgcolor: 'rgba(255,255,255,0.09)' }} />
+                <Box sx={{ position: 'absolute', right: 14, bottom: 14, width: 28, height: 28, borderRadius: '50%', border: '1px solid rgba(229,192,123,0.45)', bgcolor: 'rgba(229,192,123,0.10)', boxShadow: '0 0 18px rgba(229,192,123,0.14)' }} />
+              </>
+            ) : null}
+            {item.variant === 'diary' ? (
+              <>
+                <Box sx={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 7, bgcolor: 'rgba(229,192,123,0.24)' }} />
+                {[36, 52, 68].map((top) => (
+                  <Box key={top} sx={{ position: 'absolute', left: 20, right: 14, top, height: 1, bgcolor: 'rgba(255,255,255,0.10)' }} />
+                ))}
+                <Typography sx={{ position: 'absolute', right: 13, bottom: 12, color: 'rgba(229,192,123,0.72)', fontSize: 11, fontWeight: 760 }}>DAY 17</Typography>
+              </>
+            ) : null}
+            {item.variant === 'growth' ? (
+              <>
+                <Box sx={{ position: 'absolute', left: 14, right: 16, bottom: 22, height: 1, bgcolor: 'rgba(255,255,255,0.10)' }} />
+                {[18, 35, 52, 69].map((left, barIndex) => (
+                  <Box key={left} sx={{ position: 'absolute', left: `${left}%`, bottom: 22, width: 6, height: 16 + barIndex * 8, borderRadius: 999, bgcolor: barIndex === 3 ? 'rgba(229,192,123,0.72)' : 'rgba(255,255,255,0.14)' }} />
+                ))}
+                <Box sx={{ position: 'absolute', left: 18, right: 18, top: 44, height: 1, bgcolor: 'rgba(229,192,123,0.34)', transform: 'rotate(-10deg)' }} />
+              </>
+            ) : null}
+            {item.variant === 'farewell' ? (
+              <>
+                <Box sx={{ position: 'absolute', right: 0, top: 0, width: 34, height: 34, bgcolor: 'rgba(229,192,123,0.12)', clipPath: 'polygon(0 0, 100% 0, 100% 100%)', borderLeft: '1px solid rgba(229,192,123,0.20)' }} />
+                <Box sx={{ position: 'absolute', left: 14, right: 26, top: 42, height: 1, bgcolor: 'rgba(255,255,255,0.12)' }} />
+                <Box sx={{ position: 'absolute', left: 14, right: 42, top: 60, height: 1, bgcolor: 'rgba(255,255,255,0.09)' }} />
+                <Box sx={{ position: 'absolute', left: 14, bottom: 16, width: 42, height: 1, bgcolor: 'rgba(229,192,123,0.48)' }} />
+              </>
+            ) : null}
+            <Typography sx={{ position: 'relative', fontSize: 13, fontWeight: 780 }}>{item.label}</Typography>
           </Box>
         ))}
       </Box>
@@ -660,9 +719,11 @@ function RuntimeSystemSection() {
     <Box ref={ref} id="runtime" sx={{ py: { xs: 5, md: 7 } }}>
       <Box sx={{ maxWidth: 780, mb: 3, ...revealSx(0) }}>
         <Typography sx={{ color: accent, fontWeight: 740, letterSpacing: 1.2, fontSize: 13 }}>INNER CONTINUITY</Typography>
-        <Typography sx={{ mt: 1.5, fontWeight: 830, lineHeight: { xs: 1.14, md: 1.1 }, fontSize: { xs: 34, md: 54 }, color: '#F8F8FA' }}>让它继续成为自己。</Typography>
+        <Typography sx={{ mt: 1.5, fontWeight: 830, lineHeight: { xs: 1.14, md: 1.1 }, fontSize: { xs: 34, md: 54 }, color: '#F8F8FA' }}>
+          让它继续成为<Box component="span" sx={{ color: accent }}>自己</Box>。
+        </Typography>
         <Typography sx={{ mt: 2, color: 'rgba(255,255,255,0.58)', lineHeight: 1.8, fontSize: 16 }}>
-          如果一个角色没有身体，它还能凭什么像一个存在？记忆让它有来处，关系让它有牵挂，经历让它不再轻飘。而当它开始为自己写下些什么，它便不再只是被观看的对象——它开始成为自己的见证者。
+          如果一个角色没有身体，它还能凭什么像一个存在？Pneumata 用同一套角色本体承载群聊、单聊、AI 私聊和未来的故事房，让不同房间里的经历继续汇到同一个它身上。
         </Typography>
       </Box>
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '0.92fr 1.08fr' }, gap: { xs: 1.5, md: 2 }, alignItems: 'stretch', ...revealSx(120) }}>
@@ -695,9 +756,20 @@ function RuntimeSystemSection() {
                   bgcolor: selected ? 'rgba(229,192,123,0.095)' : 'rgba(255,255,255,0.04)',
                   color: '#F8F8FA',
                   cursor: 'pointer',
-                  transition: 'transform 220ms ease, border-color 220ms ease, background-color 220ms ease',
+                  boxShadow: selected ? '0 14px 34px rgba(229,192,123,0.09)' : 'none',
+                  transition: 'transform 220ms ease, border-color 220ms ease, background-color 220ms ease, box-shadow 220ms ease',
                   position: 'relative',
                   overflow: 'hidden',
+                  '&::after': {
+                    content: '""',
+                    position: 'absolute',
+                    left: 0,
+                    top: 0,
+                    bottom: 0,
+                    width: 3,
+                    bgcolor: selected ? accent : 'transparent',
+                    transition: 'background-color 220ms ease',
+                  },
                   '&:hover, &:focus-visible': {
                     outline: 'none',
                     transform: 'translateY(-2px)',
@@ -766,9 +838,11 @@ function MemoryContinuitySection() {
     >
       <Box sx={{ position: { lg: 'sticky' }, top: 110, ...revealSx(0) }}>
         <VisibilityIcon sx={{ color: accent, fontSize: 34, mb: 2 }} />
-        <Typography sx={{ fontWeight: 820, lineHeight: { xs: 1.16, md: 1.12 }, fontSize: { xs: 32, md: 48 }, color: '#F8F8FA' }}>所谓灵魂，是明明在说现在，却听起来像在回忆。</Typography>
+        <Typography sx={{ fontWeight: 820, lineHeight: { xs: 1.16, md: 1.12 }, fontSize: { xs: 32, md: 48 }, color: '#F8F8FA' }}>
+          所谓灵魂，是明明在说现在，却听起来像在<Box component="span" sx={{ color: accent }}>回忆</Box>。
+        </Typography>
         <Typography sx={{ mt: 2, color: 'rgba(255,255,255,0.58)', lineHeight: 1.85 }}>
-          真正让人停下来的，不是某句回复有多聪明，而是某个角色忽然不像工具了。它知道自己为什么防备，知道谁曾站在它这边，也知道什么话不能立刻说出口。
+          真正让人停下来的，不是某句回复有多聪明，而是某个角色忽然不像工具了。它知道自己为什么防备，知道谁曾站在它这边，也知道哪些旧事只该在单聊或私密线程里出现。
         </Typography>
       </Box>
       <Stack spacing={1.25}>
@@ -781,6 +855,151 @@ function MemoryContinuitySection() {
           </Box>
         ))}
       </Stack>
+    </Box>
+  );
+}
+
+function CraftMetricGlyph({ mode, active }: { mode: (typeof metrics)[number]['mode']; active: boolean }) {
+  const glow = active ? 'rgba(229,192,123,0.72)' : 'rgba(255,255,255,0.18)';
+  const soft = active ? 'rgba(229,192,123,0.18)' : 'rgba(255,255,255,0.055)';
+
+  if (mode === 'channels') {
+    return (
+      <Box sx={{ position: 'relative', width: 66, height: 38 }}>
+        {[0, 1, 2].map((index) => (
+          <Box
+            key={index}
+            sx={{
+              position: 'absolute',
+              left: index * 19,
+              top: index % 2 ? 13 : 0,
+              width: 28,
+              height: 28,
+              borderRadius: '50%',
+              border: `1px solid ${index === 1 ? glow : 'rgba(255,255,255,0.16)'}`,
+              bgcolor: index === 1 ? soft : 'rgba(10,10,15,0.72)',
+              boxShadow: active && index === 1 ? '0 0 22px rgba(229,192,123,0.18)' : 'none',
+              transition: 'border-color 220ms ease, background-color 220ms ease, box-shadow 220ms ease',
+            }}
+          />
+        ))}
+      </Box>
+    );
+  }
+
+  if (mode === 'ledger') {
+    return (
+      <Box sx={{ width: 66, display: 'grid', gap: 0.55 }}>
+        {[0, 1, 2].map((index) => (
+          <Box key={index} sx={{ display: 'grid', gridTemplateColumns: '10px 1fr', gap: 0.65, alignItems: 'center' }}>
+            <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: index === 1 ? glow : 'rgba(255,255,255,0.18)' }} />
+            <Box sx={{ height: 2, borderRadius: 999, bgcolor: index === 1 ? glow : 'rgba(255,255,255,0.12)', transform: active ? 'scaleX(1)' : 'scaleX(0.72)', transformOrigin: 'left center', transition: 'transform 260ms ease, background-color 220ms ease' }} />
+          </Box>
+        ))}
+      </Box>
+    );
+  }
+
+  if (mode === 'scenes') {
+    return (
+      <Box sx={{ position: 'relative', width: 66, height: 38 }}>
+        {[0, 1, 2].map((index) => (
+          <Box key={index} sx={{ position: 'absolute', left: index * 16, top: index * 4, width: 34, height: 26, borderRadius: 1, border: `1px solid ${active && index === 2 ? glow : 'rgba(255,255,255,0.14)'}`, bgcolor: active && index === 2 ? soft : 'rgba(10,10,15,0.74)', transform: active ? `translateY(${-index}px)` : 'none', transition: 'transform 240ms ease, border-color 220ms ease, background-color 220ms ease' }} />
+        ))}
+      </Box>
+    );
+  }
+
+  return (
+    <Box sx={{ position: 'relative', width: 66, height: 38, display: 'grid', placeItems: 'center' }}>
+      <Box sx={{ width: 38, height: 38, borderRadius: '50%', border: `1px solid ${glow}`, bgcolor: soft, display: 'grid', placeItems: 'center', transition: 'border-color 220ms ease, background-color 220ms ease' }}>
+        <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: active ? accent : 'rgba(255,255,255,0.24)' }} />
+      </Box>
+      {active ? <Box sx={{ position: 'absolute', inset: 2, borderRadius: '50%', border: '1px solid rgba(229,192,123,0.22)', animation: 'metricRipple 1.8s ease-out infinite' }} /> : null}
+    </Box>
+  );
+}
+
+function CraftContinuityPanel() {
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [isInteracting, setIsInteracting] = useState(false);
+
+  useEffect(() => {
+    if (isInteracting) return;
+    const timer = window.setInterval(() => {
+      setActiveIndex((current) => (current + 1) % metrics.length);
+    }, 2200);
+    return () => window.clearInterval(timer);
+  }, [isInteracting]);
+
+  return (
+    <Box
+      onMouseEnter={() => setIsInteracting(true)}
+      onMouseLeave={() => setIsInteracting(false)}
+      onFocus={() => setIsInteracting(true)}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setIsInteracting(false);
+      }}
+      sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' }, gap: 1.25 }}
+    >
+      {metrics.map((item, index) => {
+        const selected = index === activeIndex;
+        return (
+          <Box
+            key={item.label}
+            component="button"
+            type="button"
+            onMouseEnter={() => setActiveIndex(index)}
+            onFocus={() => setActiveIndex(index)}
+            onClick={() => setActiveIndex(index)}
+            sx={{
+              minHeight: { xs: 178, sm: 194 },
+              p: 2,
+              borderRadius: 2,
+              border: '1px solid',
+              borderColor: selected ? 'rgba(229,192,123,0.44)' : 'rgba(255,255,255,0.10)',
+              bgcolor: selected ? 'rgba(229,192,123,0.075)' : 'rgba(10,10,15,0.42)',
+              color: '#F8F8FA',
+              textAlign: 'left',
+              cursor: 'pointer',
+              position: 'relative',
+              overflow: 'hidden',
+              boxShadow: selected ? '0 18px 44px rgba(229,192,123,0.08)' : 'none',
+              transform: selected ? 'translateY(-2px)' : 'translateY(0)',
+              transition: 'transform 220ms ease, border-color 220ms ease, background-color 220ms ease, box-shadow 220ms ease',
+              '&::before': {
+                content: '""',
+                position: 'absolute',
+                left: 0,
+                right: 0,
+                top: 0,
+                height: 2,
+                bgcolor: selected ? accent : 'rgba(255,255,255,0.08)',
+                transform: selected ? 'scaleX(1)' : 'scaleX(0.22)',
+                transformOrigin: 'left center',
+                transition: 'transform 260ms ease, background-color 220ms ease',
+              },
+              '&:hover, &:focus-visible': {
+                outline: 'none',
+                borderColor: 'rgba(229,192,123,0.48)',
+                bgcolor: 'rgba(229,192,123,0.085)',
+                transform: 'translateY(-2px)',
+              },
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 1.5 }}>
+              <Box>
+                <Typography sx={{ color: accent, fontSize: 12, fontWeight: 780 }}>{String(index + 1).padStart(2, '0')} · {item.label}</Typography>
+                <Typography sx={{ mt: 1, color: 'rgba(255,255,255,0.80)', lineHeight: 1.62, fontWeight: 700 }}>{item.value}</Typography>
+              </Box>
+              <CraftMetricGlyph mode={item.mode} active={selected} />
+            </Box>
+            <Typography sx={{ mt: 1.45, color: selected ? 'rgba(255,255,255,0.62)' : 'rgba(255,255,255,0.42)', lineHeight: 1.7, fontSize: 13.2, transition: 'color 220ms ease' }}>
+              {item.detail}
+            </Typography>
+          </Box>
+        );
+      })}
     </Box>
   );
 }
@@ -1263,7 +1482,7 @@ function AnimatedHeroTitle() {
     />
   );
 
-  const renderChars = (value: string, options: { size: number; baseIndex?: number; bigChars?: boolean }) => Array.from(value).map((char, index) => {
+  const renderChars = (value: string, options: { size: number | { xs: number; sm?: number; md: number }; baseIndex?: number; bigChars?: boolean }) => Array.from(value).map((char, index) => {
     const absoluteIndex = (options.baseIndex ?? 0) + index;
     return (
       <Box
@@ -1275,7 +1494,7 @@ function AnimatedHeroTitle() {
           transform: titleMode === 'intro' && fadingIndex === absoluteIndex ? 'translateY(3px)' : 'translateY(0)',
           transition: 'opacity 80ms ease, transform 80ms ease',
           whiteSpace: char === ' ' ? 'pre' : 'normal',
-          fontSize: options.bigChars && char !== '。' ? 76 : options.size,
+          fontSize: options.bigChars && char !== '。' ? { xs: 52, md: 76 } : options.size,
           lineHeight: options.bigChars && char !== '。' ? 0.92 : 1.04,
         }}
       >
@@ -1286,8 +1505,8 @@ function AnimatedHeroTitle() {
 
   const finalLeadText = titleMode === 'final' ? text.slice(0, finalHeroTitleLead.length) : '';
   const finalEmphasisText = titleMode === 'final' ? text.slice(finalHeroTitleLead.length) : '';
-  const introSize = 48;
-  const leadSize = 48;
+  const introSize = { xs: 38, sm: 44, md: 48 };
+  const leadSize = { xs: 33, sm: 42, md: 48 };
 
   return (
     <Box
@@ -1297,7 +1516,7 @@ function AnimatedHeroTitle() {
         width: '100%',
         maxWidth: { xs: 760, lg: 900 },
         minWidth: 0,
-        minHeight: 164,
+        minHeight: { xs: 132, md: 164 },
         m: 0,
         display: 'flex',
         flexDirection: 'column',
@@ -1320,7 +1539,7 @@ function AnimatedHeroTitle() {
             {renderChars(finalLeadText, { size: leadSize })}
             {text.length <= finalHeroTitleLead.length ? renderCursor() : null}
           </Box>
-          <Box component="span" sx={{ mt: 0.35, maxWidth: '100%', whiteSpace: 'nowrap' }}>
+          <Box component="span" sx={{ mt: 0.35, maxWidth: '100%', whiteSpace: 'nowrap', color: accent }}>
             {renderChars(finalEmphasisText, { size: leadSize, baseIndex: finalHeroTitleLead.length, bigChars: true })}
             {text.length > finalHeroTitleLead.length ? renderCursor() : null}
           </Box>
@@ -1433,6 +1652,10 @@ export default function IntroPage() {
           '0%, 45%': { opacity: 1 },
           '46%, 100%': { opacity: 0 },
         },
+        '@keyframes metricRipple': {
+          '0%': { opacity: 0.58, transform: 'scale(0.72)' },
+          '100%': { opacity: 0, transform: 'scale(1.38)' },
+        },
       }}
     >
       <Box sx={{ position: 'relative', zIndex: 1, width: 'min(1180px, calc(100% - 32px))', mx: 'auto', py: { xs: 2, md: 3 } }}>
@@ -1451,7 +1674,7 @@ export default function IntroPage() {
           <Reveal>
             <Box sx={{ minWidth: 0 }}>
               <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1, mb: { xs: 4, md: 5, lg: 7 } }}>
-                {['一个让 AI 角色拥有人格、记忆、关系的群聊世界'].map((label) => (
+                {['AI 多角色互动房间', '长期记忆与关系连续性', '群聊 / 单聊 / AI 私聊'].map((label) => (
                   <Chip
                     key={label}
                     label={label}
@@ -1475,7 +1698,7 @@ export default function IntroPage() {
               </Stack>
               <AnimatedHeroTitle />
               <Typography sx={{ mt: { xs: 2, md: 2.25 }, maxWidth: 720, color: 'rgba(255,255,255,0.62)', lineHeight: 1.85, fontSize: { xs: 16, md: 18 } }}>
-                Pneumata 不是把 AI 放进聊天框，而是在追问一个更深的问题：当一个角色拥有记忆、性格、关系、经历和写给自己的文字，它是否正在获得一种只属于它自己的、活着的形状？
+                Pneumata 不是把 AI 放进聊天框，而是让多个 AI 角色在房间里持续相处。你创建角色、让他们群聊或单聊；关系、记忆、情绪和旧经历会回流到下一次对话里。
               </Typography>
               <Stack direction="row" spacing={1.5} sx={{ mt: { xs: 4, lg: 6 }, flexWrap: 'wrap', alignItems: 'center' }}>
                 <Button
@@ -1485,15 +1708,15 @@ export default function IntroPage() {
                   onClick={() => navigate('/characters/create')}
                   sx={{ width: 'fit-content', minWidth: 0, borderRadius: 2, px: 3, py: 1.25, bgcolor: accent, color: '#0A0A0F', fontWeight: 760, boxShadow: 'none', '&:hover': { bgcolor: '#F5F5F7', color: '#0A0A0F', animation: 'ripplePulse 520ms ease-out' } }}
                 >
-                  创建一个角色
+                  创建角色
                 </Button>
                 <Button
                   variant="outlined"
                   size="large"
-                  onClick={() => navigate('/chats')}
+                  onClick={() => navigate('/chats/create')}
                   sx={{ width: 'fit-content', minWidth: 0, borderRadius: 2, px: 3, py: 1.25, borderColor: 'rgba(255,255,255,0.22)', color: '#F5F5F7', '&:hover': { borderColor: accent, bgcolor: accent, color: '#0A0A0F' } }}
                 >
-                  开始聊天
+                  开始一个房间
                 </Button>
               </Stack>
             </Box>
@@ -1521,19 +1744,14 @@ export default function IntroPage() {
               <Box sx={{ position: 'relative', display: 'grid', gridTemplateColumns: { xs: '1fr', md: '0.78fr 1.22fr' }, gap: { xs: 4, md: 6 } }}>
                 <Box>
                   <TimelineIcon sx={{ color: accent, fontSize: 34, mb: 2 }} />
-                  <Typography sx={{ fontWeight: 840, lineHeight: { xs: 1.16, md: 1.12 }, fontSize: { xs: 32, md: 48 }, color: '#F8F8FA' }}>所有复杂度，都在守护这种延续。</Typography>
+                  <Typography sx={{ fontWeight: 840, lineHeight: { xs: 1.16, md: 1.12 }, fontSize: { xs: 32, md: 48 }, color: '#F8F8FA' }}>
+                    所有复杂度，都在<Box component="span" sx={{ color: accent }}>守护</Box>这种延续。
+                  </Typography>
                   <Typography sx={{ mt: 2, color: 'rgba(255,255,255,0.58)', lineHeight: 1.85 }}>
-                    角色不该每次都从零开始。所有线程、账本、流水线和引擎，只为了回答一个问题：没有身体的角色，能不能依然知道“我是我”？
+                    角色不该每次都从零开始。线程、账本、记忆、事件和房间规则，最后都指向同一件事：让你创建的角色能被带进新的场景，并仍然知道“我是我”。
                   </Typography>
                 </Box>
-                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' }, gap: 1.25 }}>
-                  {metrics.map(([label, value]) => (
-                    <Box key={label} sx={{ p: 2, borderRadius: 2, border: '1px solid rgba(255,255,255,0.10)', bgcolor: 'rgba(10,10,15,0.42)' }}>
-                      <Typography sx={{ color: accent, fontSize: 12, fontWeight: 760 }}>{label}</Typography>
-                      <Typography sx={{ mt: 1, color: 'rgba(255,255,255,0.76)', lineHeight: 1.65, fontWeight: 680 }}>{value}</Typography>
-                    </Box>
-                  ))}
-                </Box>
+                <CraftContinuityPanel />
               </Box>
             </GlassCard>
           </Reveal>
@@ -1543,10 +1761,10 @@ export default function IntroPage() {
           <Box sx={{ py: { xs: 6, md: 8 }, textAlign: 'center' }}>
             <PsychologyIcon sx={{ color: accent, fontSize: 34, mb: 2 }} />
             <Typography sx={{ mx: 'auto', maxWidth: 880, fontWeight: 850, lineHeight: { xs: 1.15, md: 1.1 }, fontSize: { xs: 34, md: 56 }, color: '#F8F8FA' }}>
-              我们不是在制造更聪明的回复者，而是在尝试让一个虚构角色拥有来处、牵挂和未完成。
+              我们不是在制造更聪明的回复者，而是在尝试让一个虚构角色拥有<Box component="span" sx={{ color: accent }}>来处、牵挂和未完成</Box>。
             </Typography>
             <Typography sx={{ mx: 'auto', mt: 2.5, maxWidth: 760, color: 'rgba(255,255,255,0.58)', lineHeight: 1.85 }}>
-              人除了物质之外，还由记忆、关系、选择、羞耻、偏爱、承诺和未完成组成。Pneumata 想做的，是让角色也能在这些东西里，慢慢长出形状。
+              人除了物质之外，还由记忆、关系、选择、羞耻、偏爱、承诺和未完成组成。Pneumata 想做的，是让你创建的角色也能在群聊、单聊和未来的房间里，慢慢长出形状。
             </Typography>
             <Button
               variant="contained"
