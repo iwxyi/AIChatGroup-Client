@@ -27,14 +27,37 @@ function clipPreview(text: string, max = 72) {
   return text.length > max ? `${text.slice(0, max)}…` : text;
 }
 
+export function stripMarkdownForPreview(text: string) {
+  return text
+    .replace(/```[a-zA-Z0-9_-]*\s*([\s\S]*?)```/g, '$1')
+    .replace(/!\[([^\]]*)]\([^)]+\)/g, '$1')
+    .replace(/\[([^\]]+)]\([^)]+\)/g, '$1')
+    .replace(/<\/?[^>]+>/g, '')
+    .replace(/^\s{0,3}>\s?/gm, '')
+    .replace(/^\s{0,3}#{1,6}\s+/gm, '')
+    .replace(/^\s{0,3}[-*+]\s+/gm, '')
+    .replace(/^\s{0,3}\d+[.)]\s+/gm, '')
+    .replace(/^\s{0,3}\|/gm, '')
+    .replace(/\|\s*$/gm, '')
+    .replace(/\|/g, ' ')
+    .replace(/`([^`\n]+)`/g, '$1')
+    .replace(/(\*\*|__)(.*?)\1/g, '$2')
+    .replace(/(\*|_)(.*?)\1/g, '$2')
+    .replace(/~~(.*?)~~/g, '$1')
+    .replace(/^[\s:-]{3,}$/gm, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function buildLatestMessagePreview(message: Message | null, members: AICharacter[]) {
   if (!message || message.isDeleted || message.type === 'system' || message.type === 'event') return '';
+  const content = stripMarkdownForPreview(message.content);
   const senderName = message.type === 'user'
     ? '你'
     : message.type === 'god'
       ? 'God Mode'
       : members.find((member) => member.id === message.senderId)?.name || message.senderName || '未知';
-  return clipPreview(sanitizeUserFacingText(`${senderName}：${message.content}`, members));
+  return clipPreview(sanitizeUserFacingText(`${senderName}：${content}`, members));
 }
 
 export function buildChatSubtitle(

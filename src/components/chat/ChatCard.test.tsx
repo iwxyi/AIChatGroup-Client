@@ -7,7 +7,7 @@ import {
 } from '../../types/character';
 import { normalizeConversation } from '../../types/chat';
 import type { Message } from '../../types/message';
-import { buildChatSubtitle } from './chatCardSubtitle';
+import { buildChatSubtitle, stripMarkdownForPreview } from './chatCardSubtitle';
 
 function character(overrides: Partial<AICharacter> = {}): AICharacter {
   return {
@@ -121,5 +121,26 @@ describe('ChatCard subtitle', () => {
     );
 
     expect(subtitle).toBe('你：明天面试有点紧张。');
+  });
+
+  it('strips markdown markers from latest message previews', () => {
+    const subtitle = buildChatSubtitle(
+      chat('direct'),
+      [character()],
+      message({
+        type: 'ai',
+        senderId: 'char-a',
+        senderName: '苏苏',
+        content: '## 结论\n\n**重点**：可以用 [文档](https://example.com) 说明。\n- 第一步：运行 `npm test`',
+      }),
+    );
+
+    expect(subtitle).toBe('苏苏：结论 重点：可以用 文档 说明。 第一步：运行 npm test');
+  });
+});
+
+describe('stripMarkdownForPreview', () => {
+  it('keeps readable text while removing common markdown syntax', () => {
+    expect(stripMarkdownForPreview('> ### 标题\n1. **加粗** 和 `代码`\n![图](a.png)')).toBe('标题 加粗 和 代码 图');
   });
 });
