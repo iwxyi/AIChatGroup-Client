@@ -17,6 +17,7 @@ export interface AuthUserResponse {
   avatar: string;
   cloudSyncEntitled?: boolean;
   assistantArtifactCloudSyncEntitled?: boolean;
+  aiProxyEntitled?: boolean;
 }
 
 export interface TopicSourceSummary {
@@ -85,6 +86,7 @@ export interface VipEntitlementInfo {
   monthlyPointGrant: number;
   cloudSyncEnabled: boolean;
   assistantArtifactCloudSync: boolean;
+  aiProxyEnabled: boolean;
 }
 
 export interface AiUsageRecordItem {
