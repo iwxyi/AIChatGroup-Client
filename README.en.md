@@ -126,6 +126,10 @@ Pneumata pages do not treat the cloud as the primary read path. Characters, chat
 | Case | Current rule |
 |---|---|
 | Opening a page | Render local data first; cloud summaries and details only refresh freshness in the background |
+| Signed-in local scope | A signed-in account reads and writes its own account-scoped local data even when cloud sync is disabled |
+| Logout | Switch back to the guest scope and clear in-memory workspace state; do not delete the signed-in account's persisted local snapshots |
+| Guest-to-account login | If guest characters, chats, messages, or artifacts exist after login, ask before importing them into the account scope |
+| Guest import ordering | Defer normal cloud refresh while an import prompt is pending; run accepted imports under the bootstrap lock, then resume workers and scope refresh |
 | Character / chat detail | If a local entity exists and the cloud returns 404, keep the local entity and mark that detail scope checked |
 | Character editor | First paint only loads the current character detail and local summaries; diary artifacts sync for that character only after the Diary tab is opened |
 | Preset characters | Provided by local preset definitions and never fetched from cloud detail endpoints |
