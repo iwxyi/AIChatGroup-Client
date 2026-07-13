@@ -143,14 +143,72 @@ function LazyPanel({ children }: { children: React.ReactNode }) {
   return <Suspense fallback={<PanelFallback />}>{children}</Suspense>;
 }
 
-function ChatPageSettingsDialog({ open, onClose, isStoryRoom }: { open: boolean; onClose: () => void; isStoryRoom: boolean }) {
+function ChatPageSettingsDialog({
+  open,
+  onClose,
+  isStoryRoom,
+  chat,
+  updateChat,
+  isAssistantChat,
+  onCloseAssistantPanel,
+}: {
+  open: boolean;
+  onClose: () => void;
+  isStoryRoom: boolean;
+  chat: GroupChat | null;
+  updateChat: (id: string, patch: Partial<GroupChat>) => Promise<void>;
+  isAssistantChat: boolean;
+  onCloseAssistantPanel?: () => void;
+}) {
   const chatAppearance = useSettingsStore((state) => state.chatAppearance);
   const setChatAppearance = useSettingsStore((state) => state.setChatAppearance);
+  const capabilities = chat?.modeState.assistantCapabilities || {};
+  const agentEnabled = Boolean(capabilities.agent);
+  const handleAgentToggle = (enabled: boolean) => {
+    if (!chat) return;
+    void updateChat(chat.id, {
+      modeState: {
+        ...chat.modeState,
+        assistantCapabilities: {
+          ...capabilities,
+          agent: enabled,
+          artifacts: enabled,
+          updatedAt: Date.now(),
+        },
+      },
+    });
+  };
   return (
     <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
       <DialogTitle>聊天页设置</DialogTitle>
       <DialogContent>
         <Stack spacing={2.25} sx={{ pt: 0.5 }}>
+          {isAssistantChat ? (
+            <>
+              <Box>
+                <Stack direction="row" spacing={1.25} sx={{ alignItems: 'center', justifyContent: 'space-between', minWidth: 0 }}>
+                  <Box sx={{ minWidth: 0 }}>
+                    <Typography variant="body2" sx={{ fontWeight: 700 }}>Agent 能力</Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.55 }}>
+                      开启后显示产物面板并支持文件、图表、网页等可沉淀结果；关闭后助手只保留普通聊天。
+                    </Typography>
+                  </Box>
+                  <Switch
+                    checked={agentEnabled}
+                    onChange={(event) => handleAgentToggle(event.target.checked)}
+                    slotProps={{ input: { 'aria-label': '开启 Agent 能力' } }}
+                  />
+                </Stack>
+                {onCloseAssistantPanel ? (
+                  <Button size="small" variant="outlined" onClick={() => { onCloseAssistantPanel(); onClose(); }} sx={{ mt: 1 }}>
+                    关闭右侧面板
+                  </Button>
+                ) : null}
+              </Box>
+              <Divider />
+            </>
+          ) : null}
+
           <Box>
             <Typography variant="body2" sx={{ fontWeight: 700, mb: 0.75 }}>页面最大宽度</Typography>
             <Slider
@@ -2833,7 +2891,7 @@ export default function ChatDetailPage() {
         hideMobileTitle
         desktopMaxWidth={isSplitDetailPane ? 340 : 420}
         desktopViewportRatio={isSplitDetailPane ? 0.28 : 0.34}
-        titleActions={isAssistantChat ? null : (
+        titleActions={(
           <IconButton size="small" aria-label="聊天页设置" onClick={() => setChatPageSettingsOpen(true)}>
             <SettingsIcon fontSize="small" />
           </IconButton>
@@ -2845,7 +2903,7 @@ export default function ChatDetailPage() {
             <LazyPanel>
               {isAssistantChat ? (
                 <Suspense fallback={<LoadingState title="正在加载" compact />}>
-                  <AssistantAgentPanel chat={chat} updateChat={updateChat} selectedArtifactId={selectedAssistantArtifactId} />
+                  <AssistantAgentPanel chat={chat} selectedArtifactId={selectedAssistantArtifactId} />
                 </Suspense>
               ) : runtimePanelLoading ? <LoadingState title="正在加载" compact /> : <ChatSidebarPanel
                 chat={projectedSidebarChat || { ...chat, primaryRecentEvent: projectedRuntimeState?.primaryRecentEvent }}
@@ -2959,7 +3017,15 @@ export default function ChatDetailPage() {
           </Box>
         </PageSection>
       </RightPanel>}
-      <ChatPageSettingsDialog open={chatPageSettingsOpen} onClose={() => setChatPageSettingsOpen(false)} isStoryRoom={isStoryRoom} />
+      <ChatPageSettingsDialog
+        open={chatPageSettingsOpen}
+        onClose={() => setChatPageSettingsOpen(false)}
+        isStoryRoom={isStoryRoom}
+        chat={chat}
+        updateChat={updateChat}
+        isAssistantChat={isAssistantChat}
+        onCloseAssistantPanel={isAssistantChat ? () => setRightPanelOpen(false) : undefined}
+      />
 
       {analysisDialogOpen ? (
         <LazyPanel>

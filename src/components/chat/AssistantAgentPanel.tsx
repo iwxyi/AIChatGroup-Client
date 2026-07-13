@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, Divider, IconButton, MenuItem, Select, Stack, Switch, Tooltip, Typography } from '@mui/material';
+import { Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, Divider, IconButton, MenuItem, Select, Stack, Tooltip, Typography } from '@mui/material';
 import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined';
 import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined';
 import CodeOutlinedIcon from '@mui/icons-material/CodeOutlined';
@@ -8,7 +8,6 @@ import DataObjectOutlinedIcon from '@mui/icons-material/DataObjectOutlined';
 import DeleteOutlineOutlinedIcon from '@mui/icons-material/DeleteOutlineOutlined';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
-import ExtensionOutlinedIcon from '@mui/icons-material/ExtensionOutlined';
 import GridViewOutlinedIcon from '@mui/icons-material/GridViewOutlined';
 import KeyboardArrowDownOutlinedIcon from '@mui/icons-material/KeyboardArrowDownOutlined';
 import KeyboardArrowUpOutlinedIcon from '@mui/icons-material/KeyboardArrowUpOutlined';
@@ -28,28 +27,7 @@ import { ensureAssistantArtifactStoreHydrated, getAssistantArtifactCurrentConten
 
 interface AssistantAgentPanelProps {
   chat: GroupChat;
-  updateChat: (id: string, patch: Partial<GroupChat>) => Promise<void>;
   selectedArtifactId?: string | null;
-}
-
-function AssistantPanelSurface({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <Box sx={{
-      p: 1.25,
-      borderRadius: 1,
-      bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.58)' : 'rgba(255,255,255,0.060)',
-      border: '1px solid',
-      borderColor: (theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.075)' : 'rgba(226,232,240,0.105)',
-      boxShadow: (theme) => theme.palette.mode === 'light'
-        ? '0 1px 0 rgba(255,255,255,0.82) inset, 0 12px 28px rgba(15,23,42,0.055)'
-        : '0 1px 0 rgba(255,255,255,0.08) inset, 0 14px 32px rgba(0,0,0,0.24)',
-      backdropFilter: 'blur(18px) saturate(1.18)',
-      WebkitBackdropFilter: 'blur(18px) saturate(1.18)',
-    }}>
-      <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.75 }}>{title}</Typography>
-      {children}
-    </Box>
-  );
 }
 
 const artifactKindLabels: Record<AssistantArtifactKind, string> = {
@@ -125,10 +103,10 @@ function downloadArtifact(item: AssistantArtifactItem, content: string) {
 type ArtifactViewMode = 'list' | 'icons' | 'gallery';
 type ArtifactSortMode = 'manual' | 'updated' | 'created' | 'title' | 'kind';
 
-const artifactViewItems = [
-  { value: 'list', label: <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}><ViewListOutlinedIcon fontSize="small" />列表</Box> },
-  { value: 'icons', label: <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}><GridViewOutlinedIcon fontSize="small" />图标</Box> },
-  { value: 'gallery', label: <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}><ViewAgendaOutlinedIcon fontSize="small" />画廊</Box> },
+const artifactViewItems: Array<{ value: ArtifactViewMode; title: string; icon: ReactNode }> = [
+  { value: 'list', title: '列表', icon: <ViewListOutlinedIcon fontSize="small" /> },
+  { value: 'icons', title: '图标', icon: <GridViewOutlinedIcon fontSize="small" /> },
+  { value: 'gallery', title: '画廊', icon: <ViewAgendaOutlinedIcon fontSize="small" /> },
 ];
 
 function artifactSortValue(item: AssistantArtifactItem) {
@@ -162,20 +140,23 @@ function isRenderableMermaid(item: AssistantArtifactItem, content: string) {
 function artifactPreviewText(item: AssistantArtifactItem) {
   const content = getAssistantArtifactCurrentContent(item).trim();
   if (!content) return '当前版本为空。';
-  if (item.summary) return item.summary;
-  return content.replace(/\s+/g, ' ').slice(0, 220);
+  return content.replace(/\s+/g, ' ').slice(0, 420);
 }
 
 function ArtifactThumbnail({ item, mode }: { item: AssistantArtifactItem; mode: ArtifactViewMode }) {
   const content = getAssistantArtifactCurrentContent(item);
-  const renderMermaid = mode === 'gallery' && isRenderableMermaid(item, content);
+  const renderMermaid = mode !== 'icons' && isRenderableMermaid(item, content);
+  const previewHeight = mode === 'list'
+    ? 'clamp(240px, 46vh, 380px)'
+    : mode === 'gallery'
+      ? 220
+      : 128;
 
   return (
     <Box
       sx={{
         position: 'relative',
-        minHeight: mode === 'list' ? 72 : 118,
-        maxHeight: mode === 'gallery' ? 240 : 150,
+        height: previewHeight,
         overflow: 'hidden',
         borderRadius: 1,
         border: '1px solid',
@@ -184,11 +165,11 @@ function ArtifactThumbnail({ item, mode }: { item: AssistantArtifactItem; mode: 
       }}
     >
       {renderMermaid ? (
-        <Box sx={{ p: 0.5, transform: 'scale(0.86)', transformOrigin: 'top left', width: '116%' }}>
+        <Box sx={{ p: 0.5, transform: mode === 'list' ? 'scale(0.92)' : 'scale(0.84)', transformOrigin: 'top left', width: mode === 'list' ? '108%' : '119%' }}>
           <MermaidDiagram source={content} />
         </Box>
       ) : item.kind === 'html' ? (
-        <Box component="iframe" title={item.title} srcDoc={content} sandbox="" sx={{ width: '100%', height: mode === 'list' ? 88 : 150, border: 0, bgcolor: '#fff' }} />
+        <Box component="iframe" title={item.title} srcDoc={content} sandbox="" sx={{ width: '100%', height: '100%', border: 0, bgcolor: '#fff' }} />
       ) : (
         <Box sx={{ p: 1, height: '100%', display: 'grid', alignContent: 'start', gap: 0.75 }}>
           <Box sx={{ color: 'text.secondary' }}>
@@ -199,7 +180,7 @@ function ArtifactThumbnail({ item, mode }: { item: AssistantArtifactItem; mode: 
             color="text.secondary"
             sx={{
               display: '-webkit-box',
-              WebkitLineClamp: mode === 'list' ? 3 : 5,
+              WebkitLineClamp: mode === 'list' ? 13 : 5,
               WebkitBoxOrient: 'vertical',
               overflow: 'hidden',
               lineHeight: 1.55,
@@ -415,6 +396,21 @@ function AssistantArtifactList({ chatId, selectedArtifactId }: { chatId: string;
               <Box sx={{ mt: 0.5 }}>{renderMeta(item)}</Box>
             </Box>
           </Stack>
+          {item.summary ? (
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{
+                display: '-webkit-box',
+                WebkitLineClamp: viewMode === 'list' ? 2 : 1,
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
+                lineHeight: 1.55,
+              }}
+            >
+              {item.summary}
+            </Typography>
+          ) : null}
           <ArtifactThumbnail item={item} mode={viewMode} />
           {viewMode !== 'icons' ? (
             <Box>
@@ -437,7 +433,16 @@ function AssistantArtifactList({ chatId, selectedArtifactId }: { chatId: string;
       <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', rowGap: 1 }}>
         <FloatingSegmentedTabs
           value={viewMode}
-          items={artifactViewItems}
+          items={artifactViewItems.map((item) => ({
+            value: item.value,
+            label: (
+              <Tooltip title={item.title}>
+                <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18 }}>
+                  {item.icon}
+                </Box>
+              </Tooltip>
+            ),
+          }))}
           onChange={(value) => setViewMode(value as ArtifactViewMode)}
           equalWidth={false}
           comfortable={false}
@@ -446,9 +451,9 @@ function AssistantArtifactList({ chatId, selectedArtifactId }: { chatId: string;
           size="small"
           value={sortMode}
           onChange={(event) => setSortMode(event.target.value as ArtifactSortMode)}
-          sx={{ minWidth: 118, '& .MuiSelect-select': { py: 0.6, fontSize: 13 } }}
+          sx={{ minWidth: 96, '& .MuiSelect-select': { py: 0.6, fontSize: 13 } }}
         >
-          <MenuItem value="manual">自定义排序</MenuItem>
+          <MenuItem value="manual">自定义</MenuItem>
           <MenuItem value="updated">最近更新</MenuItem>
           <MenuItem value="created">创建时间</MenuItem>
           <MenuItem value="title">标题</MenuItem>
@@ -506,69 +511,22 @@ function AssistantArtifactList({ chatId, selectedArtifactId }: { chatId: string;
   );
 }
 
-export default function AssistantAgentPanel({ chat, updateChat, selectedArtifactId = null }: AssistantAgentPanelProps) {
+export default function AssistantAgentPanel({ chat, selectedArtifactId = null }: AssistantAgentPanelProps) {
   const capabilities = chat.modeState.assistantCapabilities || {};
   const agentEnabled = Boolean(capabilities.agent);
 
-  const handleAgentToggle = (enabled: boolean) => {
-    void updateChat(chat.id, {
-      modeState: {
-        ...chat.modeState,
-        assistantCapabilities: {
-          ...capabilities,
-          agent: enabled,
-          artifacts: enabled,
-          updatedAt: Date.now(),
-        },
-      },
-    });
-  };
-
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, height: '100%', minHeight: 0 }}>
-      {agentEnabled ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', minWidth: 0 }}>
-          <FloatingSegmentedTabs
-            value="artifacts"
-            items={[{ value: 'artifacts', label: '产物' }]}
-            onChange={() => undefined}
-            equalWidth={false}
-            comfortable={false}
-          />
-        </Box>
-      ) : null}
-
       <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', pr: { xs: 0.25, md: 0.5 }, ...buildScrollableRegionSx() }}>
         <Stack spacing={2}>
-          <AssistantPanelSurface title="能力">
-            <Stack direction="row" spacing={1.25} sx={{ alignItems: 'center', justifyContent: 'space-between', minWidth: 0 }}>
-              <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minWidth: 0 }}>
-                <ExtensionOutlinedIcon color={agentEnabled ? 'primary' : 'disabled'} />
-                <Box sx={{ minWidth: 0 }}>
-                  <Typography variant="body2" sx={{ fontWeight: 700 }}>Agent 能力</Typography>
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.55 }}>
-                    开启后支持产物、工具和后续文件能力；关闭时助手只保留普通聊天。
-                  </Typography>
-                </Box>
-              </Stack>
-              <Switch
-                checked={agentEnabled}
-                onChange={(event) => handleAgentToggle(event.target.checked)}
-                slotProps={{ input: { 'aria-label': '开启 Agent 能力' } }}
-              />
-            </Stack>
-          </AssistantPanelSurface>
-
           {agentEnabled ? (
-            <AssistantPanelSurface title="产物">
-              <AssistantArtifactList chatId={chat.id} selectedArtifactId={selectedArtifactId} />
-            </AssistantPanelSurface>
+            <AssistantArtifactList chatId={chat.id} selectedArtifactId={selectedArtifactId} />
           ) : (
-            <AssistantPanelSurface title="纯聊天模式">
-              <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.7 }}>
-                当前助手不会创建产物，也不会加载 Office、图表、网页运行等重型能力。
+            <Box sx={{ minHeight: 160, display: 'grid', placeItems: 'center', px: 2, textAlign: 'center', color: 'text.secondary' }}>
+              <Typography variant="body2" sx={{ lineHeight: 1.7 }}>
+                Agent 能力已关闭。可在右上角设置中开启产物面板。
               </Typography>
-            </AssistantPanelSurface>
+            </Box>
           )}
         </Stack>
       </Box>
