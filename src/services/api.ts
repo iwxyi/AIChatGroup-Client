@@ -384,6 +384,7 @@ export type SyncChangeScope =
   | 'world-runtime.window'
   | 'artifacts.summary'
   | `artifacts.summary:${string}`
+  | `assistant-artifacts:${string}`
   | 'settings.account';
 
 export interface SyncChangesResponse {

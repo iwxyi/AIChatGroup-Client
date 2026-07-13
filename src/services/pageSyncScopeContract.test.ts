@@ -37,6 +37,15 @@ describe('pageSyncScopeContract', () => {
     ])).toEqual(['character-a', 'character-b']);
   });
 
+  it('adds assistant artifact scope only when the chat surface asks for it', () => {
+    const contract = getChatDetailSyncScopeContract({
+      chatId: 'chat-1',
+      includeAssistantArtifacts: true,
+    });
+
+    expect(contract.initialBackgroundScopes).toContain('assistant-artifacts:chat-1');
+  });
+
   it('keeps moments on world runtime and character summaries without chat summaries', () => {
     const contract = getMomentsSyncScopeContract();
 
@@ -53,4 +62,3 @@ describe('pageSyncScopeContract', () => {
     expect(contract.initialBackgroundScopes).not.toContain('chats.summary');
   });
 });
-

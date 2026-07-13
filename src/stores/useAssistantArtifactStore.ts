@@ -6,8 +6,10 @@ import { scopedStorageKey, storageKey } from '../constants/brand';
 import { getLocalDataUserId } from '../services/authStorageScope';
 import { createScopedIndexedDbBufferedJsonStorage, flushBufferedPersistenceWrites } from './storePersistenceScope';
 import { api } from '../services/api';
+import type { SyncChangeScope } from '../services/api';
 import { isCloudSyncEnabled } from '../services/cloudSyncPreference';
 import { isAssistantArtifactCloudSyncEnabled } from '../services/assistantArtifactCloudSyncPreference';
+import { createSyncScopeMetadata } from './syncScopeMetadata';
 
 interface AssistantArtifactSnapshot {
   items: AssistantArtifactItem[];
@@ -41,7 +43,11 @@ interface AssistantArtifactStore extends AssistantArtifactSnapshot {
 
 const MAX_ARTIFACTS_PER_CHAT = 80;
 const MAX_VERSIONS_PER_ARTIFACT = 12;
+const ASSISTANT_ARTIFACT_SYNC_TTL_MS = 30_000;
 let assistantArtifactHydrationPromise: Promise<void> | null = null;
+const assistantArtifactSyncScopes = createSyncScopeMetadata(ASSISTANT_ARTIFACT_SYNC_TTL_MS, {
+  getStorageKey: () => scopedStorageKey(`assistant-artifact-sync-scopes-${getLocalDataUserId()}`),
+});
 
 function shouldSyncAssistantArtifactsToCloud() {
   if (typeof localStorage === 'undefined') return false;
@@ -134,6 +140,61 @@ function mergeCloudArtifacts(incomingItems: AssistantArtifactItem[]) {
   useAssistantArtifactStore.setState((state) => ({ items: mergeArtifactItems(state.items, incomingItems) }));
 }
 
+function assistantArtifactSyncScope(chatId: string): SyncChangeScope {
+  return `assistant-artifacts:${chatId}`;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+function normalizeCloudArtifactPatch(change: Record<string, unknown>, chatId: string): AssistantArtifactItem | null {
+  if (change.entity !== 'assistant_artifact' || typeof change.id !== 'string') return null;
+  const patch = isRecord(change.patch) ? change.patch : null;
+  if (!patch || patch.chatId !== chatId || typeof patch.kind !== 'string') return null;
+  const versions = Array.isArray(patch.versions) ? patch.versions : [];
+  return {
+    id: change.id,
+    chatId,
+    kind: patch.kind as AssistantArtifactItem['kind'],
+    title: typeof patch.title === 'string' ? patch.title : '未命名产物',
+    summary: typeof patch.summary === 'string' ? patch.summary : undefined,
+    language: typeof patch.language === 'string' ? patch.language : null,
+    currentVersionId: typeof patch.currentVersionId === 'string' ? patch.currentVersionId : '',
+    versions: versions as AssistantArtifactItem['versions'],
+    sourceMessageId: typeof patch.sourceMessageId === 'string' ? patch.sourceMessageId : '',
+    createdAt: Number(patch.createdAt || 0),
+    updatedAt: Number(patch.updatedAt || change.revision || 0),
+    sortOrder: typeof patch.sortOrder === 'number' ? patch.sortOrder : undefined,
+    deletedAt: patch.deletedAt == null ? null : Number(patch.deletedAt),
+    revision: Number(patch.revision || change.revision || 1),
+  };
+}
+
+async function refreshArtifactsViaSyncChanges(chatId: string) {
+  const scope = assistantArtifactSyncScope(chatId);
+  const state = assistantArtifactSyncScopes.getState(scope);
+  const since = state.cursor ?? state.revision ?? null;
+  const result = await api.getSyncChanges({ scope, since });
+  if (result.status === 'modified') {
+    const incomingItems = result.changes
+      .map((change) => normalizeCloudArtifactPatch(change, chatId))
+      .filter((item): item is AssistantArtifactItem => Boolean(item));
+    mergeCloudArtifacts(incomingItems);
+  }
+  assistantArtifactSyncScopes.markChecked(scope, {
+    cursor: result.cursor,
+    revision: result.revision,
+    applied: result.status === 'modified',
+  });
+}
+
+async function refreshArtifactsViaLegacyEndpoint(chatId: string) {
+  const result = await api.getAssistantArtifacts(chatId);
+  useAssistantArtifactStore.setState((state) => ({ items: mergeArtifactItems(state.items, result.items) }));
+  assistantArtifactSyncScopes.markChecked(assistantArtifactSyncScope(chatId), { applied: true, fresh: false });
+}
+
 function scheduleArtifactCloudPush(chatId: string, artifactIds: string[]) {
   if (!shouldSyncAssistantArtifactsToCloud() || !artifactIds.length) return;
   if (typeof window === 'undefined') return;
@@ -223,8 +284,15 @@ export const useAssistantArtifactStore = create<AssistantArtifactStore>()(
 
       refreshArtifactsFromCloud: async (chatId) => {
         if (!shouldSyncAssistantArtifactsToCloud()) return;
-        const result = await api.getAssistantArtifacts(chatId);
-        set((state) => ({ items: mergeArtifactItems(state.items, result.items) }));
+        const scope = assistantArtifactSyncScope(chatId);
+        await assistantArtifactSyncScopes.run(scope, async () => {
+          try {
+            await refreshArtifactsViaSyncChanges(chatId);
+          } catch (error) {
+            assistantArtifactSyncScopes.markError(scope, error);
+            await refreshArtifactsViaLegacyEndpoint(chatId);
+          }
+        }, { markCheckedOnSuccess: false });
       },
 
       pushArtifactsToCloud: async (chatId, artifactIds) => {

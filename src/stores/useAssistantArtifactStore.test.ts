@@ -5,6 +5,7 @@ const apiMocks = vi.hoisted(() => ({
   upsertAssistantArtifact: vi.fn(),
   upsertAssistantArtifacts: vi.fn(),
   getAssistantArtifacts: vi.fn(),
+  getSyncChanges: vi.fn(),
 }));
 
 vi.mock('../services/api', () => ({ api: apiMocks }));
@@ -28,6 +29,7 @@ describe('useAssistantArtifactStore', () => {
     apiMocks.upsertAssistantArtifact.mockReset();
     apiMocks.upsertAssistantArtifacts.mockReset();
     apiMocks.getAssistantArtifacts.mockReset();
+    apiMocks.getSyncChanges.mockReset();
     localStorage.setItem('pneumata-auth-mode', 'cloud');
     useAssistantArtifactStore.setState({ items: [] });
   });
@@ -118,6 +120,90 @@ describe('useAssistantArtifactStore', () => {
       operationId: expect.stringContaining(created.id),
     }));
     expect(useAssistantArtifactStore.getState().items.find((item) => item.id === created.id)?.revision).toBe(7);
+  });
+
+  it('refreshes cloud artifacts through sync changes with all versions', async () => {
+    apiMocks.getSyncChanges.mockResolvedValueOnce({
+      status: 'modified',
+      scope: 'assistant-artifacts:chat-a',
+      cursor: 'log:9',
+      revision: 'log:9',
+      changes: [{
+        op: 'upsert',
+        entity: 'assistant_artifact',
+        id: 'artifact-a',
+        revision: 4,
+        patch: {
+          id: 'artifact-a',
+          chatId: 'chat-a',
+          kind: 'diagram',
+          title: '流程图',
+          language: 'mermaid',
+          currentVersionId: 'artifact-a:v:2',
+          versions: [{
+            id: 'artifact-a:v:1',
+            artifactId: 'artifact-a',
+            content: 'flowchart TD\nA-->B',
+            language: 'mermaid',
+            sourceMessageId: 'message-a',
+            createdAt: 100,
+          }, {
+            id: 'artifact-a:v:2',
+            artifactId: 'artifact-a',
+            content: 'flowchart TD\nA-->B-->C',
+            language: 'mermaid',
+            sourceMessageId: 'message-b',
+            baseVersionId: 'artifact-a:v:1',
+            createdAt: 200,
+          }],
+          sourceMessageId: 'message-b',
+          createdAt: 100,
+          updatedAt: 200,
+          deletedAt: null,
+          revision: 4,
+        },
+      }],
+      hasMore: false,
+    });
+
+    await useAssistantArtifactStore.getState().refreshArtifactsFromCloud('chat-a');
+
+    const [artifact] = useAssistantArtifactStore.getState().getArtifactsForChat('chat-a');
+    expect(apiMocks.getSyncChanges).toHaveBeenCalledWith({ scope: 'assistant-artifacts:chat-a', since: null });
+    expect(apiMocks.getAssistantArtifacts).not.toHaveBeenCalled();
+    expect(artifact?.versions).toHaveLength(2);
+    expect(artifact?.currentVersionId).toBe('artifact-a:v:2');
+  });
+
+  it('falls back to the legacy artifact endpoint when sync changes are unavailable', async () => {
+    apiMocks.getSyncChanges.mockRejectedValueOnce(new Error('unsupported scope'));
+    apiMocks.getAssistantArtifacts.mockResolvedValueOnce({
+      serverTime: 300,
+      items: [{
+        id: 'artifact-a',
+        chatId: 'chat-a',
+        kind: 'document',
+        title: '报告',
+        currentVersionId: 'artifact-a:v:1',
+        versions: [{
+          id: 'artifact-a:v:1',
+          artifactId: 'artifact-a',
+          content: '# 报告',
+          sourceMessageId: 'message-a',
+          createdAt: 100,
+        }],
+        sourceMessageId: 'message-a',
+        createdAt: 100,
+        updatedAt: 200,
+        deletedAt: null,
+        revision: 2,
+      }],
+    });
+
+    await useAssistantArtifactStore.getState().refreshArtifactsFromCloud('chat-a');
+
+    expect(apiMocks.getAssistantArtifacts).toHaveBeenCalledWith('chat-a');
+    expect(useAssistantArtifactStore.getState().getArtifactsForChat('chat-a')[0]?.revision).toBe(2);
   });
 
   it('creates an image artifact from a ready assistant media asset reference', () => {

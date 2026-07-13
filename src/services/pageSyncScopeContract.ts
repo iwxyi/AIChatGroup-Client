@@ -6,6 +6,7 @@ export type PageSyncSurface = 'chat-detail' | 'moments' | 'calendar';
 export interface ChatDetailScopeInput {
   chatId: string;
   memberIds?: string[];
+  includeAssistantArtifacts?: boolean;
 }
 
 export interface PageSyncScopeContract {
@@ -21,6 +22,7 @@ export function getSyncableCharacterMemberIds(memberIds: string[] | undefined) {
 
 export function getChatDetailSyncScopeContract(input: ChatDetailScopeInput): PageSyncScopeContract {
   const characterScopes = getSyncableCharacterMemberIds(input.memberIds).map((memberId) => `characters.detail:${memberId}` as const);
+  const assistantArtifactScopes = input.includeAssistantArtifacts ? [`assistant-artifacts:${input.chatId}` as const] : [];
   return {
     surface: 'chat-detail',
     localFirst: true,
@@ -28,6 +30,7 @@ export function getChatDetailSyncScopeContract(input: ChatDetailScopeInput): Pag
       `chats.detail:${input.chatId}`,
       `messages.window:${input.chatId}`,
       ...characterScopes,
+      ...assistantArtifactScopes,
     ],
     deferredScopes: [],
   };
@@ -50,4 +53,3 @@ export function getCalendarSyncScopeContract(): PageSyncScopeContract {
     deferredScopes: [],
   };
 }
-
