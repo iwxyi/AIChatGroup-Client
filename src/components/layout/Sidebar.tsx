@@ -102,6 +102,9 @@ export default function Sidebar({ collapsed }: SidebarProps) {
   const accountTitle = user?.nickname || (authMode === 'cloud' ? t('nav.account') : t('nav.localMode'));
   const accountSubtitle = user?.phone || (authMode === 'cloud' ? t('nav.account') : t('nav.signInSync'));
   const accountAvatar = user?.avatar;
+  const visibleNavSections = navSections
+    .map((section) => section.filter((item) => item.path !== '/ai-proxy' || user?.aiProxyEntitled === true))
+    .filter((section) => section.length > 0);
 
   const handleNav = (path: string) => {
     navigate(path);
@@ -343,7 +346,7 @@ export default function Sidebar({ collapsed }: SidebarProps) {
       <Divider sx={{ mx: collapsed ? 1.2 : 1.5, borderColor: 'rgba(148,163,184,0.14)' }} />
 
       <List sx={{ flex: 1, px: collapsed ? 0.65 : 1.1, pt: 1.15 }}>
-        {navSections.map((section, sectionIndex) => (
+        {visibleNavSections.map((section, sectionIndex) => (
           <Fragment key={section.map((item) => item.path).join('|')}>
             {sectionIndex > 0 ? (
               <Divider

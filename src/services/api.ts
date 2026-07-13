@@ -952,6 +952,7 @@ class ApiClient {
       aiProfiles?: Array<{ id: string; name: string; type?: 'text' | 'image' | 'audio' | 'document'; isDefault?: boolean; provider: string; apiKey: string; baseUrl: string; model: string; imageCapabilities?: { textToImage?: boolean; referenceImage?: boolean; multiReferenceImage?: boolean; seed?: boolean; negativePrompt?: boolean } }>;
       theme: string; themeColor: string; language: string; defaultSpeed: number;
       developerMode?: boolean;
+      developerModeEntitled?: boolean;
       autoGenerateCharacterAvatar?: boolean;
       avatarGeneration?: { autoGenerateCharacterAvatar?: boolean; preferNonPhotorealAvatar?: boolean };
       developerUI?: { showMemoryDebug?: boolean; showRelationshipEvents?: boolean; showAffectEvents?: boolean; showConflictEvents?: boolean; showStateEvents?: boolean; showMemoryDistillationEvents?: boolean; showLocalInterceptionHints?: boolean; showSpeechStyle?: boolean; showAdvancedRuntimePanels?: boolean; showDeliberationDebug?: boolean; showPresenceDebug?: boolean; showCompanionshipDebug?: boolean; showMomentDebug?: boolean; showWithdrawnMessageContent?: boolean; enableHumanAppraisal?: boolean; dramaBoost?: boolean };

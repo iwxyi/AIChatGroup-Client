@@ -23,6 +23,7 @@ import { createSyncScheduler } from './storeSyncScheduler';
 
 interface SettingsStore extends AppSettings {
   _loaded: boolean;
+  developerModeEntitled: boolean;
   lastSyncedAt: number;
   syncStatus: 'idle' | 'saving' | 'saved' | 'error';
   syncError: string | null;
@@ -61,6 +62,7 @@ interface SettingsStore extends AppSettings {
 type SettingsSet = (partial: SettingsStore | Partial<SettingsStore> | ((state: SettingsStore) => SettingsStore | Partial<SettingsStore>), replace?: false) => unknown;
 type RemoteSettingsPayload = Partial<AppSettings> & {
   autoGenerateCharacterAvatar?: boolean;
+  developerModeEntitled?: boolean;
   api?: APIConfig;
   aiProfiles?: AIModelProfile[];
   memoryUI?: { showDeveloperMemory?: boolean };
@@ -77,6 +79,26 @@ const settingsSyncScopes = createSyncScopeMetadata(30_000, {
 const settingsScopeSyncScheduler = createSyncScheduler('settings.scope-refresh', { priority: 10 });
 let settingsScopeRequested = false;
 let settingsScopeLifecycleRegistered = false;
+const DISABLED_DEVELOPER_UI_PREFS: DeveloperUIPrefs = {
+  ...DEFAULT_DEVELOPER_UI_PREFS,
+  showMemoryDebug: false,
+  showRelationshipEvents: false,
+  showAffectEvents: false,
+  showConflictEvents: false,
+  showStateEvents: false,
+  showMemoryDistillationEvents: false,
+  showCalendarEvents: false,
+  showLocalInterceptionHints: false,
+  showSpeechStyle: false,
+  showAdvancedRuntimePanels: false,
+  showDeliberationDebug: false,
+  showPresenceDebug: false,
+  showCompanionshipDebug: false,
+  showMomentDebug: false,
+  showWithdrawnMessageContent: false,
+  enableHumanAppraisal: false,
+  dramaBoost: false,
+};
 
 function ensureSettingsScopeLifecycle() {
   if (settingsScopeLifecycleRegistered) return;
@@ -204,15 +226,24 @@ export function buildSettingsPayload(state: AppSettings) {
   };
 }
 
-function syncState(state: Partial<AppSettings> & { api?: APIConfig; aiProfiles?: AIModelProfile[]; memoryUI?: { showDeveloperMemory?: boolean } }): Partial<AppSettings> {
+function syncState(state: Partial<AppSettings> & { api?: APIConfig; aiProfiles?: AIModelProfile[]; memoryUI?: { showDeveloperMemory?: boolean }; developerModeEntitled?: boolean }): Partial<AppSettings> & { developerModeEntitled: boolean } {
   const aiProfiles = normalizeAIProfiles(state.aiProfiles, state.api);
   const legacyShowMemoryDebug = Boolean(state.memoryUI?.showDeveloperMemory);
+  const developerModeEntitled = state.developerModeEntitled === true;
+  const developerUI = developerModeEntitled
+    ? {
+        ...DEFAULT_DEVELOPER_UI_PREFS,
+        ...(state.developerUI || {}),
+        showMemoryDebug: state.developerUI?.showMemoryDebug ?? legacyShowMemoryDebug,
+      }
+    : DISABLED_DEVELOPER_UI_PREFS;
   const normalized = {
     ...state,
+    developerModeEntitled,
     themePreset: normalizeThemePreset(state.themePreset),
     aiProfiles,
     api: buildApiFromProfiles(aiProfiles),
-    developerMode: Boolean(state.developerMode),
+    developerMode: developerModeEntitled && Boolean(state.developerMode),
     avatarGeneration: {
       ...DEFAULT_AVATAR_GENERATION_SETTINGS,
       ...(state.avatarGeneration || {}),
@@ -241,13 +272,9 @@ function syncState(state: Partial<AppSettings> & { api?: APIConfig; aiProfiles?:
         ...(state.companionship?.quietHours || {}),
       },
     },
-    developerUI: {
-      ...DEFAULT_DEVELOPER_UI_PREFS,
-      ...(state.developerUI || {}),
-      showMemoryDebug: state.developerUI?.showMemoryDebug ?? legacyShowMemoryDebug,
-    },
+    developerUI,
     memoryUI: {
-      showDeveloperMemory: state.developerUI?.showMemoryDebug ?? legacyShowMemoryDebug,
+      showDeveloperMemory: developerModeEntitled && (state.developerUI?.showMemoryDebug ?? legacyShowMemoryDebug),
     },
     chatDraftDefaults: {
       ...DEFAULT_CHAT_DRAFT_DEFAULTS,
@@ -322,6 +349,7 @@ export const useSettingsStore = create<SettingsStore>()(
     (set, get) => ({
       ...DEFAULT_SETTINGS,
       _loaded: false,
+      developerModeEntitled: false,
       lastSyncedAt: 0,
       syncStatus: 'idle',
       syncError: null,
@@ -366,6 +394,7 @@ export const useSettingsStore = create<SettingsStore>()(
               themeColor: settings.themeColor,
               language: settings.language as Language,
               defaultSpeed: settings.defaultSpeed,
+              developerModeEntitled: settings.developerModeEntitled === true,
               developerMode: settings.developerMode,
               avatarGeneration: {
                 ...DEFAULT_AVATAR_GENERATION_SETTINGS,
@@ -488,7 +517,7 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setDeveloperMode: (developerMode) => {
         set((state) => {
-          const next = { ...state, developerMode, lastSyncedAt: Date.now() };
+          const next = { ...(syncState({ ...state, developerMode: state.developerModeEntitled && developerMode }) as SettingsStore), lastSyncedAt: Date.now() };
           syncToServer(buildSettingsPayload(next), set);
           return next;
         });
@@ -590,7 +619,7 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setDeveloperUI: (prefs) => {
         set((state) => {
-          const developerUI = { ...DEFAULT_DEVELOPER_UI_PREFS, ...state.developerUI, ...prefs };
+          const developerUI = state.developerModeEntitled ? { ...DEFAULT_DEVELOPER_UI_PREFS, ...state.developerUI, ...prefs } : DISABLED_DEVELOPER_UI_PREFS;
           setHumanAppraisalRuntimeConfig({ enabled: developerUI.enableHumanAppraisal });
           const next = {
             ...state,
@@ -605,11 +634,11 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setMemoryDeveloperView: (enabled) => {
         set((state) => {
-          const developerUI = { ...DEFAULT_DEVELOPER_UI_PREFS, ...state.developerUI, showMemoryDebug: enabled };
+          const developerUI = state.developerModeEntitled ? { ...DEFAULT_DEVELOPER_UI_PREFS, ...state.developerUI, showMemoryDebug: enabled } : DISABLED_DEVELOPER_UI_PREFS;
           const next = {
             ...state,
             developerUI,
-            memoryUI: { showDeveloperMemory: enabled },
+            memoryUI: { showDeveloperMemory: state.developerModeEntitled && enabled },
             lastSyncedAt: Date.now(),
           };
           syncToServer(buildSettingsPayload(next), set);

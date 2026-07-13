@@ -17,6 +17,7 @@ interface User {
   avatar: string;
   cloudSyncEntitled?: boolean;
   assistantArtifactCloudSyncEntitled?: boolean;
+  aiProxyEntitled?: boolean;
 }
 
 type AuthMode = 'cloud' | 'local';
