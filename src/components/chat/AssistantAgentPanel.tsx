@@ -12,6 +12,8 @@ import GridViewOutlinedIcon from '@mui/icons-material/GridViewOutlined';
 import KeyboardArrowDownOutlinedIcon from '@mui/icons-material/KeyboardArrowDownOutlined';
 import KeyboardArrowUpOutlinedIcon from '@mui/icons-material/KeyboardArrowUpOutlined';
 import LanguageOutlinedIcon from '@mui/icons-material/LanguageOutlined';
+import NavigateBeforeOutlinedIcon from '@mui/icons-material/NavigateBeforeOutlined';
+import NavigateNextOutlinedIcon from '@mui/icons-material/NavigateNextOutlined';
 import OpenInFullOutlinedIcon from '@mui/icons-material/OpenInFullOutlined';
 import TableChartOutlinedIcon from '@mui/icons-material/TableChartOutlined';
 import ViewAgendaOutlinedIcon from '@mui/icons-material/ViewAgendaOutlined';
@@ -21,7 +23,7 @@ import MarkdownText from '../common/MarkdownText';
 import MermaidDiagram from '../common/MermaidDiagram';
 import { buildScrollableRegionSx } from '../../styles/interaction';
 import type { GroupChat } from '../../types/chat';
-import type { AssistantArtifactItem, AssistantArtifactKind } from '../../types/assistantArtifact';
+import type { AssistantArtifactItem, AssistantArtifactKind, AssistantArtifactVersion } from '../../types/assistantArtifact';
 import { copyTextToClipboard } from '../../utils/clipboard';
 import { ensureAssistantArtifactStoreHydrated, getAssistantArtifactCurrentContent, useAssistantArtifactStore } from '../../stores/useAssistantArtifactStore';
 
@@ -100,6 +102,27 @@ function downloadArtifact(item: AssistantArtifactItem, content: string) {
   URL.revokeObjectURL(url);
 }
 
+function getArtifactVersionContent(version: AssistantArtifactVersion | null | undefined) {
+  if (!version) return '';
+  if (version.files?.length) {
+    return version.files
+      .map((file) => `// ${file.path}\n${file.content}`)
+      .join('\n\n');
+  }
+  return version.content || '';
+}
+
+function getArtifactCurrentVersion(item: AssistantArtifactItem) {
+  const fallbackVersion = item.versions.length ? item.versions[item.versions.length - 1] : null;
+  return item.versions.find((entry) => entry.id === item.currentVersionId) || fallbackVersion;
+}
+
+function getArtifactVersionLabel(item: AssistantArtifactItem, version: AssistantArtifactVersion | null) {
+  if (!version) return '';
+  const index = item.versions.findIndex((entry) => entry.id === version.id);
+  return index >= 0 ? `${index + 1} / ${item.versions.length}` : '';
+}
+
 type ArtifactViewMode = 'list' | 'icons' | 'gallery';
 type ArtifactSortMode = 'manual' | 'updated' | 'created' | 'title' | 'kind';
 
@@ -143,9 +166,27 @@ function artifactPreviewText(item: AssistantArtifactItem) {
   return content.replace(/\s+/g, ' ').slice(0, 420);
 }
 
+function ThumbnailFade() {
+  return (
+    <Box
+      sx={{
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        bottom: 0,
+        height: 34,
+        pointerEvents: 'none',
+        background: (theme) => theme.palette.mode === 'light'
+          ? 'linear-gradient(to bottom, rgba(248,250,252,0), rgba(248,250,252,0.96))'
+          : 'linear-gradient(to bottom, rgba(15,23,42,0), rgba(15,23,42,0.96))',
+      }}
+    />
+  );
+}
+
 function ArtifactThumbnail({ item, mode }: { item: AssistantArtifactItem; mode: ArtifactViewMode }) {
   const content = getAssistantArtifactCurrentContent(item);
-  const renderMermaid = mode !== 'icons' && isRenderableMermaid(item, content);
+  const renderMermaid = isRenderableMermaid(item, content);
   const previewHeight = mode === 'list'
     ? 'clamp(240px, 46vh, 380px)'
     : mode === 'gallery'
@@ -165,11 +206,15 @@ function ArtifactThumbnail({ item, mode }: { item: AssistantArtifactItem; mode: 
       }}
     >
       {renderMermaid ? (
-        <Box sx={{ p: 0.5, transform: mode === 'list' ? 'scale(0.92)' : 'scale(0.84)', transformOrigin: 'top left', width: mode === 'list' ? '108%' : '119%' }}>
+        <Box sx={{ p: 0.5, transform: mode === 'list' ? 'scale(0.92)' : mode === 'gallery' ? 'scale(0.84)' : 'scale(0.58)', transformOrigin: 'top left', width: mode === 'list' ? '108%' : mode === 'gallery' ? '119%' : '172%' }}>
           <MermaidDiagram source={content} />
         </Box>
       ) : item.kind === 'html' ? (
         <Box component="iframe" title={item.title} srcDoc={content} sandbox="" sx={{ width: '100%', height: '100%', border: 0, bgcolor: '#fff' }} />
+      ) : item.kind === 'document' ? (
+        <Box sx={{ p: 1, height: '100%', overflow: 'hidden', bgcolor: (theme) => theme.palette.mode === 'light' ? '#fff' : 'rgba(2,6,23,0.52)' }}>
+          <MarkdownText text={content} forceRich />
+        </Box>
       ) : (
         <Box sx={{ p: 1, height: '100%', display: 'grid', alignContent: 'start', gap: 0.75 }}>
           <Box sx={{ color: 'text.secondary' }}>
@@ -192,12 +237,13 @@ function ArtifactThumbnail({ item, mode }: { item: AssistantArtifactItem; mode: 
           </Typography>
         </Box>
       )}
+      <ThumbnailFade />
     </Box>
   );
 }
 
-function ArtifactPreview({ item, expanded = false }: { item: AssistantArtifactItem; expanded?: boolean }) {
-  const content = getAssistantArtifactCurrentContent(item);
+function ArtifactPreview({ item, version, expanded = false }: { item: AssistantArtifactItem; version?: AssistantArtifactVersion | null; expanded?: boolean }) {
+  const content = version ? getArtifactVersionContent(version) : getAssistantArtifactCurrentContent(item);
   if (!content) {
     return <Typography variant="body2" color="text.secondary">当前版本为空。</Typography>;
   }
@@ -245,6 +291,7 @@ function AssistantArtifactList({ chatId, selectedArtifactId }: { chatId: string;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
   const [fullscreenId, setFullscreenId] = useState<string | null>(null);
+  const [fullscreenVersionId, setFullscreenVersionId] = useState<string | null>(null);
 
   useEffect(() => {
     void ensureAssistantArtifactStoreHydrated();
@@ -267,6 +314,22 @@ function AssistantArtifactList({ chatId, selectedArtifactId }: { chatId: string;
   const fullscreenItem = useMemo(() => (
     artifacts.find((item) => item.id === fullscreenId) || null
   ), [artifacts, fullscreenId]);
+  const fullscreenVersion = useMemo(() => {
+    if (!fullscreenItem) return null;
+    return fullscreenItem.versions.find((version) => version.id === fullscreenVersionId) || getArtifactCurrentVersion(fullscreenItem);
+  }, [fullscreenItem, fullscreenVersionId]);
+  const fullscreenVersionIndex = fullscreenItem && fullscreenVersion
+    ? fullscreenItem.versions.findIndex((version) => version.id === fullscreenVersion.id)
+    : -1;
+  const openFullscreen = (item: AssistantArtifactItem) => {
+    setFullscreenId(item.id);
+    setFullscreenVersionId(getArtifactCurrentVersion(item)?.id || null);
+  };
+  const stepFullscreenVersion = (direction: -1 | 1) => {
+    if (!fullscreenItem || fullscreenVersionIndex < 0) return;
+    const next = fullscreenItem.versions[fullscreenVersionIndex + direction];
+    if (next) setFullscreenVersionId(next.id);
+  };
 
   const toggleExpanded = (artifactId: string) => {
     setExpandedIds((prev) => {
@@ -321,11 +384,13 @@ function AssistantArtifactList({ chatId, selectedArtifactId }: { chatId: string;
           </Tooltip>
         </>
       ) : null}
-      <Tooltip title="全屏查看">
-        <IconButton size="small" onClick={(event) => { event.stopPropagation(); setFullscreenId(item.id); }}>
-          <OpenInFullOutlinedIcon fontSize="small" />
-        </IconButton>
-      </Tooltip>
+      {viewMode === 'list' ? (
+        <Tooltip title="全屏查看">
+          <IconButton size="small" onClick={(event) => { event.stopPropagation(); openFullscreen(item); }}>
+            <OpenInFullOutlinedIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+      ) : null}
       <Tooltip title="复制当前版本">
         <IconButton size="small" onClick={(event) => { event.stopPropagation(); void copyTextToClipboard(getAssistantArtifactCurrentContent(item)); }}>
           <ContentCopyOutlinedIcon fontSize="small" />
@@ -363,11 +428,15 @@ function AssistantArtifactList({ chatId, selectedArtifactId }: { chatId: string;
         key={item.id}
         role="button"
         tabIndex={0}
-        onClick={() => setSelectedId(item.id)}
+        onClick={() => {
+          if (viewMode === 'icons' || viewMode === 'gallery') openFullscreen(item);
+          else setSelectedId(item.id);
+        }}
         onKeyDown={(event) => {
           if (event.key === 'Enter' || event.key === ' ') {
             event.preventDefault();
-            setSelectedId(item.id);
+            if (viewMode === 'icons' || viewMode === 'gallery') openFullscreen(item);
+            else setSelectedId(item.id);
           }
         }}
         sx={{
@@ -412,12 +481,20 @@ function AssistantArtifactList({ chatId, selectedArtifactId }: { chatId: string;
             </Typography>
           ) : null}
           <ArtifactThumbnail item={item} mode={viewMode} />
-          {viewMode !== 'icons' ? (
+          {viewMode === 'list' ? (
             <Box>
-              {expanded ? <ArtifactPreview item={item} /> : null}
+              {expanded && item.kind !== 'diagram' && item.kind !== 'html' ? <ArtifactPreview item={item} /> : null}
               {canExpand ? (
-                <Button size="small" onClick={(event) => { event.stopPropagation(); toggleExpanded(item.id); }} sx={{ mt: expanded ? 1 : 0, px: 0 }}>
-                  {expanded ? '收起' : '展开'}
+                <Button
+                  size="small"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    if (item.kind === 'diagram' || item.kind === 'html') openFullscreen(item);
+                    else toggleExpanded(item.id);
+                  }}
+                  sx={{ mt: expanded ? 1 : 0, px: 0 }}
+                >
+                  {item.kind === 'diagram' || item.kind === 'html' ? '查看' : expanded ? '收起' : '展开'}
                 </Button>
               ) : null}
             </Box>
@@ -490,16 +567,27 @@ function AssistantArtifactList({ chatId, selectedArtifactId }: { chatId: string;
                 {renderMeta(fullscreenItem)}
               </Box>
               <Stack direction="row" spacing={0.25}>
-                <IconButton onClick={() => void copyTextToClipboard(getAssistantArtifactCurrentContent(fullscreenItem))}>
+                <IconButton onClick={() => stepFullscreenVersion(-1)} disabled={fullscreenVersionIndex <= 0}>
+                  <NavigateBeforeOutlinedIcon />
+                </IconButton>
+                <Box sx={{ minWidth: 54, display: 'grid', placeItems: 'center' }}>
+                  <Typography variant="caption" color="text.secondary">
+                    {getArtifactVersionLabel(fullscreenItem, fullscreenVersion)}
+                  </Typography>
+                </Box>
+                <IconButton onClick={() => stepFullscreenVersion(1)} disabled={fullscreenVersionIndex < 0 || fullscreenVersionIndex >= fullscreenItem.versions.length - 1}>
+                  <NavigateNextOutlinedIcon />
+                </IconButton>
+                <IconButton onClick={() => void copyTextToClipboard(getArtifactVersionContent(fullscreenVersion))}>
                   <ContentCopyOutlinedIcon />
                 </IconButton>
-                <IconButton onClick={() => downloadArtifact(fullscreenItem, getAssistantArtifactCurrentContent(fullscreenItem))}>
+                <IconButton onClick={() => downloadArtifact(fullscreenItem, getArtifactVersionContent(fullscreenVersion))}>
                   <DownloadOutlinedIcon />
                 </IconButton>
               </Stack>
             </DialogTitle>
             <DialogContent dividers sx={{ bgcolor: (theme) => theme.palette.mode === 'light' ? '#f8fafc' : '#020617' }}>
-              <ArtifactPreview item={fullscreenItem} expanded />
+              <ArtifactPreview item={fullscreenItem} version={fullscreenVersion} expanded />
             </DialogContent>
             <DialogActions>
               <Button onClick={() => setFullscreenId(null)}>关闭</Button>
