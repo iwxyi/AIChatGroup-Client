@@ -40,6 +40,31 @@ function buildAssistantSystemPrompt() {
   ].join('\n');
 }
 
+function isAssistantAgentArtifactEnabled(chat: GroupChat) {
+  return Boolean(chat.modeState.assistantCapabilities?.agent && chat.modeState.assistantCapabilities?.artifacts);
+}
+
+async function persistAssistantArtifactsFromReply(params: {
+  chat: GroupChat;
+  chatId: string;
+  message: Message;
+}) {
+  if (!isAssistantAgentArtifactEnabled(params.chat)) return;
+  const [{ extractAssistantArtifactsFromMessage }, { ensureAssistantArtifactStoreHydrated, useAssistantArtifactStore }] = await Promise.all([
+    import('./assistantArtifactExtraction'),
+    import('../stores/useAssistantArtifactStore'),
+  ]);
+  const drafts = extractAssistantArtifactsFromMessage(params.message.content);
+  if (!drafts.length) return;
+  await ensureAssistantArtifactStoreHydrated();
+  useAssistantArtifactStore.getState().upsertArtifactsFromMessage({
+    chatId: params.chatId,
+    messageId: params.message.id,
+    drafts,
+    timestamp: params.message.timestamp,
+  });
+}
+
 function toAssistantPromptMessages(messages: Message[]) {
   return messages
     .filter((message) => !message.isDeleted && message.type !== 'system' && message.type !== 'event')
@@ -238,6 +263,11 @@ export async function runAssistantChatReplyFlow(params: {
   await params.updateChat(params.chatId, {
     lastMessageAt: persisted.timestamp,
     latestMessage: persisted,
+  });
+  await persistAssistantArtifactsFromReply({
+    chat: params.chat,
+    chatId: params.chatId,
+    message: persisted,
   });
   return persisted;
 }
