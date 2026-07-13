@@ -1,6 +1,6 @@
 import type { SessionGenerationPromptContext } from '../types/sessionEngine';
 
-export type ChatStyleProfile = 'casual_room' | 'discovery_room' | 'analytical_room' | 'companion_room' | 'dramatic_room' | 'task_room';
+export type ChatStyleProfile = 'assistant_room' | 'casual_room' | 'discovery_room' | 'analytical_room' | 'companion_room' | 'dramatic_room' | 'task_room';
 
 export interface StyleProfileDefinition {
   key: ChatStyleProfile;
@@ -9,6 +9,15 @@ export interface StyleProfileDefinition {
 }
 
 const styleProfiles = new Map<ChatStyleProfile, StyleProfileDefinition>([
+  ['assistant_room', {
+    key: 'assistant_room',
+    label: 'Assistant room',
+    promptContext: {
+      additionalConstraints: ['Answer objectively and directly. Do not roleplay or add character-specific voice.'],
+      responseStyle: 'professional',
+      allowMarkdown: true,
+    },
+  }],
   ['casual_room', {
     key: 'casual_room',
     label: 'Casual room',
@@ -66,6 +75,7 @@ const styleProfiles = new Map<ChatStyleProfile, StyleProfileDefinition>([
 ]);
 
 const scenarioDefaults = new Map<string, ChatStyleProfile>([
+  ['general-assistant', 'assistant_room'],
   ['open-chat', 'casual_room'],
   ['direct-chat', 'companion_room'],
   ['ai-private-thread', 'companion_room'],
@@ -85,6 +95,7 @@ const scenarioDefaults = new Map<string, ChatStyleProfile>([
 ]);
 
 const familyDefaults = new Map<string, ChatStyleProfile>([
+  ['assistant', 'assistant_room'],
   ['conversation', 'casual_room'],
   ['analysis', 'analytical_room'],
   ['interview', 'task_room'],

@@ -3,6 +3,7 @@ import type { SessionFamily } from '../types/sessionEngine';
 import { getSessionScenarioResolution } from '../types/sessionEngine';
 
 const sessionFamilyToEngineKey = new Map<SessionFamily, GroupChat['mode']>([
+  ['assistant', 'open_chat'],
   ['conversation', 'open_chat'],
   ['interview', 'interview'],
   ['deduction', 'werewolf'],
@@ -15,6 +16,7 @@ const sessionFamilyToEngineKey = new Map<SessionFamily, GroupChat['mode']>([
 ]);
 
 const sessionScenarioToEngineKey = new Map<string, GroupChat['mode']>([
+  ['general-assistant', 'open_chat'],
   ['open-chat', 'open_chat'],
   ['direct-chat', 'open_chat'],
   ['ai-private-thread', 'open_chat'],

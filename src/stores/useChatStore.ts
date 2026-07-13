@@ -11,7 +11,7 @@ import { reportRecoverableError, reportRecoverableWarning } from '../services/di
 import { projectEntities, type SyncPatchOperation } from '../services/syncProjector';
 import { clearResolvedFieldConflicts, detectPendingFieldConflicts, type FieldConflictRecord } from '../services/syncConflictRecords';
 import { buildWarmState } from './storeWarmHelpers';
-import { createScopedIndexedDbBufferedJsonStorage, createScopedIndexedDbStorage } from './storePersistenceScope';
+import { createScopedIndexedDbBufferedJsonStorage, createScopedIndexedDbStorage, flushBufferedPersistenceWrites } from './storePersistenceScope';
 import { createSyncScheduler } from './storeSyncScheduler';
 import { createSyncScopeMetadata, type SyncScopeSnapshot } from './syncScopeMetadata';
 import { createGuestUploadFlag } from './storeGuestUpload';
@@ -155,6 +155,19 @@ async function createChatRemote(chatData: ChatCreatePayload) {
     mode: chatData.mode,
     modeConfig: chatData.modeConfig,
     modeState: chatData.modeState,
+    sessionKind: chatData.sessionKind,
+    scenarioState: chatData.scenarioState,
+    channels: chatData.channels,
+    layoutState: chatData.layoutState,
+    scenarioPackage: chatData.scenarioPackage,
+    judgeAgent: chatData.judgeAgent,
+    layeredGrowth: chatData.layeredGrowth,
+    modeStateSummary: chatData.modeStateSummary,
+    memoryLayerSummary: chatData.memoryLayerSummary,
+    growthSnapshots: chatData.growthSnapshots,
+    roleMemorySummaries: chatData.roleMemorySummaries,
+    scenarioMemorySummary: chatData.scenarioMemorySummary,
+    topologySummary: chatData.topologySummary,
     name: chatData.name,
     topic: chatData.topic,
     style: chatData.style,
@@ -968,8 +981,12 @@ export function clearPersistedChatStore() {
   chatSyncScopes.clear();
 }
 
-export function resetChatStoreForAccountBoundary() {
-  clearPersistedChatStore();
+export async function resetChatStoreForAccountBoundary() {
+  const storageKey = getChatStorageKey();
+  const storage = createChatStorageForKey(storageKey);
+  const storageName = getChatStoreStorageName();
+  const preservedSnapshot = await storage.getItem(storageName);
+  chatSyncScopes.clear();
   useChatStore.setState({
     chats: [],
     currentChatId: null,
@@ -983,6 +1000,12 @@ export function resetChatStoreForAccountBoundary() {
     chatSummaryLoadedAt: 0,
     isLoading: false,
   });
+  flushBufferedPersistenceWrites();
+  if (preservedSnapshot != null) {
+    await storage.setItem(storageName, preservedSnapshot);
+  } else {
+    await storage.removeItem(storageName);
+  }
 }
 
 const chatStorage = createScopedIndexedDbBufferedJsonStorage<PersistedChatState>({

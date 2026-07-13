@@ -21,9 +21,11 @@ import { DETAIL_COLLAPSED_CHANGE_EVENT, DETAIL_COLLAPSED_STORAGE_KEY, readDetail
 import { readPersistentUiValue, writePersistentUiValue } from '../utils/persistentUiState';
 import { motion, transition } from '../styles/motion';
 import { buildListGridSx } from '../styles/interaction';
+import { buildAssistantChatDraft } from '../services/chatDraftBuilder';
 
 const CHAT_LIST_TAB_KEY = 'chat-list-tab';
-const isChatListTab = (value: unknown): value is number => Number.isInteger(value) && Number(value) >= 0 && Number(value) <= 2;
+const ASSISTANT_TAB = 3;
+const isChatListTab = (value: unknown): value is number => Number.isInteger(value) && Number(value) >= 0 && Number(value) <= ASSISTANT_TAB;
 
 function getActiveChatId(pathname: string) {
   return pathname.match(/^\/chats\/([^/]+)(?:\/edit)?$/)?.[1] || null;
@@ -37,8 +39,9 @@ export default function ChatListPage() {
   const isThreeColumn = useMediaQuery('(min-width:1280px)');
   const pane = usePaneLayout();
   const isMasterPane = pane.role === 'master';
-  const { chats, deleteChat, prefetchChats, restoreLocalChats, markChatsWarm, isLoading } = useChatStore(useShallow((state) => ({
+  const { chats, addChat, deleteChat, prefetchChats, restoreLocalChats, markChatsWarm, isLoading } = useChatStore(useShallow((state) => ({
     chats: state.chats,
+    addChat: state.addChat,
     deleteChat: state.deleteChat,
     prefetchChats: state.prefetchChats,
     restoreLocalChats: state.restoreLocalChats,
@@ -53,6 +56,7 @@ export default function ChatListPage() {
   const [search, setSearch] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [detailCollapsed, setDetailCollapsed] = useState(readDetailCollapsedState);
+  const [creatingAssistant, setCreatingAssistant] = useState(false);
   const initialTab = useMemo(() => {
     const params = new URLSearchParams(location.search);
     const tabParam = params.get('tab');
@@ -197,11 +201,22 @@ export default function ChatListPage() {
   const groupedChats = useMemo(() => filteredChats.filter((chat) => chat.type === 'group'), [filteredChats]);
   const userDirectChats = useMemo(() => filteredChats.filter((chat) => chat.type === 'direct'), [filteredChats]);
   const privateChats = useMemo(() => filteredChats.filter((chat) => chat.type === 'ai_direct'), [filteredChats]);
-  const visibleChats = tab === 0 ? groupedChats : tab === 1 ? userDirectChats : privateChats;
-  const emptyMessage = tab === 0 ? t('chat.noGroups') : tab === 1 ? '还没有单聊' : '还没有 AI私聊';
+  const assistantChats = useMemo(() => filteredChats.filter((chat) => chat.type === 'assistant'), [filteredChats]);
+  const visibleChats = tab === ASSISTANT_TAB ? assistantChats : tab === 0 ? groupedChats : tab === 1 ? userDirectChats : privateChats;
+  const emptyMessage = tab === ASSISTANT_TAB ? '还没有助手会话' : tab === 0 ? t('chat.noGroups') : tab === 1 ? '还没有单聊' : '还没有 AI私聊';
   const createPath = tab === 0 ? '/chats/create' : '/direct/create';
-  const createLabel = tab === 0 ? t('chat.create') : '创建单聊';
-  const showDirectCreate = tab !== 2;
+  const createLabel = tab === ASSISTANT_TAB ? '创建助手' : tab === 0 ? t('chat.create') : '创建单聊';
+  const showCreateFab = tab !== 2;
+  const createAssistantChat = async () => {
+    if (creatingAssistant) return;
+    setCreatingAssistant(true);
+    try {
+      const chat = await addChat(buildAssistantChatDraft());
+      navigate(`/chats/${chat.id}?fromTab=${ASSISTANT_TAB}`);
+    } finally {
+      setCreatingAssistant(false);
+    }
+  };
   const floatingActionPositionSx = isMasterPane ? {
     position: 'fixed' as const,
     right: pane.bounds ? `calc(100vw - ${pane.bounds.right}px + 28px)` : 28,
@@ -258,6 +273,7 @@ export default function ChatListPage() {
           value={tab}
           onChange={setTab}
           items={[
+            { value: ASSISTANT_TAB, label: `助手 ${assistantChats.length}` },
             { value: 0, label: `群聊 ${groupedChats.length}` },
             { value: 1, label: `单聊 ${userDirectChats.length}` },
             { value: 2, label: `AI私聊 ${privateChats.length}` },
@@ -272,7 +288,11 @@ export default function ChatListPage() {
           variant="plain"
           message={emptyMessage}
           action={
-            showDirectCreate ? (
+            tab === ASSISTANT_TAB ? (
+              <Button variant="outlined" onClick={() => void createAssistantChat()} disabled={creatingAssistant}>
+                创建助手
+              </Button>
+            ) : showCreateFab ? (
               <Stack direction="row" spacing={1}>
                 <Button variant="outlined" onClick={() => navigate('/chats/create')}>
                   {t('chat.create')}
@@ -316,12 +336,19 @@ export default function ChatListPage() {
         destructive
       />
 
-      {tab !== 2 ? (
+      {showCreateFab ? (
         <ExpandableFab
           icon={<AddIcon />}
           label={createLabel}
           ariaLabel={createLabel}
-          onClick={() => navigate(createPath)}
+          onClick={() => {
+            if (tab === ASSISTANT_TAB) {
+              void createAssistantChat();
+              return;
+            }
+            navigate(createPath);
+          }}
+          disabled={creatingAssistant}
           sx={floatingActionPositionSx}
         />
       ) : null}

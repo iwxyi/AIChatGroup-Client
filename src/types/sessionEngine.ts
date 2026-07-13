@@ -5,7 +5,7 @@ import type { APIConfig } from './settings';
 import { buildDirectorInterventionFields } from './directorInterventionAction';
 import { canUseDirectorIntervention, canUseMute, canUsePrivateThreads } from '../services/conversationCapabilities';
 
-export type SessionFamily = 'conversation' | 'interview' | 'deduction' | 'mystery' | 'study' | 'analysis' | 'board_game' | 'agent' | 'simulation';
+export type SessionFamily = 'assistant' | 'conversation' | 'interview' | 'deduction' | 'mystery' | 'study' | 'analysis' | 'board_game' | 'agent' | 'simulation';
 export type SessionSurfaceProfile = 'text' | 'form' | 'board' | 'hybrid' | 'timeline' | 'dashboard';
 export type SessionTopology = 'group' | 'direct' | 'thread' | 'team' | 'table';
 export type SessionActorKind = 'ai_agent' | 'human_user' | 'system_agent' | 'moderator_agent' | 'observer';
@@ -269,6 +269,7 @@ export interface SessionSurfaceProjection {
 
 export const DEFAULT_SESSION_FAMILY_REGISTRY: SessionFrameworkRegistry = {
   families: {
+    assistant: { definition: { key: 'assistant', label: 'assistant', defaultActionChance: 0 }, defaultSurfaceProfile: 'text' },
     conversation: { definition: { key: 'conversation', label: 'conversation', supportsThreads: true, defaultActionChance: 0.08 }, defaultSurfaceProfile: 'text' },
     interview: { definition: { key: 'interview', label: 'interview', defaultActionChance: 0.18 }, defaultSurfaceProfile: 'form' },
     deduction: { definition: { key: 'deduction', label: 'deduction', supportsPrivateRoles: true, defaultActionChance: 0.16 }, defaultSurfaceProfile: 'hybrid' },
@@ -280,6 +281,7 @@ export const DEFAULT_SESSION_FAMILY_REGISTRY: SessionFrameworkRegistry = {
     simulation: { definition: { key: 'simulation', label: 'simulation', defaultActionChance: 0.1 }, defaultSurfaceProfile: 'timeline' },
   },
   scenarios: {
+    'general-assistant': { scenarioId: 'general-assistant', label: 'general-assistant', family: 'assistant', surfaceProfile: 'text' },
     'open-chat': { scenarioId: 'open-chat', label: 'open-chat', family: 'conversation', surfaceProfile: 'text' },
     'direct-chat': { scenarioId: 'direct-chat', label: 'direct-chat', family: 'conversation', surfaceProfile: 'text' },
     'ai-private-thread': { scenarioId: 'ai-private-thread', label: 'ai-private-thread', family: 'conversation', surfaceProfile: 'text' },
@@ -327,6 +329,7 @@ export function createDefaultTurnPolicyForFamily(family: SessionFamily, canSpeak
 }
 
 export function createDefaultSessionKind(type: GroupChat['type'], mode: GroupChat['mode']): SessionKind {
+  if (type === 'assistant') return { topology: 'direct', family: 'assistant', scenarioId: 'general-assistant', surfaceProfile: 'text' };
   if (mode === 'board_game') return { topology: type === 'group' ? 'table' : 'direct', family: 'board_game', scenarioId: 'board-game', surfaceProfile: 'board' };
   if (mode === 'interview') return { topology: type === 'group' ? 'group' : 'direct', family: 'interview', scenarioId: 'panel-interview', surfaceProfile: 'form' };
   if (mode === 'group_discussion' || mode === 'roundtable') return { topology: type === 'group' ? 'group' : 'team', family: 'analysis', scenarioId: mode === 'roundtable' ? 'roundtable-review' : 'opinion-review', surfaceProfile: 'text' };
@@ -1231,7 +1234,7 @@ export function buildResolvedProjectionRuntimeCardDisplayTitle() {
 export function defaultInputSurfacesForConversation(conversation: GroupChat): SessionInputSurfaceDefinition[] {
   const definition = resolveSessionDefinition(conversation);
   const userIsMember = conversation.memberIds.includes('user');
-  const textCapability: SessionViewerCapability = conversation.type === 'direct' || conversation.type === 'ai_direct' || userIsMember ? 'speak' : 'guide';
+  const textCapability: SessionViewerCapability = conversation.type === 'assistant' || conversation.type === 'direct' || conversation.type === 'ai_direct' || userIsMember ? 'speak' : 'guide';
   const textMode: SessionInputSurfaceDefinition['mode'] = textCapability === 'speak' ? 'memberSpeak' : 'guide';
   if (definition.kind.surfaceProfile === 'form') {
     return [createDefaultTextInputSurface({ key: 'fallback-text', label: 'Text fallback', capability: textCapability, mode: textMode })];

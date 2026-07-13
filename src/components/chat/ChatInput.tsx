@@ -24,6 +24,7 @@ interface ChatInputProps {
   onDraftActivity?: (activity: UserDraftActivity) => void;
   inputCapabilities?: Partial<AIModelInputCapabilities> | null;
   inputCapabilityWarning?: string;
+  autoFocus?: boolean;
 }
 
 function getMobilePanelTravelDistance() {
@@ -63,7 +64,7 @@ function buildAttachmentId() {
   return `att_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-export default function ChatInput({ mode, characterName, onSend, onClose, placeholderOverride, sendingLabel, hideSpeakAsChip, onSendError, onOpenPanel, onDraftActivity, inputCapabilities, inputCapabilityWarning }: ChatInputProps) {
+export default function ChatInput({ mode, characterName, onSend, onClose, placeholderOverride, sendingLabel, hideSpeakAsChip, onSendError, onOpenPanel, onDraftActivity, inputCapabilities, inputCapabilityWarning, autoFocus }: ChatInputProps) {
   const [text, setText] = useState('');
   const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
   const [isSending, setIsSending] = useState(false);
@@ -85,6 +86,14 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
   const pendingPanelOffsetRef = useRef<number | null>(null);
   const panelHandleCleanupRef = useRef<(() => void) | null>(null);
   const panelHandleClickSuppressedRef = useRef(false);
+
+  useEffect(() => {
+    if (!autoFocus) return;
+    const frame = window.requestAnimationFrame(() => {
+      textInputRef.current?.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [autoFocus]);
 
   const cleanupPanelHandleListeners = useCallback(() => {
     panelHandleCleanupRef.current?.();

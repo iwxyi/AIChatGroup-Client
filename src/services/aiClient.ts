@@ -12,6 +12,7 @@ type ChatMessage = { role: ChatRole; content: string; attachments?: ChatMessageI
 type MaybeTypedConfig = APIConfig & Partial<Pick<AIModelProfile, 'type'>>;
 type JSONValue = string | number | boolean | null | JSONValue[] | { [key: string]: JSONValue };
 export type AiUsageType =
+  | 'assistant_chat'
   | 'direct_chat'
   | 'group_chat'
   | 'story_chat'

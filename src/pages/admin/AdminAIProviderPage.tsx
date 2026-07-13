@@ -36,6 +36,7 @@ type UsageStatsGroupBy = typeof USAGE_STATS_GROUP_BY_VALUES[number];
 type UserStatsGroupBy = typeof USER_STATS_GROUP_BY_VALUES[number];
 
 const AI_USAGE_TYPE_LABELS: Record<string, string> = {
+  assistant_chat: '助手回复',
   direct_chat: '单聊回复',
   group_chat: '群聊回复',
   story_chat: '故事回复',

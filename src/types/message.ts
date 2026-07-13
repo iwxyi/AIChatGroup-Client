@@ -137,6 +137,9 @@ export interface MessageMetadata {
   format?: 'plain' | 'markdown';
   contextText?: string;
   renderText?: string;
+  assistant?: {
+    mode?: 'general';
+  };
   branching?: {
     nodeId?: string;
     parentNodeId?: string | null;

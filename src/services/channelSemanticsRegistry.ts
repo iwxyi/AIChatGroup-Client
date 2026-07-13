@@ -33,6 +33,16 @@ function buildSharedRecentSummary(messages: Message[]) {
 }
 
 const registry = new Map<ChannelSemanticKey, ChannelSemanticDefinition>([
+  ['assistant', {
+    key: 'assistant',
+    label: 'General assistant channel',
+    promptPrefix: 'This is a neutral assistant channel. Answer the user directly and objectively; do not roleplay or simulate a character.',
+    transcriptInstruction: 'Recent transcript is task context for a general assistant, not a character dialogue sample.',
+    targetPriority: 'latest_human',
+    memoryMode: 'user_private',
+    duplicateTolerance: 'relaxed',
+    summariseRecentContext: buildSharedRecentSummary,
+  }],
   ['direct', {
     key: 'direct',
     label: 'User-private channel',

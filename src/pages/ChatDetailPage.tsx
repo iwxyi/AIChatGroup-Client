@@ -4,6 +4,7 @@ import PageSection from '../components/common/PageSection';
 import AppSnackbar from '../components/common/AppSnackbar';
 import LoadingState from '../components/common/LoadingState';
 import PeopleIcon from '@mui/icons-material/People';
+import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined';
 import InfoIcon from '@mui/icons-material/Info';
 import PlayIcon from '@mui/icons-material/PlayArrow';
 import PauseIcon from '@mui/icons-material/Pause';
@@ -63,6 +64,7 @@ import { projectMergedChatMessages } from '../services/currentChatMessages';
 import { resolveSessionFamilyKey } from '../services/sessionEngineKeys';
 
 const ChatSidebarPanel = lazy(() => import('../components/chat/ChatSidebarPanel'));
+const AssistantArtifactsPanel = lazy(() => import('../components/chat/AssistantArtifactsPanel'));
 const SessionActionPanel = lazy(() => import('../components/session/SessionActionPanel'));
 const MessageAnalysisDialog = lazy(() => import('../components/chat/MessageAnalysisDialog').then((module) => ({ default: module.MessageAnalysisDialog })));
 const ProfilePreviewOverlay = lazy(() => import('../components/chat/ProfilePreviewOverlay'));
@@ -908,6 +910,7 @@ export default function ChatDetailPage() {
     [characters, speakAsCharacterId]
   );
   const isStoryRoom = chat?.sessionKind?.scenarioId === 'story-reader';
+  const isAssistantChat = chat?.type === 'assistant';
   const savedStoryReadingPositionForChat = isStoryRoom && id ? chatReadingPositions[id] : null;
   const savedStoryReadingRestoreKey = savedStoryReadingPositionForChat && !savedStoryReadingPositionForChat.pinned
     ? `${savedStoryReadingPositionForChat.messageId}:${savedStoryReadingPositionForChat.sourceTimestamp ?? ''}:${Math.round(savedStoryReadingPositionForChat.offsetTop)}`
@@ -1123,6 +1126,17 @@ export default function ChatDetailPage() {
         actorId: 'user',
         capability: 'speak' as const,
         placeholder: '输入消息',
+      }];
+    }
+    if (!effectiveSpeakAsChar && chat?.type === 'assistant') {
+      return [{
+        ...primaryTextSurface,
+        key: 'assistant-user-text',
+        type: 'text' as const,
+        mode: 'memberSpeak' as const,
+        actorId: 'user',
+        capability: 'speak' as const,
+        placeholder: '向助手提问',
       }];
     }
     if (!effectiveSpeakAsChar && chat?.type === 'ai_direct') {
@@ -1523,6 +1537,46 @@ export default function ChatDetailPage() {
             if (directReplyAbortRef.current === directReplyAbortController) directReplyAbortRef.current = null;
           }
         })();
+      } else if (chat.type === 'assistant' && createdRevision.type === 'user') {
+        const assistantReplyAbortController = new AbortController();
+        directReplyAbortRef.current = assistantReplyAbortController;
+        const shouldContinueAssistantRevision = () => {
+          if (assistantReplyAbortController.signal.aborted) return false;
+          if (directReplyEpochRef.current !== directReplyEpoch) return false;
+          const latestChat = useChatStore.getState().chats.find((item) => item.id === id) || nextChat;
+          if (latestChat.messageBranchState?.selectedRevisionByRootId?.[revisionRootId] !== revisionNodeId) return false;
+          const messageState = useMessageStore.getState();
+          const latestMessages = projectMergedChatMessages({
+            chatId: id,
+            activeMessages: messageState.messages,
+            cachedWindow: messageState.messageWindowsByChatId[id],
+          });
+          return projectActiveBranchMessages(latestChat, latestMessages).some((message) => message.id === createdRevision.id);
+        };
+        void (async () => {
+          const { runAssistantChatReplyFlow } = await import('../services/assistantChatFlow');
+          try {
+            await runAssistantChatReplyFlow({
+              api,
+              aiProfiles,
+              chatId: id,
+              chat: nextChat,
+              currentMessages: activeMessagesAfterRevision,
+              timestamp: createdRevision.timestamp + 1,
+              upsertMessage: upsertMessageStable,
+              updateChat,
+              signal: assistantReplyAbortController.signal,
+              shouldContinue: shouldContinueAssistantRevision,
+            });
+          } catch (error) {
+            if (!isGenerationCancelledError(error)) {
+              console.error('[assistant-reply:revision-error]', error);
+              showErrorToast(error instanceof Error ? error.message : String(error));
+            }
+          } finally {
+            if (directReplyAbortRef.current === assistantReplyAbortController) directReplyAbortRef.current = null;
+          }
+        })();
       } else if (createdRevision.type === 'user' || createdRevision.type === 'god') {
         await commitPersistedManualRuntime(createdRevision, activeMessagesAfterRevision);
         if (chat.type === 'ai_direct') {
@@ -1541,7 +1595,7 @@ export default function ChatDetailPage() {
       if (cancelledRunningLoop) {
         setSnackbar({ open: true, message: '已切换到新分支，当前生成已重启', severity: 'success' });
       }
-      if (chat.type !== 'direct') startConversationLoopIfNeeded(nextChat, { immediate: true });
+      if (chat.type !== 'direct' && chat.type !== 'assistant') startConversationLoopIfNeeded(nextChat, { immediate: true });
     });
   }, [addAnchoredMessage, aiProfiles, api, appendEventMessage, appendEventMessageStable, appendEventMessagesStable, appendLocalInterceptionHint, applyChatRuntimeDelta, cancelActiveConversationLoop, characters, chat, chats, commitPersistedManualRuntime, currentChatAllMessages, enqueueManualInput, getNextMessageTimestamp, id, recordSpeak, setSnackbar, showErrorToast, startConversationLoopIfNeeded, updateCharacter, updateCharacters, updateChat, upsertMessageStable]);
 
@@ -1743,6 +1797,38 @@ export default function ChatDetailPage() {
             }
           } finally {
             if (directReplyAbortRef.current === directReplyAbortController) directReplyAbortRef.current = null;
+          }
+        })();
+        return;
+      }
+      if (chat.type === 'assistant') {
+        directReplyAbortRef.current?.abort();
+        const assistantReplyEpoch = directReplyEpochRef.current + 1;
+        directReplyEpochRef.current = assistantReplyEpoch;
+        const assistantReplyAbortController = new AbortController();
+        directReplyAbortRef.current = assistantReplyAbortController;
+        void (async () => {
+          const { runAssistantChatReplyFlow } = await import('../services/assistantChatFlow');
+          try {
+            await runAssistantChatReplyFlow({
+              api,
+              aiProfiles,
+              chatId: id,
+              chat,
+              currentMessages: recentMessagesWithUser,
+              timestamp: userMessage.timestamp + 1,
+              upsertMessage: upsertMessageStable,
+              updateChat,
+              signal: assistantReplyAbortController.signal,
+              shouldContinue: () => !assistantReplyAbortController.signal.aborted && directReplyEpochRef.current === assistantReplyEpoch,
+            });
+          } catch (error) {
+            if (!isGenerationCancelledError(error)) {
+              console.error('[assistant-reply:send-error]', error);
+              showErrorToast(error instanceof Error ? error.message : String(error));
+            }
+          } finally {
+            if (directReplyAbortRef.current === assistantReplyAbortController) directReplyAbortRef.current = null;
           }
         })();
         return;
@@ -2595,15 +2681,20 @@ export default function ChatDetailPage() {
           ) : null}
           actions={isRemoteDeletedChat ? null : (
             <>
-              {headerPrimaryActionButton}
-              {!isMobile ? (
+              {isAssistantChat ? null : headerPrimaryActionButton}
+              {isAssistantChat && !isMobile ? (
+                <IconButton onClick={toggleRightPanel} aria-label="打开助手产物面板">
+                  <ArticleOutlinedIcon />
+                </IconButton>
+              ) : null}
+              {!isAssistantChat && !isMobile ? (
                 <IconButton onClick={toggleRightPanel}>
                 <PeopleIcon />
                 </IconButton>
               ) : null}
-              <IconButton onClick={() => navigate(`/chats/${chat.id}/edit`)}>
+              {!isAssistantChat ? <IconButton onClick={() => navigate(`/chats/${chat.id}/edit`)}>
                 <InfoIcon />
-              </IconButton>
+              </IconButton> : null}
             </>
           )}
         />
@@ -2695,6 +2786,7 @@ export default function ChatDetailPage() {
             hideSpeakAsChip={chat.type === 'ai_direct'}
             inputCapabilities={effectiveTextInputCapabilities}
             inputCapabilityWarning={effectiveTextInputCapabilityWarning}
+            autoFocus={isAssistantChat}
             onOpenPanel={isMobile ? () => setRightPanelOpen(true) : undefined}
             onDraftActivity={(activity) => {
               userDraftActivityRef.current = activity;
@@ -2730,11 +2822,11 @@ export default function ChatDetailPage() {
       </Box>
 
       {isRemoteDeletedChat ? null : <RightPanel
-        title={sidebarTitle}
+        title={isAssistantChat ? '助手面板' : sidebarTitle}
         hideMobileTitle
         desktopMaxWidth={isSplitDetailPane ? 340 : 420}
         desktopViewportRatio={isSplitDetailPane ? 0.28 : 0.34}
-        titleActions={(
+        titleActions={isAssistantChat ? null : (
           <IconButton size="small" aria-label="聊天页设置" onClick={() => setChatPageSettingsOpen(true)}>
             <SettingsIcon fontSize="small" />
           </IconButton>
@@ -2744,7 +2836,11 @@ export default function ChatDetailPage() {
           <SessionInfoCards cards={globalSessionInfoCards} onOpenChat={(chatId) => navigate(`/chats/${chatId}`)} />
           <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <LazyPanel>
-              {runtimePanelLoading ? <LoadingState title="正在加载" compact /> : <ChatSidebarPanel
+              {isAssistantChat ? (
+                <Suspense fallback={<LoadingState title="正在加载" compact />}>
+                  <AssistantArtifactsPanel />
+                </Suspense>
+              ) : runtimePanelLoading ? <LoadingState title="正在加载" compact /> : <ChatSidebarPanel
                 chat={projectedSidebarChat || { ...chat, primaryRecentEvent: projectedRuntimeState?.primaryRecentEvent }}
                 members={members}
                 messages={sidebarMessages}

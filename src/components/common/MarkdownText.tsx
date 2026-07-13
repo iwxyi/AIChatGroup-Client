@@ -30,9 +30,9 @@ function PlainMarkdownText({ text }: { text: string }) {
   );
 }
 
-function MarkdownText({ text, softLineBreaks = true }: { text: string; softLineBreaks?: boolean }) {
+function MarkdownText({ text, softLineBreaks = true, forceRich = false }: { text: string; softLineBreaks?: boolean; forceRich?: boolean }) {
   const normalized = normalizeStreamingMarkdown(text);
-  if (!shouldUseRichMarkdown(normalized)) return <PlainMarkdownText text={normalized} />;
+  if (!forceRich && !shouldUseRichMarkdown(normalized)) return <PlainMarkdownText text={normalized} />;
   return (
     <Suspense fallback={<PlainMarkdownText text={normalized} />}>
       <RichMarkdownText text={normalized} softLineBreaks={softLineBreaks} />

@@ -273,7 +273,7 @@ export default function CreateChatPage() {
   const showRuntimeTab = Boolean(editingChat);
   const isZh = i18n.language.startsWith('zh');
   const gameplayTabIndex = 1;
-  const conversationKind = editingChat?.type || 'group';
+  const conversationKind = editingChat?.type === 'assistant' ? 'group' : editingChat?.type || 'group';
   const isGroupConversation = conversationKind === 'group';
   const showManagementTab = !editingChat;
   const showDirectorTab = !editingChat || isGroupConversation;
@@ -1209,8 +1209,18 @@ export default function CreateChatPage() {
           draftContext.normalizedOwnerCharacterId,
           draftContext.normalizedAdminCharacterIds,
         );
+        const nameChanged = name.trim() !== (editingChat.name || '').trim();
         await updateChat(editingChat.id, {
           ...nextDraft,
+          modeState: editingChat.type === 'assistant'
+            ? {
+              ...editingChat.modeState,
+              ...nextDraft.modeState,
+              assistantTitle: nameChanged
+                ? { source: 'user', updatedAt: Date.now() }
+                : editingChat.modeState?.assistantTitle,
+            }
+            : nextDraft.modeState,
           runtimeTimeline: editingChat.runtimeTimeline || nextDraft.runtimeTimeline || [],
           runtimeEventsV2: editingChat.runtimeEventsV2 || nextDraft.runtimeEventsV2 || [],
           relationshipLedger: editingChat.relationshipLedger || nextDraft.relationshipLedger || [],

@@ -7,11 +7,11 @@ import type { RelationshipLedgerEntry, RoomStateSnapshotV2, RuntimeEventV2 } fro
 import type { APIConfig } from './settings';
 
 export type ChatStyle = 'free' | 'debate' | 'brainstorm' | 'roleplay';
-export type ConversationType = 'group' | 'direct' | 'ai_direct';
+export type ConversationType = 'assistant' | 'group' | 'direct' | 'ai_direct';
 export type ConversationMode = 'open_chat' | 'interview' | 'group_discussion' | 'roundtable' | 'classroom' | 'agent_workflow' | 'bargaining' | 'service_roleplay' | 'board_game' | 'scripted_play' | 'werewolf' | 'murder_mystery';
 export type ConversationPhase = 'idle' | 'warming' | 'debating' | 'aligned' | 'chaotic';
 export type RuntimeEvolutionIntensity = 'slow' | 'balanced' | 'fast';
-export type SessionFamily = 'conversation' | 'interview' | 'deduction' | 'mystery' | 'study' | 'analysis' | 'board_game' | 'agent' | 'simulation';
+export type SessionFamily = 'assistant' | 'conversation' | 'interview' | 'deduction' | 'mystery' | 'study' | 'analysis' | 'board_game' | 'agent' | 'simulation';
 export type SessionSurfaceProfile = 'text' | 'form' | 'board' | 'hybrid' | 'timeline' | 'dashboard';
 export type SessionTopology = 'group' | 'direct' | 'thread' | 'team' | 'table';
 
@@ -438,6 +438,9 @@ export interface SessionJudgeAgentDefinition {
 }
 
 export function createDefaultSessionKind(type: ConversationType, mode: ConversationMode): SessionKind {
+  if (type === 'assistant') {
+    return { topology: 'direct', family: 'assistant', scenarioId: 'general-assistant', surfaceProfile: 'text' };
+  }
   if (mode === 'board_game') {
     return { topology: type === 'group' ? 'table' : 'direct', family: 'board_game', scenarioId: 'board-game', surfaceProfile: 'board' };
   }
@@ -501,6 +504,9 @@ export function createDefaultTextInputSurface(params: { key?: string; label?: st
 
 export function defaultInputSurfacesForConversation(conversation: Pick<GroupChat, 'type' | 'mode' | 'sessionKind'>): SessionInputSurfaceDefinition[] {
   const definition = resolveSessionDefinitionForConversation(conversation);
+  const directTextSurface = conversation.type === 'assistant' || conversation.type === 'direct' || conversation.type === 'ai_direct'
+    ? createDefaultTextInputSurface({ mode: 'memberSpeak', capability: 'speak' })
+    : createDefaultTextInputSurface();
   if (definition.kind.scenarioId === 'story-reader') {
     return [createDefaultTextInputSurface()];
   }
@@ -517,7 +523,7 @@ export function defaultInputSurfacesForConversation(conversation: Pick<GroupChat
     ];
   }
   if (definition.kind.surfaceProfile === 'form') {
-    return [createDefaultTextInputSurface({ key: 'fallback-text', label: 'Text fallback' })];
+    return [{ ...directTextSurface, key: 'fallback-text', label: 'Text fallback' }];
   }
   if (definition.kind.surfaceProfile === 'timeline') {
     return [
@@ -531,7 +537,7 @@ export function defaultInputSurfacesForConversation(conversation: Pick<GroupChat
       { key: 'dashboard-actions', type: 'form', label: 'Workflow actions' },
     ];
   }
-  return [createDefaultTextInputSurface()];
+  return [directTextSurface];
 }
 
 export function defaultTopologySummaryForConversation(conversation: Pick<GroupChat, 'type' | 'mode' | 'sessionKind'>): SessionTopologySummary {
@@ -579,6 +585,11 @@ export interface OpenChatModeState {
   currentSpeakerId?: string | null;
   currentTopicFocus?: string;
   lastRelationshipEventAt?: number | null;
+  assistantTitle?: {
+    source?: 'ai' | 'user';
+    updatedAt?: number;
+    basisMessageCount?: number;
+  };
 }
 
 export interface ParticipantInstance {

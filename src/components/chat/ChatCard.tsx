@@ -3,6 +3,7 @@ import { Card, CardContent, CardActionArea, Box, Typography, Avatar, AvatarGroup
 import { isImageAvatar } from '../../utils/avatar';
 import DirectIcon from '@mui/icons-material/ChatBubbleOutlined';
 import GroupIcon from '@mui/icons-material/Groups';
+import AssistantIcon from '@mui/icons-material/SmartToyOutlined';
 import type { GroupChat } from '../../types/chat';
 import type { AICharacter } from '../../types/character';
 import type { Message } from '../../types/message';
@@ -39,6 +40,7 @@ function ChatCard({ chat, characters, onClick, onPrefetch, selected = false }: C
   const { t } = useTranslation();
   const resolvedLatestMessage = latestByTimestamp([chat.latestMessage]) || null;
   const members = characters.filter((c) => chat.memberIds.includes(c.id));
+  const isAssistant = chat.type === 'assistant';
   const isDirect = chat.type === 'direct' || chat.type === 'ai_direct';
   const visibleAvatarMembers = isDirect ? members.slice(0, 1) : members.slice(0, 5);
   const subtitle = buildChatSubtitle(chat, members, resolvedLatestMessage);
@@ -91,7 +93,7 @@ function ChatCard({ chat, characters, onClick, onPrefetch, selected = false }: C
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
             <Box sx={{ flex: 1, minWidth: 0, pr: gameplayLabel ? 5.5 : 0 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, minWidth: 0 }}>
-                {isDirect ? <DirectIcon sx={{ fontSize: 16, color: 'text.secondary' }} /> : <GroupIcon sx={{ fontSize: 16, color: 'text.secondary' }} />}
+                {isAssistant ? <AssistantIcon sx={{ fontSize: 16, color: 'text.secondary' }} /> : isDirect ? <DirectIcon sx={{ fontSize: 16, color: 'text.secondary' }} /> : <GroupIcon sx={{ fontSize: 16, color: 'text.secondary' }} />}
                 <Typography variant="subtitle1" noWrap sx={{ fontWeight: 760, letterSpacing: 0 }}>
                   {chat.type === 'group' ? `${chat.name} (${chat.memberIds.length})` : chat.name}
                 </Typography>
@@ -119,7 +121,9 @@ function ChatCard({ chat, characters, onClick, onPrefetch, selected = false }: C
           </Box>
 
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            {isDirect ? (
+            {isAssistant ? (
+              <Chip size="small" variant="outlined" label="客观助手" sx={{ borderRadius: 1 }} />
+            ) : isDirect ? (
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                 {visibleAvatarMembers[0] ? (
                   <Avatar

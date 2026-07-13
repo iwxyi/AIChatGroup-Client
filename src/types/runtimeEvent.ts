@@ -413,7 +413,7 @@ export interface ConflictFocusPayload {
 
 export interface ConflictFocusState {
   id: string;
-  scope: 'group' | 'direct' | 'ai_direct';
+  scope: 'assistant' | 'group' | 'direct' | 'ai_direct';
   type: ConflictType;
   severity: number;
   stage: ConflictStage;

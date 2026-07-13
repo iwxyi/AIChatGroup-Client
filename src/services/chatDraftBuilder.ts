@@ -12,7 +12,7 @@ import { getRoomTemplateDefaultsBySessionKind, hasTemplateDefault } from './room
 import { normalizeRuntimeSeedLines } from './runtimeSeed';
 
 export interface ChatDraftInput {
-  type: 'group' | 'direct';
+  type: 'group' | 'direct' | 'assistant';
   name: string;
   topic: string;
   style: ChatStyle;
@@ -507,5 +507,51 @@ export function buildDirectChatDraft(characterId: string, characterName: string)
     dramaRules: { ...DEFAULT_CONVERSATION_DRAMA_RULES, allowCliques: false, allowMockery: false },
     worldState: { ...DEFAULT_CONVERSATION_WORLD_STATE, mood: 'private', focus: '', recentEvent: '' },
     directorControls: { ...DEFAULT_CONVERSATION_DIRECTOR_CONTROLS, allowEventInjection: false, allowForcedReply: false },
+  };
+}
+
+export function buildAssistantChatDraft(): Omit<GroupChat, 'id' | 'createdAt' | 'updatedAt' | 'lastMessageAt'> {
+  const sessionKind = createDefaultSessionKind('assistant', 'open_chat');
+  return {
+    type: 'assistant',
+    mode: 'open_chat',
+    sessionKind,
+    modeConfig: { ...DEFAULT_OPEN_CHAT_MODE_CONFIG, allowPrivateThreads: false, allowDirectorInterventions: false, showRoleActions: false },
+    modeState: DEFAULT_OPEN_CHAT_MODE_STATE,
+    scenarioPackage: { scenarioId: sessionKind.scenarioId, label: '通用助手' },
+    scenarioState: {
+      turnOrder: [],
+      currentTurnActorId: null,
+      board: null,
+      factions: [],
+      seats: [],
+      roleAssignments: [],
+    },
+    channels: [{ channelId: 'public', visibility: 'public', label: 'Assistant' }],
+    layoutState: { slots: [] },
+    judgeAgent: { enabled: false, style: 'assistive' },
+    layeredGrowth: { persistentCharacterCores: [], conversationCharacterStates: [] },
+    modeStateSummary: { family: sessionKind.family, scenarioId: sessionKind.scenarioId },
+    memoryLayerSummary: { characterCore: false, relationship: false, conversation: true, scenario: false },
+    growthSnapshots: [],
+    roleMemorySummaries: [],
+    scenarioMemorySummary: null,
+    topologySummary: { topology: sessionKind.topology, description: `${sessionKind.topology}:${sessionKind.family}:${sessionKind.scenarioId}` },
+    name: '新助手会话',
+    topic: '',
+    style: 'free',
+    runtimeEvolutionIntensity: 'balanced',
+    memberIds: [],
+    operatorIds: [],
+    speed: 1,
+    isActive: false,
+    allowIntervention: false,
+    showRoleActions: false,
+    topicSeed: '',
+    runtimeSeed: { notes: [], artifacts: [] },
+    governance: { ...DEFAULT_CONVERSATION_GOVERNANCE, allowMute: false, allowPrivateThreads: false },
+    dramaRules: { ...DEFAULT_CONVERSATION_DRAMA_RULES, allowCliques: false, allowMockery: false, allowAlliances: false, allowContempt: false },
+    worldState: { ...DEFAULT_CONVERSATION_WORLD_STATE, mood: 'neutral', focus: '', recentEvent: '' },
+    directorControls: { allowSpeakAs: false, allowDirectorMode: false, allowEventInjection: false, allowForcedReply: false },
   };
 }

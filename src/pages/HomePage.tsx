@@ -520,9 +520,10 @@ export default function HomePage() {
   const customCharacters = characters.filter((character) => !character.isPreset);
   const totalDirectChats = chats.filter((chat) => chat.type === 'direct' || chat.type === 'ai_direct').length;
   const totalGroupChats = chats.filter((chat) => chat.type === 'group').length;
-  const openChatFromHome = (chat: typeof chats[number]) => navigate(`/chats/${chat.id}?fromTab=${chat.type === 'group' ? 0 : chat.type === 'ai_direct' ? 2 : 1}`);
+  const resolveChatListTab = (chat: typeof chats[number]) => chat.type === 'assistant' ? 3 : chat.type === 'group' ? 0 : chat.type === 'ai_direct' ? 2 : 1;
+  const openChatFromHome = (chat: typeof chats[number]) => navigate(`/chats/${chat.id}?fromTab=${resolveChatListTab(chat)}`);
   const recentChatsTitle = '最近会话';
-  const recentChatsActionTab = recentChats[0]?.type === 'group' ? 0 : recentChats[0]?.type === 'ai_direct' ? 2 : 1;
+  const recentChatsActionTab = recentChats[0] ? resolveChatListTab(recentChats[0]) : 0;
   const needsAIModelSetup = !hasUsableDefaultTextAI(aiProfiles);
   const needsLogin = authMode === 'local' || !isLoggedIn;
   useEffect(() => {
