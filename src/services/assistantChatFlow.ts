@@ -47,21 +47,122 @@ function isAssistantAgentArtifactEnabled(chat: GroupChat) {
 async function persistAssistantArtifactsFromReply(params: {
   chat: GroupChat;
   chatId: string;
-  message: Message;
+  userMessage: Message;
+  messages: Message[];
+  timestamp?: number;
+  upsertMessage: (message: Message) => void;
+  updateChat: (id: string, patch: Partial<GroupChat>) => Promise<void>;
+  api: APIConfig;
+  signal?: AbortSignal;
 }) {
-  if (!isAssistantAgentArtifactEnabled(params.chat)) return;
-  const [{ extractAssistantArtifactsFromMessage }, { ensureAssistantArtifactStoreHydrated, useAssistantArtifactStore }] = await Promise.all([
-    import('./assistantArtifactExtraction'),
+  if (!isAssistantAgentArtifactEnabled(params.chat)) return null;
+  const [
+    { planAssistantAgentChange, writeAssistantAgentPatchSet },
+    { ensureAssistantArtifactStoreHydrated, useAssistantArtifactStore },
+  ] = await Promise.all([
+    import('./assistantAgentOrchestrator'),
     import('../stores/useAssistantArtifactStore'),
   ]);
-  const drafts = extractAssistantArtifactsFromMessage(params.message.content);
-  if (!drafts.length) return;
   await ensureAssistantArtifactStoreHydrated();
-  useAssistantArtifactStore.getState().upsertArtifactsFromMessage({
+  const existingArtifacts = useAssistantArtifactStore.getState().getArtifactsForChat(params.chatId);
+  const plan = await planAssistantAgentChange({
+    api: params.api,
     chatId: params.chatId,
-    messageId: params.message.id,
-    drafts,
-    timestamp: params.message.timestamp,
+    messages: params.messages,
+    userMessage: params.userMessage,
+    existingArtifacts,
+    signal: params.signal,
+  });
+  if (plan.intent === 'chat') return null;
+
+  let content = plan.clarificationQuestion || '我需要先确认要处理哪个产物。';
+  let patchesCommitted = 0;
+  if (plan.intent === 'create' || plan.intent === 'update') {
+    const patchSet = await writeAssistantAgentPatchSet({
+      api: params.api,
+      chatId: params.chatId,
+      messages: params.messages,
+      userMessage: params.userMessage,
+      plan,
+      existingArtifacts,
+      signal: params.signal,
+    });
+    content = patchSet.assistantMessage;
+    if (patchSet.patches.length) {
+      patchesCommitted = patchSet.patches.length;
+    }
+    if (!patchSet.patches.length && !content.trim()) {
+      content = '我没有得到可安全提交的产物变更。';
+    }
+    const assistantMessage = await persistAssistantFinalMessage({
+      chat: params.chat,
+      chatId: params.chatId,
+      currentMessages: params.messages,
+      content,
+      timestamp: params.timestamp,
+      upsertMessage: params.upsertMessage,
+    });
+    if (patchSet.patches.length) {
+      useAssistantArtifactStore.getState().commitPatchSet({
+        chatId: params.chatId,
+        messageId: assistantMessage.id,
+        patches: patchSet.patches,
+        timestamp: assistantMessage.timestamp,
+      });
+    }
+    await params.updateChat(params.chatId, {
+      lastMessageAt: assistantMessage.timestamp,
+      latestMessage: assistantMessage,
+    });
+    return { message: assistantMessage, patchesCommitted };
+  }
+
+  const assistantMessage = await persistAssistantFinalMessage({
+    chat: params.chat,
+    chatId: params.chatId,
+    currentMessages: params.messages,
+    content,
+    timestamp: params.timestamp,
+    upsertMessage: params.upsertMessage,
+  });
+  await params.updateChat(params.chatId, {
+    lastMessageAt: assistantMessage.timestamp,
+    latestMessage: assistantMessage,
+  });
+  return { message: assistantMessage, patchesCommitted };
+}
+
+async function persistAssistantFinalMessage(params: {
+  chat: GroupChat;
+  chatId: string;
+  currentMessages: Message[];
+  content: string;
+  timestamp?: number;
+  upsertMessage: (message: Message) => void;
+}) {
+  const assistantDraft: Omit<Message, 'id' | 'timestamp' | 'isDeleted'> = {
+    chatId: params.chatId,
+    type: 'ai',
+    senderId: 'assistant',
+    senderName: '助手',
+    content: params.content,
+    emotion: 0,
+    metadata: {
+      format: 'markdown',
+      assistant: {
+        mode: 'general',
+      },
+    },
+  };
+  const localMessage = createStreamingLocalMessage(
+    attachMessageToActiveBranch(params.chat, params.currentMessages, assistantDraft) as Omit<Message, 'id' | 'timestamp' | 'isDeleted'>,
+    { timestamp: params.timestamp },
+  );
+  params.upsertMessage(localMessage);
+  return persistLocalFirstMessage({
+    message: localMessage,
+    existingLocalMessage: localMessage,
+    upsertMessage: params.upsertMessage,
   });
 }
 
@@ -74,6 +175,16 @@ function toAssistantPromptMessages(messages: Message[]) {
       content: message.content,
     }))
     .filter((message) => message.content.trim());
+}
+
+function latestUserMessage(messages: Message[]) {
+  return [...messages]
+    .reverse()
+    .find((message) => (
+      !message.isDeleted
+      && (message.type === 'user' || message.type === 'god')
+      && message.content.trim()
+    )) || null;
 }
 
 function getTitleSource(chat: GroupChat) {
@@ -207,6 +318,23 @@ export async function runAssistantChatReplyFlow(params: {
     currentMessages: params.currentMessages,
     updateChat: params.updateChat,
   });
+  if (isAssistantAgentArtifactEnabled(params.chat)) {
+    const userMessage = latestUserMessage(params.currentMessages);
+    if (userMessage) {
+      const agentResult = await persistAssistantArtifactsFromReply({
+        chat: params.chat,
+        chatId: params.chatId,
+        userMessage,
+        messages: params.currentMessages,
+        timestamp: params.timestamp,
+        upsertMessage: params.upsertMessage,
+        updateChat: params.updateChat,
+        api: resolvedApi,
+        signal: params.signal,
+      });
+      if (agentResult?.message) return agentResult.message;
+    }
+  }
   const assistantDraft: Omit<Message, 'id' | 'timestamp' | 'isDeleted'> = {
     chatId: params.chatId,
     type: 'ai',
@@ -263,11 +391,6 @@ export async function runAssistantChatReplyFlow(params: {
   await params.updateChat(params.chatId, {
     lastMessageAt: persisted.timestamp,
     latestMessage: persisted,
-  });
-  await persistAssistantArtifactsFromReply({
-    chat: params.chat,
-    chatId: params.chatId,
-    message: persisted,
   });
   return persisted;
 }

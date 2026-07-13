@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { AssistantArtifactDraft, AssistantArtifactItem } from '../types/assistantArtifact';
+import type { AssistantAgentPatch, AssistantArtifactDraft, AssistantArtifactItem } from '../types/assistantArtifact';
 import { scopedStorageKey } from '../constants/brand';
 import { getLocalDataUserId } from '../services/authStorageScope';
 import { createScopedIndexedDbBufferedJsonStorage, flushBufferedPersistenceWrites } from './storePersistenceScope';
@@ -14,6 +14,12 @@ interface AssistantArtifactStore extends AssistantArtifactSnapshot {
     chatId: string;
     messageId: string;
     drafts: AssistantArtifactDraft[];
+    timestamp?: number;
+  }) => AssistantArtifactItem[];
+  commitPatchSet: (params: {
+    chatId: string;
+    messageId: string;
+    patches: AssistantAgentPatch[];
     timestamp?: number;
   }) => AssistantArtifactItem[];
   getArtifactsForChat: (chatId: string) => AssistantArtifactItem[];
@@ -36,19 +42,24 @@ function createVersionId(artifactId: string, now: number) {
   return `${artifactId}:v:${now}:${Math.random().toString(36).slice(2, 6)}`;
 }
 
-function normalizeTitle(value: string) {
-  return value.trim().replace(/\s+/g, ' ').toLowerCase();
+function findTargetArtifact(items: AssistantArtifactItem[], chatId: string, draft: AssistantArtifactDraft) {
+  if (draft.action !== 'update' || !draft.targetArtifactId) return null;
+  return items.find((item) => item.id === draft.targetArtifactId && item.chatId === chatId && item.deletedAt == null) || null;
 }
 
-function findExistingArtifact(items: AssistantArtifactItem[], chatId: string, draft: AssistantArtifactDraft) {
-  const title = normalizeTitle(draft.title);
-  return items.find((item) => (
-    item.chatId === chatId
-    && item.deletedAt == null
-    && item.kind === draft.kind
-    && normalizeTitle(item.title) === title
-    && (item.language || null) === (draft.language || null)
-  ));
+function draftFromPatch(patch: AssistantAgentPatch): AssistantArtifactDraft {
+  return {
+    action: patch.action,
+    targetArtifactId: patch.action === 'update' ? patch.artifactId || null : null,
+    kind: patch.kind,
+    title: patch.title,
+    summary: patch.summary,
+    language: patch.language || null,
+    content: patch.content,
+    files: patch.files,
+    baseVersionId: patch.baseVersionId || null,
+    changeSummary: patch.changeSummary,
+  };
 }
 
 function pruneChatArtifacts(items: AssistantArtifactItem[], chatId: string) {
@@ -74,14 +85,17 @@ export const useAssistantArtifactStore = create<AssistantArtifactStore>()(
         set((state) => {
           let nextItems = [...state.items];
           drafts.forEach((draft, index) => {
-            const existing = findExistingArtifact(nextItems, chatId, draft);
+            const existing = findTargetArtifact(nextItems, chatId, draft);
             const artifactId = existing?.id || createArtifactId(chatId, now, index);
             const version = {
               id: createVersionId(artifactId, now + index),
               artifactId,
               content: draft.content,
+              files: draft.files,
               language: draft.language || null,
               sourceMessageId: messageId,
+              baseVersionId: draft.baseVersionId || existing?.currentVersionId || null,
+              changeSummary: draft.changeSummary,
               createdAt: now + index,
             };
             if (existing) {
@@ -126,6 +140,13 @@ export const useAssistantArtifactStore = create<AssistantArtifactStore>()(
         return changed;
       },
 
+      commitPatchSet: ({ chatId, messageId, patches, timestamp }) => get().upsertArtifactsFromMessage({
+        chatId,
+        messageId,
+        drafts: patches.map(draftFromPatch),
+        timestamp,
+      }),
+
       getArtifactsForChat: (chatId) => get().items
         .filter((item) => item.chatId === chatId && item.deletedAt == null)
         .sort((a, b) => b.updatedAt - a.updatedAt),
@@ -154,7 +175,14 @@ export const useAssistantArtifactStore = create<AssistantArtifactStore>()(
 
 export function getAssistantArtifactCurrentContent(item: AssistantArtifactItem) {
   const fallbackVersion = item.versions.length ? item.versions[item.versions.length - 1] : null;
-  return item.versions.find((version) => version.id === item.currentVersionId)?.content || fallbackVersion?.content || '';
+  const version = item.versions.find((entry) => entry.id === item.currentVersionId) || fallbackVersion;
+  if (!version) return '';
+  if (version.files?.length) {
+    return version.files
+      .map((file) => `// ${file.path}\n${file.content}`)
+      .join('\n\n');
+  }
+  return version.content || '';
 }
 
 export function ensureAssistantArtifactStoreHydrated() {
