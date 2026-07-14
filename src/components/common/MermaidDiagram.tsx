@@ -7,11 +7,16 @@ interface MermaidDiagramProps {
   onRenderSettled?: () => void;
 }
 
+export function estimateMermaidDiagramHeight(source: string) {
+  return Math.min(420, Math.max(160, source.split('\n').length * 24 + 80));
+}
+
 function MermaidDiagram({ source, hideLoading = false, onRenderSettled }: MermaidDiagramProps) {
   const reactId = useId().replace(/[^a-zA-Z0-9_-]/g, '');
   const [svg, setSvg] = useState('');
   const [error, setError] = useState('');
   const [showSource, setShowSource] = useState(false);
+  const reservedHeight = estimateMermaidDiagramHeight(source);
 
   useEffect(() => {
     let cancelled = false;
@@ -53,6 +58,7 @@ function MermaidDiagram({ source, hideLoading = false, onRenderSettled }: Mermai
         borderColor: theme.palette.mode === 'light' ? 'rgba(15,23,42,0.10)' : 'rgba(226,232,240,0.14)',
         bgcolor: theme.palette.mode === 'light' ? 'rgba(255,255,255,0.74)' : 'rgba(15,23,42,0.48)',
         overflowX: 'auto',
+        minHeight: hideLoading ? undefined : reservedHeight,
       })}
     >
       {!hideLoading && !svg && !error ? (

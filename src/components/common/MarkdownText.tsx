@@ -30,12 +30,12 @@ function PlainMarkdownText({ text }: { text: string }) {
   );
 }
 
-function MarkdownText({ text, softLineBreaks = true, forceRich = false }: { text: string; softLineBreaks?: boolean; forceRich?: boolean }) {
+function MarkdownText({ text, softLineBreaks = true, forceRich = false, deferDiagrams = false }: { text: string; softLineBreaks?: boolean; forceRich?: boolean; deferDiagrams?: boolean }) {
   const normalized = normalizeStreamingMarkdown(text);
   if (!forceRich && !shouldUseRichMarkdown(normalized)) return <PlainMarkdownText text={normalized} />;
   return (
     <Suspense fallback={<PlainMarkdownText text={normalized} />}>
-      <RichMarkdownText text={normalized} softLineBreaks={softLineBreaks} />
+      <RichMarkdownText text={normalized} softLineBreaks={softLineBreaks} deferDiagrams={deferDiagrams} />
     </Suspense>
   );
 }
