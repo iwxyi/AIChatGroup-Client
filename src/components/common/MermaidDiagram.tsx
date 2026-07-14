@@ -58,13 +58,12 @@ function MermaidDiagram({ source, hideLoading = false, onRenderSettled }: Mermai
         borderColor: theme.palette.mode === 'light' ? 'rgba(15,23,42,0.10)' : 'rgba(226,232,240,0.14)',
         bgcolor: theme.palette.mode === 'light' ? 'rgba(255,255,255,0.74)' : 'rgba(15,23,42,0.48)',
         overflowX: 'auto',
-        width: 'fit-content',
         maxWidth: '100%',
         minHeight: hideLoading || svg || error ? undefined : reservedHeight,
       })}
     >
       {!hideLoading && !svg && !error ? (
-        <Box sx={{ display: 'grid', placeItems: 'center', py: 1, color: 'text.secondary' }}>
+        <Box sx={{ minHeight: reservedHeight - 16, display: 'grid', placeItems: 'center', color: 'text.secondary' }}>
           <CircularProgress size={16} />
         </Box>
       ) : null}
@@ -73,10 +72,9 @@ function MermaidDiagram({ source, hideLoading = false, onRenderSettled }: Mermai
           sx={{
             minWidth: 0,
             '& svg': {
-              width: 'auto !important',
               maxWidth: 'min(100%, 680px)',
               maxHeight: 'min(58vh, 520px)',
-              height: 'auto !important',
+              height: 'auto',
               display: 'block',
             },
           }}
