@@ -67,13 +67,17 @@ async function processAssistantMediaAttachments(params: {
 }) {
   if (!params.message.metadata?.attachments?.some((attachment) => attachment.status === 'queued')) return;
   const { processRichMessageMedia } = await import('./richMessageMedia');
-  await processRichMessageMedia({
-    message: params.message,
-    character: null,
-    characters: [],
-    aiProfiles: params.aiProfiles,
-    upsertMessage: params.upsertMessage,
-  });
+  try {
+    await processRichMessageMedia({
+      message: params.message,
+      character: null,
+      characters: [],
+      aiProfiles: params.aiProfiles,
+      upsertMessage: params.upsertMessage,
+    });
+  } catch (error) {
+    params.upsertMessage(markAssistantMediaAttachmentsFailed(params.message, error));
+  }
 }
 
 async function persistAssistantArtifactsFromReply(params: {
@@ -247,12 +251,42 @@ function formatPatchForBubble(patch: AssistantAgentPatchSet['patches'][number]) 
   ].join('\n');
 }
 
-function buildAgentArtifactReplyContent(patchSet: AssistantAgentPatchSet) {
+export function buildAgentArtifactReplyContent(patchSet: AssistantAgentPatchSet) {
   const intro = patchSet.assistantMessage.trim() || '已完成产物变更。';
   const visiblePatches = patchSet.patches.filter((patch) => patch.content || patch.files?.length).slice(0, 3);
-  if (!visiblePatches.length && patchSet.mediaTasks?.length) return intro || '图片已加入生成队列。';
+  const hasImageTasks = Boolean(patchSet.mediaTasks?.length);
+  const imageTaskNotice = hasImageTasks ? '正在生成图片，完成后会自动显示。' : '';
+  if (!visiblePatches.length && hasImageTasks) return imageTaskNotice;
   if (!visiblePatches.length) return intro;
-  return `${intro}${visiblePatches.map(formatPatchForBubble).join('')}`;
+  return `${intro}${visiblePatches.map(formatPatchForBubble).join('')}${imageTaskNotice ? `\n\n${imageTaskNotice}` : ''}`;
+}
+
+export function markAssistantMediaAttachmentsFailed(message: Message, error: unknown): Message {
+  const attachments = message.metadata?.attachments || [];
+  if (!attachments.some((attachment) => attachment.status === 'queued' || attachment.status === 'generating')) return message;
+  const errorText = error instanceof Error ? error.message : String(error || '图片生成失败');
+  const nextAttachments = attachments.map((attachment) => (
+    attachment.status === 'queued' || attachment.status === 'generating'
+      ? { ...attachment, status: 'failed' as const, error: errorText, updatedAt: Date.now() }
+      : attachment
+  ));
+  const generationStatus = nextAttachments.some((attachment) => attachment.status === 'queued' || attachment.status === 'generating')
+    ? 'generating'
+    : nextAttachments.some((attachment) => attachment.status === 'failed')
+      ? 'failed'
+      : 'ready';
+  return {
+    ...message,
+    metadata: {
+      ...(message.metadata || {}),
+      attachments: nextAttachments,
+      generation: {
+        ...(message.metadata?.generation || {}),
+        status: generationStatus,
+        updatedAt: Date.now(),
+      },
+    },
+  };
 }
 
 async function persistAssistantFinalMessage(params: {
