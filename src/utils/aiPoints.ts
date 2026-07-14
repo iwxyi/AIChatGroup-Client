@@ -3,6 +3,7 @@ export type OfficialAiProviderCode = 'api2d' | 'deepseek' | string;
 type FormatAiAmountOptions = {
   compact?: boolean;
   empty?: string;
+  prefix?: string;
   suffix?: string;
 };
 
@@ -39,7 +40,7 @@ export function formatAiAmount(value: unknown, provider: OfficialAiProviderCode,
     minimumFractionDigits: 0,
     useGrouping: false,
   }).format(displayAmount);
-  return `${formatted}${options.suffix ?? 'P'}`;
+  return `${options.prefix ?? ''}${formatted}${options.suffix ?? 'P'}`;
 }
 
 export function formatAiBalanceAmount(balance: Record<string, unknown> | null | undefined, provider?: unknown, options: FormatAiAmountOptions = {}) {
@@ -49,6 +50,9 @@ export function formatAiBalanceAmount(balance: Record<string, unknown> | null | 
   const currencyUnit = String(balance.currencyUnit ?? balance.currency_unit ?? '').toLowerCase();
   if (currencyUnit === 'cny' || currencyUnit === 'rmb') {
     return formatAiAmount(raw, providerCode || 'deepseek', { ...options, suffix: '元' });
+  }
+  if (currencyUnit === 'usd' || currencyUnit === 'dollar') {
+    return formatAiAmount(raw, providerCode || 'nanobanana', { ...options, prefix: '$', suffix: '' });
   }
   return formatAiAmount(raw, providerCode || 'api2d', options);
 }

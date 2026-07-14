@@ -52,6 +52,8 @@ function createAssistantMediaAttachments(patchSet: AssistantAgentPatchSet, times
     status: 'queued',
     promptText: task.prompt,
     altText: task.altText || 'AI 图片',
+    aspectRatio: task.aspectRatio,
+    imageSize: task.imageSize,
     referenceImages: task.referenceImages,
     createdAt: timestamp + index,
     updatedAt: timestamp + index,

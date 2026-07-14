@@ -823,7 +823,7 @@ function EntitlementEditor({
         <FormControlLabel control={<Switch checked={entitlement.agentEnabled} onChange={(event) => onEntitlementChange('agentEnabled', event.target.checked)} />} label="允许 Agent" />
       </Box>
       <Box>
-        <Typography variant="subtitle2" sx={{ fontWeight: 900, mb: 1 }}>支持的官方 AI 平台</Typography>
+        <Typography variant="subtitle2" sx={{ fontWeight: 900, mb: 1 }}>支持的官方 AI 供应商</Typography>
         <Stack direction="row" spacing={0.75} sx={{ flexWrap: 'wrap', gap: 0.75 }}>
           {providerOptions.map((option) => {
             const selected = selectedProviders.includes(option.value);

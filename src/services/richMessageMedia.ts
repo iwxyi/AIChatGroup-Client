@@ -130,6 +130,8 @@ export async function processRichMessageMedia(params: {
           character: referenceCharacters.length ? null : params.character,
           characters: referenceCharacters,
           referenceImages: attachment.referenceImages,
+          aspectRatio: attachment.aspectRatio,
+          imageSize: attachment.imageSize,
           allowCharacterReferenceImages: true,
           negativePrompt: visualCharacter?.visualIdentity?.negativePrompt,
           seed: visualCharacter?.visualIdentity?.seed,

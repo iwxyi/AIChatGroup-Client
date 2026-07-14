@@ -42,7 +42,7 @@ function formatBalance(result: Record<string, unknown>, providerCode: string) {
   if (!Number.isFinite(value)) return '未知';
   const normalizedProviderCode = providerCode.trim().toLowerCase();
   const unit = String(result.currencyUnit ?? result.currency_unit ?? '').trim().toLowerCase();
-  if (normalizedProviderCode === 'moacode' || normalizedProviderCode === 'moacode-team' || unit === 'moacode_balance') return `$${formatBalanceNumber(value, 2)}`;
+  if (normalizedProviderCode === 'moacode' || normalizedProviderCode === 'moacode-team' || unit === 'moacode_balance' || unit === 'usd') return `$${formatBalanceNumber(value, 2)}`;
   if (normalizedProviderCode === 'api2d') return `${formatBalanceNumber(value, 0)}P`;
   if (normalizedProviderCode === 'deepseek' || unit === 'cny' || unit === 'rmb') return `￥${formatBalanceNumber(value, 2)}`;
   const text = formatBalanceNumber(value, 4);
@@ -367,16 +367,16 @@ export default function AdminAIPage() {
   }, []);
 
   const providerMetricItems = [
-    buildOpsMetricItem({ label: '全部 Provider', value: formatOpsNumber(providerStats.total, 0), subValue: '当前配置', tone: 'info' }),
-    buildOpsMetricItem({ label: '启用 Provider', value: formatOpsNumber(providerStats.active, 0), subValue: '可供调用', tone: 'success' }),
-    buildOpsMetricItem({ label: '停用 Provider', value: formatOpsNumber(providerStats.disabled, 0), subValue: '保留兼容', tone: 'warning' }),
+    buildOpsMetricItem({ label: '全部供应商', value: formatOpsNumber(providerStats.total, 0), subValue: '当前配置', tone: 'info' }),
+    buildOpsMetricItem({ label: '启用供应商', value: formatOpsNumber(providerStats.active, 0), subValue: '可供调用', tone: 'success' }),
+    buildOpsMetricItem({ label: '停用供应商', value: formatOpsNumber(providerStats.disabled, 0), subValue: '保留兼容', tone: 'warning' }),
   ];
 
   return (
     <Stack spacing={1.5}>
       <AdminSection
-        title="AI 平台运营"
-        subtitle="管理官方 Provider、余额状态和默认分配策略"
+        title="AI 供应商运营"
+        subtitle="管理官方 AI 供应商、余额状态和默认分配策略"
         action={<Button variant="outlined" size="small" onClick={openGlobalDialog}>全局配置</Button>}
       >
         <AdminMetricGrid items={providerMetricItems} minWidth={132} compact />
@@ -385,8 +385,8 @@ export default function AdminAIPage() {
       <OpsSummaryPanel summary={opsSummary} loading={opsLoading} error={opsError} onRetry={() => void loadOpsSummary()} />
 
       <AdminSection
-        title="Provider 列表"
-        subtitle="点击行进入对应平台配置与用量详情"
+        title="供应商列表"
+        subtitle="点击行进入对应供应商配置与用量详情"
         action={<Button size="small" onClick={() => void loadProviders()} disabled={loading}>刷新</Button>}
         bodySx={{ p: 0 }}
       >

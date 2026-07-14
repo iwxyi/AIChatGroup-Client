@@ -102,6 +102,8 @@ export interface AssistantAgentMediaTask {
   kind: 'image';
   prompt: string;
   altText: string;
+  aspectRatio?: string;
+  imageSize?: string;
   referenceImages?: Array<{
     url: string;
     mimeType?: string;

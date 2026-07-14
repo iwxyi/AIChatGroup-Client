@@ -16,6 +16,8 @@ const MAX_RECENT_MESSAGES = 12;
 const MAX_ARTIFACTS_IN_REGISTRY = 120;
 const MAX_PATCHES = 20;
 const MAX_MEDIA_TASKS = 4;
+const SUPPORTED_IMAGE_ASPECT_RATIOS = new Set(['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9']);
+const SUPPORTED_IMAGE_SIZES = new Set(['1K', '2K', '4K']);
 const MAX_CONTENT_CHARS = 120_000;
 const MAX_FILE_CONTENT_CHARS = 120_000;
 
@@ -181,9 +183,10 @@ function buildWriterPrompt() {
     '7. 如需生成图片，不要把图片当作 markdown 文档或代码块，必须输出 mediaTasks；图片提示词由文本模型生成，图片由独立图片模型执行。',
     '8. 用户消息或最近对话里的 imageAttachments 可作为 referenceImages；只复制这些已有 URL，不要虚构 URL。',
     '9. 当前只支持新建图片任务。用户要求局部修改、蒙版编辑或指定区域编辑时，如果没有明确可用的编辑能力和区域标注，assistantMessage 说明当前只能参考原图重新生成，mediaTasks 为空或生成整体变体。',
+    '10. 图片任务可按用户自然语言要求输出 aspectRatio 和 imageSize。aspectRatio 仅可为 1:1、2:3、3:2、3:4、4:3、4:5、5:4、9:16、16:9、21:9；imageSize 仅可为 1K、2K、4K。用户没有要求时省略。',
     '',
     '输出格式：',
-    '{"assistantMessage":"面向用户的简短结果说明","patches":[{"action":"create|update","artifactId":"...","kind":"document|code|diagram|html|table|json|text","title":"...","summary":"...","language":"...","content":"完整内容","files":[{"id":"...","path":"...","language":"...","content":"完整文件内容"}],"baseVersionId":"...","changeSummary":"..."}],"mediaTasks":[{"kind":"image","prompt":"给图片模型的完整提示词","altText":"图片标题或替代文本","referenceImages":[{"url":"data:image/png;base64,... 或 https://...","mimeType":"image/png","label":"参考图"}]}]}',
+    '{"assistantMessage":"面向用户的简短结果说明","patches":[{"action":"create|update","artifactId":"...","kind":"document|code|diagram|html|table|json|text","title":"...","summary":"...","language":"...","content":"完整内容","files":[{"id":"...","path":"...","language":"...","content":"完整文件内容"}],"baseVersionId":"...","changeSummary":"..."}],"mediaTasks":[{"kind":"image","prompt":"给图片模型的完整提示词","altText":"图片标题或替代文本","aspectRatio":"16:9","imageSize":"2K","referenceImages":[{"url":"data:image/png;base64,... 或 https://...","mimeType":"image/png","label":"参考图"}]}]}',
   ].join('\n');
 }
 
@@ -215,6 +218,8 @@ function normalizeMediaTasks(value: unknown): AssistantAgentMediaTask[] {
     if (!isRecord(item) || item.kind !== 'image') return [];
     const prompt = text(item.prompt, 4000);
     const altText = text(item.altText, 160) || text(item.title, 160) || 'AI 图片';
+    const aspectRatio = text(item.aspectRatio, 16);
+    const imageSize = text(item.imageSize, 8).toUpperCase();
     if (!prompt) return [];
     const referenceImages = Array.isArray(item.referenceImages)
       ? item.referenceImages.slice(0, 8).flatMap((entry): NonNullable<AssistantAgentMediaTask['referenceImages']> => {
@@ -232,6 +237,8 @@ function normalizeMediaTasks(value: unknown): AssistantAgentMediaTask[] {
       kind: 'image',
       prompt,
       altText,
+      aspectRatio: SUPPORTED_IMAGE_ASPECT_RATIOS.has(aspectRatio) ? aspectRatio : undefined,
+      imageSize: SUPPORTED_IMAGE_SIZES.has(imageSize) ? imageSize : undefined,
       referenceImages: referenceImages?.length ? referenceImages : undefined,
     }];
   });

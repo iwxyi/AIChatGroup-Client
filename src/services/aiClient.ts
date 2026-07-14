@@ -78,6 +78,8 @@ export interface AvailableModelInfo {
 export interface ImageGenerationOptions {
   prompt: string;
   size?: string;
+  aspectRatio?: string;
+  imageSize?: '1K' | '2K' | '4K' | string;
   count?: number;
   negativePrompt?: string;
   seed?: string | number | null;
@@ -181,6 +183,11 @@ function buildGeminiUrl(baseUrl: string, model: string, stream: boolean) {
   return `${normalized}/models/${model}:${method}`;
 }
 
+function buildOfficialGeminiGenerateContentUrl(baseUrl: string, model: string) {
+  const normalized = trimTrailingSlashes(baseUrl || '/api/ai');
+  return `${normalized}/gemini/models/${encodeURIComponent(model)}/generateContent`;
+}
+
 function buildZhipuUrl(baseUrl: string) {
   const normalized = trimTrailingSlashes(baseUrl);
   if (normalized.endsWith('/chat/completions')) return normalized;
@@ -204,6 +211,36 @@ function buildOpenAICompatibleImageEditUrl(baseUrl: string) {
   if (normalized.endsWith('/images/edits')) return normalized;
   if (normalized.endsWith('/images/generations')) return normalized.replace(/\/images\/generations$/, '/images/edits');
   return `${normalized}/images/edits`;
+}
+
+function isNanoBananaImageModel(model: unknown) {
+  const normalized = String(model || '').trim().toLowerCase();
+  return normalized.includes('image-preview') || normalized.includes('nanobanana');
+}
+
+function imageSizeToGeminiConfig(size: unknown, aspectRatioOverride?: string, imageSizeOverride?: string) {
+  const allowedAspectRatios = new Set(['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9']);
+  const normalizedAspectRatio = typeof aspectRatioOverride === 'string' ? aspectRatioOverride.trim() : '';
+  const normalizedImageSize = typeof imageSizeOverride === 'string' ? imageSizeOverride.trim().toUpperCase() : '';
+  if (normalizedAspectRatio || normalizedImageSize) {
+    return {
+      ...(allowedAspectRatios.has(normalizedAspectRatio) ? { aspectRatio: normalizedAspectRatio } : {}),
+      ...(['1K', '2K', '4K'].includes(normalizedImageSize) ? { imageSize: normalizedImageSize } : {}),
+    };
+  }
+  const text = typeof size === 'string' ? size.trim().toLowerCase() : '';
+  const match = text.match(/^(\d+)\s*x\s*(\d+)$/);
+  if (!match) return {};
+  const width = Number(match[1]);
+  const height = Number(match[2]);
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return {};
+  const gcd = (left: number, right: number): number => (right === 0 ? left : gcd(right, left % right));
+  const divisor = gcd(width, height);
+  const aspectRatio = `${width / divisor}:${height / divisor}`;
+  return {
+    ...(allowedAspectRatios.has(aspectRatio) ? { aspectRatio } : {}),
+    imageSize: Math.max(width, height) > 2048 ? '4K' : Math.max(width, height) > 1024 ? '2K' : '1K',
+  };
 }
 
 function buildOpenAICompatibleSpeechUrl(baseUrl: string) {
@@ -841,10 +878,17 @@ async function listOfficialModels(config: APIConfig): Promise<AvailableModelInfo
   if (response.status === 401) {
     dispatchAuthSessionExpired({ status: response.status, path: '/api/ai/models' });
   }
-  const result = await parseJsonResponse<{ items?: Array<{ id?: string; label?: string; metadata?: JSONValue }> }>(response, 'Official model list request failed');
+  const result = await parseJsonResponse<{ items?: Array<{ id?: string; label?: string; family?: string; tier?: string | null; metadata?: JSONValue }> }>(response, 'Official model list request failed');
   return (result.items || [])
-    .filter((item): item is { id: string; label?: string; metadata?: JSONValue } => Boolean(item.id))
-    .map((item) => ({ id: item.id, label: item.label || item.id, raw: item.metadata }));
+    .filter((item): item is { id: string; label?: string; family?: string; tier?: string | null; metadata?: JSONValue } => Boolean(item.id))
+    .map((item) => {
+      const raw: Record<string, JSONValue> = item.metadata && typeof item.metadata === 'object' && !Array.isArray(item.metadata)
+        ? { ...(item.metadata as Record<string, JSONValue>) }
+        : {};
+      if (item.family) raw.family = item.family;
+      if (item.tier) raw.tier = item.tier;
+      return { id: item.id, label: item.label || item.id, raw };
+    });
 }
 
 async function listAnthropicModels(config: APIConfig) {
@@ -1025,29 +1069,38 @@ async function generateGeminiImage(config: APIConfig, options: ImageGenerationOp
     }
   }
 
-  const response = await fetch(`${buildGeminiUrl(config.baseUrl, config.model, false)}?key=${encodeURIComponent(config.apiKey)}`, {
+  const officialProxy = usesOfficialProxy(config);
+  const response = await fetch(officialProxy
+    ? buildOfficialGeminiGenerateContentUrl(config.baseUrl || '/api/ai', config.model)
+    : `${buildGeminiUrl(config.baseUrl, config.model, false)}?key=${encodeURIComponent(config.apiKey)}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      ...(officialProxy ? getAuthHeaders() : {}),
     },
     signal: options.signal,
     body: JSON.stringify({
+      ...(officialProxy ? { provider: resolveOfficialBackendProvider(config.provider), model: config.model } : {}),
       contents: [{ role: 'user', parts }],
       generationConfig: {
-        responseModalities: ['TEXT', 'IMAGE'],
+        responseModalities: ['IMAGE'],
+        imageConfig: imageSizeToGeminiConfig(options.size, options.aspectRatio, options.imageSize),
       },
     }),
   });
+  if (officialProxy && response.status === 401) {
+    dispatchAuthSessionExpired({ status: response.status, path: buildOfficialGeminiGenerateContentUrl(config.baseUrl || '/api/ai', config.model) });
+  }
 
   const result = await parseJsonResponse<{
-    candidates?: Array<{ content?: { parts?: Array<{ inlineData?: { mimeType?: string; data?: string } }> } }>;
+    candidates?: Array<{ content?: { parts?: Array<{ inlineData?: { mimeType?: string; data?: string }; inline_data?: { mime_type?: string; data?: string } }> } }>;
   }>(response, 'Gemini image generation request failed');
 
   const images: GeneratedImage[] = [];
   for (const candidate of result.candidates || []) {
     for (const part of candidate.content?.parts || []) {
-      const mimeType = part.inlineData?.mimeType;
-      const data = part.inlineData?.data;
+      const mimeType = part.inlineData?.mimeType || part.inline_data?.mime_type;
+      const data = part.inlineData?.data || part.inline_data?.data;
       if (mimeType && data) {
         images.push({
           mimeType,
@@ -1060,6 +1113,9 @@ async function generateGeminiImage(config: APIConfig, options: ImageGenerationOp
 }
 
 export async function generateImage(config: APIConfig, options: ImageGenerationOptions): Promise<GeneratedImage[]> {
+  if (usesOfficialProxy(config) && isNanoBananaImageModel(config.model)) {
+    return generateGeminiImage(config, options);
+  }
   if (isOpenAICompatibleEndpoint(config)) {
     return generateOpenAICompatibleImage(config, options);
   }

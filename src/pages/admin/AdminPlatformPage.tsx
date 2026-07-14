@@ -555,7 +555,7 @@ export default function AdminPlatformPage() {
         ) : null}
       </Stack>
       {category === 'ai' ? (
-        canReadAi ? <AdminAIPage /> : <Alert severity="warning">当前管理员没有访问 AI 平台配置的权限。</Alert>
+        canReadAi ? <AdminAIPage /> : <Alert severity="warning">当前管理员没有访问 AI 供应商配置的权限。</Alert>
       ) : (
         <Stack spacing={2}>
           <AdminRequestState loading={loading} error={error} onRetry={() => void load()} />

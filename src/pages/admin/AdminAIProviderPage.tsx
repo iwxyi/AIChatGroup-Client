@@ -25,6 +25,11 @@ const DEFAULT_DEEPSEEK_PRICING_FORM: DeepSeekPricingForm = {
   cacheMiss: '1',
 };
 
+const NANOBANANA_ASPECT_RATIOS = ['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'];
+const NANOBANANA_IMAGE_SIZES = ['1K', '2K', '4K'];
+const DEFAULT_NANOBANANA_POINT_VALUE = '0.01';
+const DEFAULT_NANOBANANA_BILLING_MULTIPLIER = '1.5';
+
 const USER_USAGE_PAGE_SIZE = 100;
 const USAGE_STATS_PAGE_SIZE = 100;
 const USAGE_STATS_GROUP_STORAGE_KEY_PREFIX = 'pneumata.admin.aiProvider.usageStatsGroupBy';
@@ -190,6 +195,43 @@ function toDeepSeekPricingForm(value: unknown): DeepSeekPricingForm {
   };
 }
 
+function toNanoBananaDefaultsForm(metadataValue: unknown) {
+  const metadata = getRecord(metadataValue);
+  const defaults = getRecord(metadata.nanobananaDefaults);
+  const aspectRatio = typeof defaults.aspectRatio === 'string' && NANOBANANA_ASPECT_RATIOS.includes(defaults.aspectRatio)
+    ? defaults.aspectRatio
+    : '';
+  const imageSize = typeof defaults.imageSize === 'string' && NANOBANANA_IMAGE_SIZES.includes(defaults.imageSize.toUpperCase())
+    ? defaults.imageSize.toUpperCase()
+    : '1K';
+  const accountUserId = typeof defaults.accountUserId === 'string' || typeof defaults.accountUserId === 'number'
+    ? String(defaults.accountUserId).trim()
+    : '';
+  return { aspectRatio, imageSize, accountUserId };
+}
+
+function toNanoBananaPricingForm(value: unknown) {
+  const pricing = getRecord(value);
+  return {
+    pointValue: numberText(pricing.pointValueCny, DEFAULT_NANOBANANA_POINT_VALUE),
+    billingMultiplier: numberText(pricing.billingMultiplier, DEFAULT_NANOBANANA_BILLING_MULTIPLIER),
+  };
+}
+
+function buildNanoBananaPricing(form: { pointValue: string; billingMultiplier: string }) {
+  return {
+    unit: 'point',
+    costUnit: 'USD',
+    perTokens: 1,
+    pointValueCny: toPositiveNumber(form.pointValue, Number(DEFAULT_NANOBANANA_POINT_VALUE)),
+    billingMultiplier: toPositiveNumber(form.billingMultiplier, Number(DEFAULT_NANOBANANA_BILLING_MULTIPLIER)),
+    models: {
+      default: { requestCost: 0.22 },
+      'gemini-3-pro-image-preview': { requestCost: 0.22 },
+    },
+  };
+}
+
 function buildInternalLedgerTokenPricing(providerCode: string, form: DeepSeekPricingForm) {
   const isMoacodeProvider = providerCode === 'moacode' || providerCode === 'moacode-team';
   const modelPricing = {
@@ -255,7 +297,7 @@ function formatBalance(balance: Record<string, unknown> | null, providerCode: st
   const raw = balance?.availableBalance ?? balance?.available_balance;
   const currencyUnit = String(balance?.currencyUnit ?? balance?.currency_unit ?? '').toLowerCase();
   const normalizedProviderCode = providerCode.trim().toLowerCase();
-  if (normalizedProviderCode === 'moacode' || normalizedProviderCode === 'moacode-team' || currencyUnit === 'moacode_balance' || currencyUnit === 'moacode_team_balance') {
+  if (normalizedProviderCode === 'moacode' || normalizedProviderCode === 'moacode-team' || currencyUnit === 'moacode_balance' || currencyUnit === 'moacode_team_balance' || currencyUnit === 'usd') {
     return typeof raw === 'number' && Number.isFinite(raw) ? `余额 ${formatDollarAmount(raw, 2)}` : '已获取';
   }
   if (currencyUnit === 'moacode_usage' && (balance?.raw || Object.keys(balance || {}).length > 0)) {
@@ -340,7 +382,8 @@ const configGridSx = {
   display: 'grid',
   gridTemplateColumns: {
     xs: '1fr',
-    md: 'minmax(180px, 240px) minmax(120px, 150px) minmax(120px, 150px) minmax(140px, 170px)',
+    sm: 'repeat(2, minmax(0, 1fr))',
+    md: 'minmax(140px, 180px) minmax(110px, 130px) minmax(100px, 120px) minmax(130px, 150px)',
   },
   gap: 1.25,
   alignItems: 'start',
@@ -350,7 +393,8 @@ const publicConfigGridSx = {
   display: 'grid',
   gridTemplateColumns: {
     xs: '1fr',
-    md: 'minmax(160px, 210px) minmax(160px, 220px) minmax(160px, 220px) minmax(280px, 1fr)',
+    sm: 'repeat(2, minmax(0, 1fr))',
+    md: 'minmax(120px, 160px) minmax(150px, 190px) minmax(150px, 190px) minmax(260px, 1fr)',
   },
   gap: 1.25,
   alignItems: 'start',
@@ -360,6 +404,26 @@ const endpointGridSx = {
   display: 'grid',
   gridTemplateColumns: { xs: '1fr', md: 'minmax(320px, 1fr) minmax(320px, 1fr)' },
   gap: 1.25,
+};
+
+const shortConfigGridSx = {
+  display: 'grid',
+  gridTemplateColumns: {
+    xs: 'repeat(2, minmax(0, 1fr))',
+    sm: 'repeat(auto-fit, minmax(150px, 190px))',
+  },
+  gap: 1.25,
+  alignItems: 'start',
+};
+
+const pricingConfigGridSx = {
+  display: 'grid',
+  gridTemplateColumns: {
+    xs: 'repeat(2, minmax(0, 1fr))',
+    sm: 'repeat(auto-fit, minmax(140px, 180px))',
+  },
+  gap: 1.25,
+  alignItems: 'start',
 };
 
 type PublicModelGroup = {
@@ -470,6 +534,13 @@ function getMoacodeUsageSummary(balance: Record<string, unknown> | null) {
   return Object.keys(rawUsage).length ? rawUsage : raw;
 }
 
+function getNanoBananaBalanceSummary(balance: Record<string, unknown> | null) {
+  const summary = getRecord(balance?.balanceSummary ?? balance?.balance_summary);
+  if (Object.keys(summary).length) return summary;
+  const raw = getRecord(balance?.raw);
+  return getRecord(raw.data);
+}
+
 function getMoacodeUsageModels(summary: Record<string, unknown>): Array<Record<string, unknown>> {
   if (Array.isArray(summary.models)) {
     return summary.models.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object' && !Array.isArray(item));
@@ -548,9 +619,10 @@ export default function AdminAIProviderPage() {
   const isDeepSeek = providerCode === 'deepseek';
   const isMoacodeTeam = providerCode === 'moacode-team';
   const isMoacode = providerCode === 'moacode' || providerCode === 'moacode-team';
-  const providerDisplayName = isApi2d ? 'API2D' : isDeepSeek ? 'DeepSeek' : providerCode === 'moacode' ? 'Moacode' : providerCode === 'moacode-team' ? 'Moacode Team' : providerCode.toUpperCase();
-  const canQueryAccountBalance = isApi2d || isDeepSeek || isMoacode;
-  const accountBalanceTitle = isMoacode ? '主账号余额与用量' : '主账号总余额';
+  const isNanoBanana = providerCode === 'nanobanana';
+  const providerDisplayName = isApi2d ? 'API2D' : isDeepSeek ? 'DeepSeek' : providerCode === 'moacode' ? 'Moacode' : providerCode === 'moacode-team' ? 'Moacode Team' : isNanoBanana ? 'NanoBanana' : providerCode.toUpperCase();
+  const canQueryAccountBalance = isApi2d || isDeepSeek || isMoacode || isNanoBanana;
+  const accountBalanceTitle = isMoacode ? '主账号余额与用量' : isNanoBanana ? '主账号余额与请求' : '主账号总余额';
   const [tab, setTab] = useState(0);
   const [providerConfig, setProviderConfig] = useState<Record<string, unknown> | null>(null);
   const [form, setForm] = useState({
@@ -571,6 +643,13 @@ export default function AdminAIProviderPage() {
     quotaTransferMethod: 'POST',
     quotaTransferBodyTemplate: '',
     deepseekPricing: DEFAULT_DEEPSEEK_PRICING_FORM,
+    nanobananaAspectRatio: '',
+    nanobananaImageSize: '1K',
+    nanobananaAccountUserId: '',
+    nanobananaPricing: {
+      pointValue: DEFAULT_NANOBANANA_POINT_VALUE,
+      billingMultiplier: DEFAULT_NANOBANANA_BILLING_MULTIPLIER,
+    },
   });
   const [loadedSecrets, setLoadedSecrets] = useState({ adminToken: '', forwardKey: '' });
   const [keys, setKeys] = useState<Array<Record<string, unknown>>>([]);
@@ -622,14 +701,16 @@ export default function AdminAIProviderPage() {
   const moacodeBalanceSummary = isMoacode ? getMoacodeBalanceSummary(accountBalance) : {};
   const moacodeUsageSummary = isMoacode ? getMoacodeUsageSummary(accountBalance) : {};
   const moacodeUsageModels = isMoacode ? getMoacodeUsageModels(moacodeUsageSummary).slice(0, 8) : [];
+  const nanobananaBalanceSummary = isNanoBanana ? getNanoBananaBalanceSummary(accountBalance) : {};
   const publicModelGroups = buildPublicModelGroups(publicModels);
   const publicModelOptions = buildPublicModelOptions(publicModels);
-  const publicModelTabIndex = isMoacode ? 1 : -1;
-  const userManagementTabIndex = isMoacode ? 2 : 1;
-  const usageStatsTabIndex = isMoacode ? 3 : 2;
+  const hasPublicModelPricing = isMoacode || isNanoBanana;
+  const publicModelTabIndex = hasPublicModelPricing ? 1 : -1;
+  const userManagementTabIndex = hasPublicModelPricing ? 2 : 1;
+  const usageStatsTabIndex = hasPublicModelPricing ? 3 : 2;
 
   const loadPublicModels = async (search = publicModelSearch) => {
-    if (!isMoacode) return;
+    if (!hasPublicModelPricing) return;
     setPublicModelLoading(true);
     setPublicModelError(null);
     try {
@@ -669,6 +750,7 @@ export default function AdminAIProviderPage() {
       const config = await adminApi.getAiProviderConfig(providerCode);
       const adminToken = typeof config.adminToken === 'string' ? config.adminToken : '';
       const forwardKey = typeof config.forwardKey === 'string' ? config.forwardKey : '';
+      const nanobananaDefaults = toNanoBananaDefaultsForm(config.metadata);
       setProviderConfig(config);
       setLoadedSecrets({ adminToken, forwardKey });
       setForm({
@@ -691,8 +773,12 @@ export default function AdminAIProviderPage() {
           ? ''
           : JSON.stringify(config.quotaTransferBodyTemplate, null, 2),
         deepseekPricing: toDeepSeekPricingForm(config.tokenPricing),
+        nanobananaAspectRatio: nanobananaDefaults.aspectRatio,
+        nanobananaImageSize: nanobananaDefaults.imageSize,
+        nanobananaAccountUserId: nanobananaDefaults.accountUserId,
+        nanobananaPricing: toNanoBananaPricingForm(config.tokenPricing),
       });
-      if (canQueryAccountBalance && (isApi2d ? config.forwardKeyConfigured : isMoacode ? config.forwardKeyConfigured : config.adminTokenConfigured)) void loadAccountBalance();
+      if (canQueryAccountBalance && (isApi2d || isMoacode || isNanoBanana ? config.forwardKeyConfigured : config.adminTokenConfigured)) void loadAccountBalance();
       else {
         setAccountBalance(null);
         setAccountBalanceError(null);
@@ -733,7 +819,7 @@ export default function AdminAIProviderPage() {
   }, [providerCode]);
 
   useEffect(() => {
-    if (isMoacode && (tab === 0 || tab === publicModelTabIndex) && !publicModels.length && !publicModelLoading) void loadPublicModels();
+    if (hasPublicModelPricing && (tab === 0 || tab === publicModelTabIndex) && !publicModels.length && !publicModelLoading) void loadPublicModels();
     if (tab === userManagementTabIndex) {
       if (usesInternalLedger) void loadUserBalances();
       else void loadKeys();
@@ -763,7 +849,18 @@ export default function AdminAIProviderPage() {
           ? JSON.parse(form.quotaTransferBodyTemplate)
           : null,
       };
-      if (usesInternalLedger) payload.tokenPricing = buildInternalLedgerTokenPricing(providerCode, form.deepseekPricing);
+      if (isNanoBanana) payload.tokenPricing = buildNanoBananaPricing(form.nanobananaPricing);
+      else if (usesInternalLedger) payload.tokenPricing = buildInternalLedgerTokenPricing(providerCode, form.deepseekPricing);
+      if (isNanoBanana) {
+        payload.metadata = {
+          ...getRecord(providerConfig?.metadata),
+          nanobananaDefaults: {
+            aspectRatio: form.nanobananaAspectRatio || '',
+            imageSize: form.nanobananaImageSize || '1K',
+            accountUserId: form.nanobananaAccountUserId.trim(),
+          },
+        };
+      }
       const nextAdminToken = form.adminToken.trim();
       const nextForwardKey = form.forwardKey.trim();
       if (nextAdminToken !== loadedSecrets.adminToken) payload.adminToken = nextAdminToken;
@@ -773,11 +870,16 @@ export default function AdminAIProviderPage() {
       const updatedForwardKey = typeof updated.forwardKey === 'string' ? updated.forwardKey : nextForwardKey;
       setProviderConfig(updated);
       setLoadedSecrets({ adminToken: updatedAdminToken, forwardKey: updatedForwardKey });
+      const updatedNanoBananaDefaults = toNanoBananaDefaultsForm(updated.metadata);
       setForm((prev) => ({
         ...prev,
         adminToken: updatedAdminToken,
         forwardKey: updatedForwardKey,
         deepseekPricing: toDeepSeekPricingForm(updated.tokenPricing),
+        nanobananaAspectRatio: updatedNanoBananaDefaults.aspectRatio,
+        nanobananaImageSize: updatedNanoBananaDefaults.imageSize,
+        nanobananaAccountUserId: updatedNanoBananaDefaults.accountUserId,
+        nanobananaPricing: toNanoBananaPricingForm(updated.tokenPricing),
       }));
     } catch (saveError) {
       setError(getAdminErrorMessage(saveError));
@@ -1004,6 +1106,16 @@ export default function AdminAIProviderPage() {
     }));
   };
 
+  const updateNanoBananaPricing = (field: 'pointValue' | 'billingMultiplier', value: string) => {
+    setForm((prev) => ({
+      ...prev,
+      nanobananaPricing: {
+        ...prev.nanobananaPricing,
+        [field]: value,
+      },
+    }));
+  };
+
   const openUpdateDialog = (item: Record<string, unknown>) => {
     setKeyAction({
       externalKeyId: String(item.id || ''),
@@ -1020,7 +1132,7 @@ export default function AdminAIProviderPage() {
     <Stack spacing={2} sx={{ pb: 10 }}>
       <Tabs value={tab} onChange={(_event, value) => setTab(value)}>
         <Tab label="配置" />
-        {isMoacode ? <Tab label="模型价格" /> : null}
+        {hasPublicModelPricing ? <Tab label="模型价格" /> : null}
         <Tab label={usesInternalLedger ? '用户点数' : 'Key 查询'} />
         <Tab label="用量统计" />
       </Tabs>
@@ -1145,6 +1257,42 @@ export default function AdminAIProviderPage() {
                   />
                 ) : null}
               </Box>
+              {isNanoBanana ? (
+                <Box sx={shortConfigGridSx}>
+                  <TextField
+                    select
+                    label="默认宽高比"
+                    value={form.nanobananaAspectRatio}
+                    onChange={(e) => setForm((prev) => ({ ...prev, nanobananaAspectRatio: e.target.value }))}
+                    helperText="用户指定时覆盖"
+                    sx={compactTextFieldSx}
+                  >
+                    <MenuItem value="">不指定</MenuItem>
+                    {NANOBANANA_ASPECT_RATIOS.map((value) => (
+                      <MenuItem key={value} value={value}>{value}</MenuItem>
+                    ))}
+                  </TextField>
+                  <TextField
+                    select
+                    label="默认画质"
+                    value={form.nanobananaImageSize}
+                    onChange={(e) => setForm((prev) => ({ ...prev, nanobananaImageSize: e.target.value }))}
+                    helperText="支持 1K、2K、4K"
+                    sx={compactTextFieldSx}
+                  >
+                    {NANOBANANA_IMAGE_SIZES.map((value) => (
+                      <MenuItem key={value} value={value}>{value}</MenuItem>
+                    ))}
+                  </TextField>
+                  <TextField
+                    label="余额查询用户 ID"
+                    value={form.nanobananaAccountUserId}
+                    onChange={(e) => setForm((prev) => ({ ...prev, nanobananaAccountUserId: e.target.value }))}
+                    helperText="new-api-user"
+                    sx={compactTextFieldSx}
+                  />
+                </Box>
+              ) : null}
               <TextField
                 label={isApi2d ? 'API2D 主账号管理 Token（不是模型调用 Key）' : `${providerDisplayName} 主账号 API Key`}
                 value={form.adminToken}
@@ -1152,9 +1300,13 @@ export default function AdminAIProviderPage() {
                 fullWidth
                 sx={compactTextFieldSx}
               />
-              {isApi2d || isMoacode ? (
+              {isApi2d || isMoacode || isNanoBanana ? (
                 <TextField
-                  label={isMoacode ? `${providerDisplayName} Cookie（用于余额和用量查询）` : 'API2D 主账号 ForwardKey（用于余额查询）'}
+                  label={isMoacode
+                    ? `${providerDisplayName} Cookie（用于余额和用量查询）`
+                    : isNanoBanana
+                      ? 'NanoBanana Session/Cookie（用于余额查询）'
+                      : 'API2D 主账号 ForwardKey（用于余额查询）'}
                   value={form.forwardKey}
                   onChange={(e) => setForm((prev) => ({ ...prev, forwardKey: e.target.value }))}
                   fullWidth
@@ -1178,11 +1330,32 @@ export default function AdminAIProviderPage() {
                     variant="outlined"
                     size="small"
                     onClick={() => void loadAccountBalance()}
-                    disabled={!(isApi2d || isMoacode ? providerConfig?.forwardKeyConfigured : providerConfig?.adminTokenConfigured) || accountBalanceLoading}
+                    disabled={!(isApi2d || isMoacode || isNanoBanana ? providerConfig?.forwardKeyConfigured : providerConfig?.adminTokenConfigured) || accountBalanceLoading}
                   >
                     刷新余额
                   </Button>
                 </Stack>
+              ) : null}
+              {isNanoBanana && accountBalance ? (
+                <Box
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', md: 'repeat(4, minmax(0, 1fr))' },
+                    gap: 1,
+                  }}
+                >
+                  {[
+                    { label: '可用余额', value: formatCurrencyAmount(getFirstDefinedValue(nanobananaBalanceSummary, ['availableBalance', 'available_balance']), '$', 2) },
+                    { label: '已用额度', value: formatCurrencyAmount(getFirstDefinedValue(nanobananaBalanceSummary, ['usedAmount', 'used_amount']), '$', 2) },
+                    { label: '请求次数', value: formatOptionalPlainNumber(getFirstDefinedValue(nanobananaBalanceSummary, ['requestCount', 'request_count']), 0) },
+                    { label: '账号', value: String(getFirstDefinedValue(nanobananaBalanceSummary, ['displayName', 'display_name', 'username']) ?? '-') },
+                  ].map((item) => (
+                    <Box key={item.label} sx={{ border: 1, borderColor: 'divider', borderRadius: 1, p: 1 }}>
+                      <Typography variant="caption" color="text.secondary">{item.label}</Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 800 }}>{item.value}</Typography>
+                    </Box>
+                  ))}
+                </Box>
               ) : null}
               {isMoacode && accountBalance ? (
                 <Stack spacing={1}>
@@ -1307,54 +1480,77 @@ export default function AdminAIProviderPage() {
 
           {usesInternalLedger ? (
             <AdminSection title={`${providerDisplayName} 扣费配置`}>
-              <Stack spacing={1.25}>
-                <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.25}>
-                  <TextField
-                    label={isMoacode ? '1P 等于多少美元' : '1P 等于多少元'}
-                    value={form.deepseekPricing.pointValueCny}
-                    onChange={(e) => updateDeepSeekPricing('pointValueCny', e.target.value)}
-                    fullWidth
-                  />
-                  <TextField
-                    label="计费倍率"
-                    value={form.deepseekPricing.billingMultiplier}
-                    onChange={(e) => updateDeepSeekPricing('billingMultiplier', e.target.value)}
-                    fullWidth
-                  />
+              {isNanoBanana ? (
+                <Stack spacing={1.25}>
+                  <Box sx={shortConfigGridSx}>
+                    <TextField
+                      label="1P 等于多少美元"
+                      value={form.nanobananaPricing.pointValue}
+                      onChange={(e) => updateNanoBananaPricing('pointValue', e.target.value)}
+                      helperText="默认 0.01"
+                      sx={compactTextFieldSx}
+                    />
+                    <TextField
+                      label="扣点倍率"
+                      value={form.nanobananaPricing.billingMultiplier}
+                      onChange={(e) => updateNanoBananaPricing('billingMultiplier', e.target.value)}
+                      helperText="价格 * 倍率 / P价值"
+                      sx={compactTextFieldSx}
+                    />
+                  </Box>
                 </Stack>
-                {!isMoacode ? (
-                  <>
-                    <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.25}>
-                      <TextField
-                        label="输入成本价（元/百万 tokens）"
-                        value={form.deepseekPricing.prompt}
-                        onChange={(e) => updateDeepSeekPricing('prompt', e.target.value)}
-                        fullWidth
-                      />
-                      <TextField
-                        label="输出成本价（元/百万 tokens）"
-                        value={form.deepseekPricing.completion}
-                        onChange={(e) => updateDeepSeekPricing('completion', e.target.value)}
-                        fullWidth
-                      />
-                    </Stack>
-                    <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.25}>
-                      <TextField
-                        label="缓存命中价格（元/百万 tokens）"
-                        value={form.deepseekPricing.cacheHit}
-                        onChange={(e) => updateDeepSeekPricing('cacheHit', e.target.value)}
-                        fullWidth
-                      />
-                      <TextField
-                        label="缓存未命中价格（元/百万 tokens）"
-                        value={form.deepseekPricing.cacheMiss}
-                        onChange={(e) => updateDeepSeekPricing('cacheMiss', e.target.value)}
-                        fullWidth
-                      />
-                    </Stack>
-                  </>
-                ) : null}
-              </Stack>
+              ) : (
+                <Stack spacing={1.25}>
+                  <Box sx={isMoacode ? pricingConfigGridSx : { display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' }, gap: 1.25 }}>
+                    <TextField
+                      label={isMoacode ? '1P 等于多少美元' : '1P 等于多少元'}
+                      value={form.deepseekPricing.pointValueCny}
+                      onChange={(e) => updateDeepSeekPricing('pointValueCny', e.target.value)}
+                      fullWidth={!isMoacode}
+                      sx={compactTextFieldSx}
+                    />
+                    <TextField
+                      label="计费倍率"
+                      value={form.deepseekPricing.billingMultiplier}
+                      onChange={(e) => updateDeepSeekPricing('billingMultiplier', e.target.value)}
+                      fullWidth={!isMoacode}
+                      sx={compactTextFieldSx}
+                    />
+                  </Box>
+                  {!isMoacode ? (
+                    <>
+                      <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.25}>
+                        <TextField
+                          label="输入成本价（元/百万 tokens）"
+                          value={form.deepseekPricing.prompt}
+                          onChange={(e) => updateDeepSeekPricing('prompt', e.target.value)}
+                          fullWidth
+                        />
+                        <TextField
+                          label="输出成本价（元/百万 tokens）"
+                          value={form.deepseekPricing.completion}
+                          onChange={(e) => updateDeepSeekPricing('completion', e.target.value)}
+                          fullWidth
+                        />
+                      </Stack>
+                      <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.25}>
+                        <TextField
+                          label="缓存命中价格（元/百万 tokens）"
+                          value={form.deepseekPricing.cacheHit}
+                          onChange={(e) => updateDeepSeekPricing('cacheHit', e.target.value)}
+                          fullWidth
+                        />
+                        <TextField
+                          label="缓存未命中价格（元/百万 tokens）"
+                          value={form.deepseekPricing.cacheMiss}
+                          onChange={(e) => updateDeepSeekPricing('cacheMiss', e.target.value)}
+                          fullWidth
+                        />
+                      </Stack>
+                    </>
+                  ) : null}
+                </Stack>
+              )}
             </AdminSection>
           ) : null}
 
@@ -1401,7 +1597,7 @@ export default function AdminAIProviderPage() {
           ) : null}
 
         </Stack>
-      ) : isMoacode && tab === publicModelTabIndex ? (
+      ) : hasPublicModelPricing && tab === publicModelTabIndex ? (
         <Stack spacing={1.5}>
           <AdminSection title="模型价格">
             <Stack spacing={1.25}>
@@ -1435,7 +1631,48 @@ export default function AdminAIProviderPage() {
               </Stack>
               {publicModelError ? <Alert severity="error">{publicModelError}</Alert> : null}
               {!publicModels.length && !publicModelLoading && !publicModelError ? <Alert severity="info">暂无模型价格</Alert> : null}
-              {publicModels.length ? (
+              {publicModels.length && isNanoBanana ? (
+                <AdminTableFrame minWidth={760}>
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell sx={{ width: 300 }}>模型</TableCell>
+                        <TableCell>价格($/次)</TableCell>
+                        <TableCell>可用分组</TableCell>
+                        <TableCell>端点</TableCell>
+                        <TableCell>供应商</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {publicModels.map((row, rowIndex) => (
+                        <TableRow key={String(row.id || `${getPublicModelRowModelName(row)}-${rowIndex}`)}>
+                          <TableCell>
+                            <Typography variant="body2" sx={{ fontWeight: 800, wordBreak: 'break-word' }}>
+                              {getPublicModelRowModelName(row)}
+                            </Typography>
+                          </TableCell>
+                          <TableCell>{formatDollarAmount(row.requestPrice ?? row.request_price, 6)}</TableCell>
+                          <TableCell>
+                            {Array.isArray(row.enableGroups)
+                              ? row.enableGroups.join('、')
+                              : Array.isArray(row.enable_groups)
+                                ? row.enable_groups.join('、')
+                                : '-'}
+                          </TableCell>
+                          <TableCell>
+                            {Array.isArray(row.endpointTypes)
+                              ? row.endpointTypes.join('、')
+                              : Array.isArray(row.endpoint_types)
+                                ? row.endpoint_types.join('、')
+                                : '-'}
+                          </TableCell>
+                          <TableCell>{getPublicModelRowProviderLabel(row)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </AdminTableFrame>
+              ) : publicModels.length ? (
                 <AdminTableFrame minWidth={980}>
                   <Table size="small">
                     <TableHead>

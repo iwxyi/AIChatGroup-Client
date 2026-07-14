@@ -17,7 +17,7 @@ import { useLayoutHeaderActions } from '../components/layout/AppLayoutContext';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { useCharacterStore } from '../stores/useCharacterStore';
 import { useAuthStore } from '../stores/useAuthStore';
-import { isLikelyBrowserCorsError, listAvailableModels, testConnection } from '../services/aiClient';
+import { isLikelyBrowserCorsError, listAvailableModels, testConnection, type AvailableModelInfo } from '../services/aiClient';
 import { api, type OfficialAiProviderInfo } from '../services/api';
 import type { AIModelImageCapabilities, AIModelInputCapabilities, AIModelType, AIProvider } from '../types/settings';
 import { normalizeImageCapabilities, normalizeInputCapabilities, inferTextInputCapabilities, buildTextInputCapabilityPatch, getInputCapabilityLockState, getAttachmentUiCapabilitySummary, getInputCapabilityBadge, getInputCapabilityWarning, shouldShowInputCapabilityWarning } from '../types/settings';
@@ -34,10 +34,15 @@ import { formatAiAmount } from '../utils/aiPoints';
 type AiBalanceView =
   | { status: 'idle' | 'loading' }
   | { status: 'guest' | 'unassigned' | 'error' }
-  | { status: 'ready'; points: number };
+  | { status: 'ready'; points: number; currencyUnit?: string };
 
 type AIProviderOption = AIProviderCatalogEntry & {
   unavailableReason?: string;
+};
+
+type ModelDropdownOption = {
+  value: string;
+  group: string;
 };
 
 function maskSecret(value: string) {
@@ -175,23 +180,67 @@ function getOfficialModelGroupKey(model: string) {
 
 function isImageModelName(model: string) {
   const normalized = model.trim().toLowerCase();
-  return normalized.includes('image') || normalized.includes('dall-e');
+  return normalized.includes('image') || normalized.includes('dall-e') || normalized.includes('seedream');
 }
 
 function isEmbeddingModelName(model: string) {
   return model.trim().toLowerCase().includes('embedding');
 }
 
-function filterModelsForType(models: string[], type: AIModelType) {
+function isImageModelInfo(model: AvailableModelInfo) {
+  if (isImageModelName(model.id)) return true;
+  const metadata = model.raw && typeof model.raw === 'object' && !Array.isArray(model.raw)
+    ? model.raw as Record<string, unknown>
+    : {};
+  const family = String(metadata.family || '').trim().toLowerCase();
+  return family === 'image' || family === 'images';
+}
+
+function filterModelsForType(models: AvailableModelInfo[], type: AIModelType) {
   return models.filter((model) => {
-    if (type === 'image') return isImageModelName(model);
-    if (type === 'text' || type === 'document') return !isImageModelName(model) && !isEmbeddingModelName(model);
+    if (type === 'image') return isImageModelInfo(model);
+    if (type === 'text' || type === 'document') return !isImageModelInfo(model) && !isEmbeddingModelName(model.id);
     if (type === 'audio') {
-      const normalized = model.trim().toLowerCase();
+      const normalized = model.id.trim().toLowerCase();
       return normalized.includes('audio') || normalized.includes('voice') || normalized.includes('tts') || normalized.includes('speech');
     }
     return true;
   });
+}
+
+function getModelMetadata(model: AvailableModelInfo) {
+  return model.raw && typeof model.raw === 'object' && !Array.isArray(model.raw)
+    ? model.raw as Record<string, unknown>
+    : {};
+}
+
+function getNanoBananaVendorGroup(model: AvailableModelInfo, isZh: boolean) {
+  const metadata = getModelMetadata(model);
+  const normalizeVendor = (value: unknown) => {
+    const text = String(value || '').trim();
+    return text && text !== '-' ? text : '';
+  };
+  const providerDisplay = normalizeVendor(metadata.providerDisplay || metadata.provider_display);
+  const providerName = normalizeVendor(metadata.providerName || metadata.provider_name);
+  const providerCode = normalizeVendor(metadata.providerCode || metadata.provider_code);
+  const normalizedModel = model.id.trim().toLowerCase();
+  return providerDisplay
+    || providerName
+    || (normalizedModel.startsWith('gemini-') ? 'Google' : '')
+    || (normalizedModel.startsWith('doubao-') ? '豆包' : '')
+    || (normalizedModel.startsWith('gpt-') ? 'OpenAI' : '')
+    || providerCode
+    || (isZh ? '其他供应商' : 'Other vendors');
+}
+
+function buildRemoteModelOption(model: AvailableModelInfo, type: AIModelType, provider: AIProvider, usesOfficialProxy: boolean, isZh: boolean): ModelDropdownOption {
+  if (type === 'image' && provider === 'official-nanobanana') {
+    return { value: model.id, group: getNanoBananaVendorGroup(model, isZh) };
+  }
+  return {
+    value: model.id,
+    group: usesOfficialProxy ? getOfficialModelGroupLabel(model.id, isZh) : (isZh ? '远程可用模型' : 'Available from provider'),
+  };
 }
 
 function getOfficialModelGroupLabel(model: string, isZh: boolean) {
@@ -243,12 +292,19 @@ function resolveAiBalanceView(balance: Record<string, unknown> | null, loading: 
   if (loading) return { status: 'loading' };
   if (!balance) return { status: 'idle' };
   const raw = balance.availableBalance ?? balance.available_balance;
-  if (typeof raw === 'number' && Number.isFinite(raw)) return { status: 'ready', points: raw };
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    return {
+      status: 'ready',
+      points: raw,
+      currencyUnit: String(balance.currencyUnit ?? balance.currency_unit ?? ''),
+    };
+  }
   return { status: 'unassigned' };
 }
 
 function getAiBalanceLabel(view: AiBalanceView, providerKey: string, zh: boolean) {
   if (view.status === 'loading') return zh ? '点数刷新中' : 'Refreshing points';
+  if (view.status === 'ready' && view.currencyUnit?.trim().toLowerCase() === 'usd') return formatAiAmount(view.points, providerKey, { prefix: '$', suffix: '' });
   if (view.status === 'ready') return formatAiAmount(view.points, resolveOfficialBackendProvider(providerKey));
   if (view.status === 'guest') return zh ? '登录后查看点数' : 'Sign in to view points';
   if (view.status === 'unassigned') return zh ? '未分配点数' : 'No points assigned';
@@ -272,11 +328,16 @@ function resolveLegacyOfficialProviderKey(provider: string) {
   return provider;
 }
 
+function isNanoBananaOfficialProviderKey(provider: string) {
+  return provider === 'official-nanobanana';
+}
+
 function buildOnlineOfficialProviderOption(provider: OfficialAiProviderInfo): (AIProviderOption & { sortOrder: number }) | null {
   if (!provider.officialProvider?.trim()) return null;
   const providerKey = provider.officialProvider.trim() as AIProvider;
   const fallbackDefault = { baseUrl: '/api/ai', model: provider.defaultModel || '' };
   const catalogEntry = AI_PROVIDER_CATALOG.find((item) => item.key === providerKey)
+    || (providerKey === 'official-1' ? AI_PROVIDER_CATALOG.find((item) => item.key === 'official-deepseek') : null)
     || (providerKey === 'official-2' ? AI_PROVIDER_CATALOG.find((item) => item.key === 'official-moacode') : null)
     || (providerKey === 'official-team' ? AI_PROVIDER_CATALOG.find((item) => item.key === 'official-moacode-team') : null)
     || {
@@ -303,6 +364,21 @@ function buildOnlineOfficialProviderOption(provider: OfficialAiProviderInfo): (A
   const textDefaultModel = !isImageModelName(remoteDefaultModel)
     ? remoteDefaultModel
     : (catalogEntry.defaults.text?.model || '');
+  const nextDefaults: AIProviderCatalogEntry['defaults'] = {
+    ...catalogEntry.defaults,
+    text: textDefaultModel || catalogEntry.defaults.text?.model
+      ? { ...(catalogEntry.defaults.text || fallbackDefault), model: textDefaultModel || catalogEntry.defaults.text?.model || '' }
+      : catalogEntry.defaults.text,
+    audio: catalogEntry.defaults.audio?.model ? { ...catalogEntry.defaults.audio, model: catalogEntry.defaults.audio.model } : catalogEntry.defaults.audio,
+    document: textDefaultModel || catalogEntry.defaults.document?.model
+      ? { ...(catalogEntry.defaults.document || fallbackDefault), model: textDefaultModel || catalogEntry.defaults.document?.model || '' }
+      : catalogEntry.defaults.document,
+  };
+  if (imageDefaultModel || catalogEntry.defaults.image?.model) {
+    nextDefaults.image = { ...(catalogEntry.defaults.image || fallbackDefault), model: imageDefaultModel || catalogEntry.defaults.image?.model || '' };
+  } else {
+    delete nextDefaults.image;
+  }
   return {
     ...catalogEntry,
     key: providerKey,
@@ -310,13 +386,7 @@ function buildOnlineOfficialProviderOption(provider: OfficialAiProviderInfo): (A
     family: provider.family || catalogEntry.family,
     hidden: Boolean(provider.hidden),
     unavailableReason: provider.accessAllowed === false ? '当前会员不可用' : undefined,
-    defaults: {
-      ...catalogEntry.defaults,
-      text: { ...(catalogEntry.defaults.text || fallbackDefault), model: textDefaultModel || catalogEntry.defaults.text?.model || '' },
-      image: { ...(catalogEntry.defaults.image || fallbackDefault), model: imageDefaultModel },
-      audio: { ...(catalogEntry.defaults.audio || fallbackDefault), model: catalogEntry.defaults.audio?.model || '' },
-      document: { ...(catalogEntry.defaults.document || fallbackDefault), model: textDefaultModel || catalogEntry.defaults.document?.model || '' },
-    },
+    defaults: nextDefaults,
     popularModels: {
       ...catalogEntry.popularModels,
       text: catalogEntry.popularModels.text || (textDefaultModel ? [textDefaultModel] : []),
@@ -371,7 +441,7 @@ export default function AIModelsPage() {
   const [assigningId, setAssigningId] = useState<string | null>(null);
   const [applyingKeyId, setApplyingKeyId] = useState<string | null>(null);
   const [confirmAssignProfileId, setConfirmAssignProfileId] = useState<string | null>(null);
-  const [remoteModelOptions, setRemoteModelOptions] = useState<Record<string, string[]>>({});
+  const [remoteModelOptions, setRemoteModelOptions] = useState<Record<string, ModelDropdownOption[]>>({});
   const [fetchedModelKeys, setFetchedModelKeys] = useState<Record<string, string>>({});
   const [fetchingModelIds, setFetchingModelIds] = useState<Record<string, boolean>>({});
   const [fetchModelFailedIds, setFetchModelFailedIds] = useState<Record<string, boolean>>({});
@@ -473,11 +543,17 @@ export default function AIModelsPage() {
         }))
       : officialProvidersError
         ? []
-        : onlineOfficialProviderOptions.filter((item) => (
-          providerSupportsType(item, type)
-          || item.key === selectedProvider
-          || item.key === resolveLegacyOfficialProviderKey(selectedProvider || '')
-        ) && (!item.hidden || item.key === selectedProvider || item.key === resolveLegacyOfficialProviderKey(selectedProvider || '')));
+        : onlineOfficialProviderOptions.filter((item) => {
+          const resolvedSelected = resolveLegacyOfficialProviderKey(selectedProvider || '');
+          const isSelected = item.key === selectedProvider || item.key === resolvedSelected;
+          if (type === 'image') {
+            return isNanoBananaOfficialProviderKey(item.key) && (!item.hidden || isSelected);
+          }
+          return (
+            providerSupportsType(item, type)
+            || isSelected
+          ) && (!item.hidden || isSelected);
+        });
     const resolvedSelectedProvider = selectedProvider ? resolveLegacyOfficialProviderKey(selectedProvider) : '';
     const selectedOfficialKey = selectedProvider && (isOfficialProviderKey(selectedProvider) || onlineOfficialProviderKeySet.has(resolvedSelectedProvider as AIProvider))
       ? resolvedSelectedProvider
@@ -548,7 +624,7 @@ export default function AIModelsPage() {
       .catch((error) => {
         if (!active) return;
         setOfficialProviders([]);
-        setOfficialProvidersError(extractConnectionErrorMessage(error) || (i18n.language.startsWith('zh') ? '官方 AI 平台列表获取失败' : 'Failed to load official AI providers'));
+        setOfficialProvidersError(extractConnectionErrorMessage(error) || (i18n.language.startsWith('zh') ? '官方 AI 供应商列表获取失败' : 'Failed to load official AI providers'));
       })
       .finally(() => {
         if (active) setOfficialProvidersLoading(false);
@@ -749,7 +825,17 @@ export default function AIModelsPage() {
   const fetchAvailableModels = async (profileId: string, silent = false, force = false) => {
     const profile = settings.aiProfiles.find((item) => item.id === profileId);
     if (!profile) return false;
-    const profileUsesOfficialProxy = isOfficialProxyProviderKey(profile.provider) || profile.baseUrl.replace(/\/+$/, '') === '/api/ai';
+    const activeType = profile.type || 'text';
+    const providerOptions = getProviderOptionsForType(activeType, profile.provider);
+    const effectiveProvider = resolveSelectableProviderKey(profile.provider, activeType, providerOptions);
+    const providerDefaults = getProviderDefaultsFromOptions(effectiveProvider, activeType, providerOptions);
+    const effectiveProfile = {
+      ...profile,
+      provider: effectiveProvider,
+      baseUrl: providerDefaults.baseUrl || profile.baseUrl,
+      model: profile.model || providerDefaults.model,
+    };
+    const profileUsesOfficialProxy = isOfficialProxyProviderKey(effectiveProfile.provider) || effectiveProfile.baseUrl.replace(/\/+$/, '') === '/api/ai';
     if (profileUsesOfficialProxy && !canUseOfficialProviders) {
       setRemoteModelOptions((prev) => ({ ...prev, [profileId]: [] }));
       if (!silent) {
@@ -766,7 +852,7 @@ export default function AIModelsPage() {
       return false;
     }
 
-    const fetchKey = `${profile.provider}__${profile.type || 'text'}__${profile.baseUrl}__${profile.apiKey || 'account'}`;
+    const fetchKey = `${effectiveProfile.provider}__${activeType}__${effectiveProfile.baseUrl}__${effectiveProfile.apiKey || 'account'}`;
     if (!force && fetchedModelKeys[profileId] === fetchKey) return true;
     if (fetchingModelKeysRef.current[profileId] === fetchKey) return false;
 
@@ -778,11 +864,13 @@ export default function AIModelsPage() {
       return next;
     });
     try {
-      const models = await listAvailableModels(profile);
-      const remoteModelIds = Array.from(new Set(models.map((item) => item.id).filter((id): id is string => Boolean(id))));
-      const options = filterModelsForType(remoteModelIds, profile.type || 'text');
+      const models = await listAvailableModels(effectiveProfile);
+      const uniqueModels = Array.from(new Map(models.filter((item) => Boolean(item.id)).map((item) => [item.id, item])).values());
+      const options = filterModelsForType(uniqueModels, activeType)
+        .map((item) => buildRemoteModelOption(item, activeType, effectiveProfile.provider, profileUsesOfficialProxy, i18n.language.startsWith('zh')));
       if (profileUsesOfficialProxy) {
-        options.sort(compareOfficialModels);
+        options.sort((left, right) => left.group.localeCompare(right.group, undefined, { numeric: true, sensitivity: 'base' })
+          || compareOfficialModels(left.value, right.value));
       }
       setRemoteModelOptions((prev) => ({ ...prev, [profileId]: options }));
       setFetchedModelKeys((prev) => ({ ...prev, [profileId]: fetchKey }));
@@ -846,7 +934,7 @@ export default function AIModelsPage() {
       ) : null}
       {officialProvidersError ? (
         <Alert severity="error" variant="outlined">
-          {i18n.language.startsWith('zh') ? `官方 AI 平台列表获取失败：${officialProvidersError}` : `Failed to load official AI providers: ${officialProvidersError}`}
+          {i18n.language.startsWith('zh') ? `官方 AI 供应商列表获取失败：${officialProvidersError}` : `Failed to load official AI providers: ${officialProvidersError}`}
         </Alert>
       ) : null}
 
@@ -885,7 +973,8 @@ export default function AIModelsPage() {
                     const fetchedModels = remoteModelOptions[profile.id] || [];
                     const providerPopularModels = selectedProvider.popularModels[activeType] || getPopularModels(selectedProvider.key, activeType);
                     const popularModels = usesOfficialProxy && fetchedModels.length > 0 ? [] : providerPopularModels;
-                    const remoteModels = fetchedModels.filter((item) => !popularModels.includes(item));
+                    const popularModelSet = new Set(popularModels);
+                    const remoteModels = fetchedModels.filter((item) => !popularModelSet.has(item.value));
                     const fetchingModels = Boolean(fetchingModelIds[profile.id]);
                     const balanceView = usesOfficialProxy
                       ? (aiBalanceStatuses[selectedProvider.key] === 'guest' || aiBalanceStatuses[selectedProvider.key] === 'error'
@@ -899,10 +988,7 @@ export default function AIModelsPage() {
                         value,
                         group: usesOfficialProxy ? getOfficialModelGroupLabel(value, i18n.language.startsWith('zh')) : groupedModelLabels.popular,
                       })),
-                      ...remoteModels.map((value) => ({
-                        value,
-                        group: usesOfficialProxy ? getOfficialModelGroupLabel(value, i18n.language.startsWith('zh')) : groupedModelLabels.remote,
-                      })),
+                      ...remoteModels,
                     ];
                     return (
                       <>

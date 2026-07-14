@@ -19,6 +19,8 @@ export interface MessageAttachment {
   height?: number;
   generationJobId?: string;
   promptText?: string;
+  aspectRatio?: string;
+  imageSize?: string;
   referenceCharacterIds?: string[];
   referenceImages?: Array<{
     url: string;
@@ -38,6 +40,8 @@ export interface MediaGenerationDecision {
     reason?: string;
     prompt?: string;
     altText?: string;
+    aspectRatio?: string;
+    imageSize?: string;
     referenceCharacterIds?: string[];
   } | null;
   audio?: {

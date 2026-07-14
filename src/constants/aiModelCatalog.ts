@@ -73,8 +73,8 @@ const OFFICIAL_MOACODE_TEXT_MODELS = [
   'gpt-5.3-codex-spark',
   ...OFFICIAL_MOACODE_CODE_MODELS,
 ];
-const OFFICIAL_MOACODE_IMAGE_MODELS = [
-  'gpt-image-2',
+const OFFICIAL_NANOBANANA_IMAGE_MODELS = [
+  'gemini-3-pro-image-preview',
 ];
 
 export interface ProviderTypeDefaults {
@@ -111,12 +111,10 @@ export const AI_PROVIDER_CATALOG: AIProviderCatalogEntry[] = [
     family: 'Pneumata Claude/GPT',
     defaults: {
       text: { baseUrl: '/api/ai', model: 'gpt-5.5' },
-      image: { baseUrl: '/api/ai', model: 'gpt-image-2' },
       document: { baseUrl: '/api/ai', model: 'gpt-5.5' },
     },
     popularModels: {
       text: OFFICIAL_MOACODE_TEXT_MODELS,
-      image: OFFICIAL_MOACODE_IMAGE_MODELS,
       document: OFFICIAL_MOACODE_TEXT_MODELS,
     },
   },
@@ -126,13 +124,22 @@ export const AI_PROVIDER_CATALOG: AIProviderCatalogEntry[] = [
     family: 'Pneumata Claude/GPT Team',
     defaults: {
       text: { baseUrl: '/api/ai', model: 'gpt-5.5' },
-      image: { baseUrl: '/api/ai', model: 'gpt-image-2' },
       document: { baseUrl: '/api/ai', model: 'gpt-5.5' },
     },
     popularModels: {
       text: OFFICIAL_MOACODE_TEXT_MODELS,
-      image: OFFICIAL_MOACODE_IMAGE_MODELS,
       document: OFFICIAL_MOACODE_TEXT_MODELS,
+    },
+  },
+  {
+    key: 'official-nanobanana',
+    label: '官方图片（NanoBanana）',
+    family: 'Pneumata NanoBanana',
+    defaults: {
+      image: { baseUrl: '/api/ai', model: 'gemini-3-pro-image-preview' },
+    },
+    popularModels: {
+      image: OFFICIAL_NANOBANANA_IMAGE_MODELS,
     },
   },
   {
@@ -371,6 +378,10 @@ export function inferImageCapabilities(provider: AIProvider, model: string): AIM
       return { ...base, referenceImage: true, multiReferenceImage: true };
     }
     return base;
+  }
+
+  if (provider === 'official-nanobanana' || normalizedModel.includes('image-preview') || normalizedModel.includes('nanobanana')) {
+    return { ...base, referenceImage: true, multiReferenceImage: true };
   }
 
   if (provider === 'alibaba') {

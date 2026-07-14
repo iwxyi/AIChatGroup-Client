@@ -41,6 +41,8 @@ export interface ImageGenerationAdapterOptions {
   intent: GenerationIntent;
   count?: number;
   size?: string;
+  aspectRatio?: string;
+  imageSize?: string;
   negativePrompt?: string;
   seed?: string | number | null;
   referenceImages?: ImageReferenceInput[];
@@ -166,6 +168,8 @@ export function resolveImageGenerationRequest(params: ImageGenerationAdapterOpti
     prompt,
     count: params.count,
     size: params.size,
+    aspectRatio: params.aspectRatio,
+    imageSize: params.imageSize,
     signal: params.signal,
     referenceImages: canUseReferences ? referenceImages.map(({ url, mimeType }) => ({ url, mimeType })) : undefined,
     negativePrompt: capabilities.negativePrompt ? params.negativePrompt : undefined,

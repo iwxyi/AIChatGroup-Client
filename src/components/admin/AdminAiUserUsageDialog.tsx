@@ -147,7 +147,7 @@ function formatBillingSource(value: unknown) {
 }
 
 function formatProviderLabel(providerCode: string) {
-  if (providerCode === 'all') return '全部平台';
+  if (providerCode === 'all') return '全部供应商';
   if (providerCode === 'deepseek') return 'DeepSeek';
   if (providerCode === 'moacode') return 'Moacode';
   if (providerCode === 'moacode-team') return 'Moacode Team';
@@ -461,7 +461,7 @@ export default function AdminAiUserUsageDialog({
                     <TableHead>
                       <TableRow>
                         <TableCell>用途</TableCell>
-                        {providerCode === 'all' ? <TableCell>平台</TableCell> : null}
+                        {providerCode === 'all' ? <TableCell>供应商</TableCell> : null}
                         <TableCell>模型</TableCell>
                         <TableCell>输入</TableCell>
                         <TableCell>输出</TableCell>

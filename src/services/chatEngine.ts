@@ -2179,6 +2179,8 @@ function normalizeMediaDecision(decision: MediaGenerationDecision | null | undef
       reason: decision.image.reason || '',
       prompt: decision.image.prompt,
       altText: decision.image.altText,
+      aspectRatio: decision.image.aspectRatio,
+      imageSize: decision.image.imageSize,
       referenceCharacterIds: decision.image.referenceCharacterIds?.filter(Boolean),
     };
   }
@@ -2229,6 +2231,8 @@ function buildMessageMetadata(params: {
       status: 'queued',
       altText: decision.image.altText,
       promptText: decision.image.prompt,
+      aspectRatio: decision.image.aspectRatio,
+      imageSize: decision.image.imageSize,
       referenceCharacterIds: decision.image.referenceCharacterIds?.filter(Boolean),
       createdAt: now,
       updatedAt: now,
