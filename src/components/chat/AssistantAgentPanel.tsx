@@ -622,19 +622,13 @@ function AssistantArtifactList({ chatId, selectedArtifactId }: { chatId: string;
                 alignItems: 'center',
                 justifyContent: 'space-between',
                 gap: 1,
-                mx: { xs: 1, sm: 2 },
-                mt: { xs: 1, sm: 1.5 },
-                px: { xs: 1.25, sm: 1.75 },
-                py: 1,
-                border: '1px solid',
-                borderColor: theme.palette.mode === 'light' ? 'rgba(148, 163, 184, 0.32)' : 'rgba(148, 163, 184, 0.22)',
-                borderRadius: 2,
-                bgcolor: theme.palette.mode === 'light' ? 'rgba(255, 255, 255, 0.72)' : 'rgba(15, 23, 42, 0.68)',
-                backdropFilter: 'blur(18px) saturate(1.35)',
-                WebkitBackdropFilter: 'blur(18px) saturate(1.35)',
-                boxShadow: theme.palette.mode === 'light'
-                  ? '0 18px 42px rgba(15, 23, 42, 0.12)'
-                  : '0 18px 42px rgba(0, 0, 0, 0.32)',
+                px: { xs: 1.25, sm: 2 },
+                py: { xs: 0.75, sm: 1 },
+                borderBottom: '1px solid',
+                borderColor: theme.palette.mode === 'light' ? 'rgba(148, 163, 184, 0.20)' : 'rgba(148, 163, 184, 0.16)',
+                bgcolor: theme.palette.mode === 'light' ? 'rgba(248, 250, 252, 0.74)' : 'rgba(2, 6, 23, 0.72)',
+                backdropFilter: 'blur(16px) saturate(1.25)',
+                WebkitBackdropFilter: 'blur(16px) saturate(1.25)',
               })}
             >
               <Box sx={{ minWidth: 0 }}>
@@ -649,11 +643,9 @@ function AssistantArtifactList({ chatId, selectedArtifactId }: { chatId: string;
                 sx={{
                   flexShrink: 0,
                   '& .MuiIconButton-root': {
-                    bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.62)' : 'rgba(15,23,42,0.62)',
-                    border: '1px solid',
-                    borderColor: (theme) => theme.palette.mode === 'light' ? 'rgba(148,163,184,0.22)' : 'rgba(148,163,184,0.18)',
+                    bgcolor: 'transparent',
                     '&:hover': {
-                      bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.88)' : 'rgba(30,41,59,0.82)',
+                      bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.06)' : 'rgba(148,163,184,0.14)',
                     },
                   },
                 }}
@@ -683,7 +675,7 @@ function AssistantArtifactList({ chatId, selectedArtifactId }: { chatId: string;
             <DialogContent
               sx={{
                 borderTop: 0,
-                pt: { xs: 2, sm: 2.5 },
+                pt: { xs: 1, sm: 1.25 },
                 bgcolor: 'transparent',
               }}
             >
