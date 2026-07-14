@@ -568,17 +568,65 @@ function AssistantArtifactList({ chatId, selectedArtifactId }: { chatId: string;
         </Box>
       )}
 
-      <Dialog open={Boolean(fullscreenItem)} onClose={() => setFullscreenId(null)} fullScreen>
+      <Dialog
+        open={Boolean(fullscreenItem)}
+        onClose={() => setFullscreenId(null)}
+        fullScreen
+        slotProps={{
+          paper: {
+            sx: (theme) => ({
+              bgcolor: theme.palette.mode === 'light' ? '#f8fafc' : '#020617',
+            }),
+          },
+        }}
+      >
         {fullscreenItem ? (
           <>
-            <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+            <DialogTitle
+              sx={(theme) => ({
+                position: 'sticky',
+                top: 0,
+                zIndex: theme.zIndex.appBar,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 1,
+                mx: { xs: 1, sm: 2 },
+                mt: { xs: 1, sm: 1.5 },
+                px: { xs: 1.25, sm: 1.75 },
+                py: 1,
+                border: '1px solid',
+                borderColor: theme.palette.mode === 'light' ? 'rgba(148, 163, 184, 0.32)' : 'rgba(148, 163, 184, 0.22)',
+                borderRadius: 2,
+                bgcolor: theme.palette.mode === 'light' ? 'rgba(255, 255, 255, 0.72)' : 'rgba(15, 23, 42, 0.68)',
+                backdropFilter: 'blur(18px) saturate(1.35)',
+                WebkitBackdropFilter: 'blur(18px) saturate(1.35)',
+                boxShadow: theme.palette.mode === 'light'
+                  ? '0 18px 42px rgba(15, 23, 42, 0.12)'
+                  : '0 18px 42px rgba(0, 0, 0, 0.32)',
+              })}
+            >
               <Box sx={{ minWidth: 0 }}>
                 <Typography variant="subtitle1" sx={{ fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {fullscreenItem.title}
                 </Typography>
                 {renderMeta(fullscreenItem)}
               </Box>
-              <Stack direction="row" spacing={0.25}>
+              <Stack
+                direction="row"
+                spacing={0.25}
+                sx={{
+                  flexShrink: 0,
+                  '& .MuiIconButton-root': {
+                    bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.62)' : 'rgba(15,23,42,0.62)',
+                    border: '1px solid',
+                    borderColor: (theme) => theme.palette.mode === 'light' ? 'rgba(148,163,184,0.22)' : 'rgba(148,163,184,0.18)',
+                    '&:hover': {
+                      bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.88)' : 'rgba(30,41,59,0.82)',
+                    },
+                  },
+                }}
+              >
                 <IconButton onClick={() => stepFullscreenVersion(-1)} disabled={fullscreenVersionIndex <= 0}>
                   <NavigateBeforeOutlinedIcon />
                 </IconButton>
@@ -601,7 +649,13 @@ function AssistantArtifactList({ chatId, selectedArtifactId }: { chatId: string;
                 </IconButton>
               </Stack>
             </DialogTitle>
-            <DialogContent dividers sx={{ bgcolor: (theme) => theme.palette.mode === 'light' ? '#f8fafc' : '#020617' }}>
+            <DialogContent
+              sx={{
+                borderTop: 0,
+                pt: { xs: 2, sm: 2.5 },
+                bgcolor: 'transparent',
+              }}
+            >
               <ArtifactPreview item={fullscreenItem} version={fullscreenVersion} expanded />
             </DialogContent>
           </>
