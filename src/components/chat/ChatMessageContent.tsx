@@ -33,6 +33,26 @@ export function PendingTypingDots() {
   );
 }
 
+function parseAttachmentRatio(attachment: Pick<MessageAttachment, 'width' | 'height' | 'aspectRatio'>) {
+  const width = Number(attachment.width || 0);
+  const height = Number(attachment.height || 0);
+  if (width > 0 && height > 0) return width / height;
+  const ratioMatch = attachment.aspectRatio?.match(/^(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)$/);
+  if (ratioMatch) {
+    const left = Number(ratioMatch[1]);
+    const right = Number(ratioMatch[2]);
+    if (left > 0 && right > 0) return left / right;
+  }
+  return 4 / 3;
+}
+
+function getAttachmentMaxWidth(ratio: number) {
+  if (ratio < 0.82) return 300;
+  if (ratio < 1.2) return 360;
+  if (ratio < 1.7) return 440;
+  return 520;
+}
+
 function NarrativeChoiceCard({ block, showDeveloperDetails = false }: { block: NarrativeBlock; showDeveloperDetails?: boolean }) {
   const chatAppearance = useSettingsStore((state) => state.chatAppearance);
   const maxContentWidth = chatAppearance.maxContentWidthUnlimited ? '100%' : chatAppearance.maxContentWidth;
@@ -135,13 +155,14 @@ export function MessageContent({ message, onRetryMedia, onOpenImage }: {
     if (status === 'ready') return 'success';
     return 'primary';
   };
-  const getMediaFrameStyle = (attachment: { width?: number; height?: number }) => {
-    const width = Number(attachment.width || 0);
-    const height = Number(attachment.height || 0);
-    const ratio = width > 0 && height > 0 ? `${width} / ${height}` : '4 / 3';
+  const getMediaFrameStyle = (attachment: Pick<MessageAttachment, 'width' | 'height' | 'aspectRatio'>) => {
+    const ratioValue = parseAttachmentRatio(attachment);
+    const ratio = `${ratioValue} / 1`;
+    const maxWidth = getAttachmentMaxWidth(ratioValue);
     return {
-      width: '100%',
-      maxWidth: 320,
+      width: `min(100%, ${maxWidth}px)`,
+      maxHeight: 'min(56vh, 520px)',
+      justifySelf: 'start',
       aspectRatio: ratio,
       borderRadius: 1.5,
       border: '1px solid',
@@ -168,7 +189,7 @@ export function MessageContent({ message, onRetryMedia, onOpenImage }: {
                   loading="lazy"
                   decoding="async"
                   onClick={() => onOpenImage?.(message, attachment)}
-                  sx={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', cursor: onOpenImage ? 'zoom-in' : 'default' }}
+                  sx={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block', cursor: onOpenImage ? 'zoom-in' : 'default' }}
                 />
               </Box>
             );

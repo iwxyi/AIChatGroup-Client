@@ -2,7 +2,7 @@ import { Box, Typography } from '@mui/material';
 import { memo, isValidElement, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import MermaidDiagram, { estimateMermaidDiagramHeight } from './MermaidDiagram';
+import MermaidDiagram from './MermaidDiagram';
 
 type MarkdownAstNode = {
   type?: string;
@@ -56,13 +56,14 @@ function extractCodeBlock(children: ReactNode) {
   };
 }
 
-function MermaidDiagramPlaceholder({ source }: { source: string }) {
+function MermaidDiagramPlaceholder() {
   return (
     <Box
       aria-hidden
       sx={(theme) => ({
         my: 1,
-        minHeight: estimateMermaidDiagramHeight(source),
+        height: { xs: 180, sm: 220 },
+        width: 'min(100%, 520px)',
         borderRadius: 1.25,
         border: '1px solid',
         borderColor: theme.palette.mode === 'light' ? 'rgba(15,23,42,0.10)' : 'rgba(226,232,240,0.14)',
@@ -151,7 +152,7 @@ function RichMarkdownText({ text, softLineBreaks = true, deferDiagrams = false }
           p: ({ children }) => <Typography component="p" variant="body2">{children}</Typography>,
           pre: ({ children }) => {
             const block = extractCodeBlock(children);
-            if (block?.language === 'mermaid' && deferDiagrams) return <MermaidDiagramPlaceholder source={block.source} />;
+            if (block?.language === 'mermaid' && deferDiagrams) return <MermaidDiagramPlaceholder />;
             if (block?.language === 'mermaid' && !deferDiagrams) return <MermaidDiagram source={block.source} />;
             return <pre>{children}</pre>;
           },

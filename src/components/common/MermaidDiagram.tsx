@@ -58,7 +58,9 @@ function MermaidDiagram({ source, hideLoading = false, onRenderSettled }: Mermai
         borderColor: theme.palette.mode === 'light' ? 'rgba(15,23,42,0.10)' : 'rgba(226,232,240,0.14)',
         bgcolor: theme.palette.mode === 'light' ? 'rgba(255,255,255,0.74)' : 'rgba(15,23,42,0.48)',
         overflowX: 'auto',
-        minHeight: hideLoading ? undefined : reservedHeight,
+        width: 'fit-content',
+        maxWidth: '100%',
+        minHeight: hideLoading || svg || error ? undefined : reservedHeight,
       })}
     >
       {!hideLoading && !svg && !error ? (
@@ -71,10 +73,11 @@ function MermaidDiagram({ source, hideLoading = false, onRenderSettled }: Mermai
           sx={{
             minWidth: 0,
             '& svg': {
-              maxWidth: '100%',
-              height: 'auto',
+              width: 'auto !important',
+              maxWidth: 'min(100%, 680px)',
+              maxHeight: 'min(58vh, 520px)',
+              height: 'auto !important',
               display: 'block',
-              mx: 'auto',
             },
           }}
           dangerouslySetInnerHTML={{ __html: svg }}
