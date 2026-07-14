@@ -56,9 +56,8 @@ function MermaidDiagram({ source, hideLoading = false, onRenderSettled }: Mermai
       })}
     >
       {!hideLoading && !svg && !error ? (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 1, color: 'text.secondary' }}>
+        <Box sx={{ display: 'grid', placeItems: 'center', py: 1, color: 'text.secondary' }}>
           <CircularProgress size={16} />
-          <Typography variant="caption">正在渲染流程图</Typography>
         </Box>
       ) : null}
       {svg ? (

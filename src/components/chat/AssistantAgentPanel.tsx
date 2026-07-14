@@ -662,13 +662,9 @@ function AssistantArtifactList({ chatId, selectedArtifactId }: { chatId: string;
                   <NavigateBeforeOutlinedIcon />
                 </IconButton>
                 <Box sx={{ minWidth: 54, display: 'grid', placeItems: 'center' }}>
-                  {isFullscreenVersionRendering ? (
-                    <CircularProgress size={16} thickness={5} />
-                  ) : (
-                    <Typography variant="caption" color="text.secondary">
-                      {getArtifactVersionLabel(fullscreenItem, fullscreenVersion)}
-                    </Typography>
-                  )}
+                  <Typography variant="caption" color="text.secondary">
+                    {getArtifactVersionLabel(fullscreenItem, fullscreenVersion)}
+                  </Typography>
                 </Box>
                 <IconButton onClick={() => stepFullscreenVersion(1)} disabled={fullscreenVersionIndex < 0 || fullscreenVersionIndex >= fullscreenItem.versions.length - 1 || isFullscreenVersionRendering}>
                   <NavigateNextOutlinedIcon />
@@ -692,6 +688,33 @@ function AssistantArtifactList({ chatId, selectedArtifactId }: { chatId: string;
               }}
             >
               <Box sx={{ position: 'relative' }}>
+                <Box
+                  aria-hidden={!isFullscreenVersionRendering}
+                  sx={(theme) => ({
+                    position: 'sticky',
+                    top: { xs: 8, sm: 10 },
+                    zIndex: 2,
+                    width: 'fit-content',
+                    mx: 'auto',
+                    mb: isFullscreenVersionRendering ? 1 : 0,
+                    display: 'grid',
+                    placeItems: 'center',
+                    p: 1,
+                    borderRadius: 999,
+                    border: '1px solid',
+                    borderColor: theme.palette.mode === 'light' ? 'rgba(148,163,184,0.28)' : 'rgba(148,163,184,0.18)',
+                    bgcolor: theme.palette.mode === 'light' ? 'rgba(255,255,255,0.72)' : 'rgba(15,23,42,0.68)',
+                    backdropFilter: 'blur(14px) saturate(1.25)',
+                    WebkitBackdropFilter: 'blur(14px) saturate(1.25)',
+                    boxShadow: theme.palette.mode === 'light' ? '0 10px 28px rgba(15,23,42,0.12)' : '0 10px 28px rgba(0,0,0,0.28)',
+                    opacity: isFullscreenVersionRendering ? 1 : 0,
+                    transform: isFullscreenVersionRendering ? 'translateY(0) scale(1)' : 'translateY(-6px) scale(0.94)',
+                    transition: 'opacity 180ms ease, transform 180ms ease, margin-bottom 180ms ease',
+                    pointerEvents: 'none',
+                  })}
+                >
+                  <CircularProgress size={18} thickness={5} />
+                </Box>
                 <ArtifactPreview item={fullscreenItem} version={fullscreenVersion} expanded />
                 {pendingFullscreenVersion ? (
                   <Box
