@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, Divider, IconButton, MenuItem, Select, Stack, Tooltip, Typography } from '@mui/material';
+import { Box, Button, Chip, Dialog, DialogContent, DialogTitle, Divider, IconButton, MenuItem, Select, Stack, Switch, Tooltip, Typography } from '@mui/material';
 import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined';
 import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined';
 import CloseOutlinedIcon from '@mui/icons-material/CloseOutlined';
@@ -31,6 +31,7 @@ import { ensureAssistantArtifactStoreHydrated, getAssistantArtifactCurrentConten
 interface AssistantAgentPanelProps {
   chat: GroupChat;
   selectedArtifactId?: string | null;
+  onAgentEnabledChange?: (enabled: boolean) => void;
 }
 
 const artifactKindLabels: Record<AssistantArtifactKind, string> = {
@@ -610,7 +611,7 @@ function AssistantArtifactList({ chatId, selectedArtifactId }: { chatId: string;
   );
 }
 
-export default function AssistantAgentPanel({ chat, selectedArtifactId = null }: AssistantAgentPanelProps) {
+export default function AssistantAgentPanel({ chat, selectedArtifactId = null, onAgentEnabledChange }: AssistantAgentPanelProps) {
   const capabilities = chat.modeState.assistantCapabilities || {};
   const agentEnabled = Boolean(capabilities.agent);
 
@@ -618,12 +619,36 @@ export default function AssistantAgentPanel({ chat, selectedArtifactId = null }:
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, height: '100%', minHeight: 0 }}>
       <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', pr: { xs: 0.25, md: 0.5 }, ...buildScrollableRegionSx() }}>
         <Stack spacing={2}>
+          <Box
+            sx={{
+              p: 1.25,
+              border: '1px solid',
+              borderColor: (theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.08)' : 'rgba(226,232,240,0.12)',
+              borderRadius: 1,
+              bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.72)' : 'rgba(15,23,42,0.36)',
+            }}
+          >
+            <Stack direction="row" spacing={1.25} sx={{ alignItems: 'center', justifyContent: 'space-between', minWidth: 0 }}>
+              <Box sx={{ minWidth: 0 }}>
+                <Typography variant="body2" sx={{ fontWeight: 800 }}>Agent</Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.55 }}>
+                  {agentEnabled ? '已开启产物整理与修改能力。' : '开启后可生成并管理文档、代码、图表、网页等产物。'}
+                </Typography>
+              </Box>
+              <Switch
+                checked={agentEnabled}
+                disabled={!onAgentEnabledChange}
+                onChange={(event) => onAgentEnabledChange?.(event.target.checked)}
+                slotProps={{ input: { 'aria-label': '开启 Agent 能力' } }}
+              />
+            </Stack>
+          </Box>
           {agentEnabled ? (
             <AssistantArtifactList chatId={chat.id} selectedArtifactId={selectedArtifactId} />
           ) : (
             <Box sx={{ minHeight: 160, display: 'grid', placeItems: 'center', px: 2, textAlign: 'center', color: 'text.secondary' }}>
               <Typography variant="body2" sx={{ lineHeight: 1.7 }}>
-                Agent 能力已关闭。可在右上角设置中开启产物面板。
+                Agent 能力已关闭。开启后，助手会把需要沉淀的结果整理到产物面板。
               </Typography>
             </Box>
           )}

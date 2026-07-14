@@ -40,6 +40,7 @@ type AccountEntitlementDraft = {
   cloudSyncEnabled: boolean;
   assistantArtifactCloudSync: boolean;
   aiProxyEnabled: boolean;
+  agentEnabled: boolean;
   maxCharacters: string;
   maxChats: string;
   dailyAiGenerationLimit: string;
@@ -56,6 +57,7 @@ const EMPTY_ACCOUNT_ENTITLEMENT_DRAFT: AccountEntitlementDraft = {
   cloudSyncEnabled: false,
   assistantArtifactCloudSync: false,
   aiProxyEnabled: false,
+  agentEnabled: false,
   maxCharacters: '',
   maxChats: '',
   dailyAiGenerationLimit: '',
@@ -105,6 +107,7 @@ function accountEntitlementToDraft(value: unknown): AccountEntitlementDraft {
     cloudSyncEnabled: entitlement.cloudSyncEnabled === true,
     assistantArtifactCloudSync: entitlement.assistantArtifactCloudSync === true,
     aiProxyEnabled: entitlement.aiProxyEnabled === true,
+    agentEnabled: entitlement.agentEnabled === true,
     maxCharacters: draftText(entitlement.maxCharacters),
     maxChats: draftText(entitlement.maxChats),
     dailyAiGenerationLimit: draftText(entitlement.dailyAiGenerationLimit),
@@ -144,6 +147,7 @@ function buildAccountEntitlementPayload(draft: AccountEntitlementDraft) {
   if (draft.cloudSyncEnabled) entitlement.cloudSyncEnabled = true;
   if (draft.assistantArtifactCloudSync) entitlement.assistantArtifactCloudSync = true;
   if (draft.aiProxyEnabled) entitlement.aiProxyEnabled = true;
+  if (draft.agentEnabled) entitlement.agentEnabled = true;
   if (draft.developerModeEnabled) entitlement.developerModeEnabled = true;
   if (draft.officialProviderAccess.length) entitlement.officialProviderAccess = draft.officialProviderAccess;
   return { entitlement, note: draft.note.trim() };
@@ -746,6 +750,10 @@ export default function AdminUsersPage() {
                       <FormControlLabel
                         control={<Switch checked={accountEntitlementDraft.aiProxyEnabled} onChange={(event) => updateAccountEntitlementDraft({ aiProxyEnabled: event.target.checked })} />}
                         label="中转站"
+                      />
+                      <FormControlLabel
+                        control={<Switch checked={accountEntitlementDraft.agentEnabled} onChange={(event) => updateAccountEntitlementDraft({ agentEnabled: event.target.checked })} />}
+                        label="Agent"
                       />
                     </Stack>
                     <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', lg: 'repeat(4, minmax(0, 1fr))' }, gap: 1 }}>

@@ -98,7 +98,19 @@ export interface AssistantAgentPatch {
   media?: AssistantArtifactMediaRef[];
 }
 
+export interface AssistantAgentMediaTask {
+  kind: 'image';
+  prompt: string;
+  altText: string;
+  referenceImages?: Array<{
+    url: string;
+    mimeType?: string;
+    label?: string;
+  }>;
+}
+
 export interface AssistantAgentPatchSet {
   assistantMessage: string;
   patches: AssistantAgentPatch[];
+  mediaTasks?: AssistantAgentMediaTask[];
 }

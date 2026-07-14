@@ -83,4 +83,30 @@ describe('assistantAgentOrchestrator validation', () => {
       existingArtifacts: [artifact()],
     }).patches).toEqual([]);
   });
+
+  it('keeps validated image media tasks for create plans', () => {
+    const plan: AssistantAgentChangePlan = {
+      intent: 'create',
+      scope: { targetMode: 'unknown', artifactIds: [] },
+      operations: [{ kind: 'create', instruction: '生成一张产品海报' }],
+      requiresConfirmation: false,
+      confidence: 0.95,
+    };
+    const patchSet: AssistantAgentPatchSet = {
+      assistantMessage: '图片已加入生成队列。',
+      patches: [],
+      mediaTasks: [{
+        kind: 'image',
+        prompt: 'A clean product poster, studio lighting',
+        altText: '产品海报',
+        referenceImages: [{ url: 'https://example.test/ref.png', mimeType: 'image/png', label: '参考图' }],
+      }],
+    };
+
+    expect(validateAssistantAgentPatchSet({
+      patchSet,
+      plan,
+      existingArtifacts: [],
+    }).mediaTasks).toEqual(patchSet.mediaTasks);
+  });
 });

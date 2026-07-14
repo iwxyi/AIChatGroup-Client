@@ -1,5 +1,6 @@
 import type {
   AssistantAgentChangePlan,
+  AssistantAgentMediaTask,
   AssistantAgentPatch,
   AssistantAgentPatchSet,
   AssistantArtifactFile,
@@ -14,6 +15,7 @@ const VALID_ARTIFACT_KINDS = new Set<AssistantArtifactKind>(['document', 'code',
 const MAX_RECENT_MESSAGES = 12;
 const MAX_ARTIFACTS_IN_REGISTRY = 120;
 const MAX_PATCHES = 20;
+const MAX_MEDIA_TASKS = 4;
 const MAX_CONTENT_CHARS = 120_000;
 const MAX_FILE_CONTENT_CHARS = 120_000;
 
@@ -83,6 +85,19 @@ function recentConversation(messages: Message[]) {
       id: message.id,
       role: message.type === 'ai' ? 'assistant' : 'user',
       content: message.content.slice(0, 6000),
+      imageAttachments: imageAttachmentRefs(message),
+    }));
+}
+
+function imageAttachmentRefs(message: Message) {
+  return (message.metadata?.attachments || [])
+    .filter((attachment) => attachment.kind === 'image' && attachment.status === 'ready' && attachment.url)
+    .slice(0, 6)
+    .map((attachment) => ({
+      id: attachment.id,
+      url: attachment.url,
+      mimeType: attachment.mimeType,
+      altText: attachment.altText,
     }));
 }
 
@@ -98,6 +113,7 @@ function buildPlannerPrompt() {
     '规则：',
     '1. 普通问答输出 intent=chat，并在 assistantMessage 中直接给出用户可见回答。',
     '2. 需要创建产物输出 intent=create。',
+    '2a. 用户要求生成图片、海报、插画、照片、图像素材时，也属于 intent=create；Planner 只规划，不输出图片提示词正文。',
     '3. 需要修改一个或多个现有产物输出 intent=update，scope.artifactIds 可以是多个。',
     '4. 目标不明确且会影响多个候选时输出 intent=clarify，并给 clarificationQuestion。',
     '5. 不允许猜 target。低置信度、多候选、缺少焦点时必须 clarify。',
@@ -162,9 +178,12 @@ function buildWriterPrompt() {
     '4. content 必须是完整新版本，不能是说明、占位、省略或“参考上文”。',
     '5. 多文件产物可以输出 files；单文件/文档可以只输出 content。',
     '6. 不确定时 assistantMessage 说明无法安全修改，patches 为空。',
+    '7. 如需生成图片，不要把图片当作 markdown 文档或代码块，必须输出 mediaTasks；图片提示词由文本模型生成，图片由独立图片模型执行。',
+    '8. 用户消息或最近对话里的 imageAttachments 可作为 referenceImages；只复制这些已有 URL，不要虚构 URL。',
+    '9. 当前只支持新建图片任务。用户要求局部修改、蒙版编辑或指定区域编辑时，如果没有明确可用的编辑能力和区域标注，assistantMessage 说明当前只能参考原图重新生成，mediaTasks 为空或生成整体变体。',
     '',
     '输出格式：',
-    '{"assistantMessage":"面向用户的简短结果说明","patches":[{"action":"create|update","artifactId":"...","kind":"document|code|diagram|html|table|json|text","title":"...","summary":"...","language":"...","content":"完整内容","files":[{"id":"...","path":"...","language":"...","content":"完整文件内容"}],"baseVersionId":"...","changeSummary":"..."}]}',
+    '{"assistantMessage":"面向用户的简短结果说明","patches":[{"action":"create|update","artifactId":"...","kind":"document|code|diagram|html|table|json|text","title":"...","summary":"...","language":"...","content":"完整内容","files":[{"id":"...","path":"...","language":"...","content":"完整文件内容"}],"baseVersionId":"...","changeSummary":"..."}],"mediaTasks":[{"kind":"image","prompt":"给图片模型的完整提示词","altText":"图片标题或替代文本","referenceImages":[{"url":"data:image/png;base64,... 或 https://...","mimeType":"image/png","label":"参考图"}]}]}',
   ].join('\n');
 }
 
@@ -190,8 +209,36 @@ function normalizeFiles(value: unknown): AssistantArtifactFile[] | undefined {
   return files.length ? files : undefined;
 }
 
+function normalizeMediaTasks(value: unknown): AssistantAgentMediaTask[] {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, MAX_MEDIA_TASKS).flatMap((item): AssistantAgentMediaTask[] => {
+    if (!isRecord(item) || item.kind !== 'image') return [];
+    const prompt = text(item.prompt, 4000);
+    const altText = text(item.altText, 160) || text(item.title, 160) || 'AI 图片';
+    if (!prompt) return [];
+    const referenceImages = Array.isArray(item.referenceImages)
+      ? item.referenceImages.slice(0, 8).flatMap((entry): NonNullable<AssistantAgentMediaTask['referenceImages']> => {
+          if (!isRecord(entry)) return [];
+          const url = text(entry.url, 12_000);
+          if (!url || (!url.startsWith('data:image/') && !/^https?:\/\//i.test(url))) return [];
+          return [{
+            url,
+            mimeType: text(entry.mimeType, 120) || undefined,
+            label: text(entry.label, 160) || undefined,
+          }];
+        })
+      : undefined;
+    return [{
+      kind: 'image',
+      prompt,
+      altText,
+      referenceImages: referenceImages?.length ? referenceImages : undefined,
+    }];
+  });
+}
+
 function normalizePatchSet(raw: unknown): AssistantAgentPatchSet {
-  if (!isRecord(raw)) return { assistantMessage: '没有可提交的产物变更。', patches: [] };
+  if (!isRecord(raw)) return { assistantMessage: '没有可提交的产物变更。', patches: [], mediaTasks: [] };
   const patches = Array.isArray(raw.patches) ? raw.patches.slice(0, MAX_PATCHES).flatMap((item): AssistantAgentPatch[] => {
     if (!isRecord(item)) return [];
     const action = item.action === 'update' ? 'update' : item.action === 'create' ? 'create' : null;
@@ -212,9 +259,11 @@ function normalizePatchSet(raw: unknown): AssistantAgentPatchSet {
       changeSummary: text(item.changeSummary, 240),
     }];
   }) : [];
+  const mediaTasks = normalizeMediaTasks(raw.mediaTasks);
   return {
-    assistantMessage: text(raw.assistantMessage, 800) || (patches.length ? '已完成产物变更。' : '没有可提交的产物变更。'),
+    assistantMessage: text(raw.assistantMessage, 800) || (patches.length || mediaTasks.length ? '已完成产物变更。' : '没有可提交的产物变更。'),
     patches,
+    mediaTasks,
   };
 }
 
@@ -238,6 +287,7 @@ export function validateAssistantAgentPatchSet(params: {
   return {
     assistantMessage: params.patchSet.assistantMessage,
     patches: validPatches,
+    mediaTasks: params.patchSet.mediaTasks || [],
   } satisfies AssistantAgentPatchSet;
 }
 
@@ -252,7 +302,7 @@ export async function planAssistantAgentChange(params: {
 }) {
   const payload = {
     chatId: params.chatId,
-    userMessage: { id: params.userMessage.id, content: params.userMessage.content },
+    userMessage: { id: params.userMessage.id, content: params.userMessage.content, imageAttachments: imageAttachmentRefs(params.userMessage) },
     recentConversation: recentConversation(params.messages),
     artifactRegistry: artifactRegistry(params.existingArtifacts),
     interactionFocus: params.interactionFocus || {},
@@ -298,7 +348,7 @@ export async function writeAssistantAgentPatchSet(params: {
     });
   const payload = {
     chatId: params.chatId,
-    userMessage: { id: params.userMessage.id, content: params.userMessage.content },
+    userMessage: { id: params.userMessage.id, content: params.userMessage.content, imageAttachments: imageAttachmentRefs(params.userMessage) },
     recentConversation: recentConversation(params.messages),
     changePlan: params.plan,
     artifactRegistry: artifactRegistry(params.existingArtifacts),

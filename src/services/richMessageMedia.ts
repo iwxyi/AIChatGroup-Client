@@ -129,6 +129,7 @@ export async function processRichMessageMedia(params: {
           intent: 'chat-image',
           character: referenceCharacters.length ? null : params.character,
           characters: referenceCharacters,
+          referenceImages: attachment.referenceImages,
           allowCharacterReferenceImages: true,
           negativePrompt: visualCharacter?.visualIdentity?.negativePrompt,
           seed: visualCharacter?.visualIdentity?.seed,

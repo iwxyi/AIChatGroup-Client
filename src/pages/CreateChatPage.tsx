@@ -177,6 +177,11 @@ function buildSaveAsChatName(sourceName: string, existingNames: string[]) {
   return `${baseName}（${maxIndex + 1}）`;
 }
 
+function isAgentRoomTemplate(template: ReturnType<typeof getRoomTemplate>) {
+  const sessionKind = template.sessionKind;
+  return sessionKind.family === 'agent' || sessionKind.scenarioId.includes('agent');
+}
+
 export default function CreateChatPage() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
@@ -208,6 +213,7 @@ export default function CreateChatPage() {
   })));
   const isLoggedIn = useAuthStore((state) => state.isLoggedIn);
   const authMode = useAuthStore((state) => state.authMode);
+  const currentUser = useAuthStore((state) => state.user);
   const [memberDialogOpen, setMemberDialogOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [clearMessagesConfirmOpen, setClearMessagesConfirmOpen] = useState(false);
@@ -673,9 +679,10 @@ export default function CreateChatPage() {
   const hasCustomCharacters = customCharacters.length > 0;
   const hasPresetCharacters = presetCharacters.length > 0;
   const canAutofill = !editingChat && !aiAutofilling && Boolean(name.trim() || topic.trim() || selectedMembers.length);
+  const agentEntitled = authMode === 'cloud' && isLoggedIn && currentUser?.agentEntitled === true;
   const availableRoomTemplates = useMemo(
-    () => filterRoomTemplatesForAvailability(ROOM_TEMPLATES, { developerMode }),
-    [developerMode],
+    () => filterRoomTemplatesForAvailability(ROOM_TEMPLATES, { developerMode }).filter((template) => agentEntitled || !isAgentRoomTemplate(template)),
+    [agentEntitled, developerMode],
   );
   const roomTemplateAvailable = availableRoomTemplates.some((template) => template.key === roomTemplate);
   const gameplaySectionTemplates = useMemo(() => {
@@ -744,6 +751,11 @@ export default function CreateChatPage() {
   }, [applyRoomTemplate, editingChat, roomTemplateAvailable]);
 
   const handleRoomTemplateChange = useCallback((templateKey: RoomTemplateKey) => {
+    const nextTemplate = getRoomTemplate(templateKey);
+    if (!agentEntitled && isAgentRoomTemplate(nextTemplate)) {
+      showError(isZh ? 'Agent 房间仅会员可用。' : 'Agent rooms are available to members only.');
+      return;
+    }
     if (!developerMode && !availableRoomTemplates.some((template) => template.key === templateKey)) {
       showError(isZh ? '该玩法仍在开发中，开发者模式下才可使用。' : 'This gameplay is still in development and is only available in developer mode.');
       return;
@@ -761,7 +773,7 @@ export default function CreateChatPage() {
       }
     }
     applyRoomTemplate(templateKey);
-  }, [applyRoomTemplate, availableRoomTemplates, developerMode, gameplayRuntimeLocked, isZh, roomTemplate, selectedRoomTemplate]);
+  }, [agentEntitled, applyRoomTemplate, availableRoomTemplates, developerMode, gameplayRuntimeLocked, isZh, roomTemplate, selectedRoomTemplate]);
 
   const isStoryRoomTemplate = selectedRoomTemplate.sessionKind.scenarioId === 'story-reader';
   const topicPlaceholder = selectedRoomTemplate.topicPlaceholder;
@@ -1121,6 +1133,10 @@ export default function CreateChatPage() {
       showChatLimitDialog('另存为会超过聊天上限');
       return;
     }
+    if (!agentEntitled && isAgentRoomTemplate(selectedRoomTemplate)) {
+      showError(isZh ? 'Agent 房间仅会员可用。' : 'Agent rooms are available to members only.');
+      return;
+    }
     const draftContext = buildValidatedDraftContext();
     if (!name.trim()) {
       showError(i18n.language.startsWith('zh') ? '请填写群聊名称' : 'Please enter a chat name');
@@ -1173,6 +1189,10 @@ export default function CreateChatPage() {
     }
     if (chatLimitReached) {
       showChatLimitDialog();
+      return;
+    }
+    if (!agentEntitled && isAgentRoomTemplate(selectedRoomTemplate)) {
+      showError(isZh ? 'Agent 房间仅会员可用。' : 'Agent rooms are available to members only.');
       return;
     }
 

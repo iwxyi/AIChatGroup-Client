@@ -18,6 +18,7 @@ interface User {
   cloudSyncEntitled?: boolean;
   assistantArtifactCloudSyncEntitled?: boolean;
   aiProxyEntitled?: boolean;
+  agentEntitled?: boolean;
 }
 
 type AuthMode = 'cloud' | 'local';

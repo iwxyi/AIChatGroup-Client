@@ -91,6 +91,7 @@ type VipEntitlementForm = {
   cloudSyncEnabled: boolean;
   assistantArtifactCloudSync: boolean;
   aiProxyEnabled: boolean;
+  agentEnabled: boolean;
 };
 
 type MembershipConfigForm = {
@@ -173,6 +174,7 @@ const DEFAULT_VIP_ENTITLEMENTS: Record<string, VipEntitlementForm> = {
     cloudSyncEnabled: false,
     assistantArtifactCloudSync: false,
     aiProxyEnabled: false,
+    agentEnabled: false,
   },
   basic: {
     description: '',
@@ -188,6 +190,7 @@ const DEFAULT_VIP_ENTITLEMENTS: Record<string, VipEntitlementForm> = {
     cloudSyncEnabled: true,
     assistantArtifactCloudSync: false,
     aiProxyEnabled: false,
+    agentEnabled: true,
   },
   pro: {
     description: '',
@@ -203,6 +206,7 @@ const DEFAULT_VIP_ENTITLEMENTS: Record<string, VipEntitlementForm> = {
     cloudSyncEnabled: true,
     assistantArtifactCloudSync: true,
     aiProxyEnabled: true,
+    agentEnabled: true,
   },
   premium: {
     description: '',
@@ -218,6 +222,7 @@ const DEFAULT_VIP_ENTITLEMENTS: Record<string, VipEntitlementForm> = {
     cloudSyncEnabled: true,
     assistantArtifactCloudSync: true,
     aiProxyEnabled: true,
+    agentEnabled: true,
   },
 };
 const EMPTY_MEMBERSHIP_CONFIG_FORM: MembershipConfigForm = {
@@ -448,6 +453,7 @@ function toEntitlementForm(value: unknown, fallback: VipEntitlementForm): VipEnt
     cloudSyncEnabled: hasOwnRecordValue(record, 'cloudSyncEnabled') ? toBoolean(record.cloudSyncEnabled, fallback.cloudSyncEnabled) : fallback.cloudSyncEnabled,
     assistantArtifactCloudSync: hasOwnRecordValue(record, 'assistantArtifactCloudSync') ? toBoolean(record.assistantArtifactCloudSync, fallback.assistantArtifactCloudSync) : fallback.assistantArtifactCloudSync,
     aiProxyEnabled: hasOwnRecordValue(record, 'aiProxyEnabled') ? toBoolean(record.aiProxyEnabled, fallback.aiProxyEnabled) : fallback.aiProxyEnabled,
+    agentEnabled: hasOwnRecordValue(record, 'agentEnabled') ? toBoolean(record.agentEnabled, fallback.agentEnabled) : fallback.agentEnabled,
   };
 }
 
@@ -473,6 +479,7 @@ function buildEntitlementPayload(form: VipEntitlementForm) {
     cloudSyncEnabled: form.cloudSyncEnabled,
     assistantArtifactCloudSync: form.assistantArtifactCloudSync,
     aiProxyEnabled: form.aiProxyEnabled,
+    agentEnabled: form.agentEnabled,
   };
 }
 
@@ -1769,6 +1776,10 @@ export default function AdminBillingPage() {
                           control={<Switch checked={entitlement.aiProxyEnabled} onChange={(event) => updateMembershipEntitlementForm('free', 'aiProxyEnabled', event.target.checked)} />}
                           label="允许中转站"
                         />
+                        <FormControlLabel
+                          control={<Switch checked={entitlement.agentEnabled} onChange={(event) => updateMembershipEntitlementForm('free', 'agentEnabled', event.target.checked)} />}
+                          label="允许 Agent"
+                        />
                         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
                           <TextField label="官方 AI 平台（每行一个ID）" value={entitlement.officialProviderAccessText} onChange={(event) => updateMembershipEntitlementForm('free', 'officialProviderAccessText', event.target.value)} fullWidth multiline minRows={2} />
                           <TextField label="点数扣费折扣" value={entitlement.aiBillingDiscount} onChange={(event) => updateMembershipEntitlementForm('free', 'aiBillingDiscount', event.target.value)} helperText="免费用户通常为 1" fullWidth />
@@ -1828,6 +1839,10 @@ export default function AdminBillingPage() {
                               <FormControlLabel
                                 control={<Switch checked={entitlement.aiProxyEnabled} onChange={(event) => updateMembershipEntitlementForm(tier.code, 'aiProxyEnabled', event.target.checked)} />}
                                 label="允许中转站"
+                              />
+                              <FormControlLabel
+                                control={<Switch checked={entitlement.agentEnabled} onChange={(event) => updateMembershipEntitlementForm(tier.code, 'agentEnabled', event.target.checked)} />}
+                                label="允许 Agent"
                               />
                               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
                                 <TextField label="官方 AI 平台（每行一个ID）" value={entitlement.officialProviderAccessText} onChange={(event) => updateMembershipEntitlementForm(tier.code, 'officialProviderAccessText', event.target.value)} fullWidth multiline minRows={2} />

@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useLayoutEffect, useState, useCallback, useRef, useMemo } from 'react';
-import { Box, IconButton, Button, Typography, Switch, Stack, TextField, Chip, Alert, Dialog, DialogTitle, DialogContent, DialogActions, Slider, FormControl, InputLabel, Select, MenuItem, Divider, FormControlLabel, Checkbox, CircularProgress } from '@mui/material';
+import { Box, IconButton, Button, Typography, Switch, Stack, TextField, Chip, Alert, Dialog, DialogTitle, DialogContent, DialogActions, Slider, FormControl, InputLabel, Select, MenuItem, Divider, FormControlLabel, Checkbox, CircularProgress, Tooltip } from '@mui/material';
 import PageSection from '../components/common/PageSection';
 import AppSnackbar from '../components/common/AppSnackbar';
 import LoadingState from '../components/common/LoadingState';
@@ -10,6 +10,7 @@ import PlayIcon from '@mui/icons-material/PlayArrow';
 import PauseIcon from '@mui/icons-material/Pause';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import SettingsIcon from '@mui/icons-material/Settings';
+import HelpOutlineIcon from '@mui/icons-material/HelpOutlineOutlined';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useShallow } from 'zustand/react/shallow';
@@ -168,6 +169,7 @@ function ChatPageSettingsDialog({
   const [artifactCloudSyncEnabled, setArtifactCloudSyncState] = useState(() => isAssistantArtifactCloudSyncEnabled());
   const capabilities = chat?.modeState.assistantCapabilities || {};
   const agentEnabled = Boolean(capabilities.agent);
+  const agentAvailable = authMode === 'cloud' && currentUser?.agentEntitled === true;
   const artifactCloudSyncEntitled = Boolean(currentUser?.assistantArtifactCloudSyncEntitled);
   const artifactCloudSyncAvailable = authMode === 'cloud' && currentUser?.cloudSyncEntitled !== false && artifactCloudSyncEntitled;
   useEffect(() => {
@@ -183,6 +185,7 @@ function ChatPageSettingsDialog({
   }, []);
   const handleAgentToggle = (enabled: boolean) => {
     if (!chat) return;
+    if (enabled && !agentAvailable) return;
     void updateChat(chat.id, {
       modeState: {
         ...chat.modeState,
@@ -204,6 +207,7 @@ function ChatPageSettingsDialog({
         .catch(() => undefined);
     }
   };
+  const artifactSyncHelp = '仅同步文档、代码、图表源码、表格、JSON、纯文本和图片引用；Office、PDF、压缩包和工程文件仍走 WebDAV / 本地存储。';
   return (
     <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
       <DialogTitle>聊天页设置</DialogTitle>
@@ -221,10 +225,16 @@ function ChatPageSettingsDialog({
                   </Box>
                   <Switch
                     checked={agentEnabled}
+                    disabled={!agentAvailable}
                     onChange={(event) => handleAgentToggle(event.target.checked)}
                     slotProps={{ input: { 'aria-label': '开启 Agent 能力' } }}
                   />
                 </Stack>
+                {!agentAvailable ? (
+                  <Typography variant="caption" color="warning.main" sx={{ display: 'block', mt: 0.5 }}>
+                    Agent 能力仅会员可用。
+                  </Typography>
+                ) : null}
                 {onCloseAssistantPanel ? (
                   <Button size="small" variant="outlined" onClick={() => { onCloseAssistantPanel(); onClose(); }} sx={{ mt: 1 }}>
                     关闭右侧面板
@@ -234,10 +244,14 @@ function ChatPageSettingsDialog({
               <Box>
                 <Stack direction="row" spacing={1.25} sx={{ alignItems: 'center', justifyContent: 'space-between', minWidth: 0 }}>
                   <Box sx={{ minWidth: 0 }}>
-                    <Typography variant="body2" sx={{ fontWeight: 700 }}>同步 AI 文本产物</Typography>
-                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.55 }}>
-                      仅同步文档、代码、图表源码、表格、JSON、纯文本和图片引用；Office、PDF、压缩包和工程文件仍走 WebDAV / 本地存储。
-                    </Typography>
+                    <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
+                      <Typography variant="body2" sx={{ fontWeight: 700 }}>同步 AI 文本产物</Typography>
+                      <Tooltip title={artifactSyncHelp} arrow>
+                        <IconButton size="small" aria-label="同步 AI 文本产物说明" sx={{ width: 24, height: 24 }}>
+                          <HelpOutlineIcon fontSize="inherit" />
+                        </IconButton>
+                      </Tooltip>
+                    </Stack>
                     {!artifactCloudSyncAvailable ? (
                       <Typography variant="caption" color="warning.main" sx={{ display: 'block', mt: 0.5 }}>
                         当前账号未获得 AI 产物云同步权限，或未处于云端同步模式。
@@ -1017,6 +1031,24 @@ export default function ChatDetailPage() {
   );
   const isStoryRoom = chat?.sessionKind?.scenarioId === 'story-reader';
   const isAssistantChat = chat?.type === 'assistant';
+  const agentEntitled = authMode === 'cloud' && currentUser?.agentEntitled === true;
+  useEffect(() => {
+    if (!chat || !isAssistantChat || agentEntitled) return;
+    const capabilities = chat.modeState.assistantCapabilities || {};
+    if (!capabilities.agent && !capabilities.artifacts) return;
+    void updateChat(chat.id, {
+      modeState: {
+        ...chat.modeState,
+        assistantCapabilities: {
+          ...capabilities,
+          agent: false,
+          artifacts: false,
+          updatedAt: Date.now(),
+        },
+      },
+    });
+    setSnackbar({ open: true, message: 'Agent 能力仅会员可用，已关闭当前助手的 Agent 模式。', severity: 'error' });
+  }, [agentEntitled, chat, isAssistantChat, updateChat]);
   const savedStoryReadingPositionForChat = isStoryRoom && id ? chatReadingPositions[id] : null;
   const savedStoryReadingRestoreKey = savedStoryReadingPositionForChat && !savedStoryReadingPositionForChat.pinned
     ? `${savedStoryReadingPositionForChat.messageId}:${savedStoryReadingPositionForChat.sourceTimestamp ?? ''}:${Math.round(savedStoryReadingPositionForChat.offsetTop)}`
@@ -2950,7 +2982,23 @@ export default function ChatDetailPage() {
             <LazyPanel>
               {isAssistantChat ? (
                 <Suspense fallback={<LoadingState title="正在加载" compact />}>
-                  <AssistantAgentPanel chat={chat} selectedArtifactId={selectedAssistantArtifactId} />
+                  <AssistantAgentPanel
+                    chat={chat}
+                    selectedArtifactId={selectedAssistantArtifactId}
+                    onAgentEnabledChange={agentEntitled ? (enabled) => {
+                      void updateChat(chat.id, {
+                        modeState: {
+                          ...chat.modeState,
+                          assistantCapabilities: {
+                            ...(chat.modeState.assistantCapabilities || {}),
+                            agent: enabled,
+                            artifacts: enabled,
+                            updatedAt: Date.now(),
+                          },
+                        },
+                      });
+                    } : undefined}
+                  />
                 </Suspense>
               ) : runtimePanelLoading ? <LoadingState title="正在加载" compact /> : <ChatSidebarPanel
                 chat={projectedSidebarChat || { ...chat, primaryRecentEvent: projectedRuntimeState?.primaryRecentEvent }}

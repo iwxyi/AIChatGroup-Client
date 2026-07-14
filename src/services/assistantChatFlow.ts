@@ -1,5 +1,5 @@
 import type { GroupChat } from '../types/chat';
-import type { Message } from '../types/message';
+import type { Message, MessageAttachment, MessageMetadata } from '../types/message';
 import type { AssistantAgentPatchSet } from '../types/assistantArtifact';
 import type { APIConfig, AIModelProfile } from '../types/settings';
 import { getUsablePreferredAIProfile } from '../types/settings';
@@ -45,6 +45,35 @@ function isAssistantAgentArtifactEnabled(chat: GroupChat) {
   return Boolean(chat.modeState.assistantCapabilities?.agent && chat.modeState.assistantCapabilities?.artifacts);
 }
 
+function createAssistantMediaAttachments(patchSet: AssistantAgentPatchSet, timestamp: number): MessageAttachment[] {
+  return (patchSet.mediaTasks || []).map((task, index) => ({
+    id: `assistant-image-${timestamp}-${index + 1}`,
+    kind: 'image',
+    status: 'queued',
+    promptText: task.prompt,
+    altText: task.altText || 'AI 图片',
+    referenceImages: task.referenceImages,
+    createdAt: timestamp + index,
+    updatedAt: timestamp + index,
+  }));
+}
+
+async function processAssistantMediaAttachments(params: {
+  message: Message;
+  aiProfiles: AIModelProfile[];
+  upsertMessage: (message: Message) => void;
+}) {
+  if (!params.message.metadata?.attachments?.some((attachment) => attachment.status === 'queued')) return;
+  const { processRichMessageMedia } = await import('./richMessageMedia');
+  await processRichMessageMedia({
+    message: params.message,
+    character: null,
+    characters: [],
+    aiProfiles: params.aiProfiles,
+    upsertMessage: params.upsertMessage,
+  });
+}
+
 async function persistAssistantArtifactsFromReply(params: {
   chat: GroupChat;
   chatId: string;
@@ -54,6 +83,7 @@ async function persistAssistantArtifactsFromReply(params: {
   upsertMessage: (message: Message) => void;
   updateChat: (id: string, patch: Partial<GroupChat>) => Promise<void>;
   api: APIConfig;
+  aiProfiles: AIModelProfile[];
   signal?: AbortSignal;
 }) {
   if (!isAssistantAgentArtifactEnabled(params.chat)) return null;
@@ -104,10 +134,11 @@ async function persistAssistantArtifactsFromReply(params: {
       signal: params.signal,
     });
     content = buildAgentArtifactReplyContent(patchSet);
+    const attachments = createAssistantMediaAttachments(patchSet, params.timestamp || Date.now());
     if (patchSet.patches.length) {
       patchesCommitted = patchSet.patches.length;
     }
-    if (!patchSet.patches.length && !content.trim()) {
+    if (!patchSet.patches.length && !attachments.length && !content.trim()) {
       content = '我没有得到可安全提交的产物变更。';
     }
     const assistantMessage = await persistAssistantFinalMessage({
@@ -115,9 +146,23 @@ async function persistAssistantArtifactsFromReply(params: {
       chatId: params.chatId,
       currentMessages: params.messages,
       content,
+      metadata: attachments.length ? {
+        attachments,
+        generation: {
+          status: 'queued',
+          updatedAt: Date.now(),
+        },
+      } : undefined,
       timestamp: params.timestamp,
       upsertMessage: params.upsertMessage,
     });
+    if (attachments.length) {
+      void processAssistantMediaAttachments({
+        message: assistantMessage,
+        aiProfiles: params.aiProfiles,
+        upsertMessage: params.upsertMessage,
+      }).catch(() => undefined);
+    }
     if (patchSet.patches.length) {
       const changedArtifacts = useAssistantArtifactStore.getState().commitPatchSet({
         chatId: params.chatId,
@@ -203,6 +248,7 @@ function formatPatchForBubble(patch: AssistantAgentPatchSet['patches'][number]) 
 function buildAgentArtifactReplyContent(patchSet: AssistantAgentPatchSet) {
   const intro = patchSet.assistantMessage.trim() || '已完成产物变更。';
   const visiblePatches = patchSet.patches.filter((patch) => patch.content || patch.files?.length).slice(0, 3);
+  if (!visiblePatches.length && patchSet.mediaTasks?.length) return intro || '图片已加入生成队列。';
   if (!visiblePatches.length) return intro;
   return `${intro}${visiblePatches.map(formatPatchForBubble).join('')}`;
 }
@@ -212,6 +258,7 @@ async function persistAssistantFinalMessage(params: {
   chatId: string;
   currentMessages: Message[];
   content: string;
+  metadata?: Partial<MessageMetadata>;
   timestamp?: number;
   upsertMessage: (message: Message) => void;
 }) {
@@ -227,6 +274,7 @@ async function persistAssistantFinalMessage(params: {
       assistant: {
         mode: 'general',
       },
+      ...(params.metadata || {}),
     },
   };
   const localMessage = createStreamingLocalMessage(
@@ -405,6 +453,7 @@ export async function runAssistantChatReplyFlow(params: {
         upsertMessage: params.upsertMessage,
         updateChat: params.updateChat,
         api: resolvedApi,
+        aiProfiles: params.aiProfiles,
         signal: params.signal,
       });
       if (agentResult?.message) return agentResult.message;

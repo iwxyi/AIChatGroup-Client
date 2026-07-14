@@ -18,6 +18,7 @@ export interface AuthUserResponse {
   cloudSyncEntitled?: boolean;
   assistantArtifactCloudSyncEntitled?: boolean;
   aiProxyEntitled?: boolean;
+  agentEntitled?: boolean;
 }
 
 export interface TopicSourceSummary {
@@ -87,6 +88,7 @@ export interface VipEntitlementInfo {
   cloudSyncEnabled: boolean;
   assistantArtifactCloudSync: boolean;
   aiProxyEnabled: boolean;
+  agentEnabled: boolean;
 }
 
 export interface AiUsageRecordItem {

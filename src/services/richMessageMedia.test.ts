@@ -234,6 +234,38 @@ describe('processRichMessageMedia', () => {
     });
   });
 
+  it('passes explicit reference images from the message attachment to the image adapter', async () => {
+    vi.mocked(generateImageWithAdapter).mockResolvedValue([{
+      dataUrl: 'data:image/png;base64,referenced',
+      mimeType: 'image/png',
+    }]);
+    const upserts: Message[] = [];
+
+    await processRichMessageMedia({
+      message: buildQueuedImageMessage({
+        metadata: {
+          attachments: [{
+            id: 'image-1',
+            kind: 'image',
+            status: 'queued',
+            promptText: '按参考图风格生成海报',
+            altText: '参考图海报',
+            referenceImages: [{ url: 'https://example.test/reference.png', mimeType: 'image/png', label: '用户参考图' }],
+            createdAt: 123,
+            updatedAt: 123,
+          }],
+        },
+      }),
+      aiProfiles: [imageProfile],
+      upsertMessage: (message) => upserts.push(message),
+    });
+
+    expect(generateImageWithAdapter).toHaveBeenCalledWith(expect.objectContaining({
+      referenceImages: [{ url: 'https://example.test/reference.png', mimeType: 'image/png', label: '用户参考图' }],
+    }));
+    expect(upserts.at(-1)?.metadata?.attachments?.[0]?.status).toBe('ready');
+  });
+
   it('retries a failed media attachment by resetting it to queued and running the same pipeline', async () => {
     vi.mocked(generateImageWithAdapter).mockResolvedValue([{
       dataUrl: 'data:image/png;base64,retry',

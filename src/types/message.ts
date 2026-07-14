@@ -20,6 +20,11 @@ export interface MessageAttachment {
   generationJobId?: string;
   promptText?: string;
   referenceCharacterIds?: string[];
+  referenceImages?: Array<{
+    url: string;
+    mimeType?: string;
+    label?: string;
+  }>;
   thumbnailAssetId?: string;
   checksum?: string;
   error?: string;

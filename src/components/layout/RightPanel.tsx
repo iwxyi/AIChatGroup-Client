@@ -474,10 +474,20 @@ export default function RightPanel({ children, title, hideMobileTitle = false, t
               transition: 'background-color 140ms ease, transform 140ms ease',
             }} />
           </Box>
-          {title && !hideMobileTitle && (
-            <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 800, letterSpacing: 0, mb: 1.25 }}>
-              {title}
-            </Typography>
+          {title && (!hideMobileTitle || titleActions) && (
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: hideMobileTitle ? 'flex-end' : 'space-between', mb: 1.25, minHeight: 34 }}>
+              {!hideMobileTitle ? (
+                <Typography variant="subtitle1" sx={{ fontWeight: 800, letterSpacing: 0, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {title}
+                </Typography>
+              ) : null}
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0 }}>
+                {titleActions}
+                <IconButton size="small" onClick={closeMobileSheet} aria-label="关闭面板">
+                  <CloseIcon fontSize="small" />
+                </IconButton>
+              </Box>
+            </Box>
           )}
           <Box sx={{
             flex: 1,
