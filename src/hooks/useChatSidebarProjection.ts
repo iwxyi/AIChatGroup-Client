@@ -4,6 +4,7 @@ import type { CompanionshipStatusSignature } from '../types/companionship';
 import { buildDefaultSessionSurfaceProjection, resolveSessionDefinitionForConversation, type GroupChat, type ParticipantInstance, type RuntimeAction, type RuntimePanelDefinition } from '../types/chat';
 import type { Message } from '../types/message';
 import type { SessionActionDefinition, SessionProjectionContext } from '../types/sessionEngine';
+import { getCurrentRetentionLimits } from '../services/retentionLimits';
 
 type SessionProjectionData = Awaited<ReturnType<typeof import('../services/sessionEngineKernel')['resolveSessionProjectionData']>>;
 type ProjectedChatDetailState = ReturnType<typeof import('../services/sessionProjection')['buildProjectedChatDetailState']>;
@@ -176,7 +177,7 @@ function buildLightweightProjectedChatDetailState(params: {
         ? 'actions'
         : showMemberTab ? 'members' : showRuntimeTab ? 'world' : 'actions';
   const actionPanelActions = buildLightweightProjectedSessionActions(params.chat, [], params.members);
-  const memorySummary = params.speakAsChar?.layeredMemories?.slice(-2).map((item) => item.text).join(' / ');
+  const memorySummary = params.speakAsChar?.layeredMemories?.slice(-getCurrentRetentionLimits().characterLayeredMemories.recall).map((item) => item.text).join(' / ');
   return {
     memberPanel,
     runtimePanel,

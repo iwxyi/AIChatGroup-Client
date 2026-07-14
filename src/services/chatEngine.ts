@@ -16,6 +16,7 @@ import { loadSessionEngine } from './sessionEngineLoader';
 import { getStyleProfile, resolveDefaultStyleProfile } from './styleProfileRegistry';
 import { getChannelSemantics } from './channelSemanticsRegistry';
 import { logDeveloperDiagnostic } from './developerDiagnostics';
+import { getCurrentRetentionLimits } from './retentionLimits';
 
 function getSessionEngine(chat: Pick<GroupChat, 'mode' | 'sessionKind'>) {
   return loadSessionEngine(chat);
@@ -208,10 +209,11 @@ function buildAnalysisSpeakerSystemPrompt(args: {
   chat: GroupChat;
   messages: Message[];
 }) {
+  const limits = getCurrentRetentionLimits();
   const memoryLines = [
     args.speaker.memory?.shortTermSummary ? `- Short memory: ${compactAnalysisPromptText(args.speaker.memory.shortTermSummary, 140)}` : '',
     ...(args.speaker.memory?.longTerm || []).slice(-2).map((item) => `- Long memory: ${compactAnalysisPromptText(item, 120)}`),
-    ...(args.speaker.layeredMemories || []).slice(-3).map((item) => `- Character memory: ${compactAnalysisPromptText(item.text, 120)}`),
+    ...(args.speaker.layeredMemories || []).slice(-limits.characterLayeredMemories.recall).map((item) => `- Character memory: ${compactAnalysisPromptText(item.text, 120)}`),
   ].filter(Boolean);
   const latest = args.messages.filter((message) => !message.isDeleted && message.type !== 'system' && message.type !== 'event').at(-1);
   return [

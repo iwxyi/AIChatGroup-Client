@@ -14,6 +14,7 @@ import { formatActorRefKindLabel, formatSystemAgentSubtypeLabel, inferSystemAgen
 import { evaluateGuidanceGeneratedContent, extractGuidanceMatchTokens, normalizeGuidanceMatchText } from './guidanceExecution';
 import { projectWorldAttentionStates } from './worldRuntimeProjection';
 import { canUsePrivateThreads } from './conversationCapabilities';
+import { getCurrentRetentionLimits } from './retentionLimits';
 
 export interface ProjectedRuntimeTimelineItem {
   type: 'note' | 'artifact' | 'relationship';
@@ -1187,7 +1188,7 @@ export function buildProjectedComposerSurfaces(chat: GroupChat, frameworkState: 
 }
 
 export function buildProjectedCompactMemorySummary(speakAsChar?: { layeredMemories?: Array<{ text: string }> } | null) {
-  return speakAsChar?.layeredMemories?.slice(-2).map((item) => item.text).join(' / ');
+  return speakAsChar?.layeredMemories?.slice(-getCurrentRetentionLimits().characterLayeredMemories.recall).map((item) => item.text).join(' / ');
 }
 
 export function buildProjectedSpeakAsSummary(speakAsChar?: { name?: string; layeredMemories?: Array<{ text: string }> } | null) {

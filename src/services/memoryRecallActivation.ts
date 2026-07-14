@@ -6,6 +6,7 @@ import { retrieveRelevantMemories } from './memoryRetrieval';
 import { compactMemoryItems } from './memoryLifecycle';
 import { accumulateCharacterRuntime } from './characterRuntime';
 import { sanitizeUserFacingText, type DisplayTextMember } from './displayTextSanitizer';
+import { getCurrentRetentionLimits } from './retentionLimits';
 
 function latestTargetId(messages: Array<Pick<Message, 'senderId' | 'type' | 'isDeleted'>>, speakerId: string, memberIds: string[]) {
   const members = new Set(memberIds);
@@ -177,15 +178,16 @@ export function applyRecalledMemoryActivation(params: {
   const cueText = buildRecallCue(params.recentMessages, params.message);
   const promptRecalled = recalledFromPromptMetadata(layeredMemories, params.message);
   const now = typeof params.now === 'number' && Number.isFinite(params.now) ? Math.round(params.now) : Date.now();
+  const recallLimit = getCurrentRetentionLimits().characterLayeredMemories.recall;
   const recalled = (promptRecalled.length ? promptRecalled : retrieveRelevantMemories(layeredMemories, {
     speakerId: speaker.id,
     targetId: latestTargetId(params.recentMessages, speaker.id, params.chat.memberIds),
     conversationId: params.chat.id,
-    maxItems: 6,
+    maxItems: recallLimit,
     now,
     cueText,
     includeArchivedRecall: true,
-    maxArchivedItems: 3,
+    maxArchivedItems: Math.max(1, Math.floor(recallLimit / 2)),
     preferredLayers: ['long_term', 'episodic', 'working'],
     preferredScopes: ['relationship', 'character_self', 'conversation', 'thread', 'system_runtime'],
   }))

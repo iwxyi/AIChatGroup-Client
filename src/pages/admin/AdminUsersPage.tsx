@@ -4,6 +4,7 @@ import AdminAiUserUsageDialog from '../../components/admin/AdminAiUserUsageDialo
 import AdminRequestState, { getAdminErrorMessage } from '../../components/admin/AdminRequestState';
 import { AdminMetricGrid, AdminSection, AdminTableFrame, type AdminMetricItem } from '../../components/admin/AdminSurface';
 import { adminApi } from '../../services/adminApi';
+import { DEFAULT_BASIC_RETENTION_LIMITS } from '../../services/retentionLimits';
 import { formatAiAmount, formatAiBalanceAmount } from '../../utils/aiPoints';
 
 type KeyDraft = {
@@ -49,6 +50,7 @@ type AccountEntitlementDraft = {
   aiBillingDiscount: string;
   dailyPointGrant: string;
   monthlyPointGrant: string;
+  retentionLimitsText: string;
   note: string;
 };
 
@@ -66,8 +68,58 @@ const EMPTY_ACCOUNT_ENTITLEMENT_DRAFT: AccountEntitlementDraft = {
   aiBillingDiscount: '',
   dailyPointGrant: '',
   monthlyPointGrant: '',
+  retentionLimitsText: '',
   note: '',
 };
+const LEGACY_OFFICIAL_PROVIDER_PUBLIC_IDS: Record<string, string> = {
+  deepseek: 'official-1',
+  moacode: 'official-2',
+  'moacode-team': 'official-team',
+  api2d: 'official-4',
+};
+
+const RETENTION_LIMIT_ROWS: Array<{ key: string; label: string; description: string }> = [
+  { key: 'characterLayeredMemories', label: '角色长期记忆', description: '角色自身长期记忆条数' },
+  { key: 'characterRuntimeTimeline', label: '角色时间线', description: '角色运行时间线条数' },
+  { key: 'chatLayeredMemories', label: '会话长期记忆', description: '房间/会话长期记忆条数' },
+  { key: 'runtimeEventsV2', label: '运行事件', description: '结构化运行事件条数' },
+  { key: 'runtimeTimeline', label: '会话时间线', description: '轻量时间线条数' },
+  { key: 'relationshipLedger', label: '关系账本', description: '关系状态与变化账本条数' },
+  { key: 'roleMemorySummaries', label: '角色摘要', description: '会话内角色摘要条数' },
+  { key: 'growthSnapshots', label: '成长快照', description: '成长/状态快照条数' },
+  { key: 'runtimeSeedNotes', label: '种子笔记', description: 'runtimeSeed notes 条数' },
+  { key: 'runtimeSeedArtifacts', label: '种子产物', description: 'runtimeSeed artifacts 条数' },
+];
+
+function parseRetentionLimitsText(value: string): Record<string, { storage?: unknown; recall?: unknown }> {
+  if (!value.trim()) return DEFAULT_BASIC_RETENTION_LIMITS as Record<string, { storage?: unknown; recall?: unknown }>;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, { storage?: unknown; recall?: unknown }>
+      : DEFAULT_BASIC_RETENTION_LIMITS as Record<string, { storage?: unknown; recall?: unknown }>;
+  } catch {
+    return DEFAULT_BASIC_RETENTION_LIMITS as Record<string, { storage?: unknown; recall?: unknown }>;
+  }
+}
+
+function retentionLimitsText(value: unknown) {
+  const record = value && typeof value === 'object' && !Array.isArray(value) ? value : DEFAULT_BASIC_RETENTION_LIMITS;
+  return JSON.stringify(record, null, 2);
+}
+
+function updateRetentionLimitText(currentText: string, key: string, field: 'storage' | 'recall', value: string) {
+  const current = parseRetentionLimitsText(currentText);
+  const parsed = Number(value);
+  const nextValue = Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 1;
+  return retentionLimitsText({
+    ...current,
+    [key]: {
+      ...(current[key] || {}),
+      [field]: nextValue,
+    },
+  });
+}
 
 function formatTime(value: unknown) {
   const parsed = Number(value || 0);
@@ -97,6 +149,13 @@ function draftText(value: unknown) {
   return value == null ? '' : String(value);
 }
 
+function normalizeOfficialProviderAccess(values: unknown[]) {
+  return Array.from(new Set(values
+    .map((item) => String(item || '').trim().toLowerCase())
+    .map((item) => LEGACY_OFFICIAL_PROVIDER_PUBLIC_IDS[item] || item)
+    .filter(Boolean)));
+}
+
 function accountEntitlementToDraft(value: unknown): AccountEntitlementDraft {
   const row = value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
   const entitlement = row.entitlement && typeof row.entitlement === 'object' && !Array.isArray(row.entitlement)
@@ -113,11 +172,12 @@ function accountEntitlementToDraft(value: unknown): AccountEntitlementDraft {
     dailyAiGenerationLimit: draftText(entitlement.dailyAiGenerationLimit),
     batchCharacterGenerationLimit: draftText(entitlement.batchCharacterGenerationLimit),
     officialProviderAccess: Array.isArray(entitlement.officialProviderAccess)
-      ? entitlement.officialProviderAccess.map((item) => String(item)).filter(Boolean)
+      ? normalizeOfficialProviderAccess(entitlement.officialProviderAccess)
       : [],
     aiBillingDiscount: draftText(entitlement.aiBillingDiscount),
     dailyPointGrant: draftText(entitlement.dailyPointGrant),
     monthlyPointGrant: draftText(entitlement.monthlyPointGrant),
+    retentionLimitsText: entitlement.retentionLimits ? retentionLimitsText(entitlement.retentionLimits) : '',
     note: String(row.note || ''),
   };
 }
@@ -129,7 +189,12 @@ function parseOptionalNumber(value: string) {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-function buildAccountEntitlementPayload(draft: AccountEntitlementDraft) {
+function filterAllowedProviderAccess(values: string[], allowedProviderIds?: Set<string>) {
+  if (!allowedProviderIds?.size) return values;
+  return values.filter((value) => allowedProviderIds.has(value));
+}
+
+function buildAccountEntitlementPayload(draft: AccountEntitlementDraft, allowedProviderIds?: Set<string>) {
   const entitlement: Record<string, unknown> = {};
   const numberFields: Array<keyof AccountEntitlementDraft> = [
     'maxCharacters',
@@ -149,7 +214,9 @@ function buildAccountEntitlementPayload(draft: AccountEntitlementDraft) {
   if (draft.aiProxyEnabled) entitlement.aiProxyEnabled = true;
   if (draft.agentEnabled) entitlement.agentEnabled = true;
   if (draft.developerModeEnabled) entitlement.developerModeEnabled = true;
-  if (draft.officialProviderAccess.length) entitlement.officialProviderAccess = draft.officialProviderAccess;
+  const officialProviderAccess = filterAllowedProviderAccess(normalizeOfficialProviderAccess(draft.officialProviderAccess), allowedProviderIds);
+  if (officialProviderAccess.length) entitlement.officialProviderAccess = officialProviderAccess;
+  if (draft.retentionLimitsText.trim()) entitlement.retentionLimits = parseRetentionLimitsText(draft.retentionLimitsText);
   return { entitlement, note: draft.note.trim() };
 }
 
@@ -213,6 +280,63 @@ function WorkspaceTable({ title, rows, columns }: { title: string; rows: Array<R
   );
 }
 
+function AccountRetentionLimitsTable({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const limits = parseRetentionLimitsText(value);
+  return (
+    <AdminTableFrame minWidth={720}>
+      <Table size="small">
+        <TableHead>
+          <TableRow>
+            <TableCell>项目</TableCell>
+            <TableCell>说明</TableCell>
+            <TableCell width={130}>存储/同步上限</TableCell>
+            <TableCell width={130}>提示词召回</TableCell>
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          {RETENTION_LIMIT_ROWS.map((row) => {
+            const pair = limits[row.key] || DEFAULT_BASIC_RETENTION_LIMITS[row.key as keyof typeof DEFAULT_BASIC_RETENTION_LIMITS];
+            return (
+              <TableRow key={row.key}>
+                <TableCell sx={{ fontWeight: 800 }}>{row.label}</TableCell>
+                <TableCell>
+                  <Typography variant="caption" color="text.secondary">{row.description}</Typography>
+                </TableCell>
+                <TableCell>
+                  <TextField
+                    size="small"
+                    type="number"
+                    value={String(pair.storage || 1)}
+                    onChange={(event) => onChange(updateRetentionLimitText(value, row.key, 'storage', event.target.value))}
+                    slotProps={{ htmlInput: { min: 1 } }}
+                    fullWidth
+                  />
+                </TableCell>
+                <TableCell>
+                  <TextField
+                    size="small"
+                    type="number"
+                    value={String(pair.recall || 1)}
+                    onChange={(event) => onChange(updateRetentionLimitText(value, row.key, 'recall', event.target.value))}
+                    slotProps={{ htmlInput: { min: 1 } }}
+                    fullWidth
+                  />
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+    </AdminTableFrame>
+  );
+}
+
 export default function AdminUsersPage() {
   const theme = useTheme();
   const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
@@ -249,15 +373,12 @@ export default function AdminUsersPage() {
   ], [selectedUser]);
 
   const accountProviderOptions = useMemo(() => {
-    const optionMap = new Map(officialProviderOptions.map((option) => [option.value, option]));
-    accountEntitlementDraft.officialProviderAccess.forEach((code) => {
-      const normalized = String(code || '').trim().toLowerCase();
-      if (normalized && !optionMap.has(normalized)) {
-        optionMap.set(normalized, { value: normalized, label: normalized });
-      }
-    });
-    return Array.from(optionMap.values());
-  }, [accountEntitlementDraft.officialProviderAccess, officialProviderOptions]);
+    return officialProviderOptions;
+  }, [officialProviderOptions]);
+  const allowedOfficialProviderIds = useMemo(
+    () => new Set(officialProviderOptions.map((option) => option.value)),
+    [officialProviderOptions],
+  );
 
   const loadUsers = async () => {
     setLoading(true);
@@ -280,16 +401,20 @@ export default function AdminUsersPage() {
           .map((provider) => String(provider.code || '').trim().toLowerCase())
           .filter(Boolean),
       );
-      const options = (Array.isArray(result.items) ? result.items : [])
+      const options = Array.from(new Map((Array.isArray(result.items) ? result.items : [])
         .map((provider) => {
           const code = String(provider.code || '').trim().toLowerCase();
+          const publicId = String(provider.publicId || provider.public_id || '').trim().toLowerCase();
           if (!code || !runtimeCodes.has(code)) return null;
+          if (!publicId) return null;
+          const name = String(provider.publicName || provider.public_name || provider.name || publicId);
           return {
-            value: code,
-            label: String(provider.name || code),
+            value: publicId,
+            label: `${name}（${publicId}）`,
           };
         })
-        .filter((option): option is OfficialProviderOption => Boolean(option));
+        .filter((option): option is OfficialProviderOption => Boolean(option))
+        .map((option) => [option.value, option])).values());
       setOfficialProviderOptions(options);
     } catch (loadError) {
       console.error('Failed to load AI provider options', loadError);
@@ -351,7 +476,7 @@ export default function AdminUsersPage() {
     setActionLoading(true);
     setDetailError(null);
     try {
-      const accountEntitlement = await adminApi.updateUserAccountEntitlement(selectedUserId, buildAccountEntitlementPayload(accountEntitlementDraft));
+      const accountEntitlement = await adminApi.updateUserAccountEntitlement(selectedUserId, buildAccountEntitlementPayload(accountEntitlementDraft, allowedOfficialProviderIds));
       setSelectedUser((prev) => prev ? { ...prev, accountEntitlement } : prev);
       setAccountEntitlementDraft(accountEntitlementToDraft(accountEntitlement));
     } catch (saveError) {
@@ -785,6 +910,33 @@ export default function AdminUsersPage() {
                           );
                         })}
                       </Stack>
+                    </Box>
+                    <Box>
+                      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ alignItems: { xs: 'stretch', sm: 'center' }, justifyContent: 'space-between', mb: 1 }}>
+                        <Box>
+                          <Typography variant="subtitle2" sx={{ fontWeight: 900 }}>记忆/运行态上限覆盖</Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            留空表示不单独覆盖该用户；编辑表格后保存，会与会员权益合并，取更高值。
+                          </Typography>
+                        </Box>
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          disabled={!accountEntitlementDraft.retentionLimitsText.trim()}
+                          onClick={() => updateAccountEntitlementDraft({ retentionLimitsText: '' })}
+                        >
+                          清空记忆上限覆盖
+                        </Button>
+                      </Stack>
+                      {!accountEntitlementDraft.retentionLimitsText.trim() ? (
+                        <Alert severity="info" sx={{ mb: 1 }}>
+                          当前显示基础会员默认值作为编辑起点；未编辑并保存前不会写入账号独立覆盖。
+                        </Alert>
+                      ) : null}
+                      <AccountRetentionLimitsTable
+                        value={accountEntitlementDraft.retentionLimitsText}
+                        onChange={(value) => updateAccountEntitlementDraft({ retentionLimitsText: value })}
+                      />
                     </Box>
                     <TextField
                       size="small"

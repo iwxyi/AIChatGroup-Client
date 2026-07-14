@@ -33,6 +33,7 @@ import {
   shouldSkipCloudSync,
   updatePendingOperation,
 } from './storeSyncHelpers';
+import { DEFAULT_BASIC_RETENTION_LIMITS, getCurrentRetentionLimits, takeRecentByLimit } from '../services/retentionLimits';
 
 function createLocalChatId() {
   return `local-chat-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -212,15 +213,7 @@ interface PersistedChatState {
   fieldConflicts?: FieldConflictRecord[];
 }
 
-const CHAT_RUNTIME_PERSIST_LIMITS = {
-  layeredMemories: 80,
-  runtimeSeedNotes: 40,
-  runtimeSeedArtifacts: 40,
-  runtimeTimeline: 80,
-  runtimeEventsV2: 120,
-  companionshipStateHistoryPerKey: 4,
-  relationshipLedger: 120,
-};
+const COMPANIONSHIP_STATE_HISTORY_PER_KEY = 4;
 const MAX_PERSISTED_DATA_URL_CHARS = 2048;
 
 function isInlineDataUrl(value: string) {
@@ -251,11 +244,6 @@ function stripLargeInlineMediaForPersistence<T>(value: T, key = '', seen = new W
     if (stripped !== undefined) next[entryKey] = stripped;
   });
   return next as T;
-}
-
-function takeRecentItems<T>(items: T[] | undefined, limit: number): T[] {
-  if (!Array.isArray(items)) return [];
-  return items.length > limit ? items.slice(-limit) : items;
 }
 
 function getRecordString(record: Record<string, unknown>, key: string) {
@@ -313,7 +301,7 @@ function compactRuntimeEventsForPersistence(events: RuntimeEventV2[] | undefined
       key,
       history
         .sort((left, right) => right.createdAt - left.createdAt)
-        .slice(0, CHAT_RUNTIME_PERSIST_LIMITS.companionshipStateHistoryPerKey),
+        .slice(0, COMPANIONSHIP_STATE_HISTORY_PER_KEY),
     );
   }
   const selected = new Map<string, RuntimeEventV2>();
@@ -338,7 +326,7 @@ function mergeRuntimeEventsForSync(localEvents: RuntimeEventV2[] | undefined, re
   [...localEvents, ...remoteEvents].forEach((event) => byId.set(event.id, event));
   return compactRuntimeEventsForPersistence(
     Array.from(byId.values()).sort((left, right) => left.createdAt - right.createdAt),
-    CHAT_RUNTIME_PERSIST_LIMITS.runtimeEventsV2,
+    getCurrentRetentionLimits().runtimeEventsV2.storage,
   );
 }
 
@@ -367,29 +355,37 @@ function mergeMessageBranchStateForSync(local: GroupChat | undefined, remote: Gr
 }
 
 function compactRuntimeSeedForPersistence(runtimeSeed: GroupChat['runtimeSeed']): GroupChat['runtimeSeed'] {
+  const limits = getCurrentRetentionLimits();
   return {
-    notes: takeRecentItems(runtimeSeed?.notes, CHAT_RUNTIME_PERSIST_LIMITS.runtimeSeedNotes),
-    artifacts: takeRecentItems(runtimeSeed?.artifacts, CHAT_RUNTIME_PERSIST_LIMITS.runtimeSeedArtifacts),
+    notes: takeRecentByLimit(runtimeSeed?.notes, limits.runtimeSeedNotes.storage),
+    artifacts: takeRecentByLimit(runtimeSeed?.artifacts, limits.runtimeSeedArtifacts.storage),
   };
 }
 
 function compactChatRuntimeFieldsForPersistence<T extends Partial<GroupChat>>(chat: T): T {
+  const limits = getCurrentRetentionLimits();
   return {
     ...chat,
     ...(chat.layeredMemories !== undefined ? {
-      layeredMemories: takeRecentItems(chat.layeredMemories, CHAT_RUNTIME_PERSIST_LIMITS.layeredMemories),
+      layeredMemories: takeRecentByLimit(chat.layeredMemories, limits.chatLayeredMemories.storage),
     } : {}),
     ...(chat.runtimeSeed !== undefined ? {
       runtimeSeed: compactRuntimeSeedForPersistence(chat.runtimeSeed),
     } : {}),
+    ...(chat.roleMemorySummaries !== undefined ? {
+      roleMemorySummaries: takeRecentByLimit(chat.roleMemorySummaries, limits.roleMemorySummaries.storage),
+    } : {}),
+    ...(chat.growthSnapshots !== undefined ? {
+      growthSnapshots: takeRecentByLimit(chat.growthSnapshots, limits.growthSnapshots.storage),
+    } : {}),
     ...(chat.runtimeTimeline !== undefined ? {
-      runtimeTimeline: takeRecentItems(chat.runtimeTimeline, CHAT_RUNTIME_PERSIST_LIMITS.runtimeTimeline),
+      runtimeTimeline: takeRecentByLimit(chat.runtimeTimeline, limits.runtimeTimeline.storage),
     } : {}),
     ...(chat.runtimeEventsV2 !== undefined ? {
-      runtimeEventsV2: compactRuntimeEventsForPersistence(chat.runtimeEventsV2, CHAT_RUNTIME_PERSIST_LIMITS.runtimeEventsV2),
+      runtimeEventsV2: compactRuntimeEventsForPersistence(chat.runtimeEventsV2, limits.runtimeEventsV2.storage),
     } : {}),
     ...(chat.relationshipLedger !== undefined ? {
-      relationshipLedger: takeRecentItems(chat.relationshipLedger, CHAT_RUNTIME_PERSIST_LIMITS.relationshipLedger),
+      relationshipLedger: takeRecentByLimit(chat.relationshipLedger, limits.relationshipLedger.storage),
     } : {}),
   };
 }
@@ -1752,5 +1748,13 @@ export const __chatRuntimePersistenceForTests = {
   mergeChats,
   mergeWorldRuntimeRecord,
   buildPersistedChatState,
-  limits: CHAT_RUNTIME_PERSIST_LIMITS,
+  limits: {
+    layeredMemories: DEFAULT_BASIC_RETENTION_LIMITS.chatLayeredMemories.storage,
+    runtimeSeedNotes: DEFAULT_BASIC_RETENTION_LIMITS.runtimeSeedNotes.storage,
+    runtimeSeedArtifacts: DEFAULT_BASIC_RETENTION_LIMITS.runtimeSeedArtifacts.storage,
+    runtimeTimeline: DEFAULT_BASIC_RETENTION_LIMITS.runtimeTimeline.storage,
+    runtimeEventsV2: DEFAULT_BASIC_RETENTION_LIMITS.runtimeEventsV2.storage,
+    companionshipStateHistoryPerKey: COMPANIONSHIP_STATE_HISTORY_PER_KEY,
+    relationshipLedger: DEFAULT_BASIC_RETENTION_LIMITS.relationshipLedger.storage,
+  },
 };

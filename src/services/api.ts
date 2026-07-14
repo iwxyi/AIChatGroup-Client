@@ -19,6 +19,7 @@ export interface AuthUserResponse {
   assistantArtifactCloudSyncEntitled?: boolean;
   aiProxyEntitled?: boolean;
   agentEntitled?: boolean;
+  retentionLimits?: Record<string, { storage: number; recall: number }>;
 }
 
 export interface TopicSourceSummary {
@@ -89,6 +90,7 @@ export interface VipEntitlementInfo {
   assistantArtifactCloudSync: boolean;
   aiProxyEnabled: boolean;
   agentEnabled: boolean;
+  retentionLimits?: Record<string, { storage: number; recall: number }>;
 }
 
 export interface AiUsageRecordItem {

@@ -14,6 +14,7 @@ import { projectConversationForModel, type ConversationProjectionOptions } from 
 import { resolvePersonaActivation, type PersonaActivation } from './personaActivation';
 import { buildInfluenceState, type InfluenceState } from './influenceState';
 import { userProfileMemoryPayloadOf } from './directUserProfileMemory';
+import { getCurrentRetentionLimits } from './retentionLimits';
 import type { SharedMemoryAnchor, UserProfileMemoryEventItem, UserProfileMemoryKind } from '../types/companionship';
 import type { RelationshipLedgerEntry, RuntimeEventV2 } from '../types/runtimeEvent';
 import { buildPublicSafeRelationshipSemanticSummary } from './relationshipSemanticPrivacy';
@@ -208,6 +209,10 @@ function buildRetrievalBoosts(chat: GroupChat) {
   if (chat.type === 'direct') return { relationshipBoost: true, selfMemoryBoost: true, conversationBoost: false };
   if (chat.type === 'ai_direct') return { relationshipBoost: true, selfMemoryBoost: true, conversationBoost: true };
   return { relationshipBoost: true, selfMemoryBoost: true, conversationBoost: true };
+}
+
+function archivedRecallLimit(limit: number) {
+  return Math.max(1, Math.floor(limit / 2));
 }
 
 function sharedAnchorMemoryKind(kind: SharedMemoryAnchor['kind']): MemoryItem['kind'] {
@@ -686,6 +691,7 @@ function resolvePromptMemoryContext(character: AICharacter, chat: GroupChat, mes
   const relationshipSnapshot = getRelationshipSnapshot(character, target);
   const policies = buildPromptMemoryPolicies(chat);
   const boosts = buildRetrievalBoosts(chat);
+  const limits = getCurrentRetentionLimits();
   const allMemories = buildMergedMemories([
     ...(character.layeredMemories || []),
     ...buildCompanionshipAnchorPromptMemories(character, chat),
@@ -693,16 +699,50 @@ function resolvePromptMemoryContext(character: AICharacter, chat: GroupChat, mes
   ]);
   const members = buildPromptDisplayMembers(character, characters);
   const recallCue = buildRecallCue(messages, target);
-  const conversationMemories = getMemoryContext(allMemories, character.id, null, chat.id, policies.conversation.preferred, policies.conversation.allowed, policies.conversation.blocked, boosts, recallCue);
-  const characterMemories = getMemoryContext(allMemories, character.id, null, chat.id, policies.character.preferred, policies.character.allowed, policies.character.blocked, boosts, recallCue);
+  const conversationMemories = getMemoryContext(
+    allMemories,
+    character.id,
+    null,
+    chat.id,
+    policies.conversation.preferred,
+    policies.conversation.allowed,
+    policies.conversation.blocked,
+    boosts,
+    recallCue,
+    { maxItems: limits.chatLayeredMemories.recall, maxArchivedItems: archivedRecallLimit(limits.chatLayeredMemories.recall) },
+  );
+  const characterMemories = getMemoryContext(
+    allMemories,
+    character.id,
+    null,
+    chat.id,
+    policies.character.preferred,
+    policies.character.allowed,
+    policies.character.blocked,
+    boosts,
+    recallCue,
+    { maxItems: limits.characterLayeredMemories.recall, maxArchivedItems: archivedRecallLimit(limits.characterLayeredMemories.recall) },
+  );
   const targetedCharacterMemories = target
-    ? getMemoryContext(allMemories, character.id, target.id, chat.id, policies.character.preferred, policies.character.allowed, policies.character.blocked, boosts, recallCue)
+    ? getMemoryContext(
+      allMemories,
+      character.id,
+      target.id,
+      chat.id,
+      policies.character.preferred,
+      policies.character.allowed,
+      policies.character.blocked,
+      boosts,
+      recallCue,
+      { maxItems: limits.characterLayeredMemories.recall, maxArchivedItems: archivedRecallLimit(limits.characterLayeredMemories.recall) },
+    )
     : [];
   const influenceState: InfluenceState = buildInfluenceState({
     conversationMemories,
     characterMemories,
     targetedCharacterMemories,
   });
+  const mergedMemories = buildMergedMemories([...targetedCharacterMemories, ...characterMemories, ...conversationMemories]);
   return {
     target,
     relationshipSnapshot,
@@ -711,7 +751,7 @@ function resolvePromptMemoryContext(character: AICharacter, chat: GroupChat, mes
     targetedCharacterMemories,
     influenceState,
     trace: buildTraceFromPromptMemories(
-      [...targetedCharacterMemories, ...characterMemories, ...conversationMemories],
+      mergedMemories,
       members,
       buildSharedSecretTraceLines(chat, character, target, characters),
       target ? {

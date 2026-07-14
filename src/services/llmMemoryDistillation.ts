@@ -21,6 +21,7 @@ import {
   type LlmAnalyzedMemoryItem,
 } from './memoryAnalysisStrategy';
 import { isRuntimeEvidenceMemory } from './memoryPresentation';
+import { getCurrentRetentionLimits } from './retentionLimits';
 
 function isEligibleItem(item: MemoryItem) {
   return !item.archivedAt
@@ -196,7 +197,8 @@ function toCandidate(ownerId: string, source: MemoryItem[], item: LlmAnalyzedMem
 }
 
 export function buildLlmDistillationSource(owner: { layeredMemories?: MemoryItem[] }) {
-  return eligibleItems(owner.layeredMemories || []).slice(-LLM_MEMORY_ANALYSIS_MAX_SOURCE_ITEMS);
+  const recallLimit = Math.max(getCurrentRetentionLimits().chatLayeredMemories.recall, getCurrentRetentionLimits().characterLayeredMemories.recall);
+  return eligibleItems(owner.layeredMemories || []).slice(-Math.max(LLM_MEMORY_ANALYSIS_MAX_SOURCE_ITEMS, recallLimit));
 }
 
 export function debugLlmChatDistillation(chat: GroupChat) {

@@ -369,15 +369,26 @@ export function summarizeLayeredMemories(items: MemoryItem[]) {
   return items.slice(-3).map((item) => item.text).join(' / ');
 }
 
-export function getMemoryContext(items: MemoryItem[], speakerId: string, targetId: string | null | undefined, conversationId: string, preferredSourceTags?: string[], allowedSourceTags?: string[], blockedSourceTags?: string[], boosts?: { relationshipBoost?: boolean; selfMemoryBoost?: boolean; conversationBoost?: boolean }, cueText?: string) {
+export function getMemoryContext(
+  items: MemoryItem[],
+  speakerId: string,
+  targetId: string | null | undefined,
+  conversationId: string,
+  preferredSourceTags?: string[],
+  allowedSourceTags?: string[],
+  blockedSourceTags?: string[],
+  boosts?: { relationshipBoost?: boolean; selfMemoryBoost?: boolean; conversationBoost?: boolean },
+  cueText?: string,
+  limits?: { maxItems?: number; maxArchivedItems?: number },
+) {
   return retrieveRelevantMemories(items, {
     speakerId,
     targetId,
     conversationId,
-    maxItems: 6,
+    maxItems: limits?.maxItems || 6,
     cueText,
     includeArchivedRecall: Boolean(cueText?.trim()),
-    maxArchivedItems: 2,
+    maxArchivedItems: limits?.maxArchivedItems || 2,
     preferredLayers: ['working', 'episodic', 'long_term'],
     preferredScopes: targetId ? ['relationship', 'conversation', 'thread', 'character_self', 'system_runtime'] : ['conversation', 'relationship', 'character_self', 'thread', 'system_runtime'],
     preferredSourceTags,

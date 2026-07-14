@@ -92,6 +92,12 @@ type VipEntitlementForm = {
   assistantArtifactCloudSync: boolean;
   aiProxyEnabled: boolean;
   agentEnabled: boolean;
+  retentionLimitsText: string;
+};
+
+type OfficialProviderOption = {
+  value: string;
+  label: string;
 };
 
 type MembershipConfigForm = {
@@ -103,6 +109,40 @@ type MembershipConfigForm = {
   tiers: VipTierForm[];
   entitlements: Record<string, VipEntitlementForm>;
 };
+
+const DEFAULT_BASIC_RETENTION_LIMITS = {
+  characterLayeredMemories: { storage: 80, recall: 6 },
+  characterRuntimeTimeline: { storage: 80, recall: 6 },
+  chatLayeredMemories: { storage: 80, recall: 8 },
+  runtimeEventsV2: { storage: 120, recall: 16 },
+  runtimeTimeline: { storage: 80, recall: 10 },
+  relationshipLedger: { storage: 120, recall: 12 },
+  roleMemorySummaries: { storage: 32, recall: 8 },
+  growthSnapshots: { storage: 40, recall: 8 },
+  runtimeSeedNotes: { storage: 40, recall: 8 },
+  runtimeSeedArtifacts: { storage: 40, recall: 8 },
+};
+
+function scaleRetentionLimits(factor: number) {
+  return Object.fromEntries(Object.entries(DEFAULT_BASIC_RETENTION_LIMITS).map(([key, value]) => [key, {
+    storage: Math.max(1, Math.round(value.storage * factor)),
+    recall: Math.max(1, Math.round(value.recall * factor)),
+  }]));
+}
+
+function retentionLimitsText(value: unknown, fallback: Record<string, { storage: number; recall: number }>) {
+  const record = value && typeof value === 'object' && !Array.isArray(value) ? value : fallback;
+  return JSON.stringify(record, null, 2);
+}
+
+function parseRetentionLimitsText(value: string, fallback: Record<string, { storage: number; recall: number }>) {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 const EMPTY_PLAN_FORM: PlanForm = {
   id: '',
@@ -167,7 +207,7 @@ const DEFAULT_VIP_ENTITLEMENTS: Record<string, VipEntitlementForm> = {
     maxChats: '30',
     dailyAiGenerationLimit: '3',
     batchCharacterGenerationLimit: '3',
-    officialProviderAccessText: 'deepseek',
+    officialProviderAccessText: 'official-1',
     aiBillingDiscount: '1',
     dailyPointGrant: '30',
     monthlyPointGrant: '100',
@@ -175,6 +215,7 @@ const DEFAULT_VIP_ENTITLEMENTS: Record<string, VipEntitlementForm> = {
     assistantArtifactCloudSync: false,
     aiProxyEnabled: false,
     agentEnabled: false,
+    retentionLimitsText: retentionLimitsText(scaleRetentionLimits(0.5), scaleRetentionLimits(0.5)),
   },
   basic: {
     description: '',
@@ -183,7 +224,7 @@ const DEFAULT_VIP_ENTITLEMENTS: Record<string, VipEntitlementForm> = {
     maxChats: '200',
     dailyAiGenerationLimit: '20',
     batchCharacterGenerationLimit: '10',
-    officialProviderAccessText: 'deepseek\nmoacode',
+    officialProviderAccessText: 'official-1\nofficial-2',
     aiBillingDiscount: '0.95',
     dailyPointGrant: '30',
     monthlyPointGrant: '300',
@@ -191,6 +232,7 @@ const DEFAULT_VIP_ENTITLEMENTS: Record<string, VipEntitlementForm> = {
     assistantArtifactCloudSync: false,
     aiProxyEnabled: false,
     agentEnabled: true,
+    retentionLimitsText: retentionLimitsText(DEFAULT_BASIC_RETENTION_LIMITS, DEFAULT_BASIC_RETENTION_LIMITS),
   },
   pro: {
     description: '',
@@ -199,7 +241,7 @@ const DEFAULT_VIP_ENTITLEMENTS: Record<string, VipEntitlementForm> = {
     maxChats: '2000',
     dailyAiGenerationLimit: '100',
     batchCharacterGenerationLimit: '30',
-    officialProviderAccessText: 'deepseek\nmoacode',
+    officialProviderAccessText: 'official-1\nofficial-2\nofficial-team',
     aiBillingDiscount: '0.9',
     dailyPointGrant: '30',
     monthlyPointGrant: '500',
@@ -207,6 +249,7 @@ const DEFAULT_VIP_ENTITLEMENTS: Record<string, VipEntitlementForm> = {
     assistantArtifactCloudSync: true,
     aiProxyEnabled: true,
     agentEnabled: true,
+    retentionLimitsText: retentionLimitsText(scaleRetentionLimits(1.5), scaleRetentionLimits(1.5)),
   },
   premium: {
     description: '',
@@ -215,7 +258,7 @@ const DEFAULT_VIP_ENTITLEMENTS: Record<string, VipEntitlementForm> = {
     maxChats: '2000',
     dailyAiGenerationLimit: '100',
     batchCharacterGenerationLimit: '30',
-    officialProviderAccessText: 'deepseek\nmoacode',
+    officialProviderAccessText: 'official-1\nofficial-2\nofficial-team\nofficial-4',
     aiBillingDiscount: '0.9',
     dailyPointGrant: '30',
     monthlyPointGrant: '500',
@@ -223,6 +266,18 @@ const DEFAULT_VIP_ENTITLEMENTS: Record<string, VipEntitlementForm> = {
     assistantArtifactCloudSync: true,
     aiProxyEnabled: true,
     agentEnabled: true,
+    retentionLimitsText: retentionLimitsText({
+      characterLayeredMemories: { storage: 200, recall: 15 },
+      characterRuntimeTimeline: { storage: 200, recall: 15 },
+      chatLayeredMemories: { storage: 200, recall: 18 },
+      runtimeEventsV2: { storage: 300, recall: 36 },
+      runtimeTimeline: { storage: 200, recall: 22 },
+      relationshipLedger: { storage: 300, recall: 28 },
+      roleMemorySummaries: { storage: 80, recall: 18 },
+      growthSnapshots: { storage: 100, recall: 18 },
+      runtimeSeedNotes: { storage: 100, recall: 18 },
+      runtimeSeedArtifacts: { storage: 100, recall: 18 },
+    }, DEFAULT_BASIC_RETENTION_LIMITS),
   },
 };
 const EMPTY_MEMBERSHIP_CONFIG_FORM: MembershipConfigForm = {
@@ -236,9 +291,15 @@ const EMPTY_MEMBERSHIP_CONFIG_FORM: MembershipConfigForm = {
 };
 const BILLING_TAB_STORAGE_KEY = 'admin.billing.tab';
 const EMPTY_ORDER_SUMMARY = { total: 0, pending: 0, paid: 0, cancelled: 0, partiallyRefunded: 0, refunded: 0, failed: 0 };
+const LEGACY_OFFICIAL_PROVIDER_PUBLIC_IDS: Record<string, string> = {
+  deepseek: 'official-1',
+  moacode: 'official-2',
+  'moacode-team': 'official-team',
+  api2d: 'official-4',
+};
 
 function isBillingTab(value: unknown): value is number {
-  return value === 0 || value === 1;
+  return value === 0 || value === 1 || value === 2;
 }
 
 function formatOrderTime(value: unknown) {
@@ -454,6 +515,9 @@ function toEntitlementForm(value: unknown, fallback: VipEntitlementForm): VipEnt
     assistantArtifactCloudSync: hasOwnRecordValue(record, 'assistantArtifactCloudSync') ? toBoolean(record.assistantArtifactCloudSync, fallback.assistantArtifactCloudSync) : fallback.assistantArtifactCloudSync,
     aiProxyEnabled: hasOwnRecordValue(record, 'aiProxyEnabled') ? toBoolean(record.aiProxyEnabled, fallback.aiProxyEnabled) : fallback.aiProxyEnabled,
     agentEnabled: hasOwnRecordValue(record, 'agentEnabled') ? toBoolean(record.agentEnabled, fallback.agentEnabled) : fallback.agentEnabled,
+    retentionLimitsText: hasOwnRecordValue(record, 'retentionLimits')
+      ? retentionLimitsText(record.retentionLimits, parseRetentionLimitsText(fallback.retentionLimitsText, DEFAULT_BASIC_RETENTION_LIMITS) as Record<string, { storage: number; recall: number }>)
+      : fallback.retentionLimitsText,
   };
 }
 
@@ -464,7 +528,12 @@ function parseLimitValue(value: string) {
   return Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : null;
 }
 
-function buildEntitlementPayload(form: VipEntitlementForm) {
+function filterAllowedProviderAccess(values: string[], allowedProviderIds?: Set<string>) {
+  if (!allowedProviderIds?.size) return values;
+  return values.filter((value) => allowedProviderIds.has(value));
+}
+
+function buildEntitlementPayload(form: VipEntitlementForm, allowedProviderIds?: Set<string>) {
   return {
     description: form.description.trim(),
     benefitsMarkdown: form.benefitsMarkdown,
@@ -472,7 +541,7 @@ function buildEntitlementPayload(form: VipEntitlementForm) {
     maxChats: parseLimitValue(form.maxChats),
     dailyAiGenerationLimit: parseLimitValue(form.dailyAiGenerationLimit),
     batchCharacterGenerationLimit: parseLimitValue(form.batchCharacterGenerationLimit),
-    officialProviderAccess: form.officialProviderAccessText.split('\n').map((item) => item.trim().toLowerCase()).filter(Boolean),
+    officialProviderAccess: filterAllowedProviderAccess(parseProviderAccessText(form.officialProviderAccessText), allowedProviderIds),
     aiBillingDiscount: Math.max(0, Math.min(1, toNumber(form.aiBillingDiscount, 1))),
     dailyPointGrant: Math.max(0, toNumber(form.dailyPointGrant, 0)),
     monthlyPointGrant: Math.max(0, toNumber(form.monthlyPointGrant, 0)),
@@ -480,6 +549,7 @@ function buildEntitlementPayload(form: VipEntitlementForm) {
     assistantArtifactCloudSync: form.assistantArtifactCloudSync,
     aiProxyEnabled: form.aiProxyEnabled,
     agentEnabled: form.agentEnabled,
+    retentionLimits: parseRetentionLimitsText(form.retentionLimitsText, DEFAULT_BASIC_RETENTION_LIMITS),
   };
 }
 
@@ -557,7 +627,7 @@ function toMembershipConfigForm(config: Record<string, unknown>): MembershipConf
   };
 }
 
-function buildMembershipConfigPayload(form: MembershipConfigForm) {
+function buildMembershipConfigPayload(form: MembershipConfigForm, allowedProviderIds?: Set<string>) {
   return {
     title: form.title.trim(),
     subtitle: form.subtitle.trim(),
@@ -573,7 +643,7 @@ function buildMembershipConfigPayload(form: MembershipConfigForm) {
       conversionRatio: Math.max(0, toNumber(tier.conversionRatio, 1)),
       benefitsMarkdown: tier.benefitsMarkdown,
     })).filter((tier) => tier.code && tier.name),
-    entitlements: Object.fromEntries(Object.entries(form.entitlements).map(([code, entitlement]) => [code, buildEntitlementPayload(entitlement)])),
+    entitlements: Object.fromEntries(Object.entries(form.entitlements).map(([code, entitlement]) => [code, buildEntitlementPayload(entitlement, allowedProviderIds)])),
   };
 }
 
@@ -582,6 +652,202 @@ function DetailLine({ label, value }: { label: string; value: ReactNode }) {
     <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ justifyContent: 'space-between', gap: 1, py: 0.75 }}>
       <Typography variant="body2" color="text.secondary" sx={{ minWidth: 96 }}>{label}</Typography>
       <Typography variant="body2" sx={{ fontWeight: 700, textAlign: { xs: 'left', sm: 'right' }, wordBreak: 'break-all' }}>{value}</Typography>
+    </Stack>
+  );
+}
+
+const RETENTION_LIMIT_ROWS: Array<{ key: string; label: string; description: string }> = [
+  { key: 'characterLayeredMemories', label: '角色长期记忆', description: '角色自身长期记忆条数' },
+  { key: 'characterRuntimeTimeline', label: '角色时间线', description: '角色运行时间线条数' },
+  { key: 'chatLayeredMemories', label: '会话长期记忆', description: '房间/会话长期记忆条数' },
+  { key: 'runtimeEventsV2', label: '运行事件', description: '结构化运行事件条数' },
+  { key: 'runtimeTimeline', label: '会话时间线', description: '轻量时间线条数' },
+  { key: 'relationshipLedger', label: '关系账本', description: '关系状态与变化账本条数' },
+  { key: 'roleMemorySummaries', label: '角色摘要', description: '会话内角色摘要条数' },
+  { key: 'growthSnapshots', label: '成长快照', description: '成长/状态快照条数' },
+  { key: 'runtimeSeedNotes', label: '种子笔记', description: 'runtimeSeed notes 条数' },
+  { key: 'runtimeSeedArtifacts', label: '种子产物', description: 'runtimeSeed artifacts 条数' },
+];
+
+function parseRetentionLimitsForForm(form: VipEntitlementForm) {
+  return parseRetentionLimitsText(form.retentionLimitsText, DEFAULT_BASIC_RETENTION_LIMITS) as Record<string, { storage?: unknown; recall?: unknown }>;
+}
+
+function updateRetentionLimitText(form: VipEntitlementForm, key: string, field: 'storage' | 'recall', value: string) {
+  const current = parseRetentionLimitsForForm(form);
+  const parsed = Number(value);
+  const nextValue = Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 1;
+  return retentionLimitsText({
+    ...current,
+    [key]: {
+      ...(current[key] || {}),
+      [field]: nextValue,
+    },
+  }, DEFAULT_BASIC_RETENTION_LIMITS);
+}
+
+function parseProviderAccessText(value: string) {
+  return value
+    .split('\n')
+    .map((item) => item.trim().toLowerCase())
+    .map((item) => LEGACY_OFFICIAL_PROVIDER_PUBLIC_IDS[item] || item)
+    .filter(Boolean);
+}
+
+function providerAccessText(values: string[]) {
+  return Array.from(new Set(values.map((item) => item.trim().toLowerCase()).filter(Boolean))).join('\n');
+}
+
+function providerOptionsForEntitlement(options: OfficialProviderOption[]) {
+  return options;
+}
+
+function RetentionLimitsTable({
+  entitlement,
+  onChange,
+}: {
+  entitlement: VipEntitlementForm;
+  onChange: (value: string) => void;
+}) {
+  const limits = parseRetentionLimitsForForm(entitlement);
+  return (
+    <AdminTableFrame minWidth={720}>
+      <Table size="small">
+        <TableHead>
+          <TableRow>
+            <TableCell>项目</TableCell>
+            <TableCell>说明</TableCell>
+            <TableCell width={130}>存储/同步上限</TableCell>
+            <TableCell width={130}>提示词召回</TableCell>
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          {RETENTION_LIMIT_ROWS.map((row) => {
+            const pair = limits[row.key] || DEFAULT_BASIC_RETENTION_LIMITS[row.key as keyof typeof DEFAULT_BASIC_RETENTION_LIMITS];
+            return (
+              <TableRow key={row.key}>
+                <TableCell sx={{ fontWeight: 800 }}>{row.label}</TableCell>
+                <TableCell>
+                  <Typography variant="caption" color="text.secondary">{row.description}</Typography>
+                </TableCell>
+                <TableCell>
+                  <TextField
+                    size="small"
+                    type="number"
+                    value={String(pair.storage || 1)}
+                    onChange={(event) => onChange(updateRetentionLimitText(entitlement, row.key, 'storage', event.target.value))}
+                    slotProps={{ htmlInput: { min: 1 } }}
+                    fullWidth
+                  />
+                </TableCell>
+                <TableCell>
+                  <TextField
+                    size="small"
+                    type="number"
+                    value={String(pair.recall || 1)}
+                    onChange={(event) => onChange(updateRetentionLimitText(entitlement, row.key, 'recall', event.target.value))}
+                    slotProps={{ htmlInput: { min: 1 } }}
+                    fullWidth
+                  />
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+    </AdminTableFrame>
+  );
+}
+
+function EntitlementEditor({
+  title,
+  tier,
+  entitlement,
+  officialProviderOptions,
+  onTierChange,
+  onEntitlementChange,
+}: {
+  title: string;
+  tier?: VipTierForm;
+  entitlement: VipEntitlementForm;
+  officialProviderOptions: OfficialProviderOption[];
+  onTierChange?: <K extends keyof VipTierForm>(key: K, value: VipTierForm[K]) => void;
+  onEntitlementChange: <K extends keyof VipEntitlementForm>(key: K, value: VipEntitlementForm[K]) => void;
+}) {
+  const selectedProviders = parseProviderAccessText(entitlement.officialProviderAccessText);
+  const providerOptions = providerOptionsForEntitlement(officialProviderOptions);
+  return (
+    <Stack spacing={1.25}>
+      <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+        <Typography variant="subtitle1" sx={{ fontWeight: 950 }}>{title}</Typography>
+        {tier && onTierChange ? (
+          <FormControlLabel
+            control={<Switch checked={tier.enabled} onChange={(event) => onTierChange('enabled', event.target.checked)} />}
+            label={tier.enabled ? '启用' : '停用'}
+          />
+        ) : null}
+      </Stack>
+      {tier && onTierChange ? (
+        <>
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+            <TextField label="等级ID" value={tier.code} onChange={(event) => onTierChange('code', event.target.value)} fullWidth />
+            <TextField label="等级名称" value={tier.name} onChange={(event) => onTierChange('name', event.target.value)} fullWidth />
+          </Stack>
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+            <TextField label="等级排序" value={tier.rank} onChange={(event) => onTierChange('rank', event.target.value)} fullWidth />
+            <TextField label="升级折算比例" value={tier.conversionRatio} onChange={(event) => onTierChange('conversionRatio', event.target.value)} fullWidth />
+          </Stack>
+          <TextField label="等级说明" value={tier.description} onChange={(event) => onTierChange('description', event.target.value)} fullWidth />
+          <TextField label="等级权益 Markdown" value={tier.benefitsMarkdown} onChange={(event) => onTierChange('benefitsMarkdown', event.target.value)} fullWidth multiline minRows={4} />
+        </>
+      ) : null}
+      {!tier ? (
+        <>
+          <TextField label="免费说明" value={entitlement.description} onChange={(event) => onEntitlementChange('description', event.target.value)} fullWidth />
+          <TextField label="免费权益 Markdown" value={entitlement.benefitsMarkdown} onChange={(event) => onEntitlementChange('benefitsMarkdown', event.target.value)} fullWidth multiline minRows={4} />
+        </>
+      ) : null}
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(4, minmax(0, 1fr))' }, gap: 1 }}>
+        <TextField label="角色上限" value={entitlement.maxCharacters} onChange={(event) => onEntitlementChange('maxCharacters', event.target.value)} fullWidth />
+        <TextField label="聊天上限" value={entitlement.maxChats} onChange={(event) => onEntitlementChange('maxChats', event.target.value)} fullWidth />
+        <TextField label="每日生成次数" value={entitlement.dailyAiGenerationLimit} onChange={(event) => onEntitlementChange('dailyAiGenerationLimit', event.target.value)} fullWidth />
+        <TextField label="批量角色单次上限" value={entitlement.batchCharacterGenerationLimit} onChange={(event) => onEntitlementChange('batchCharacterGenerationLimit', event.target.value)} fullWidth />
+        <TextField label="每日领取点数" value={entitlement.dailyPointGrant} onChange={(event) => onEntitlementChange('dailyPointGrant', event.target.value)} fullWidth />
+        <TextField label="每月领取点数" value={entitlement.monthlyPointGrant} onChange={(event) => onEntitlementChange('monthlyPointGrant', event.target.value)} fullWidth />
+        <TextField label="点数扣费折扣" value={entitlement.aiBillingDiscount} onChange={(event) => onEntitlementChange('aiBillingDiscount', event.target.value)} fullWidth />
+      </Box>
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(auto-fit, minmax(180px, 1fr))' }, gap: 0.5 }}>
+        <FormControlLabel control={<Switch checked={entitlement.cloudSyncEnabled} onChange={(event) => onEntitlementChange('cloudSyncEnabled', event.target.checked)} />} label="允许云同步" />
+        <FormControlLabel control={<Switch checked={entitlement.assistantArtifactCloudSync} disabled={!entitlement.cloudSyncEnabled} onChange={(event) => onEntitlementChange('assistantArtifactCloudSync', event.target.checked)} />} label="允许 AI 产物云同步" />
+        <FormControlLabel control={<Switch checked={entitlement.aiProxyEnabled} onChange={(event) => onEntitlementChange('aiProxyEnabled', event.target.checked)} />} label="允许中转站" />
+        <FormControlLabel control={<Switch checked={entitlement.agentEnabled} onChange={(event) => onEntitlementChange('agentEnabled', event.target.checked)} />} label="允许 Agent" />
+      </Box>
+      <Box>
+        <Typography variant="subtitle2" sx={{ fontWeight: 900, mb: 1 }}>支持的官方 AI 平台</Typography>
+        <Stack direction="row" spacing={0.75} sx={{ flexWrap: 'wrap', gap: 0.75 }}>
+          {providerOptions.map((option) => {
+            const selected = selectedProviders.includes(option.value);
+            return (
+              <Chip
+                key={option.value}
+                label={option.label}
+                color={selected ? 'primary' : 'default'}
+                variant={selected ? 'filled' : 'outlined'}
+                onClick={() => onEntitlementChange(
+                  'officialProviderAccessText',
+                  providerAccessText(selected
+                    ? selectedProviders.filter((item) => item !== option.value)
+                    : [...selectedProviders, option.value]),
+                )}
+              />
+            );
+          })}
+        </Stack>
+      </Box>
+      <Box>
+        <Typography variant="subtitle2" sx={{ fontWeight: 900, mb: 1 }}>记忆/运行态上限</Typography>
+        <RetentionLimitsTable entitlement={entitlement} onChange={(value) => onEntitlementChange('retentionLimitsText', value)} />
+      </Box>
     </Stack>
   );
 }
@@ -1165,8 +1431,9 @@ export default function AdminBillingPage() {
   const [selectedOrderDetail, setSelectedOrderDetail] = useState<Record<string, unknown> | null>(null);
   const [planForm, setPlanForm] = useState<PlanForm>(EMPTY_PLAN_FORM);
   const [membershipConfigForm, setMembershipConfigForm] = useState<MembershipConfigForm>(EMPTY_MEMBERSHIP_CONFIG_FORM);
+  const [officialProviderOptions, setOfficialProviderOptions] = useState<OfficialProviderOption[]>([]);
+  const [membershipEntitlementTab, setMembershipEntitlementTab] = useState(0);
   const [planDialogOpen, setPlanDialogOpen] = useState(false);
-  const [membershipConfigDialogOpen, setMembershipConfigDialogOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Record<string, unknown> | null>(null);
   const [cancelOrderTarget, setCancelOrderTarget] = useState<Record<string, unknown> | null>(null);
   const [deleteOrderTarget, setDeleteOrderTarget] = useState<Record<string, unknown> | null>(null);
@@ -1216,6 +1483,39 @@ export default function AdminBillingPage() {
   const hasEnabledMembershipTier = membershipConfigForm.tiers.some((tier) => tier.enabled);
   const canSaveMembershipConfig = Boolean(membershipConfigForm.title.trim()) && Boolean(membershipConfigForm.benefitsText.trim()) && hasEnabledMembershipTier && !savingMembershipConfig;
   const selectableVipTiers = membershipConfigForm.tiers.filter((tier) => tier.enabled || tier.code === planForm.vipTierCode);
+
+  const loadOfficialProviderOptions = async () => {
+    try {
+      const result = await adminApi.getAiProviders();
+      const runtimeCodes = new Set(
+        (Array.isArray(result.runtime) ? result.runtime : [])
+          .map((provider) => String(provider.code || '').trim().toLowerCase())
+          .filter(Boolean),
+      );
+      const options = Array.from(new Map((Array.isArray(result.items) ? result.items : [])
+        .map((provider) => {
+          const code = String(provider.code || '').trim().toLowerCase();
+          const publicId = String(provider.publicId || provider.public_id || '').trim().toLowerCase();
+          if (!code || !runtimeCodes.has(code)) return null;
+          if (!publicId) return null;
+          const name = String(provider.publicName || provider.public_name || provider.name || publicId);
+          return {
+            value: publicId,
+            label: `${name}（${publicId}）`,
+          };
+        })
+        .filter((option): option is OfficialProviderOption => Boolean(option))
+        .map((option) => [option.value, option])).values());
+      setOfficialProviderOptions(options);
+    } catch (loadError) {
+      console.error('Failed to load AI provider options', loadError);
+      setOfficialProviderOptions([]);
+    }
+  };
+  const allowedOfficialProviderIds = useMemo(
+    () => new Set(officialProviderOptions.map((option) => option.value)),
+    [officialProviderOptions],
+  );
 
   const loadPlans = async () => {
     setPlansLoading(true);
@@ -1297,9 +1597,8 @@ export default function AdminBillingPage() {
     setSavingMembershipConfig(true);
     setPlansError(null);
     try {
-      const config = await adminApi.updateBillingMembershipConfig(buildMembershipConfigPayload(membershipConfigForm));
+      const config = await adminApi.updateBillingMembershipConfig(buildMembershipConfigPayload(membershipConfigForm, allowedOfficialProviderIds));
       setMembershipConfigForm(toMembershipConfigForm(config));
-      setMembershipConfigDialogOpen(false);
     } catch (saveError) {
       setPlansError(getAdminErrorMessage(saveError));
     } finally {
@@ -1463,7 +1762,11 @@ export default function AdminBillingPage() {
   };
 
   useEffect(() => {
-    if (tab === 0) void loadPlans();
+    void loadOfficialProviderOptions();
+  }, []);
+
+  useEffect(() => {
+    if (tab === 0 || tab === 2) void loadPlans();
     if (tab === 1) void loadOrders();
   }, [tab]);
 
@@ -1524,6 +1827,7 @@ export default function AdminBillingPage() {
         <Tabs value={tab} onChange={changeTab} variant="scrollable" allowScrollButtonsMobile sx={{ minWidth: 0, flex: '1 1 auto' }}>
           <Tab label="套餐" />
           <Tab label="订单" />
+          <Tab label="会员权益" />
         </Tabs>
       </Box>
 
@@ -1535,32 +1839,6 @@ export default function AdminBillingPage() {
             subtitle="套餐可以单独售卖 VIP、点数，也可以同时包含多种权益。"
           >
             <AdminMetricGrid items={planMetrics} compact minWidth={132} />
-          </AdminSection>
-
-          <AdminSection
-            title="会员展示配置"
-            subtitle="统一维护 VIP 权益介绍，前台会员页只展示一次，避免每个时长套餐重复。"
-            action={(
-              <Button variant="outlined" onClick={() => setMembershipConfigDialogOpen(true)}>
-                编辑会员权益
-              </Button>
-            )}
-          >
-            <Stack spacing={1}>
-              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ alignItems: { xs: 'flex-start', sm: 'center' }, justifyContent: 'space-between' }}>
-                <Box sx={{ minWidth: 0 }}>
-                  <Typography sx={{ fontWeight: 900 }}>{membershipConfigForm.title}</Typography>
-                  <Typography variant="body2" color="text.secondary">{membershipConfigForm.subtitle}</Typography>
-                </Box>
-                <Chip size="small" color="primary" variant="outlined" label={`${membershipConfigForm.benefitsText.split('\n').filter((item) => item.trim()).length} 项权益`} />
-              </Stack>
-              <Typography variant="body2" color="text.secondary">{membershipConfigForm.description}</Typography>
-              <Stack direction="row" spacing={0.75} sx={{ flexWrap: 'wrap' }}>
-                {membershipConfigForm.benefitsText.split('\n').map((item) => item.trim()).filter(Boolean).slice(0, 6).map((item) => (
-                  <Chip key={item} size="small" label={item} />
-                ))}
-              </Stack>
-            </Stack>
           </AdminSection>
 
           <AdminSection
@@ -1730,140 +2008,6 @@ export default function AdminBillingPage() {
               </Button>
             </DialogActions>
           </Dialog>
-          <Dialog open={membershipConfigDialogOpen} onClose={() => setMembershipConfigDialogOpen(false)} maxWidth="md" fullWidth>
-            <DialogTitle>编辑会员展示配置</DialogTitle>
-            <DialogContent>
-              <Stack spacing={1.25} sx={{ pt: 1 }}>
-                <TextField label="标题" required value={membershipConfigForm.title} onChange={(event) => updateMembershipConfigForm('title', event.target.value)} fullWidth />
-                <TextField label="副标题" value={membershipConfigForm.subtitle} onChange={(event) => updateMembershipConfigForm('subtitle', event.target.value)} fullWidth />
-                <TextField label="介绍文案" value={membershipConfigForm.description} onChange={(event) => updateMembershipConfigForm('description', event.target.value)} fullWidth multiline minRows={2} />
-                <TextField label="统一 VIP 权益（每行一项）" required value={membershipConfigForm.benefitsText} onChange={(event) => updateMembershipConfigForm('benefitsText', event.target.value)} fullWidth multiline minRows={5} />
-                <TextField label="履约说明" value={membershipConfigForm.fulfillmentNote} onChange={(event) => updateMembershipConfigForm('fulfillmentNote', event.target.value)} fullWidth />
-                <Divider />
-                <Typography variant="subtitle2" sx={{ fontWeight: 900 }}>VIP 等级权益</Typography>
-                <Typography variant="caption" color="text.secondary">权益支持简单 Markdown，使用 **加粗** 高亮与其他等级的不同点；转换比例表示低级剩余时长升级到该等级时的折算比例。</Typography>
-                {!hasEnabledMembershipTier ? <Alert severity="warning">至少需要启用一个 VIP 等级，否则前台无法展示会员套餐。</Alert> : null}
-                {(() => {
-                  const entitlement = membershipConfigForm.entitlements.free || DEFAULT_VIP_ENTITLEMENTS.free;
-                  return (
-                    <Paper variant="outlined" sx={{ p: 1.25, borderRadius: 2 }}>
-                      <Stack spacing={1}>
-                        <Typography variant="subtitle2" sx={{ fontWeight: 900 }}>免费用户限制</Typography>
-                        <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 800 }}>留空表示不限制，0 表示不可用。</Typography>
-                        <TextField label="等级说明" value={entitlement.description} onChange={(event) => updateMembershipEntitlementForm('free', 'description', event.target.value)} fullWidth />
-                        <TextField label="等级权益 Markdown" value={entitlement.benefitsMarkdown} onChange={(event) => updateMembershipEntitlementForm('free', 'benefitsMarkdown', event.target.value)} fullWidth multiline minRows={4} />
-                        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-                          <TextField label="角色上限" value={entitlement.maxCharacters} onChange={(event) => updateMembershipEntitlementForm('free', 'maxCharacters', event.target.value)} fullWidth />
-                          <TextField label="聊天上限" value={entitlement.maxChats} onChange={(event) => updateMembershipEntitlementForm('free', 'maxChats', event.target.value)} fullWidth />
-                        </Stack>
-                        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-                          <TextField label="每日生成次数" value={entitlement.dailyAiGenerationLimit} onChange={(event) => updateMembershipEntitlementForm('free', 'dailyAiGenerationLimit', event.target.value)} fullWidth />
-                          <TextField label="批量角色单次上限" value={entitlement.batchCharacterGenerationLimit} onChange={(event) => updateMembershipEntitlementForm('free', 'batchCharacterGenerationLimit', event.target.value)} fullWidth />
-                        </Stack>
-                        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-                          <TextField label="每日领取点数" value={entitlement.dailyPointGrant} onChange={(event) => updateMembershipEntitlementForm('free', 'dailyPointGrant', event.target.value)} fullWidth />
-                          <TextField label="每月领取点数" value={entitlement.monthlyPointGrant} onChange={(event) => updateMembershipEntitlementForm('free', 'monthlyPointGrant', event.target.value)} fullWidth />
-                        </Stack>
-                        <FormControlLabel
-                          control={<Switch checked={entitlement.cloudSyncEnabled} onChange={(event) => updateMembershipEntitlementForm('free', 'cloudSyncEnabled', event.target.checked)} />}
-                          label="允许云同步"
-                        />
-                        <FormControlLabel
-                          control={<Switch checked={entitlement.assistantArtifactCloudSync} disabled={!entitlement.cloudSyncEnabled} onChange={(event) => updateMembershipEntitlementForm('free', 'assistantArtifactCloudSync', event.target.checked)} />}
-                          label="允许 AI 产物云同步"
-                        />
-                        <FormControlLabel
-                          control={<Switch checked={entitlement.aiProxyEnabled} onChange={(event) => updateMembershipEntitlementForm('free', 'aiProxyEnabled', event.target.checked)} />}
-                          label="允许中转站"
-                        />
-                        <FormControlLabel
-                          control={<Switch checked={entitlement.agentEnabled} onChange={(event) => updateMembershipEntitlementForm('free', 'agentEnabled', event.target.checked)} />}
-                          label="允许 Agent"
-                        />
-                        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-                          <TextField label="官方 AI 平台（每行一个ID）" value={entitlement.officialProviderAccessText} onChange={(event) => updateMembershipEntitlementForm('free', 'officialProviderAccessText', event.target.value)} fullWidth multiline minRows={2} />
-                          <TextField label="点数扣费折扣" value={entitlement.aiBillingDiscount} onChange={(event) => updateMembershipEntitlementForm('free', 'aiBillingDiscount', event.target.value)} helperText="免费用户通常为 1" fullWidth />
-                        </Stack>
-                      </Stack>
-                    </Paper>
-                  );
-                })()}
-                {membershipConfigForm.tiers.map((tier, index) => (
-                  <Paper key={tier.code || index} variant="outlined" sx={{ p: 1.25, borderRadius: 2 }}>
-                    <Stack spacing={1}>
-                      <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap' }}>
-                        <Typography variant="subtitle2" sx={{ fontWeight: 900 }}>{tier.name || tier.code || `等级 ${index + 1}`}</Typography>
-                        <FormControlLabel
-                          control={<Switch checked={tier.enabled} onChange={(event) => updateMembershipTierForm(index, 'enabled', event.target.checked)} />}
-                          label={tier.enabled ? '启用' : '停用'}
-                        />
-                      </Stack>
-                      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-                        <TextField label="等级ID" value={tier.code} onChange={(event) => updateMembershipTierForm(index, 'code', event.target.value)} fullWidth />
-                        <TextField label="等级名称" value={tier.name} onChange={(event) => updateMembershipTierForm(index, 'name', event.target.value)} fullWidth />
-                      </Stack>
-                      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-                        <TextField label="等级排序" value={tier.rank} onChange={(event) => updateMembershipTierForm(index, 'rank', event.target.value)} fullWidth />
-                        <TextField label="升级折算比例" value={tier.conversionRatio} onChange={(event) => updateMembershipTierForm(index, 'conversionRatio', event.target.value)} fullWidth />
-                      </Stack>
-                      <TextField label="等级说明" value={tier.description} onChange={(event) => updateMembershipTierForm(index, 'description', event.target.value)} fullWidth />
-                      <TextField label="等级权益 Markdown" value={tier.benefitsMarkdown} onChange={(event) => updateMembershipTierForm(index, 'benefitsMarkdown', event.target.value)} fullWidth multiline minRows={4} />
-                      {(() => {
-                        const entitlement = membershipConfigForm.entitlements[tier.code] || DEFAULT_VIP_ENTITLEMENTS[tier.code] || DEFAULT_VIP_ENTITLEMENTS.free;
-                        return (
-                          <Box sx={{ borderTop: '1px solid', borderColor: 'divider', pt: 1 }}>
-                            <Stack spacing={1}>
-                              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 800 }}>
-                                用量限制：留空表示不限制，0 表示不可用。
-                              </Typography>
-                              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-                                <TextField label="角色上限" value={entitlement.maxCharacters} onChange={(event) => updateMembershipEntitlementForm(tier.code, 'maxCharacters', event.target.value)} fullWidth />
-                                <TextField label="聊天上限" value={entitlement.maxChats} onChange={(event) => updateMembershipEntitlementForm(tier.code, 'maxChats', event.target.value)} fullWidth />
-                              </Stack>
-                              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-                                <TextField label="每日生成次数" value={entitlement.dailyAiGenerationLimit} onChange={(event) => updateMembershipEntitlementForm(tier.code, 'dailyAiGenerationLimit', event.target.value)} fullWidth />
-                                <TextField label="批量角色单次上限" value={entitlement.batchCharacterGenerationLimit} onChange={(event) => updateMembershipEntitlementForm(tier.code, 'batchCharacterGenerationLimit', event.target.value)} fullWidth />
-                              </Stack>
-                              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-                                <TextField label="每日领取点数" value={entitlement.dailyPointGrant} onChange={(event) => updateMembershipEntitlementForm(tier.code, 'dailyPointGrant', event.target.value)} fullWidth />
-                                <TextField label="每月领取点数" value={entitlement.monthlyPointGrant} onChange={(event) => updateMembershipEntitlementForm(tier.code, 'monthlyPointGrant', event.target.value)} fullWidth />
-                              </Stack>
-                              <FormControlLabel
-                                control={<Switch checked={entitlement.cloudSyncEnabled} onChange={(event) => updateMembershipEntitlementForm(tier.code, 'cloudSyncEnabled', event.target.checked)} />}
-                                label="允许云同步"
-                              />
-                              <FormControlLabel
-                                control={<Switch checked={entitlement.assistantArtifactCloudSync} disabled={!entitlement.cloudSyncEnabled} onChange={(event) => updateMembershipEntitlementForm(tier.code, 'assistantArtifactCloudSync', event.target.checked)} />}
-                                label="允许 AI 产物云同步"
-                              />
-                              <FormControlLabel
-                                control={<Switch checked={entitlement.aiProxyEnabled} onChange={(event) => updateMembershipEntitlementForm(tier.code, 'aiProxyEnabled', event.target.checked)} />}
-                                label="允许中转站"
-                              />
-                              <FormControlLabel
-                                control={<Switch checked={entitlement.agentEnabled} onChange={(event) => updateMembershipEntitlementForm(tier.code, 'agentEnabled', event.target.checked)} />}
-                                label="允许 Agent"
-                              />
-                              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-                                <TextField label="官方 AI 平台（每行一个ID）" value={entitlement.officialProviderAccessText} onChange={(event) => updateMembershipEntitlementForm(tier.code, 'officialProviderAccessText', event.target.value)} fullWidth multiline minRows={2} />
-                                <TextField label="点数扣费折扣" value={entitlement.aiBillingDiscount} onChange={(event) => updateMembershipEntitlementForm(tier.code, 'aiBillingDiscount', event.target.value)} helperText="1=无折扣，0.95=95折，0.9=9折" fullWidth />
-                              </Stack>
-                            </Stack>
-                          </Box>
-                        );
-                      })()}
-                    </Stack>
-                  </Paper>
-                ))}
-              </Stack>
-            </DialogContent>
-            <DialogActions>
-              <Button onClick={() => setMembershipConfigDialogOpen(false)} disabled={savingMembershipConfig}>取消</Button>
-              <Button variant="contained" startIcon={<SaveIcon />} disabled={!canSaveMembershipConfig} onClick={() => void saveMembershipConfig()}>
-                保存配置
-              </Button>
-            </DialogActions>
-          </Dialog>
           <ConfirmDialog
             open={Boolean(deleteTarget)}
             title="删除套餐"
@@ -1874,6 +2018,64 @@ export default function AdminBillingPage() {
             }}
             onConfirm={() => void deletePlan()}
           />
+        </Stack>
+      ) : tab === 2 ? (
+        <Stack spacing={2}>
+          <AdminRequestState loading={plansLoading} error={plansError} onRetry={() => void loadPlans()} />
+          <AdminSection
+            title="会员权益"
+            subtitle="统一维护会员展示文案、等级权益、功能开关、存储/同步上限和提示词召回上限。"
+            action={(
+              <Button variant="contained" startIcon={<SaveIcon />} disabled={!canSaveMembershipConfig} onClick={() => void saveMembershipConfig()}>
+                保存会员权益
+              </Button>
+            )}
+          >
+            <Tabs value={membershipEntitlementTab} onChange={(_event, value: number) => setMembershipEntitlementTab(value)} variant="scrollable" allowScrollButtonsMobile sx={{ mb: 2 }}>
+              <Tab label="说明" />
+              <Tab label="免费" />
+              {membershipConfigForm.tiers.map((tier, index) => (
+                <Tab key={tier.code || index} label={`会员${index + 1}`} />
+              ))}
+            </Tabs>
+            {membershipEntitlementTab === 0 ? (
+              <Stack spacing={1.25}>
+                <TextField label="标题" required value={membershipConfigForm.title} onChange={(event) => updateMembershipConfigForm('title', event.target.value)} fullWidth />
+                <TextField label="副标题" value={membershipConfigForm.subtitle} onChange={(event) => updateMembershipConfigForm('subtitle', event.target.value)} fullWidth />
+                <TextField label="介绍文案" value={membershipConfigForm.description} onChange={(event) => updateMembershipConfigForm('description', event.target.value)} fullWidth multiline minRows={2} />
+                <TextField label="统一 VIP 权益（每行一项）" required value={membershipConfigForm.benefitsText} onChange={(event) => updateMembershipConfigForm('benefitsText', event.target.value)} fullWidth multiline minRows={5} />
+                <TextField label="履约说明" value={membershipConfigForm.fulfillmentNote} onChange={(event) => updateMembershipConfigForm('fulfillmentNote', event.target.value)} fullWidth />
+                {!hasEnabledMembershipTier ? <Alert severity="warning">至少需要启用一个 VIP 等级，否则前台无法展示会员套餐。</Alert> : null}
+                <Stack direction="row" spacing={0.75} sx={{ flexWrap: 'wrap' }}>
+                  {membershipConfigForm.benefitsText.split('\n').map((item) => item.trim()).filter(Boolean).slice(0, 8).map((item) => (
+                    <Chip key={item} size="small" label={item} />
+                  ))}
+                </Stack>
+              </Stack>
+            ) : membershipEntitlementTab === 1 ? (
+              <EntitlementEditor
+                title="免费用户"
+                entitlement={membershipConfigForm.entitlements.free || DEFAULT_VIP_ENTITLEMENTS.free}
+                officialProviderOptions={officialProviderOptions}
+                onEntitlementChange={(key, value) => updateMembershipEntitlementForm('free', key, value)}
+              />
+            ) : (() => {
+              const tierIndex = membershipEntitlementTab - 2;
+              const tier = membershipConfigForm.tiers[tierIndex] || DEFAULT_VIP_TIERS[tierIndex] || DEFAULT_VIP_TIERS[0];
+              const tierCode = tier.code || DEFAULT_VIP_TIERS[tierIndex]?.code || 'basic';
+              const entitlement = membershipConfigForm.entitlements[tierCode] || DEFAULT_VIP_ENTITLEMENTS[tierCode] || DEFAULT_VIP_ENTITLEMENTS.basic;
+              return (
+                <EntitlementEditor
+                  title={tier.name || `会员${tierIndex + 1}`}
+                  tier={tier}
+                  entitlement={entitlement}
+                  officialProviderOptions={officialProviderOptions}
+                  onTierChange={(key, value) => updateMembershipTierForm(tierIndex, key, value)}
+                  onEntitlementChange={(key, value) => updateMembershipEntitlementForm(tierCode, key, value)}
+                />
+              );
+            })()}
+          </AdminSection>
         </Stack>
       ) : (
         <Stack spacing={2}>

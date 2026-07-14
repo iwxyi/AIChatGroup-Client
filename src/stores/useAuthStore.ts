@@ -19,6 +19,7 @@ interface User {
   assistantArtifactCloudSyncEntitled?: boolean;
   aiProxyEntitled?: boolean;
   agentEntitled?: boolean;
+  retentionLimits?: Record<string, { storage: number; recall: number }>;
 }
 
 type AuthMode = 'cloud' | 'local';

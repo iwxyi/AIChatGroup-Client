@@ -30,6 +30,7 @@ import {
   shouldSkipCloudSync,
   updatePendingOperation,
 } from './storeSyncHelpers';
+import { DEFAULT_BASIC_RETENTION_LIMITS, getCurrentRetentionLimits, takeRecentByLimit } from '../services/retentionLimits';
 
 function createLocalCharacterId() {
   return `local-character-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -460,24 +461,15 @@ interface PersistedCharacterState {
   fieldConflicts?: FieldConflictRecord[];
 }
 
-const CHARACTER_RUNTIME_PERSIST_LIMITS = {
-  layeredMemories: 80,
-  runtimeTimeline: 80,
-};
-
-function takeRecentItems<T>(items: T[] | undefined, limit: number): T[] {
-  if (!Array.isArray(items)) return [];
-  return items.length > limit ? items.slice(-limit) : items;
-}
-
 function compactCharacterRuntimeFieldsForPersistence<T extends Partial<AICharacter>>(character: T): T {
+  const limits = getCurrentRetentionLimits();
   return {
     ...character,
     ...(character.layeredMemories !== undefined ? {
-      layeredMemories: takeRecentItems(character.layeredMemories, CHARACTER_RUNTIME_PERSIST_LIMITS.layeredMemories),
+      layeredMemories: takeRecentByLimit(character.layeredMemories, limits.characterLayeredMemories.storage),
     } : {}),
     ...(character.runtimeTimeline !== undefined ? {
-      runtimeTimeline: takeRecentItems(character.runtimeTimeline, CHARACTER_RUNTIME_PERSIST_LIMITS.runtimeTimeline),
+      runtimeTimeline: takeRecentByLimit(character.runtimeTimeline, limits.characterRuntimeTimeline.storage),
     } : {}),
   };
 }
@@ -520,9 +512,9 @@ function buildPersistedCharacterState(state: PersistedCharacterState): Persisted
       background: character.background,
       relationships: character.relationships,
       memory: character.memory,
-      layeredMemories: takeRecentItems(character.layeredMemories, CHARACTER_RUNTIME_PERSIST_LIMITS.layeredMemories),
+      layeredMemories: takeRecentByLimit(character.layeredMemories, getCurrentRetentionLimits().characterLayeredMemories.storage),
       intervention: character.intervention,
-      runtimeTimeline: takeRecentItems(character.runtimeTimeline, CHARACTER_RUNTIME_PERSIST_LIMITS.runtimeTimeline),
+      runtimeTimeline: takeRecentByLimit(character.runtimeTimeline, getCurrentRetentionLimits().characterRuntimeTimeline.storage),
       isPreset: character.isPreset,
       deletedAt: character.deletedAt ?? null,
       createdAt: character.createdAt,
@@ -1585,5 +1577,8 @@ export const useCharacterStore = create<CharacterStore>()(
 export const __characterRuntimePersistenceForTests = {
   compactCharacterPatchForCloud,
   buildPersistedCharacterState,
-  limits: CHARACTER_RUNTIME_PERSIST_LIMITS,
+  limits: {
+    layeredMemories: DEFAULT_BASIC_RETENTION_LIMITS.characterLayeredMemories.storage,
+    runtimeTimeline: DEFAULT_BASIC_RETENTION_LIMITS.characterRuntimeTimeline.storage,
+  },
 };
