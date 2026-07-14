@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Box, Button, Chip, Dialog, DialogContent, DialogTitle, Divider, IconButton, MenuItem, Select, Stack, Switch, Tooltip, Typography } from '@mui/material';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Box, Button, Chip, CircularProgress, Dialog, DialogContent, DialogTitle, Divider, IconButton, MenuItem, Select, Stack, Switch, Tooltip, Typography } from '@mui/material';
 import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined';
 import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined';
 import CloseOutlinedIcon from '@mui/icons-material/CloseOutlined';
@@ -247,13 +247,19 @@ function ArtifactThumbnail({ item, mode }: { item: AssistantArtifactItem; mode: 
   );
 }
 
-function ArtifactPreview({ item, version, expanded = false }: { item: AssistantArtifactItem; version?: AssistantArtifactVersion | null; expanded?: boolean }) {
+function ArtifactPreview({ item, version, expanded = false, hideMermaidLoading = false, onMermaidRenderSettled }: {
+  item: AssistantArtifactItem;
+  version?: AssistantArtifactVersion | null;
+  expanded?: boolean;
+  hideMermaidLoading?: boolean;
+  onMermaidRenderSettled?: () => void;
+}) {
   const content = version ? getArtifactVersionContent(version) : getAssistantArtifactCurrentContent(item);
   if (!content) {
     return <Typography variant="body2" color="text.secondary">当前版本为空。</Typography>;
   }
   if (isRenderableMermaid(item, content)) {
-    return <MermaidDiagram source={content} />;
+    return <MermaidDiagram source={content} hideLoading={hideMermaidLoading} onRenderSettled={onMermaidRenderSettled} />;
   }
   if (item.kind === 'document') {
     return <MarkdownText text={content} forceRich />;
@@ -298,6 +304,7 @@ function AssistantArtifactList({ chatId, selectedArtifactId }: { chatId: string;
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
   const [fullscreenId, setFullscreenId] = useState<string | null>(null);
   const [fullscreenVersionId, setFullscreenVersionId] = useState<string | null>(null);
+  const [pendingFullscreenVersionId, setPendingFullscreenVersionId] = useState<string | null>(null);
 
   useEffect(() => {
     void ensureAssistantArtifactStoreHydrated();
@@ -330,18 +337,42 @@ function AssistantArtifactList({ chatId, selectedArtifactId }: { chatId: string;
     if (!fullscreenItem) return null;
     return fullscreenItem.versions.find((version) => version.id === fullscreenVersionId) || getArtifactCurrentVersion(fullscreenItem);
   }, [fullscreenItem, fullscreenVersionId]);
+  const pendingFullscreenVersion = useMemo(() => {
+    if (!fullscreenItem || !pendingFullscreenVersionId) return null;
+    return fullscreenItem.versions.find((version) => version.id === pendingFullscreenVersionId) || null;
+  }, [fullscreenItem, pendingFullscreenVersionId]);
+  const isFullscreenVersionRendering = Boolean(pendingFullscreenVersion);
   const fullscreenVersionIndex = fullscreenItem && fullscreenVersion
     ? fullscreenItem.versions.findIndex((version) => version.id === fullscreenVersion.id)
     : -1;
   const openFullscreen = (item: AssistantArtifactItem) => {
     setFullscreenId(item.id);
     setFullscreenVersionId(getArtifactCurrentVersion(item)?.id || null);
+    setPendingFullscreenVersionId(null);
   };
+  const closeFullscreen = useCallback(() => {
+    setFullscreenId(null);
+    setPendingFullscreenVersionId(null);
+  }, []);
+  useEffect(() => {
+    if (!fullscreenItem) setPendingFullscreenVersionId(null);
+  }, [fullscreenItem]);
   const stepFullscreenVersion = (direction: -1 | 1) => {
-    if (!fullscreenItem || fullscreenVersionIndex < 0) return;
+    if (!fullscreenItem || fullscreenVersionIndex < 0 || isFullscreenVersionRendering) return;
     const next = fullscreenItem.versions[fullscreenVersionIndex + direction];
-    if (next) setFullscreenVersionId(next.id);
+    if (!next) return;
+    const nextContent = getArtifactVersionContent(next);
+    if (isRenderableMermaid(fullscreenItem, nextContent)) {
+      setPendingFullscreenVersionId(next.id);
+      return;
+    }
+    setFullscreenVersionId(next.id);
   };
+  const handlePendingFullscreenVersionReady = useCallback(() => {
+    if (!pendingFullscreenVersionId) return;
+    setFullscreenVersionId(pendingFullscreenVersionId);
+    setPendingFullscreenVersionId(null);
+  }, [pendingFullscreenVersionId]);
 
   const toggleExpanded = (artifactId: string) => {
     setExpandedIds((prev) => {
@@ -570,7 +601,7 @@ function AssistantArtifactList({ chatId, selectedArtifactId }: { chatId: string;
 
       <Dialog
         open={Boolean(fullscreenItem)}
-        onClose={() => setFullscreenId(null)}
+        onClose={closeFullscreen}
         fullScreen
         slotProps={{
           paper: {
@@ -627,15 +658,19 @@ function AssistantArtifactList({ chatId, selectedArtifactId }: { chatId: string;
                   },
                 }}
               >
-                <IconButton onClick={() => stepFullscreenVersion(-1)} disabled={fullscreenVersionIndex <= 0}>
+                <IconButton onClick={() => stepFullscreenVersion(-1)} disabled={fullscreenVersionIndex <= 0 || isFullscreenVersionRendering}>
                   <NavigateBeforeOutlinedIcon />
                 </IconButton>
                 <Box sx={{ minWidth: 54, display: 'grid', placeItems: 'center' }}>
-                  <Typography variant="caption" color="text.secondary">
-                    {getArtifactVersionLabel(fullscreenItem, fullscreenVersion)}
-                  </Typography>
+                  {isFullscreenVersionRendering ? (
+                    <CircularProgress size={16} thickness={5} />
+                  ) : (
+                    <Typography variant="caption" color="text.secondary">
+                      {getArtifactVersionLabel(fullscreenItem, fullscreenVersion)}
+                    </Typography>
+                  )}
                 </Box>
-                <IconButton onClick={() => stepFullscreenVersion(1)} disabled={fullscreenVersionIndex < 0 || fullscreenVersionIndex >= fullscreenItem.versions.length - 1}>
+                <IconButton onClick={() => stepFullscreenVersion(1)} disabled={fullscreenVersionIndex < 0 || fullscreenVersionIndex >= fullscreenItem.versions.length - 1 || isFullscreenVersionRendering}>
                   <NavigateNextOutlinedIcon />
                 </IconButton>
                 <IconButton onClick={() => void copyTextToClipboard(getArtifactVersionContent(fullscreenVersion))}>
@@ -644,7 +679,7 @@ function AssistantArtifactList({ chatId, selectedArtifactId }: { chatId: string;
                 <IconButton onClick={() => downloadArtifact(fullscreenItem, getArtifactVersionContent(fullscreenVersion))}>
                   <DownloadOutlinedIcon />
                 </IconButton>
-                <IconButton onClick={() => setFullscreenId(null)} aria-label="关闭产物详情">
+                <IconButton onClick={closeFullscreen} aria-label="关闭产物详情">
                   <CloseOutlinedIcon />
                 </IconButton>
               </Stack>
@@ -656,7 +691,28 @@ function AssistantArtifactList({ chatId, selectedArtifactId }: { chatId: string;
                 bgcolor: 'transparent',
               }}
             >
-              <ArtifactPreview item={fullscreenItem} version={fullscreenVersion} expanded />
+              <Box sx={{ position: 'relative' }}>
+                <ArtifactPreview item={fullscreenItem} version={fullscreenVersion} expanded />
+                {pendingFullscreenVersion ? (
+                  <Box
+                    aria-hidden
+                    sx={{
+                      position: 'absolute',
+                      inset: 0,
+                      opacity: 0,
+                      pointerEvents: 'none',
+                    }}
+                  >
+                    <ArtifactPreview
+                      item={fullscreenItem}
+                      version={pendingFullscreenVersion}
+                      expanded
+                      hideMermaidLoading
+                      onMermaidRenderSettled={handlePendingFullscreenVersionReady}
+                    />
+                  </Box>
+                ) : null}
+              </Box>
             </DialogContent>
           </>
         ) : null}

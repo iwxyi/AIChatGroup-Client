@@ -3,9 +3,11 @@ import { memo, useEffect, useId, useState } from 'react';
 
 interface MermaidDiagramProps {
   source: string;
+  hideLoading?: boolean;
+  onRenderSettled?: () => void;
 }
 
-function MermaidDiagram({ source }: MermaidDiagramProps) {
+function MermaidDiagram({ source, hideLoading = false, onRenderSettled }: MermaidDiagramProps) {
   const reactId = useId().replace(/[^a-zA-Z0-9_-]/g, '');
   const [svg, setSvg] = useState('');
   const [error, setError] = useState('');
@@ -25,15 +27,21 @@ function MermaidDiagram({ source }: MermaidDiagramProps) {
           theme: 'default',
         });
         const result = await mermaid.render(`mermaid-${reactId}-${Date.now()}`, source);
-        if (!cancelled) setSvg(result.svg);
+        if (!cancelled) {
+          setSvg(result.svg);
+          onRenderSettled?.();
+        }
       })
       .catch((err: unknown) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : String(err));
+          onRenderSettled?.();
+        }
       });
     return () => {
       cancelled = true;
     };
-  }, [reactId, source]);
+  }, [onRenderSettled, reactId, source]);
 
   return (
     <Box
@@ -47,7 +55,7 @@ function MermaidDiagram({ source }: MermaidDiagramProps) {
         overflowX: 'auto',
       })}
     >
-      {!svg && !error ? (
+      {!hideLoading && !svg && !error ? (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 1, color: 'text.secondary' }}>
           <CircularProgress size={16} />
           <Typography variant="caption">正在渲染流程图</Typography>
