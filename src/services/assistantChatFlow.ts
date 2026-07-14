@@ -13,7 +13,10 @@ const MAX_ASSISTANT_HISTORY = 24;
 const MAX_ASSISTANT_TITLE_CONTEXT = 12;
 const DEFAULT_ASSISTANT_CHAT_NAME = '新助手会话';
 const MAX_GENERATED_TITLE_LENGTH = 28;
+const MAX_ASSISTANT_MEDIA_TASKS = 3;
 const pendingAssistantTitleChatIds = new Set<string>();
+
+type AssistantMediaTask = NonNullable<AssistantAgentPatchSet['mediaTasks']>[number];
 
 function ensureAssistantReplyStillCurrent(params: { signal?: AbortSignal; shouldContinue?: () => boolean }) {
   if (params.signal?.aborted) throw new GenerationCancelledError();
@@ -41,6 +44,21 @@ function buildAssistantSystemPrompt() {
   ].join('\n');
 }
 
+function buildAssistantStructuredSystemPrompt() {
+  return [
+    buildAssistantSystemPrompt(),
+    '',
+    '必须只输出严格 JSON，不要 Markdown 围栏，不要解释。',
+    '输出格式：{"assistantMessage":"面向用户的回复，支持 Markdown","mediaTasks":[{"kind":"image","prompt":"给图片模型的完整提示词","altText":"图片标题或替代文本","referenceImages":[{"url":"data:image/png;base64,... 或 https://...","mimeType":"image/png","label":"参考图"}]}]}',
+    '规则：',
+    '1. 用户明确要求生成、发送、画、做一张图片/照片/插画/图像时，mediaTasks 必须包含 image 任务；不要回答“无法直接发送图片”。',
+    '2. 图片由独立图片模型生成。assistantMessage 应简短说明正在生成或已加入生成队列，不要伪造图片 URL、base64 或 Markdown 图片链接。',
+    '3. 用户只是普通问答、资料查询、写作、解释或代码请求时，mediaTasks 为空，assistantMessage 给出完整回答。',
+    '4. 图片 prompt 要具体、可执行，保留用户主体、风格、构图、材质、光线和限制；避免水印、文字叠加、URL、品牌侵权或无法执行的要求。',
+    '5. 如用户要求局部编辑、蒙版修改或指定区域修改，但没有明确可用区域标注，说明当前只能参考原图重新生成整体变体。',
+  ].join('\n');
+}
+
 function isAssistantAgentArtifactEnabled(chat: GroupChat) {
   return Boolean(chat.modeState.assistantCapabilities?.agent && chat.modeState.assistantCapabilities?.artifacts);
 }
@@ -56,6 +74,67 @@ function createAssistantMediaAttachments(patchSet: AssistantAgentPatchSet, times
     createdAt: timestamp + index,
     updatedAt: timestamp + index,
   }));
+}
+
+function textField(value: unknown, max: number) {
+  return typeof value === 'string' ? value.trim().slice(0, max) : '';
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function parseJsonObject(value: string) {
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    const match = /\{[\s\S]*\}/.exec(value);
+    if (!match) return null;
+    try {
+      return JSON.parse(match[0]) as unknown;
+    } catch {
+      return null;
+    }
+  }
+}
+
+function normalizeAssistantMediaTasks(value: unknown): AssistantMediaTask[] {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, MAX_ASSISTANT_MEDIA_TASKS).flatMap((item): AssistantMediaTask[] => {
+    if (!isRecord(item) || item.kind !== 'image') return [];
+    const prompt = textField(item.prompt, 4000);
+    if (!prompt) return [];
+    const referenceImages = Array.isArray(item.referenceImages)
+      ? item.referenceImages.slice(0, 8).flatMap((entry): NonNullable<AssistantMediaTask['referenceImages']> => {
+          if (!isRecord(entry)) return [];
+          const url = textField(entry.url, 12_000);
+          if (!url || (!url.startsWith('data:image/') && !/^https?:\/\//i.test(url))) return [];
+          return [{
+            url,
+            mimeType: textField(entry.mimeType, 120) || undefined,
+            label: textField(entry.label, 160) || undefined,
+          }];
+        })
+      : undefined;
+    return [{
+      kind: 'image',
+      prompt,
+      altText: textField(item.altText, 160) || textField(item.title, 160) || 'AI 图片',
+      referenceImages: referenceImages?.length ? referenceImages : undefined,
+    }];
+  });
+}
+
+function normalizeAssistantStructuredReply(raw: string): Pick<AssistantAgentPatchSet, 'assistantMessage' | 'mediaTasks'> {
+  const parsed = parseJsonObject(raw);
+  if (!isRecord(parsed)) {
+    return { assistantMessage: raw.trim(), mediaTasks: [] };
+  }
+  const mediaTasks = normalizeAssistantMediaTasks(parsed.mediaTasks);
+  return {
+    assistantMessage: textField(parsed.assistantMessage, 8000) || (mediaTasks.length ? '图片已加入生成队列。' : ''),
+    mediaTasks,
+  };
 }
 
 async function processAssistantMediaAttachments(params: {
@@ -459,38 +538,13 @@ export async function runAssistantChatReplyFlow(params: {
       if (agentResult?.message) return agentResult.message;
     }
   }
-  const assistantDraft: Omit<Message, 'id' | 'timestamp' | 'isDeleted'> = {
-    chatId: params.chatId,
-    type: 'ai',
-    senderId: 'assistant',
-    senderName: '助手',
-    content: '',
-    emotion: 0,
-    metadata: {
-      format: 'markdown',
-      assistant: {
-        mode: 'general',
-      },
-    },
-  };
-  const placeholder = createStreamingLocalMessage(
-    attachMessageToActiveBranch(params.chat, params.currentMessages, assistantDraft) as Omit<Message, 'id' | 'timestamp' | 'isDeleted'>,
-    { timestamp: params.timestamp },
-  );
-  let streamingMessage = { ...placeholder, isStreaming: true };
-  params.upsertMessage(streamingMessage);
-
   const generated = await generateResponse(
     resolvedApi,
-    buildAssistantSystemPrompt(),
+    buildAssistantStructuredSystemPrompt(),
     toAssistantPromptMessages(params.currentMessages),
-    (content) => {
-      ensureAssistantReplyStillCurrent(params);
-      streamingMessage = { ...streamingMessage, content, isStreaming: true };
-      params.upsertMessage(streamingMessage);
-    },
+    undefined,
     {
-      responseFormat: 'text',
+      responseFormat: 'json',
       signal: params.signal,
       aiUsage: {
         type: 'assistant_chat',
@@ -501,17 +555,36 @@ export async function runAssistantChatReplyFlow(params: {
     },
   );
   ensureAssistantReplyStillCurrent(params);
-  const content = generated.trim();
+  const structuredReply = normalizeAssistantStructuredReply(generated);
+  const attachments = createAssistantMediaAttachments({
+    assistantMessage: structuredReply.assistantMessage,
+    patches: [],
+    mediaTasks: structuredReply.mediaTasks,
+  }, params.timestamp || Date.now());
+  const content = structuredReply.assistantMessage.trim() || (attachments.length ? '图片已加入生成队列。' : '');
   if (!content) throw new Error('助手没有生成有效内容');
-  const persisted = await persistLocalFirstMessage({
-    message: {
-      ...streamingMessage,
-      content,
-      isStreaming: false,
-    },
-    existingLocalMessage: streamingMessage,
+  const persisted = await persistAssistantFinalMessage({
+    chat: params.chat,
+    chatId: params.chatId,
+    currentMessages: params.currentMessages,
     upsertMessage: params.upsertMessage,
+    content,
+    metadata: attachments.length ? {
+      attachments,
+      generation: {
+        status: 'queued',
+        updatedAt: Date.now(),
+      },
+    } : undefined,
+    timestamp: params.timestamp,
   });
+  if (attachments.length) {
+    void processAssistantMediaAttachments({
+      message: persisted,
+      aiProfiles: params.aiProfiles,
+      upsertMessage: params.upsertMessage,
+    }).catch(() => undefined);
+  }
   await params.updateChat(params.chatId, {
     lastMessageAt: persisted.timestamp,
     latestMessage: persisted,
