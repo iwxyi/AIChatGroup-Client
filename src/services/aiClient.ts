@@ -49,9 +49,13 @@ export type AiUsageMetadata = {
 export type GenerateResponseOptions = {
   responseFormat?: 'text' | 'json';
   maxTokens?: number;
+  maxInputChars?: number;
   signal?: AbortSignal;
   aiUsage?: AiUsageMetadata;
 };
+
+const DEFAULT_MAX_TEXT_INPUT_CHARS = 600_000;
+const INLINE_IMAGE_DATA_URL_PATTERN = /data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/=]{1024,}/i;
 
 function isLegacyOfficialProvider(provider: APIConfig['provider']) {
   return provider === 'official' || String(provider).startsWith('official-');
@@ -159,6 +163,21 @@ function splitSystemMessages(messages: ChatMessage[], systemPrompt: string) {
     systemPrompt: systemParts.join('\n\n'),
     conversation: conversation.length > 0 ? conversation : [{ role: 'user' as const, content: 'Hello' }],
   };
+}
+
+function assertTextInputWithinBudget(systemPrompt: string, messages: ChatMessage[], options: GenerateResponseOptions = {}) {
+  const textParts = [systemPrompt, ...messages.map((message) => message.content || '')];
+  const inlineDataUrlPart = textParts.find((part) => INLINE_IMAGE_DATA_URL_PATTERN.test(part));
+  if (inlineDataUrlPart) {
+    const sample = inlineDataUrlPart.slice(0, 120).replace(/\s+/g, ' ');
+    throw new Error(`AI text request contains inline image data. Store images as attachments/assets and pass lightweight references instead. Sample: ${sample}`);
+  }
+
+  const maxInputChars = options.maxInputChars ?? DEFAULT_MAX_TEXT_INPUT_CHARS;
+  const totalChars = textParts.reduce((sum, part) => sum + part.length, 0);
+  if (totalChars > maxInputChars) {
+    throw new Error(`AI text request is too large (${totalChars} chars, limit ${maxInputChars}). Compact conversation or artifact context before calling the model.`);
+  }
 }
 
 function buildAnthropicUrl(baseUrl: string) {
@@ -757,6 +776,7 @@ async function generateOpenAICompatibleResponse(
         Authorization: `Bearer ${config.apiKey}`,
       },
       body: JSON.stringify(requestBody),
+      signal: options.signal,
     });
 
     await parseSSEStream(response, (parsed) => {
@@ -777,6 +797,7 @@ async function generateOpenAICompatibleResponse(
       Authorization: `Bearer ${config.apiKey}`,
     },
     body: JSON.stringify(requestBody),
+    signal: options.signal,
   });
 
   const result = await parseJsonResponse<{
@@ -1271,6 +1292,7 @@ export const generateResponse = async (
   onChunk?: (chunk: string) => void,
   options: GenerateResponseOptions = {},
 ): Promise<string> => {
+  assertTextInputWithinBudget(systemPrompt, messages, options);
   if (usesOfficialProxy(config)) {
     return generateOfficialResponse(config, systemPrompt, messages, onChunk, options);
   }
@@ -1289,6 +1311,7 @@ export const generateJsonResponse = async (
 ): Promise<string> => {
   const jsonPrompt = `${systemPrompt}\n\nThe response must be exactly one valid JSON object. Do not wrap it in markdown.`;
   const jsonOptions: GenerateResponseOptions = { ...options, responseFormat: 'json' };
+  assertTextInputWithinBudget(jsonPrompt, messages, jsonOptions);
 
   try {
     if (usesOfficialProxy(config)) {

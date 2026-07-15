@@ -1,9 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { generateResponse } from './aiClient';
 
 const fetchMock = globalThis.fetch;
 
 describe('aiClient multimodal requests', () => {
+  afterEach(() => {
+    globalThis.fetch = fetchMock;
+  });
+
   it('builds OpenAI-compatible image message content', async () => {
     const calls: RequestInit[] = [];
     globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
@@ -22,7 +26,6 @@ describe('aiClient multimodal requests', () => {
       { type: 'text', text: '看这张图' },
       { type: 'image_url', image_url: { url: 'data:image/png;base64,AAA' } },
     ]);
-    globalThis.fetch = fetchMock;
   });
 
   it('builds Anthropic image content with base64 source', async () => {
@@ -43,7 +46,6 @@ describe('aiClient multimodal requests', () => {
       { type: 'text', text: '看图' },
       { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: 'BBB' } },
     ]);
-    globalThis.fetch = fetchMock;
   });
 
   it('builds Gemini image parts with inlineData', async () => {
@@ -64,6 +66,40 @@ describe('aiClient multimodal requests', () => {
       { text: '图片里是什么' },
       { inlineData: { mimeType: 'image/webp', data: 'CCC' } },
     ]);
-    globalThis.fetch = fetchMock;
+  });
+
+  it('rejects inline image data in text content before making a text request', async () => {
+    let called = false;
+    globalThis.fetch = (async () => {
+      called = true;
+      return new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }) as typeof fetch;
+
+    await expect(generateResponse(
+      { provider: 'openai', apiKey: 'k', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4.1' },
+      'system',
+      [{
+        role: 'user',
+        content: `参考图：data:image/png;base64,${'A'.repeat(2048)}`,
+      }],
+    )).rejects.toThrow(/inline image data/i);
+    expect(called).toBe(false);
+  });
+
+  it('rejects oversized text payloads before making a request', async () => {
+    let called = false;
+    globalThis.fetch = (async () => {
+      called = true;
+      return new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }) as typeof fetch;
+
+    await expect(generateResponse(
+      { provider: 'openai', apiKey: 'k', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4.1' },
+      'system',
+      [{ role: 'user', content: 'x'.repeat(128) }],
+      undefined,
+      { maxInputChars: 32 },
+    )).rejects.toThrow(/too large/i);
+    expect(called).toBe(false);
   });
 });

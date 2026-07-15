@@ -8,7 +8,7 @@ import { generateResponse } from './aiClient';
 import { GenerationCancelledError } from './generationCancellation';
 import { attachMessageToActiveBranch } from './messageBranching';
 import { useChatStore } from '../stores/useChatStore';
-import { buildAiSearchPromptBlock } from './aiSearchContext';
+import { api, ApiError, type AiSearchResultItem } from './api';
 
 const MAX_ASSISTANT_HISTORY = 24;
 const MAX_ASSISTANT_TITLE_CONTEXT = 12;
@@ -46,13 +46,103 @@ function isAssistantAgentArtifactEnabled(chat: GroupChat) {
   return Boolean(chat.modeState.assistantCapabilities?.agent && chat.modeState.assistantCapabilities?.artifacts);
 }
 
+function isAssistantAgentSearchEnabled(chat: GroupChat) {
+  return Boolean(chat.modeState.assistantCapabilities?.agent && chat.modeState.assistantCapabilities?.webSearch);
+}
+
+function formatAssistantSearchResult(item: AiSearchResultItem, index: number) {
+  const body = item.summary || item.snippet || '';
+  const source = [item.siteName, item.publishedAt].filter(Boolean).join(' / ');
+  return [
+    `${index + 1}. ${item.title}`,
+    `URL: ${item.url}`,
+    source ? `Source: ${source}` : '',
+    body ? `Excerpt: ${body}` : '',
+  ].filter(Boolean).join('\n');
+}
+
+function buildAssistantSearchResultPromptBlock(params: {
+  query: string;
+  providerCode: string;
+  pointCost: number;
+  results: AiSearchResultItem[];
+}) {
+  return [
+    '## Web Search Result',
+    `Query: ${params.query}`,
+    `Provider: ${params.providerCode}; charged ${params.pointCost} AI points.`,
+    'Live web search results are available below. Use them when relevant; do not say you cannot browse or cannot access current information. Do not invent citations. Prefer concise synthesis over listing every result.',
+    params.results.map(formatAssistantSearchResult).join('\n\n') || 'No usable result items were returned.',
+  ].join('\n');
+}
+
+async function generateAssistantSearchAnswer(params: {
+  api: APIConfig;
+  chatId: string;
+  userMessage: Message;
+  messages: Message[];
+  searchQuery: string;
+  signal?: AbortSignal;
+}) {
+  let searchPromptBlock = '';
+  try {
+    const response = await api.searchWeb(params.searchQuery, {
+      source: 'assistant_agent',
+      resourceId: params.chatId,
+    });
+    searchPromptBlock = buildAssistantSearchResultPromptBlock({
+      query: response.query,
+      providerCode: response.providerCode,
+      pointCost: response.pointCost,
+      results: response.results,
+    });
+  } catch (error) {
+    const expectedSkip = error instanceof ApiError && (
+      error.code === 'AI_SEARCH_ENTITLEMENT_REQUIRED'
+      || error.code === 'AI_SEARCH_PROVIDER_UNAVAILABLE'
+      || error.code === 'AI_SEARCH_POINTS_INSUFFICIENT'
+      || error.status === 401
+    );
+    searchPromptBlock = [
+      '## Web Search Result',
+      `Query: ${params.searchQuery}`,
+      `Search failed: ${error instanceof Error ? error.message : 'unknown error'}`,
+      expectedSkip
+        ? 'Tell the user the search could not be performed because the capability, provider, account, or points are unavailable. Do not invent current facts.'
+        : 'Tell the user the search failed and answer only from stable knowledge if possible. Do not invent current facts.',
+    ].join('\n');
+  }
+  return generateResponse(
+    params.api,
+    [
+      buildAssistantSystemPrompt(),
+      searchPromptBlock,
+      'Answer the latest user request using the search result above. Keep the answer objective and cite URLs when useful.',
+    ].join('\n\n'),
+    toAssistantPromptMessages(withLatestUserMessage(params.messages, params.userMessage)),
+    undefined,
+    {
+      responseFormat: 'text',
+      signal: params.signal,
+      aiUsage: {
+        type: 'assistant_chat',
+        label: '助手Agent搜索回答',
+        scope: 'chat',
+        resourceId: params.chatId,
+      },
+    },
+  );
+}
+
 function createAssistantMediaAttachments(patchSet: AssistantAgentPatchSet, timestamp: number): MessageAttachment[] {
   return (patchSet.mediaTasks || []).map((task, index) => ({
     id: `assistant-image-${timestamp}-${index + 1}`,
     kind: 'image',
     status: 'queued',
+    slotId: task.slotId || `image-${index + 1}`,
     promptText: task.prompt,
     altText: task.altText || 'AI 图片',
+    caption: task.userCaption || task.altText,
     aspectRatio: task.aspectRatio,
     imageSize: task.imageSize,
     referenceImages: task.referenceImages,
@@ -109,8 +199,36 @@ async function persistAssistantArtifactsFromReply(params: {
     messages: params.messages,
     userMessage: params.userMessage,
     existingArtifacts,
+    toolCapabilities: {
+      webSearch: isAssistantAgentSearchEnabled(params.chat),
+    },
     signal: params.signal,
   });
+  if (plan.intent === 'search') {
+    const query = plan.searchQuery?.trim() || params.userMessage.content.trim();
+    const answer = await generateAssistantSearchAnswer({
+      api: params.api,
+      chatId: params.chatId,
+      userMessage: params.userMessage,
+      messages: params.messages,
+      searchQuery: query,
+      signal: params.signal,
+    });
+    const content = answer.trim() || '搜索已完成，但没有生成有效回答。';
+    const assistantMessage = await persistAssistantFinalMessage({
+      chat: params.chat,
+      chatId: params.chatId,
+      currentMessages: params.messages,
+      content,
+      timestamp: params.timestamp,
+      upsertMessage: params.upsertMessage,
+    });
+    await params.updateChat(params.chatId, {
+      lastMessageAt: assistantMessage.timestamp,
+      latestMessage: assistantMessage,
+    });
+    return { message: assistantMessage, patchesCommitted: 0 };
+  }
   if (plan.intent === 'chat' && plan.assistantMessage?.trim()) {
     const assistantMessage = await persistAssistantFinalMessage({
       chat: params.chat,
@@ -257,7 +375,7 @@ export function buildAgentArtifactReplyContent(patchSet: AssistantAgentPatchSet)
   const visiblePatches = patchSet.patches.filter((patch) => patch.content || patch.files?.length).slice(0, 3);
   const hasImageTasks = Boolean(patchSet.mediaTasks?.length);
   const imageTaskNotice = hasImageTasks ? '正在生成图片，完成后会自动显示。' : '';
-  if (!visiblePatches.length && hasImageTasks) return imageTaskNotice;
+  if (!visiblePatches.length && hasImageTasks) return intro || imageTaskNotice;
   if (!visiblePatches.length) return intro;
   return `${intro}${visiblePatches.map(formatPatchForBubble).join('')}${imageTaskNotice ? `\n\n${imageTaskNotice}` : ''}`;
 }
@@ -335,6 +453,11 @@ function toAssistantPromptMessages(messages: Message[]) {
       content: message.content,
     }))
     .filter((message) => message.content.trim());
+}
+
+function withLatestUserMessage(messages: Message[], userMessage: Message) {
+  if (messages.some((message) => message.id === userMessage.id)) return messages;
+  return [...messages, userMessage];
 }
 
 function latestUserMessage(messages: Message[]) {
@@ -516,20 +639,9 @@ export async function runAssistantChatReplyFlow(params: {
   );
   let streamingMessage = { ...placeholder, isStreaming: true };
   params.upsertMessage(streamingMessage);
-  const searchPromptBlock = await buildAiSearchPromptBlock({
-    chat: params.chat,
-    messages: params.currentMessages,
-    enabled: Boolean(params.chat.modeState.assistantCapabilities?.agent && params.chat.modeState.assistantCapabilities?.webSearch),
-    signal: params.signal,
-  });
-  const systemPrompt = [
-    buildAssistantSystemPrompt(),
-    searchPromptBlock,
-  ].filter(Boolean).join('\n\n');
-
   const generated = await generateResponse(
     resolvedApi,
-    systemPrompt,
+    buildAssistantSystemPrompt(),
     toAssistantPromptMessages(params.currentMessages),
     (content) => {
       ensureAssistantReplyStillCurrent(params);

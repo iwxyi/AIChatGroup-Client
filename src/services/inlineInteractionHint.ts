@@ -84,6 +84,11 @@ export interface InlineInteractionEnvelope {
   storyChoices?: InlineStoryChoice[] | null;
   deliberationArtifacts?: InlineDeliberationArtifacts | null;
   presenceUpdate?: MessagePresenceUpdate | null;
+  toolRequest?: {
+    type: 'web_search';
+    query: string;
+    reason?: string | null;
+  } | null;
 }
 
 function cleanJsonLikeText(value: string) {
@@ -310,6 +315,8 @@ export function buildInlineInteractionContract(params: {
     audio: boolean;
   };
   mediaRequested?: boolean;
+  webSearchEnabled?: boolean;
+  webSearchResultInjected?: boolean;
 }) {
   const isStoryReader = params.chat.sessionKind?.scenarioId === 'story-reader';
   const isAnalysisRoom = resolveSessionFamilyKey(params.chat) === 'analysis';
@@ -325,6 +332,9 @@ export function buildInlineInteractionContract(params: {
     : '';
   const deliberationExample = isAnalysisRoom
     ? `,\n  "deliberationArtifacts": {"claims":[{"text":"从本条可见回复中抽取的论点","stance":"review","reason":"这条可见回复为什么支持该论点","confidence":0.8}]}`
+    : '';
+  const toolRequestExample = params.webSearchEnabled && !params.webSearchResultInjected && !isStoryReader
+    ? ', "toolRequest": null'
     : '';
 
   const intentionalRepeatRules = `\n\nRules for intentionalRepeat:
@@ -430,11 +440,14 @@ ${transcriptScope}${recentSocialEvents ? `\n\nRecent social events to avoid dupl
 
   return `\n\nOutput contract:
 Return exactly one JSON object:
-{"content":"visible first bubble","extraMessages":["optional later bubble from the same speaker"],"intentionalRepeat":false${mediaExample}${deliberationExample},"presenceUpdate":null,"conflictFocus":null,"interactionHints":null,"socialEventHints":null}
+{"content":"visible first bubble","extraMessages":["optional later bubble from the same speaker"],"intentionalRepeat":false${mediaExample}${deliberationExample},"presenceUpdate":null,"conflictFocus":null,"interactionHints":null,"socialEventHints":null${toolRequestExample}}
 
 JSON rules: parseable JSON only; the first character must be { and the last character must be }. No markdown, comments, bracketed protocol notes, trailing commas, undefined, or TypeScript unions. Use null for absent optional fields. content must be a non-empty visible chat message, not an explanation of this contract; do not use whitespace, empty string, or null to represent silence. Escape ASCII quotes inside strings. intensity=1-5; confidence/severity=0-1.
 
 extraMessages: use null when there are no later sends. Use an array only for optional later bubbles from the same speaker, max 4, when the reply would naturally arrive as consecutive chat messages. Do not split one sentence into fragments or use it for another actor. One bubble may contain multiple paragraphs; multiple bubbles should have distinct social purposes. Judge all hidden fields from content+extraMessages.${turnPlanRules}${deliberationRules}
+
+${params.webSearchEnabled && !params.webSearchResultInjected && !isStoryReader ? `web_search toolRequest: Use this only when the speaker cannot answer responsibly from the supplied conversation and stable knowledge, and live/current/external facts are actually required. If no search is needed, keep toolRequest=null and answer normally. When search is needed, set content to a short in-character waiting line and set {"type":"web_search","query":"specific search query","reason":"why live search is needed"}. Do not invent search results.` : ''}
+${params.webSearchResultInjected && !isStoryReader ? 'web_search result: Search results have already been supplied in this prompt. Use them if relevant, cite URLs naturally when needed, and keep toolRequest=null. Do not ask for another search in this turn.' : ''}
 
 presenceUpdate: null unless the speaker explicitly says they are leaving/away/sleeping/busy/offline or explicitly back. Away shape: {"status":"away","activity":"睡觉/忙工作/洗澡等","reason":"visible reason","durationMinutes":30}; pick realistic duration. Do not mark away for ordinary goodnight/farewell jokes.
 

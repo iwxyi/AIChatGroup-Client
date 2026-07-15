@@ -50,7 +50,7 @@ import { normalizeStoryChoiceSuggestions } from './storyChoices';
 import type { StoryContinuationState } from './narrativeRuntime';
 import { sanitizeUserFacingText } from './displayTextSanitizer';
 import { useSettingsStore } from '../stores/useSettingsStore';
-import { buildAiSearchPromptBlock } from './aiSearchContext';
+import { api, ApiError, type AiSearchResultItem } from './api';
 
 export interface GeneratedRoundMessage extends Omit<Message, 'id' | 'timestamp' | 'isDeleted'> {
   extraMessages?: string[] | null;
@@ -88,6 +88,14 @@ export interface LocalInterceptionEvent {
 }
 
 type ResponseSurfaceKind = 'chat' | 'professional' | 'creative' | 'longform';
+type WebSearchTurnCacheEntry = {
+  expiresAt: number;
+  promptBlock: string;
+  query: string;
+};
+
+const WEB_SEARCH_TURN_CACHE_TTL_MS = 5 * 60 * 1000;
+const webSearchTurnCache = new Map<string, WebSearchTurnCacheEntry>();
 
 interface ResponseSurface {
   kind: ResponseSurfaceKind;
@@ -2511,6 +2519,81 @@ function parseRawInlineEnvelopeObject(raw: string): Record<string, unknown> | nu
   }
 }
 
+function normalizeWebSearchToolRequest(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const raw = value as Record<string, unknown>;
+  if (raw.type !== 'web_search') return null;
+  const query = typeof raw.query === 'string' ? raw.query.trim().slice(0, 300) : '';
+  if (!query) return null;
+  const reason = typeof raw.reason === 'string' ? raw.reason.trim().slice(0, 240) : '';
+  return {
+    type: 'web_search' as const,
+    query,
+    reason: reason || null,
+  };
+}
+
+function formatWebSearchResult(item: AiSearchResultItem, index: number) {
+  const body = item.summary || item.snippet || '';
+  const source = [item.siteName, item.publishedAt].filter(Boolean).join(' / ');
+  return [
+    `${index + 1}. ${item.title}`,
+    `URL: ${item.url}`,
+    source ? `Source: ${source}` : '',
+    body ? `Excerpt: ${body}` : '',
+  ].filter(Boolean).join('\n');
+}
+
+function buildWebSearchResultPromptBlock(params: {
+  query: string;
+  providerCode: string;
+  pointCost: number;
+  results: AiSearchResultItem[];
+}) {
+  return [
+    '## Web Search Result',
+    `Query: ${params.query}`,
+    `Provider: ${params.providerCode}; charged ${params.pointCost} AI points.`,
+    'Use these live search results only when relevant. Do not invent citations or claim unsupported facts. Prefer concise synthesis over listing every result.',
+    params.results.map(formatWebSearchResult).join('\n\n') || 'No usable result items were returned.',
+  ].join('\n');
+}
+
+function getLatestHumanTurnId(messages: Message[]) {
+  return [...messages]
+    .reverse()
+    .find((message) => !message.isDeleted && (message.type === 'user' || message.type === 'god') && message.content.trim())
+    ?.id || 'no-human-turn';
+}
+
+function getWebSearchTurnCacheKey(chatId: string, latestHumanTurnId: string, query: string) {
+  return `${chatId}:${latestHumanTurnId}:${query.trim().toLowerCase().replace(/\s+/g, ' ').slice(0, 300)}`;
+}
+
+function getCachedWebSearchPromptBlock(cacheKey: string) {
+  const cached = webSearchTurnCache.get(cacheKey);
+  if (!cached) return '';
+  if (cached.expiresAt <= Date.now()) {
+    webSearchTurnCache.delete(cacheKey);
+    return '';
+  }
+  return cached.promptBlock;
+}
+
+function setCachedWebSearchPromptBlock(cacheKey: string, query: string, promptBlock: string) {
+  webSearchTurnCache.set(cacheKey, {
+    query,
+    promptBlock,
+    expiresAt: Date.now() + WEB_SEARCH_TURN_CACHE_TTL_MS,
+  });
+  if (webSearchTurnCache.size > 80) {
+    const now = Date.now();
+    for (const [key, value] of webSearchTurnCache) {
+      if (value.expiresAt <= now || webSearchTurnCache.size > 60) webSearchTurnCache.delete(key);
+    }
+  }
+}
+
 function countRawHintItems(value: unknown) {
   if (Array.isArray(value)) return value.length;
   return value && typeof value === 'object' ? 1 : 0;
@@ -2814,7 +2897,76 @@ async function generateNonDuplicateResponse(params: {
   const requestUsesJsonResponseFormat = shouldUseJsonResponseFormat(params.chat, params.resolvedApi);
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const shouldStreamAttempt = !requestUsesJsonResponseFormat && !isStoryReader && !params.guidance && attempt === 0;
-    const generated = await generateWithPrompt({ ...params, characters: params.characters || [], systemPrompt: prompt, attempt: attempt + 1, onChunk: shouldStreamAttempt ? params.onChunk : undefined });
+    let generated = await generateWithPrompt({ ...params, characters: params.characters || [], systemPrompt: prompt, attempt: attempt + 1, onChunk: shouldStreamAttempt ? params.onChunk : undefined });
+    const webSearchRequest = attempt === 0 && !isStoryReader && params.chat.modeState.assistantCapabilities?.webSearch
+      ? normalizeWebSearchToolRequest(generated.parsedEnvelope?.toolRequest)
+      : null;
+    if (webSearchRequest) {
+      const latestHumanTurnId = getLatestHumanTurnId(params.activeMessages);
+      const cacheKey = getWebSearchTurnCacheKey(params.chat.id, latestHumanTurnId, webSearchRequest.query);
+      let searchPromptBlock = getCachedWebSearchPromptBlock(cacheKey);
+      if (searchPromptBlock) {
+        logDeveloperDiagnostic('chat-run:web-search-cache-hit', {
+          chatId: params.chat.id,
+          speakerId: params.speaker.id,
+          speakerName: params.speaker.name,
+          query: webSearchRequest.query,
+          latestHumanTurnId,
+        }, 'info', 'chat-run');
+      } else {
+        try {
+          const searchResponse = await api.searchWeb(webSearchRequest.query, {
+            source: 'group_chat',
+            resourceId: params.chat.id,
+          });
+          searchPromptBlock = buildWebSearchResultPromptBlock({
+            query: searchResponse.query,
+            providerCode: searchResponse.providerCode,
+            pointCost: searchResponse.pointCost,
+            results: searchResponse.results,
+          });
+          setCachedWebSearchPromptBlock(cacheKey, searchResponse.query, searchPromptBlock);
+          logDeveloperDiagnostic('chat-run:web-search-completed', {
+            chatId: params.chat.id,
+            speakerId: params.speaker.id,
+            speakerName: params.speaker.name,
+            query: searchResponse.query,
+            resultCount: searchResponse.results.length,
+            pointCost: searchResponse.pointCost,
+            latestHumanTurnId,
+          }, 'info', 'chat-run');
+        } catch (error) {
+          const expectedSkip = error instanceof ApiError && (
+            error.code === 'AI_SEARCH_ENTITLEMENT_REQUIRED'
+            || error.code === 'AI_SEARCH_PROVIDER_UNAVAILABLE'
+            || error.code === 'AI_SEARCH_POINTS_INSUFFICIENT'
+            || error.status === 401
+          );
+          logDeveloperDiagnostic('chat-run:web-search-failed', {
+            chatId: params.chat.id,
+            speakerId: params.speaker.id,
+            speakerName: params.speaker.name,
+            query: webSearchRequest.query,
+            code: error instanceof ApiError ? error.code : undefined,
+            reason: error instanceof Error ? error.message : 'search failed',
+            expectedSkip,
+          }, expectedSkip ? 'debug' : 'info', 'chat-run');
+          searchPromptBlock = [
+            '## Web Search Result',
+            `Query: ${webSearchRequest.query}`,
+            `Search failed: ${error instanceof Error ? error.message : 'unknown error'}`,
+            'Answer from the available conversation and stable knowledge. If current facts are required, say the search was unavailable and avoid inventing details. Keep toolRequest=null.',
+          ].join('\n');
+        }
+      }
+      generated = await generateWithPrompt({
+        ...params,
+        characters: params.characters || [],
+        systemPrompt: `${prompt}\n\n${searchPromptBlock}\n\nSearch tool has already been handled for this turn. Return the final visible reply now and keep toolRequest=null.`,
+        attempt: attempt + 1,
+        onChunk: params.onChunk,
+      });
+    }
     lastParsedEnvelope = generated.parsedEnvelope;
     lastFinalResponse = generated.finalResponse;
     lastFullResponse = generated.fullResponse;
@@ -3360,12 +3512,7 @@ export async function generateSpeakerMessage(params: {
   });
   const isStoryReader = params.chat.sessionKind?.scenarioId === 'story-reader';
   const promptPlayMode = resolvePromptPlayMode(params.chat);
-  const searchPromptBlock = await buildAiSearchPromptBlock({
-    chat: params.chat,
-    messages: activeMessages,
-    enabled: Boolean(params.chat.modeState.assistantCapabilities?.webSearch),
-    signal: params.signal,
-  });
+  const webSearchEnabled = Boolean(params.chat.modeState.assistantCapabilities?.webSearch) && !isStoryReader;
   const speakerSystemPrompt = buildSpeakerSystemPrompt({
     speaker: params.speaker,
     chat: params.chat,
@@ -3385,7 +3532,6 @@ export async function generateSpeakerMessage(params: {
     { id: 'world_event_context', layer: 'scene', priority: 20, content: buildWorldEventContextPrompt({ chat: params.chat, speaker: params.speaker, members: effectiveMembers }) },
     { id: 'world_influence', layer: 'scene', priority: 30, content: worldInfluenceSnapshot.prompt },
     { id: 'current_intent', layer: 'task', priority: 30, content: buildCurrentIntentPrompt({ directorIntent: effectiveDirectorIntent, intent }) },
-    { id: 'web_search_context', layer: 'task', priority: 32, content: isStoryReader ? '' : searchPromptBlock },
     { id: 'private_turn_priority', layer: 'task', priority: 35, content: buildPrivateTurnPriorityPrompt(params.chat) },
     { id: 'engine_constraints', layer: 'task', priority: 40, content: additionalConstraints },
     { id: 'analysis_room_contract', layer: 'task', priority: 45, content: buildAnalysisRoomContractPrompt(params.chat) },
@@ -3402,7 +3548,7 @@ export async function generateSpeakerMessage(params: {
     { id: 'style_quarantine', layer: 'style', priority: 60, content: buildStyleQuarantinePrompt(responseSurface) },
     { id: 'visible_message_surface_contract', layer: 'output', priority: 0, content: buildVisibleMessageSurfaceContractPrompt(params.chat, showRoleActions) },
     { id: 'generation_constraints', layer: 'output', priority: 10, content: buildGenerationConstraints(activeMessages, params.speaker.id, responseSurface) },
-    { id: 'inline_interaction_contract', layer: 'output', priority: 20, content: buildInlineInteractionContract({ chat: params.chat, speaker: params.speaker, characters: effectiveMembers, recentMessages: activeMessages, turnPlan, mediaCapabilities, mediaRequested: Boolean(userGuidance?.mediaRequest) }) },
+    { id: 'inline_interaction_contract', layer: 'output', priority: 20, content: buildInlineInteractionContract({ chat: params.chat, speaker: params.speaker, characters: effectiveMembers, recentMessages: activeMessages, turnPlan, mediaCapabilities, mediaRequested: Boolean(userGuidance?.mediaRequest), webSearchEnabled }) },
     { id: 'engine_suffix', layer: 'suffix', priority: 100, content: promptSuffix },
   ];
   const baseSystemPrompt = isStoryReader
@@ -3416,9 +3562,7 @@ export async function generateSpeakerMessage(params: {
       promptSuffix,
     })
     : composePromptBlocks(promptBlocks, promptPlayMode);
-  const systemPrompt = isStoryReader && searchPromptBlock
-    ? `${baseSystemPrompt}\n\n${searchPromptBlock}`
-    : baseSystemPrompt;
+  const systemPrompt = baseSystemPrompt;
   const chatMessages = buildChatMessages(activeMessages, characterMap, MAX_HISTORY_FOR_PROMPT, {
     currentSpeakerId: isStoryReader ? undefined : params.speaker.id,
     chatType: params.chat.type,

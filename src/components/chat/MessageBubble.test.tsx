@@ -3,6 +3,7 @@ import type { Message } from '../../types/message';
 import { getAttachmentErrorText, getAttachmentStatusDetail, getAttachmentStatusLabel } from '../../services/messageAttachmentDisplay';
 import { getNarrativeDisplayBlocks, getNarrativeParagraphBlocks, hasNarrativeReaderBlocks, isNarrativeParagraphMessage, shouldUseCompactMessageBubble } from './messageBubblePresentation';
 import { buildEventDisplayText, buildMemoryDistillationMeta, shouldHideEmptyConflictEvent } from './messageBubbleEventHelpers';
+import { shouldUseCompactMediaBubble } from './MessageBubble';
 
 describe('MessageBubble event rendering', () => {
   it('formats memory distillation titles with readable source and owner labels', () => {
@@ -116,6 +117,64 @@ describe('MessageBubble event rendering', () => {
     expect(getAttachmentStatusDetail({ kind: 'image', status: 'queued' })).toBe('图片已加入生成队列，等待开始。');
     expect(getAttachmentStatusLabel({ kind: 'audio', status: 'generating' })).toBe('语音生成中');
     expect(getAttachmentStatusDetail({ kind: 'audio', status: 'failed', error: '语音模型未配置' })).toBe('语音模型未配置');
+  });
+
+  it('uses compact bubble layout for generated image status messages', () => {
+    const message: Message = {
+      id: 'm-image',
+      chatId: 'c1',
+      senderId: 'assistant',
+      senderName: '助手',
+      type: 'ai',
+      content: '正在生成红烧肉的照片，请稍候。\n\n图片已生成\n红烧肉照片',
+      timestamp: 1,
+      emotion: 0,
+      isDeleted: false,
+      metadata: {
+        attachments: [{
+          id: 'att-1',
+          kind: 'image',
+          status: 'ready',
+          altText: '红烧肉照片',
+          url: 'data:image/png;base64,AAA',
+          width: 512,
+          height: 512,
+          createdAt: 1,
+          updatedAt: 1,
+        }],
+      },
+    };
+
+    expect(shouldUseCompactMediaBubble(message)).toBe(true);
+  });
+
+  it('keeps rich markdown media messages on the normal text layout', () => {
+    const message: Message = {
+      id: 'm-markdown-image',
+      chatId: 'c1',
+      senderId: 'assistant',
+      senderName: '助手',
+      type: 'ai',
+      content: '## 分析报告\n\n这张图片包含以下重点，需要按正文宽度阅读。',
+      timestamp: 1,
+      emotion: 0,
+      isDeleted: false,
+      metadata: {
+        attachments: [{
+          id: 'att-1',
+          kind: 'image',
+          status: 'ready',
+          altText: '分析图',
+          url: 'data:image/png;base64,AAA',
+          width: 512,
+          height: 512,
+          createdAt: 1,
+          updatedAt: 1,
+        }],
+      },
+    };
+
+    expect(shouldUseCompactMediaBubble(message)).toBe(false);
   });
 
   it('applies compact private bubble mode to direct chats without a self member id', () => {

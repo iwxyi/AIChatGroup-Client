@@ -13,6 +13,41 @@ const typingBounce = keyframes`
   30% { transform: translateY(-4px); opacity: 1; }
 `;
 
+const INLINE_ATTACHMENT_PATTERN = /!\[([^\]\n]*)\]\(attachment:(?:\/\/)?([^)]+)\)/g;
+
+type InlineAttachmentPart =
+  | { kind: 'text'; text: string }
+  | { kind: 'attachment'; slotId: string; altText: string };
+
+function safeDecodeInlineSlotId(value: string) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+export function parseInlineAttachmentPlaceholders(text: string): InlineAttachmentPart[] {
+  const parts: InlineAttachmentPart[] = [];
+  let lastIndex = 0;
+  for (const match of text.matchAll(INLINE_ATTACHMENT_PATTERN)) {
+    const start = match.index ?? 0;
+    if (start > lastIndex) {
+      parts.push({ kind: 'text', text: text.slice(lastIndex, start) });
+    }
+    const rawSlotId = (match[2] || '').trim();
+    const slotId = rawSlotId ? safeDecodeInlineSlotId(rawSlotId).replace(/[^\w.-]/g, '') : '';
+    if (slotId) {
+      parts.push({ kind: 'attachment', slotId, altText: (match[1] || '').trim() });
+    }
+    lastIndex = start + match[0].length;
+  }
+  if (lastIndex < text.length) {
+    parts.push({ kind: 'text', text: text.slice(lastIndex) });
+  }
+  return parts.length ? parts : [{ kind: 'text', text }];
+}
+
 export function PendingTypingDots() {
   return (
     <Box sx={{ display: 'flex', gap: 0.5, py: 0.25 }}>
@@ -54,6 +89,16 @@ function getAttachmentMaxWidth(ratio: number) {
   return 520;
 }
 
+export function getAttachmentDisplayWidth(params: {
+  displaySize?: { width: number; height: number } | null;
+  ratioValue: number;
+  maxWidth: number;
+  maxHeight: number;
+}) {
+  const widthLimitByHeight = Math.max(180, params.maxHeight * params.ratioValue);
+  return Math.ceil(Math.min(params.displaySize?.width || params.maxWidth, params.maxWidth, widthLimitByHeight));
+}
+
 function getAttachmentKnownSize(attachment: Pick<MessageAttachment, 'width' | 'height'>) {
   const width = Number(attachment.width || 0);
   const height = Number(attachment.height || 0);
@@ -65,10 +110,12 @@ function MessageImageAttachment({
   message,
   attachment,
   onOpenImage,
+  caption,
 }: {
   message: Message;
   attachment: MessageAttachment;
   onOpenImage?: (message: Message, attachment: MessageAttachment) => void;
+  caption?: string;
 }) {
   const knownSize = getAttachmentKnownSize(attachment);
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(knownSize);
@@ -77,10 +124,7 @@ function MessageImageAttachment({
   const ratioValue = displaySize ? displaySize.width / displaySize.height : parseAttachmentRatio(attachment);
   const maxWidth = getAttachmentMaxWidth(ratioValue);
   const maxHeight = Math.min(viewportHeight * 0.56, 520);
-  const widthLimitByHeight = Math.max(180, maxHeight * ratioValue);
-  const width = displaySize
-    ? `min(${Math.ceil(displaySize.width)}px, 100%, ${maxWidth}px, ${Math.ceil(widthLimitByHeight)}px)`
-    : `min(100%, ${maxWidth}px)`;
+  const width = getAttachmentDisplayWidth({ displaySize, ratioValue, maxWidth, maxHeight });
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -92,40 +136,52 @@ function MessageImageAttachment({
   return (
     <Box
       sx={{
+        display: 'grid',
+        gap: 0.45,
         width,
         maxWidth: '100%',
         justifySelf: 'start',
-        borderRadius: 1.5,
-        overflow: 'hidden',
-        bgcolor: 'action.hover',
       }}
     >
       <Box
-        component="img"
-        src={attachment.url}
-        alt={attachment.altText}
-        loading="lazy"
-        decoding="async"
-        onLoad={(event) => {
-          const image = event.currentTarget;
-          if (image.naturalWidth > 0 && image.naturalHeight > 0) {
-            setNaturalSize({ width: image.naturalWidth, height: image.naturalHeight });
-          }
-        }}
-        onClick={() => onOpenImage?.(message, attachment)}
         sx={{
-          width: '100%',
-          height: 'auto',
-          maxHeight: 'min(56vh, 520px)',
-          objectFit: 'contain',
-          display: 'block',
-          cursor: onOpenImage ? 'zoom-in' : 'default',
           borderRadius: 1.5,
-          border: '1px solid',
-          borderColor: 'divider',
+          overflow: 'hidden',
           bgcolor: 'action.hover',
         }}
-      />
+      >
+        <Box
+          component="img"
+          src={attachment.url}
+          alt={attachment.altText}
+          loading="lazy"
+          decoding="async"
+          onLoad={(event) => {
+            const image = event.currentTarget;
+            if (image.naturalWidth > 0 && image.naturalHeight > 0) {
+              setNaturalSize({ width: image.naturalWidth, height: image.naturalHeight });
+            }
+          }}
+          onClick={() => onOpenImage?.(message, attachment)}
+          sx={{
+            width: '100%',
+            height: 'auto',
+            maxHeight: 'min(56vh, 520px)',
+            objectFit: 'contain',
+            display: 'block',
+            cursor: onOpenImage ? 'zoom-in' : 'default',
+            borderRadius: 1.5,
+            border: '1px solid',
+            borderColor: 'divider',
+            bgcolor: 'action.hover',
+          }}
+        />
+      </Box>
+      {caption ? (
+        <Typography variant="caption" sx={{ color: 'text.secondary', lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+          {caption}
+        </Typography>
+      ) : null}
     </Box>
   );
 }
@@ -229,6 +285,7 @@ export function MessageContent({ message, onRetryMedia, onOpenImage, onOpenDiagr
   compactMediaLayout?: boolean;
 }) {
   const attachments = message.metadata?.attachments || [];
+  const shouldHideMediaPlaceholderText = shouldHideGeneratedMediaPlaceholderText(message);
   const isAttachmentProcessing = (status: string | undefined) => status === 'queued' || status === 'generating' || status === 'placeholder';
   const statusChipColor = (status: string | undefined): 'error' | 'success' | 'primary' => {
     if (status === 'failed') return 'error';
@@ -242,11 +299,10 @@ export function MessageContent({ message, onRetryMedia, onOpenImage, onOpenDiagr
     const maxWidth = getAttachmentMaxWidth(ratioValue);
     const viewportHeight = typeof window === 'undefined' ? 900 : window.innerHeight;
     const maxHeight = Math.min(viewportHeight * 0.56, 520);
-    const widthLimitByHeight = Math.max(180, maxHeight * ratioValue);
+    const width = getAttachmentDisplayWidth({ displaySize: knownSize, ratioValue, maxWidth, maxHeight });
     return {
-      width: knownSize
-        ? `min(${Math.ceil(knownSize.width)}px, 100%, ${maxWidth}px, ${Math.ceil(widthLimitByHeight)}px)`
-        : `min(100%, ${maxWidth}px)`,
+      width,
+      maxWidth: '100%',
       maxHeight: 'min(56vh, 520px)',
       justifySelf: 'start',
       aspectRatio: ratio,
@@ -258,76 +314,116 @@ export function MessageContent({ message, onRetryMedia, onOpenImage, onOpenDiagr
       position: 'relative' as const,
     };
   };
-  return (
-    <Box sx={{ display: 'grid', gap: 0.9, width: compactMediaLayout ? 'fit-content' : 'auto', maxWidth: '100%' }}>
-      <Box sx={{ typography: 'body2', wordBreak: 'break-word', userSelect: 'text', WebkitUserSelect: 'text', '& table': { width: '100%', borderCollapse: 'collapse' }, '& th, & td': { border: '1px solid', borderColor: 'divider', px: 0.75, py: 0.4 } }}>
-        <MarkdownText
-          text={message.content}
-          forceRich={message.metadata?.format === 'markdown'}
-          deferDiagrams={Boolean(message.isStreaming)}
-          onOpenDiagram={onOpenDiagram ? (diagram) => onOpenDiagram(message, diagram) : undefined}
-        />
-      </Box>
-      {attachments.map((attachment) => {
-        if (attachment.kind === 'image') {
-          const canRetryAttachment = attachment.status === 'failed' || (attachment.status === 'ready' && !attachment.url);
-          if (attachment.status === 'ready' && attachment.url) {
-            return (
-              <MessageImageAttachment key={attachment.id} message={message} attachment={attachment} onOpenImage={onOpenImage} />
-            );
-          }
-          return (
-            <Box key={attachment.id} sx={getMediaFrameStyle(attachment)}>
-              <Box sx={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', p: 1.5, textAlign: 'center' }}>
-                <Box sx={{ display: 'grid', gap: 0.75, maxWidth: '85%' }}>
-                  <Box>
-                    <Chip size="small" label={getAttachmentStatusLabel(attachment)} color={statusChipColor(attachment.status)} variant="outlined" sx={{ height: 22 }} />
-                  </Box>
-                  {isAttachmentProcessing(attachment.status) ? <LinearProgress /> : null}
-                  <Typography variant="caption" sx={{ color: attachment.status === 'failed' ? 'error.main' : 'text.secondary', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                    {getAttachmentStatusDetail(attachment)}
-                  </Typography>
-                  {canRetryAttachment && onRetryMedia ? (
-                    <Button size="small" variant="outlined" color="error" onClick={() => void onRetryMedia?.(message, attachment.id)}>
-                      重试
-                    </Button>
-                  ) : null}
-                  <Typography variant="caption" sx={{ color: 'text.secondary', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                    {attachment.altText}
-                  </Typography>
-                </Box>
+  const findAttachmentBySlotId = (slotId: string) => attachments.find((attachment) => attachment.slotId === slotId || attachment.id === slotId);
+  const visibleContentParts = shouldHideMediaPlaceholderText ? [] : parseInlineAttachmentPlaceholders(message.content);
+  const hasInlineAttachments = visibleContentParts.some((part) => part.kind === 'attachment');
+  const usedAttachmentIds = new Set<string>();
+  const renderAttachment = (attachment: MessageAttachment, captionOverride?: string) => {
+    if (attachment.kind === 'image') {
+      const canRetryAttachment = attachment.status === 'failed' || (attachment.status === 'ready' && !attachment.url);
+      if (attachment.status === 'ready' && attachment.url) {
+        return (
+          <MessageImageAttachment
+            key={attachment.id}
+            message={message}
+            attachment={attachment}
+            caption={captionOverride || attachment.caption}
+            onOpenImage={onOpenImage}
+          />
+        );
+      }
+      return (
+        <Box key={attachment.id} sx={getMediaFrameStyle(attachment)}>
+          <Box sx={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', p: 1.5, textAlign: 'center' }}>
+            <Box sx={{ display: 'grid', gap: 0.75, maxWidth: '85%' }}>
+              <Box>
+                <Chip size="small" label={getAttachmentStatusLabel(attachment)} color={statusChipColor(attachment.status)} variant="outlined" sx={{ height: 22 }} />
               </Box>
-            </Box>
-          );
-        }
-        if (attachment.kind === 'audio') {
-          if (attachment.status === 'ready' && attachment.url) {
-            return (
-              <Box key={attachment.id} sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 220 }}>
-                <Box component="audio" controls src={attachment.url} sx={{ width: '100%', maxWidth: 280 }} />
-              </Box>
-            );
-          }
-          return (
-            <Box key={attachment.id} sx={{ minWidth: 200, borderRadius: 999, border: '1px solid', borderColor: 'divider', px: 1.25, py: 0.75, bgcolor: 'action.hover' }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
-                <Typography variant="caption" color="text.secondary">{getAttachmentStatusLabel(attachment)}</Typography>
-                <Chip size="small" label={attachment.status === 'failed' ? '失败' : '处理中'} color={statusChipColor(attachment.status)} variant="outlined" sx={{ height: 20 }} />
-              </Box>
-              {attachment.status !== 'failed' ? <LinearProgress sx={{ mt: 0.5 }} /> : null}
-              <Typography variant="caption" sx={{ display: 'block', mt: 0.45, color: attachment.status === 'failed' ? 'error.main' : 'text.secondary', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+              {isAttachmentProcessing(attachment.status) ? <LinearProgress /> : null}
+              <Typography variant="caption" sx={{ color: attachment.status === 'failed' ? 'error.main' : 'text.secondary', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                 {getAttachmentStatusDetail(attachment)}
               </Typography>
-              {attachment.status === 'failed' && onRetryMedia ? (
-                <Button size="small" variant="outlined" color="error" sx={{ mt: 0.6 }} onClick={() => void onRetryMedia?.(message, attachment.id)}>
+              {canRetryAttachment && onRetryMedia ? (
+                <Button size="small" variant="outlined" color="error" onClick={() => void onRetryMedia?.(message, attachment.id)}>
                   重试
                 </Button>
               ) : null}
+              <Typography variant="caption" sx={{ color: 'text.secondary', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                {captionOverride || attachment.caption || attachment.altText}
+              </Typography>
+            </Box>
+          </Box>
+        </Box>
+      );
+    }
+    if (attachment.kind === 'audio') {
+      if (attachment.status === 'ready' && attachment.url) {
+        return (
+          <Box key={attachment.id} sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 220 }}>
+            <Box component="audio" controls src={attachment.url} sx={{ width: '100%', maxWidth: 280 }} />
+          </Box>
+        );
+      }
+      return (
+        <Box key={attachment.id} sx={{ minWidth: 200, borderRadius: 999, border: '1px solid', borderColor: 'divider', px: 1.25, py: 0.75, bgcolor: 'action.hover' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+            <Typography variant="caption" color="text.secondary">{getAttachmentStatusLabel(attachment)}</Typography>
+            <Chip size="small" label={attachment.status === 'failed' ? '失败' : '处理中'} color={statusChipColor(attachment.status)} variant="outlined" sx={{ height: 20 }} />
+          </Box>
+          {attachment.status !== 'failed' ? <LinearProgress sx={{ mt: 0.5 }} /> : null}
+          <Typography variant="caption" sx={{ display: 'block', mt: 0.45, color: attachment.status === 'failed' ? 'error.main' : 'text.secondary', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+            {getAttachmentStatusDetail(attachment)}
+          </Typography>
+          {attachment.status === 'failed' && onRetryMedia ? (
+            <Button size="small" variant="outlined" color="error" sx={{ mt: 0.6 }} onClick={() => void onRetryMedia?.(message, attachment.id)}>
+              重试
+            </Button>
+          ) : null}
+        </Box>
+      );
+    }
+    return null;
+  };
+  return (
+    <Box sx={{ display: 'grid', gap: 0.9, width: compactMediaLayout ? 'fit-content' : 'auto', maxWidth: '100%' }}>
+      {visibleContentParts.map((part, index) => {
+        if (part.kind === 'text') {
+          if (!part.text.trim()) return null;
+          return (
+            <Box key={`text-${index}`} sx={{ typography: 'body2', wordBreak: 'break-word', userSelect: 'text', WebkitUserSelect: 'text', '& table': { width: '100%', borderCollapse: 'collapse' }, '& th, & td': { border: '1px solid', borderColor: 'divider', px: 0.75, py: 0.4 } }}>
+              <MarkdownText
+                text={part.text}
+                forceRich={message.metadata?.format === 'markdown'}
+                deferDiagrams={Boolean(message.isStreaming)}
+                onOpenDiagram={onOpenDiagram ? (diagram) => onOpenDiagram(message, diagram) : undefined}
+              />
             </Box>
           );
         }
-        return null;
+        const attachment = findAttachmentBySlotId(part.slotId);
+        if (!attachment) {
+          return (
+            <Box key={`missing-attachment-${part.slotId}-${index}`} sx={{ borderRadius: 1.5, border: '1px dashed', borderColor: 'divider', px: 1.25, py: 1, color: 'text.secondary' }}>
+              <Typography variant="caption">{part.altText || '图片'}暂不可用</Typography>
+            </Box>
+          );
+        }
+        usedAttachmentIds.add(attachment.id);
+        return renderAttachment(attachment, part.altText || attachment.caption);
       })}
+      {attachments
+        .filter((attachment) => !hasInlineAttachments || !usedAttachmentIds.has(attachment.id))
+        .map((attachment) => renderAttachment(attachment))}
     </Box>
   );
+}
+
+export function shouldHideGeneratedMediaPlaceholderText(message: Pick<Message, 'content' | 'metadata'>) {
+  const attachments = message.metadata?.attachments || [];
+  const hasMediaAttachments = attachments.some((attachment) => attachment.kind === 'image' || attachment.kind === 'audio');
+  if (!hasMediaAttachments) return false;
+  return [
+    '正在生成图片，完成后会自动显示。',
+    '正在生成图片，完成后会自动显示',
+  ].includes(message.content.trim());
 }

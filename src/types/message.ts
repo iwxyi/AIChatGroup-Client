@@ -10,6 +10,8 @@ export interface MessageAttachment {
   kind: MessageAttachmentKind;
   status: MessageAttachmentStatus;
   altText: string;
+  caption?: string;
+  slotId?: string;
   assetId?: string;
   url?: string;
   mimeType?: string;

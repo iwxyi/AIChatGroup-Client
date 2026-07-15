@@ -4,18 +4,18 @@ import type { Message } from '../types/message';
 import { buildAgentArtifactReplyContent, markAssistantMediaAttachmentsFailed } from './assistantChatFlow';
 
 describe('assistantChatFlow media artifacts', () => {
-  it('does not claim image media tasks are complete before the image is ready', () => {
+  it('keeps the user-facing assistant message separate from image prompts', () => {
     const patchSet: AssistantAgentPatchSet = {
-      assistantMessage: '图片已生成。',
+      assistantMessage: '我为你生成一张红烧肉照片，肥瘦相间、酱色油亮，适合直接查看。',
       patches: [],
       mediaTasks: [{
         kind: 'image',
-        prompt: '红烧肉照片',
+        prompt: 'A realistic photo of Chinese braised pork belly, glossy soy caramel sauce, food photography',
         altText: '红烧肉照片',
       }],
     };
 
-    expect(buildAgentArtifactReplyContent(patchSet)).toBe('正在生成图片，完成后会自动显示。');
+    expect(buildAgentArtifactReplyContent(patchSet)).toBe('我为你生成一张红烧肉照片，肥瘦相间、酱色油亮，适合直接查看。');
   });
 
   it('marks pending assistant media attachments as failed when media processing aborts unexpectedly', () => {

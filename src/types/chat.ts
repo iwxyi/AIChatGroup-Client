@@ -594,6 +594,7 @@ export interface OpenChatModeState {
     agent?: boolean;
     artifacts?: boolean;
     webSearch?: boolean;
+    webSearchUserDisabled?: boolean;
     updatedAt?: number;
   };
 }

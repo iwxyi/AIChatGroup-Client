@@ -196,6 +196,8 @@ function ChatPageSettingsDialog({
           ...capabilities,
           agent: enabled,
           artifacts: enabled,
+          webSearch: enabled && aiSearchAvailable ? true : false,
+          webSearchUserDisabled: false,
           updatedAt: Date.now(),
         },
       },
@@ -219,6 +221,7 @@ function ChatPageSettingsDialog({
         assistantCapabilities: {
           ...capabilities,
           webSearch: enabled,
+          webSearchUserDisabled: !enabled,
           updatedAt: Date.now(),
         },
       },
@@ -1092,6 +1095,22 @@ export default function ChatDetailPage() {
     });
     setSnackbar({ open: true, message: 'Agent 能力仅会员可用，已关闭当前助手的 Agent 模式。', severity: 'error' });
   }, [agentEntitled, chat, isAssistantChat, updateChat]);
+  useEffect(() => {
+    if (!chat || !isAssistantChat || authMode !== 'cloud' || currentUser?.aiSearchEntitled !== true) return;
+    const capabilities = chat.modeState.assistantCapabilities || {};
+    if (!capabilities.agent || capabilities.webSearch || capabilities.webSearchUserDisabled) return;
+    void updateChat(chat.id, {
+      modeState: {
+        ...chat.modeState,
+        assistantCapabilities: {
+          ...capabilities,
+          webSearch: true,
+          webSearchUserDisabled: false,
+          updatedAt: Date.now(),
+        },
+      },
+    });
+  }, [authMode, chat, currentUser?.aiSearchEntitled, isAssistantChat, updateChat]);
   const savedStoryReadingPositionForChat = isStoryRoom && id ? chatReadingPositions[id] : null;
   const savedStoryReadingRestoreKey = savedStoryReadingPositionForChat && !savedStoryReadingPositionForChat.pinned
     ? `${savedStoryReadingPositionForChat.messageId}:${savedStoryReadingPositionForChat.sourceTimestamp ?? ''}:${Math.round(savedStoryReadingPositionForChat.offsetTop)}`
@@ -3029,6 +3048,7 @@ export default function ChatDetailPage() {
                     chat={chat}
                     selectedArtifactId={selectedAssistantArtifactId}
                     onAgentEnabledChange={agentEntitled ? (enabled) => {
+                      const aiSearchAvailable = authMode === 'cloud' && currentUser?.aiSearchEntitled === true;
                       void updateChat(chat.id, {
                         modeState: {
                           ...chat.modeState,
@@ -3036,6 +3056,8 @@ export default function ChatDetailPage() {
                             ...(chat.modeState.assistantCapabilities || {}),
                             agent: enabled,
                             artifacts: enabled,
+                            webSearch: enabled && aiSearchAvailable ? true : false,
+                            webSearchUserDisabled: false,
                             updatedAt: Date.now(),
                           },
                         },

@@ -64,7 +64,7 @@ export interface AssistantArtifactDraft {
   media?: AssistantArtifactMediaRef[];
 }
 
-export type AssistantAgentIntent = 'chat' | 'create' | 'update' | 'clarify';
+export type AssistantAgentIntent = 'chat' | 'create' | 'update' | 'clarify' | 'search';
 export type AssistantAgentTargetMode = 'single' | 'multi' | 'workspace' | 'selection' | 'unknown';
 
 export interface AssistantAgentChangePlan {
@@ -75,11 +75,12 @@ export interface AssistantAgentChangePlan {
     artifactIds: string[];
   };
   operations: Array<{
-    kind: 'style_change' | 'content_edit' | 'structure_edit' | 'create' | 'export' | 'review' | 'other';
+    kind: 'style_change' | 'content_edit' | 'structure_edit' | 'create' | 'export' | 'review' | 'search' | 'other';
     instruction: string;
   }>;
   requiresConfirmation: boolean;
   clarificationQuestion?: string;
+  searchQuery?: string;
   confidence: number;
   rationale?: string;
 }
@@ -100,10 +101,13 @@ export interface AssistantAgentPatch {
 
 export interface AssistantAgentMediaTask {
   kind: 'image';
+  slotId?: string;
   prompt: string;
   altText: string;
+  userCaption?: string;
   aspectRatio?: string;
   imageSize?: string;
+  referenceImageIds?: string[];
   referenceImages?: Array<{
     url: string;
     mimeType?: string;

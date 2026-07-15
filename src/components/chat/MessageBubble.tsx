@@ -49,7 +49,7 @@ interface MenuPosition {
 }
 
 const LONG_PRESS_MOVE_THRESHOLD = 12;
-const SHORT_MEDIA_MESSAGE_LENGTH = 48;
+const SHORT_MEDIA_MESSAGE_LENGTH = 120;
 
 function buildWithdrawalDebugTitle(withdrawal: NonNullable<Message['metadata']>['withdrawal'] | null) {
   if (!withdrawal?.originalContent) return '';
@@ -68,13 +68,16 @@ function buildWithdrawalDebugTitle(withdrawal: NonNullable<Message['metadata']>[
   );
 }
 
-function shouldUseCompactMediaBubble(message: Message) {
+export function shouldUseCompactMediaBubble(message: Message) {
   const attachments = message.metadata?.attachments || [];
   const hasRenderableMedia = attachments.some((attachment) => attachment.kind === 'image' || attachment.kind === 'audio');
   if (!hasRenderableMedia) return false;
-  const normalizedContent = message.content.replace(/\s+/g, '').trim();
+  const rawContent = message.content.trim();
+  const normalizedContent = rawContent.replace(/\s+/g, '').trim();
   if (!normalizedContent) return true;
   if (['图片已生成', '图片已生成。', '已生成', '已生成。'].includes(normalizedContent)) return true;
+  if (/正在生成图片|图片已生成/.test(normalizedContent)) return true;
+  if (/```|(^|\n)\s{0,3}#{1,6}\s|(^|\n)\s{0,3}\|.*\|/.test(rawContent)) return false;
   return normalizedContent.length <= SHORT_MEDIA_MESSAGE_LENGTH;
 }
 
