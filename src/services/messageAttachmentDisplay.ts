@@ -1,6 +1,7 @@
 type AttachmentDisplayLike = {
   kind?: 'image' | 'audio' | 'sticker' | string;
   status?: 'placeholder' | 'queued' | 'generating' | 'ready' | 'failed' | 'deleted' | string;
+  url?: string;
   error?: string;
 };
 
@@ -30,7 +31,7 @@ export function getAttachmentStatusDetail(attachment: AttachmentDisplayLike) {
   if (attachment.status === 'failed') return getAttachmentErrorText(attachment);
   if (attachment.status === 'placeholder' || attachment.status === 'queued') return `${kind}已加入生成队列，等待开始。`;
   if (attachment.status === 'generating') return `正在生成${kind}，完成后会自动更新。`;
-  if (attachment.status === 'ready') return `${kind}已生成。`;
+  if (attachment.status === 'ready') return attachment.url ? `${kind}已生成。` : `${kind}已生成，但资源地址暂不可用。`;
   if (attachment.status === 'deleted') return `${kind}已删除。`;
   return `${kind}正在处理。`;
 }

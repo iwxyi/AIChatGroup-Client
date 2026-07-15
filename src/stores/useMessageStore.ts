@@ -4541,9 +4541,10 @@ function stripLargeInlineMediaForPersistence<T>(value: T, key = '', seen = new W
   return next as T;
 }
 
-function compactMessageForPersistence(message: Message) {
+function compactMessageForPersistence(message: Message, options: { stripInlineMedia?: boolean } = {}) {
   const normalized = compactMessage(normalizeMessage(message), { dropContextText: true });
   const { isStreaming: _isStreaming, ...persisted } = normalized;
+  if (options.stripInlineMedia === false) return persisted;
   return {
     ...persisted,
     metadata: stripLargeInlineMediaForPersistence(normalized.metadata),
@@ -4576,7 +4577,7 @@ function buildPersistedMessageState(state: PersistedMessageState): PersistedMess
   const pendingOperations = recoverInterruptedOperations(state.pendingOperations || []).map(compactPendingMessageOperation);
   const compactedWindows = Object.fromEntries(Object.entries(state.messageWindowsByChatId || {}).map(([chatId, window]) => [chatId, {
     ...window,
-    messages: (window.messages || []).map(compactMessageForPersistence),
+    messages: (window.messages || []).map((message) => compactMessageForPersistence(message, { stripInlineMedia: false })),
   }]));
   const persisted = {
     messageWindowsByChatId: trimCache(compactedWindows, pendingOperations),

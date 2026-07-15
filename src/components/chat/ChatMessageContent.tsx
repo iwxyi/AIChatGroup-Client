@@ -228,6 +228,7 @@ export function MessageContent({ message, onRetryMedia, onOpenImage, onOpenDiagr
   onOpenDiagram?: (message: Message, diagram: { source: string; svg: string; dataUrl: string }) => void;
 }) {
   const attachments = message.metadata?.attachments || [];
+  const isAttachmentProcessing = (status: string | undefined) => status === 'queued' || status === 'generating' || status === 'placeholder';
   const statusChipColor = (status: string | undefined): 'error' | 'success' | 'primary' => {
     if (status === 'failed') return 'error';
     if (status === 'ready') return 'success';
@@ -268,6 +269,7 @@ export function MessageContent({ message, onRetryMedia, onOpenImage, onOpenDiagr
       </Box>
       {attachments.map((attachment) => {
         if (attachment.kind === 'image') {
+          const canRetryAttachment = attachment.status === 'failed' || (attachment.status === 'ready' && !attachment.url);
           if (attachment.status === 'ready' && attachment.url) {
             return (
               <MessageImageAttachment key={attachment.id} message={message} attachment={attachment} onOpenImage={onOpenImage} />
@@ -280,11 +282,11 @@ export function MessageContent({ message, onRetryMedia, onOpenImage, onOpenDiagr
                   <Box>
                     <Chip size="small" label={getAttachmentStatusLabel(attachment)} color={statusChipColor(attachment.status)} variant="outlined" sx={{ height: 22 }} />
                   </Box>
-                  {attachment.status !== 'failed' ? <LinearProgress /> : null}
+                  {isAttachmentProcessing(attachment.status) ? <LinearProgress /> : null}
                   <Typography variant="caption" sx={{ color: attachment.status === 'failed' ? 'error.main' : 'text.secondary', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                     {getAttachmentStatusDetail(attachment)}
                   </Typography>
-                  {attachment.status === 'failed' && onRetryMedia ? (
+                  {canRetryAttachment && onRetryMedia ? (
                     <Button size="small" variant="outlined" color="error" onClick={() => void onRetryMedia?.(message, attachment.id)}>
                       重试
                     </Button>

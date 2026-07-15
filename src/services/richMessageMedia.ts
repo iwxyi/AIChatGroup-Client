@@ -231,7 +231,7 @@ export async function retryRichMessageMedia(params: {
 }) {
   const attachments = params.message.metadata?.attachments || [];
   const target = attachments.find((attachment) => attachment.id === params.attachmentId);
-  if (!target || target.status !== 'failed') return;
+  if (!target || (target.status !== 'failed' && !(target.status === 'ready' && !target.url))) return;
   const retryMetadata = updateAttachment(params.message.metadata, params.attachmentId, {
     status: 'queued',
     error: undefined,

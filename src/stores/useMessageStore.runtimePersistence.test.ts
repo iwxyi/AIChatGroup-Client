@@ -72,4 +72,34 @@ describe('message runtime persistence', () => {
       attachments: [{ altText: '测试图片', kind: 'image', status: 'ready' }],
     });
   });
+
+  it('keeps ready inline image urls in the local message window cache', async () => {
+    const { __messageRuntimePersistenceForTests } = await import('./useMessageStore');
+    const { buildPersistedMessageState } = __messageRuntimePersistenceForTests;
+    const dataUrl = `data:image/png;base64,${'b'.repeat(6000)}`;
+    const persisted = buildPersistedMessageState({
+      messageWindowsByChatId: {
+        'chat-1': {
+          messages: [message({
+            metadata: {
+              attachments: [{
+                id: 'att-1',
+                kind: 'image',
+                status: 'ready',
+                url: dataUrl,
+                altText: '测试图片',
+                createdAt: 1,
+                updatedAt: 1,
+              }],
+            },
+          })],
+          lastSyncedAt: 1,
+          updatedAt: 1,
+        },
+      },
+      pendingOperations: [],
+    });
+
+    expect(persisted.messageWindowsByChatId['chat-1']?.messages[0]?.metadata?.attachments?.[0]?.url).toBe(dataUrl);
+  });
 });
