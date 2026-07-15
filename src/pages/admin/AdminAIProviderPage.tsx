@@ -64,6 +64,8 @@ const AI_USAGE_TYPE_LABELS: Record<string, string> = {
   chat_draft: '群聊草稿',
   character_artifact: '角色产物',
   moment_generation: '朋友圈生成',
+  image_generation: '图片生成',
+  web_search: '网页搜索',
   model_test: '测试连接',
   proxy: '中转',
   other: '其他',

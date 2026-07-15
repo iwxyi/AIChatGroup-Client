@@ -50,6 +50,7 @@ export interface ImageGenerationAdapterOptions {
   characters?: AICharacter[];
   allowCharacterReferenceImages?: boolean;
   signal?: AbortSignal;
+  aiUsage?: AiUsageMetadata;
 }
 
 export interface TextGenerationAdapterOptions {
@@ -174,7 +175,15 @@ export function resolveImageGenerationRequest(params: ImageGenerationAdapterOpti
     referenceImages: canUseReferences ? referenceImages.map(({ url, mimeType }) => ({ url, mimeType })) : undefined,
     negativePrompt: capabilities.negativePrompt ? params.negativePrompt : undefined,
     seed: capabilities.seed ? params.seed : undefined,
+    aiUsage: params.aiUsage || defaultImageGenerationUsage(params.intent),
   };
+}
+
+function defaultImageGenerationUsage(intent: GenerationIntent): AiUsageMetadata {
+  if (intent === 'character-reference' || intent === 'avatar') {
+    return { type: 'character_visual_identity', label: intent === 'avatar' ? '头像生成' : '角色形象图生成' };
+  }
+  return { type: 'image_generation', label: '图片生成' };
 }
 
 export async function generateImageWithAdapter(params: ImageGenerationAdapterOptions): Promise<GeneratedImage[]> {

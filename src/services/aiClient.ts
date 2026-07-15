@@ -35,6 +35,8 @@ export type AiUsageType =
   | 'chat_draft'
   | 'character_artifact'
   | 'moment_generation'
+  | 'image_generation'
+  | 'web_search'
   | 'model_test'
   | 'other';
 
@@ -92,6 +94,7 @@ export interface ImageGenerationOptions {
     mimeType?: string;
   }>;
   signal?: AbortSignal;
+  aiUsage?: AiUsageMetadata;
 }
 
 export interface GeneratedImage {
@@ -984,6 +987,7 @@ async function generateOpenAICompatibleImage(config: APIConfig, options: ImageGe
     formData.append('n', String(options.count || 1));
     formData.append('size', options.size || '1024x1024');
     formData.append('response_format', 'b64_json');
+    if (officialProxy && options.aiUsage) formData.append('metadata', JSON.stringify({ aiUsage: options.aiUsage }));
 
     for (const [index, reference] of options.referenceImages.entries()) {
       const blob = await urlToBlob(reference.url, reference.mimeType || 'image/png');
@@ -1044,6 +1048,7 @@ async function generateOpenAICompatibleImage(config: APIConfig, options: ImageGe
       response_format: 'b64_json',
       negative_prompt: options.negativePrompt || undefined,
       seed: options.seed ?? undefined,
+      metadata: officialProxy && options.aiUsage ? { aiUsage: options.aiUsage } : undefined,
     }),
   });
   if (officialProxy && response.status === 401) {
@@ -1102,6 +1107,7 @@ async function generateGeminiImage(config: APIConfig, options: ImageGenerationOp
     signal: options.signal,
     body: JSON.stringify({
       ...(officialProxy ? { provider: resolveOfficialBackendProvider(config.provider), model: config.model } : {}),
+      ...(officialProxy && options.aiUsage ? { metadata: { aiUsage: options.aiUsage } } : {}),
       contents: [{ role: 'user', parts }],
       generationConfig: {
         responseModalities: ['IMAGE'],

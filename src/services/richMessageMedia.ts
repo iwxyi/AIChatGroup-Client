@@ -135,6 +135,12 @@ export async function processRichMessageMedia(params: {
           allowCharacterReferenceImages: true,
           negativePrompt: visualCharacter?.visualIdentity?.negativePrompt,
           seed: visualCharacter?.visualIdentity?.seed,
+          aiUsage: {
+            type: 'image_generation',
+            label: '聊天图片生成',
+            scope: 'chat',
+            resourceId: currentMessage.chatId,
+          },
         });
         const first = images[0];
         if (!first?.dataUrl) throw new Error('图片生成失败');
