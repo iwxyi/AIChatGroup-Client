@@ -151,7 +151,7 @@ export async function processRichMessageMedia(params: {
         const readyMetadata = updateAttachment(currentMessage.metadata, attachment.id, {
           status: 'ready',
           assetId: asset.id,
-          url: asset.url,
+          url: asset.url || dataUrl,
           mimeType: asset.mimeType,
           sizeBytes: asset.sizeBytes,
           checksum: asset.checksum,
@@ -190,7 +190,7 @@ export async function processRichMessageMedia(params: {
         const readyMetadata = updateAttachment(currentMessage.metadata, attachment.id, {
           status: 'ready',
           assetId: asset.id,
-          url: asset.url,
+          url: asset.url || dataUrl,
           mimeType: asset.mimeType,
           sizeBytes: asset.sizeBytes,
         });

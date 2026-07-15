@@ -149,6 +149,36 @@ describe('processRichMessageMedia', () => {
     expect(upserts.at(-1)?.metadata?.generation?.status).toBe('ready');
   });
 
+  it('keeps the generated data url visible if media asset creation returns no url', async () => {
+    vi.mocked(generateImageWithAdapter).mockResolvedValue([{
+      dataUrl: 'data:image/png;base64,fallback',
+      mimeType: 'image/png',
+    }]);
+    const { api } = await import('./api');
+    vi.mocked(api.createMediaAsset).mockResolvedValue({
+      id: 'asset-missing-url',
+      url: '',
+      mimeType: 'image/png',
+      sizeBytes: 1234,
+    });
+    localStorage.setItem('pneumata-auth-mode', 'cloud');
+    localStorage.setItem('pneumata-cloud-sync-enabled', '1');
+    const upserts: Message[] = [];
+
+    await processRichMessageMedia({
+      message: buildQueuedImageMessage(),
+      character,
+      aiProfiles: [imageProfile],
+      upsertMessage: (message) => upserts.push(message),
+    });
+
+    expect(upserts.at(-1)?.metadata?.attachments?.[0]).toMatchObject({
+      status: 'ready',
+      assetId: 'asset-missing-url',
+      url: 'data:image/png;base64,fallback',
+    });
+  });
+
   it('registers generated assistant images as image artifacts when agent artifacts are enabled', async () => {
     chatStoreState.chats = [{
       id: 'chat-1',
