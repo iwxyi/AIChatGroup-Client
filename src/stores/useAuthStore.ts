@@ -19,6 +19,7 @@ interface User {
   assistantArtifactCloudSyncEntitled?: boolean;
   aiProxyEntitled?: boolean;
   agentEntitled?: boolean;
+  aiSearchEntitled?: boolean;
   retentionLimits?: Record<string, { storage: number; recall: number }>;
 }
 

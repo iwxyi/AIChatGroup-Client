@@ -99,7 +99,7 @@ export default function AdminConfigMigrationPage() {
       <AdminSection title="配置迁移" subtitle="导出或导入后台配置，不包含用户列表、订单、额度流水、调用日志和用户创建的 API Key。">
         <Stack spacing={1.5}>
           <Alert severity="warning">
-            导出的 JSON 包含支付、短信、邮箱和 AI 服务商密钥。迁移完成后请按敏感文件处理，不要上传到代码仓库或公开渠道。
+            导出的 JSON 包含支付、短信、邮箱、搜索和 AI 服务商密钥。迁移完成后请按敏感文件处理，不要上传到代码仓库或公开渠道。
           </Alert>
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
             <Button variant="contained" startIcon={<DownloadIcon />} disabled={loading} onClick={() => void exportConfig()}>

@@ -92,6 +92,7 @@ type VipEntitlementForm = {
   assistantArtifactCloudSync: boolean;
   aiProxyEnabled: boolean;
   agentEnabled: boolean;
+  aiSearchEnabled: boolean;
   retentionLimitsText: string;
 };
 
@@ -215,6 +216,7 @@ const DEFAULT_VIP_ENTITLEMENTS: Record<string, VipEntitlementForm> = {
     assistantArtifactCloudSync: false,
     aiProxyEnabled: false,
     agentEnabled: false,
+    aiSearchEnabled: false,
     retentionLimitsText: retentionLimitsText(scaleRetentionLimits(0.5), scaleRetentionLimits(0.5)),
   },
   basic: {
@@ -232,6 +234,7 @@ const DEFAULT_VIP_ENTITLEMENTS: Record<string, VipEntitlementForm> = {
     assistantArtifactCloudSync: false,
     aiProxyEnabled: false,
     agentEnabled: true,
+    aiSearchEnabled: false,
     retentionLimitsText: retentionLimitsText(DEFAULT_BASIC_RETENTION_LIMITS, DEFAULT_BASIC_RETENTION_LIMITS),
   },
   pro: {
@@ -249,6 +252,7 @@ const DEFAULT_VIP_ENTITLEMENTS: Record<string, VipEntitlementForm> = {
     assistantArtifactCloudSync: true,
     aiProxyEnabled: true,
     agentEnabled: true,
+    aiSearchEnabled: true,
     retentionLimitsText: retentionLimitsText(scaleRetentionLimits(1.5), scaleRetentionLimits(1.5)),
   },
   premium: {
@@ -266,6 +270,7 @@ const DEFAULT_VIP_ENTITLEMENTS: Record<string, VipEntitlementForm> = {
     assistantArtifactCloudSync: true,
     aiProxyEnabled: true,
     agentEnabled: true,
+    aiSearchEnabled: true,
     retentionLimitsText: retentionLimitsText({
       characterLayeredMemories: { storage: 200, recall: 15 },
       characterRuntimeTimeline: { storage: 200, recall: 15 },
@@ -515,6 +520,7 @@ function toEntitlementForm(value: unknown, fallback: VipEntitlementForm): VipEnt
     assistantArtifactCloudSync: hasOwnRecordValue(record, 'assistantArtifactCloudSync') ? toBoolean(record.assistantArtifactCloudSync, fallback.assistantArtifactCloudSync) : fallback.assistantArtifactCloudSync,
     aiProxyEnabled: hasOwnRecordValue(record, 'aiProxyEnabled') ? toBoolean(record.aiProxyEnabled, fallback.aiProxyEnabled) : fallback.aiProxyEnabled,
     agentEnabled: hasOwnRecordValue(record, 'agentEnabled') ? toBoolean(record.agentEnabled, fallback.agentEnabled) : fallback.agentEnabled,
+    aiSearchEnabled: hasOwnRecordValue(record, 'aiSearchEnabled') ? toBoolean(record.aiSearchEnabled, fallback.aiSearchEnabled) : fallback.aiSearchEnabled,
     retentionLimitsText: hasOwnRecordValue(record, 'retentionLimits')
       ? retentionLimitsText(record.retentionLimits, parseRetentionLimitsText(fallback.retentionLimitsText, DEFAULT_BASIC_RETENTION_LIMITS) as Record<string, { storage: number; recall: number }>)
       : fallback.retentionLimitsText,
@@ -549,6 +555,7 @@ function buildEntitlementPayload(form: VipEntitlementForm, allowedProviderIds?: 
     assistantArtifactCloudSync: form.assistantArtifactCloudSync,
     aiProxyEnabled: form.aiProxyEnabled,
     agentEnabled: form.agentEnabled,
+    aiSearchEnabled: form.aiSearchEnabled,
     retentionLimits: parseRetentionLimitsText(form.retentionLimitsText, DEFAULT_BASIC_RETENTION_LIMITS),
   };
 }
@@ -821,6 +828,7 @@ function EntitlementEditor({
         <FormControlLabel control={<Switch checked={entitlement.assistantArtifactCloudSync} disabled={!entitlement.cloudSyncEnabled} onChange={(event) => onEntitlementChange('assistantArtifactCloudSync', event.target.checked)} />} label="允许 AI 产物云同步" />
         <FormControlLabel control={<Switch checked={entitlement.aiProxyEnabled} onChange={(event) => onEntitlementChange('aiProxyEnabled', event.target.checked)} />} label="允许中转站" />
         <FormControlLabel control={<Switch checked={entitlement.agentEnabled} onChange={(event) => onEntitlementChange('agentEnabled', event.target.checked)} />} label="允许 Agent" />
+        <FormControlLabel control={<Switch checked={entitlement.aiSearchEnabled} onChange={(event) => onEntitlementChange('aiSearchEnabled', event.target.checked)} />} label="允许 AI 搜索" />
       </Box>
       <Box>
         <Typography variant="subtitle2" sx={{ fontWeight: 900, mb: 1 }}>支持的官方 AI 供应商</Typography>

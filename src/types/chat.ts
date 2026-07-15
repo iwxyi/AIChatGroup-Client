@@ -593,6 +593,7 @@ export interface OpenChatModeState {
   assistantCapabilities?: {
     agent?: boolean;
     artifacts?: boolean;
+    webSearch?: boolean;
     updatedAt?: number;
   };
 }

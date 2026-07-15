@@ -50,6 +50,7 @@ import { normalizeStoryChoiceSuggestions } from './storyChoices';
 import type { StoryContinuationState } from './narrativeRuntime';
 import { sanitizeUserFacingText } from './displayTextSanitizer';
 import { useSettingsStore } from '../stores/useSettingsStore';
+import { buildAiSearchPromptBlock } from './aiSearchContext';
 
 export interface GeneratedRoundMessage extends Omit<Message, 'id' | 'timestamp' | 'isDeleted'> {
   extraMessages?: string[] | null;
@@ -3359,6 +3360,12 @@ export async function generateSpeakerMessage(params: {
   });
   const isStoryReader = params.chat.sessionKind?.scenarioId === 'story-reader';
   const promptPlayMode = resolvePromptPlayMode(params.chat);
+  const searchPromptBlock = await buildAiSearchPromptBlock({
+    chat: params.chat,
+    messages: activeMessages,
+    enabled: Boolean(params.chat.modeState.assistantCapabilities?.webSearch),
+    signal: params.signal,
+  });
   const speakerSystemPrompt = buildSpeakerSystemPrompt({
     speaker: params.speaker,
     chat: params.chat,
@@ -3378,6 +3385,7 @@ export async function generateSpeakerMessage(params: {
     { id: 'world_event_context', layer: 'scene', priority: 20, content: buildWorldEventContextPrompt({ chat: params.chat, speaker: params.speaker, members: effectiveMembers }) },
     { id: 'world_influence', layer: 'scene', priority: 30, content: worldInfluenceSnapshot.prompt },
     { id: 'current_intent', layer: 'task', priority: 30, content: buildCurrentIntentPrompt({ directorIntent: effectiveDirectorIntent, intent }) },
+    { id: 'web_search_context', layer: 'task', priority: 32, content: isStoryReader ? '' : searchPromptBlock },
     { id: 'private_turn_priority', layer: 'task', priority: 35, content: buildPrivateTurnPriorityPrompt(params.chat) },
     { id: 'engine_constraints', layer: 'task', priority: 40, content: additionalConstraints },
     { id: 'analysis_room_contract', layer: 'task', priority: 45, content: buildAnalysisRoomContractPrompt(params.chat) },
@@ -3397,7 +3405,7 @@ export async function generateSpeakerMessage(params: {
     { id: 'inline_interaction_contract', layer: 'output', priority: 20, content: buildInlineInteractionContract({ chat: params.chat, speaker: params.speaker, characters: effectiveMembers, recentMessages: activeMessages, turnPlan, mediaCapabilities, mediaRequested: Boolean(userGuidance?.mediaRequest) }) },
     { id: 'engine_suffix', layer: 'suffix', priority: 100, content: promptSuffix },
   ];
-  const systemPrompt = isStoryReader
+  const baseSystemPrompt = isStoryReader
     ? buildStoryReaderSystemPrompt({
       chat: params.chat,
       speaker: params.speaker,
@@ -3408,6 +3416,9 @@ export async function generateSpeakerMessage(params: {
       promptSuffix,
     })
     : composePromptBlocks(promptBlocks, promptPlayMode);
+  const systemPrompt = isStoryReader && searchPromptBlock
+    ? `${baseSystemPrompt}\n\n${searchPromptBlock}`
+    : baseSystemPrompt;
   const chatMessages = buildChatMessages(activeMessages, characterMap, MAX_HISTORY_FOR_PROMPT, {
     currentSpeakerId: isStoryReader ? undefined : params.speaker.id,
     chatType: params.chat.type,

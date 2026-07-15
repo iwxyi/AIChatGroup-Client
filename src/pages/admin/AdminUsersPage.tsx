@@ -42,6 +42,7 @@ type AccountEntitlementDraft = {
   assistantArtifactCloudSync: boolean;
   aiProxyEnabled: boolean;
   agentEnabled: boolean;
+  aiSearchEnabled: boolean;
   maxCharacters: string;
   maxChats: string;
   dailyAiGenerationLimit: string;
@@ -60,6 +61,7 @@ const EMPTY_ACCOUNT_ENTITLEMENT_DRAFT: AccountEntitlementDraft = {
   assistantArtifactCloudSync: false,
   aiProxyEnabled: false,
   agentEnabled: false,
+  aiSearchEnabled: false,
   maxCharacters: '',
   maxChats: '',
   dailyAiGenerationLimit: '',
@@ -167,6 +169,7 @@ function accountEntitlementToDraft(value: unknown): AccountEntitlementDraft {
     assistantArtifactCloudSync: entitlement.assistantArtifactCloudSync === true,
     aiProxyEnabled: entitlement.aiProxyEnabled === true,
     agentEnabled: entitlement.agentEnabled === true,
+    aiSearchEnabled: entitlement.aiSearchEnabled === true,
     maxCharacters: draftText(entitlement.maxCharacters),
     maxChats: draftText(entitlement.maxChats),
     dailyAiGenerationLimit: draftText(entitlement.dailyAiGenerationLimit),
@@ -213,6 +216,7 @@ function buildAccountEntitlementPayload(draft: AccountEntitlementDraft, allowedP
   if (draft.assistantArtifactCloudSync) entitlement.assistantArtifactCloudSync = true;
   if (draft.aiProxyEnabled) entitlement.aiProxyEnabled = true;
   if (draft.agentEnabled) entitlement.agentEnabled = true;
+  if (draft.aiSearchEnabled) entitlement.aiSearchEnabled = true;
   if (draft.developerModeEnabled) entitlement.developerModeEnabled = true;
   const officialProviderAccess = filterAllowedProviderAccess(normalizeOfficialProviderAccess(draft.officialProviderAccess), allowedProviderIds);
   if (officialProviderAccess.length) entitlement.officialProviderAccess = officialProviderAccess;
@@ -879,6 +883,10 @@ export default function AdminUsersPage() {
                       <FormControlLabel
                         control={<Switch checked={accountEntitlementDraft.agentEnabled} onChange={(event) => updateAccountEntitlementDraft({ agentEnabled: event.target.checked })} />}
                         label="Agent"
+                      />
+                      <FormControlLabel
+                        control={<Switch checked={accountEntitlementDraft.aiSearchEnabled} onChange={(event) => updateAccountEntitlementDraft({ aiSearchEnabled: event.target.checked })} />}
+                        label="AI 搜索"
                       />
                     </Stack>
                     <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', lg: 'repeat(4, minmax(0, 1fr))' }, gap: 1 }}>

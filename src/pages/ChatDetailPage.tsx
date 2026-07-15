@@ -170,6 +170,9 @@ function ChatPageSettingsDialog({
   const capabilities = chat?.modeState.assistantCapabilities || {};
   const agentEnabled = Boolean(capabilities.agent);
   const agentAvailable = authMode === 'cloud' && currentUser?.agentEntitled === true;
+  const aiSearchAvailable = authMode === 'cloud' && currentUser?.aiSearchEntitled === true;
+  const aiSearchEnabled = Boolean(capabilities.webSearch);
+  const aiSearchSwitchDisabled = !aiSearchAvailable || (isAssistantChat && !agentEnabled);
   const artifactCloudSyncEntitled = Boolean(currentUser?.assistantArtifactCloudSyncEntitled);
   const artifactCloudSyncAvailable = authMode === 'cloud' && currentUser?.cloudSyncEntitled !== false && artifactCloudSyncEntitled;
   useEffect(() => {
@@ -206,6 +209,20 @@ function ChatPageSettingsDialog({
         .then((module) => module.useAssistantArtifactStore.getState().pushArtifactsToCloud(chat.id))
         .catch(() => undefined);
     }
+  };
+  const handleAiSearchToggle = (enabled: boolean) => {
+    if (!chat) return;
+    if (enabled && aiSearchSwitchDisabled) return;
+    void updateChat(chat.id, {
+      modeState: {
+        ...chat.modeState,
+        assistantCapabilities: {
+          ...capabilities,
+          webSearch: enabled,
+          updatedAt: Date.now(),
+        },
+      },
+    });
   };
   const artifactSyncHelp = '仅同步文档、代码、图表源码、表格、JSON、纯文本和图片引用；Office、PDF、压缩包和工程文件仍走 WebDAV / 本地存储。';
   return (
@@ -269,6 +286,32 @@ function ChatPageSettingsDialog({
               <Divider />
             </>
           ) : null}
+
+          <Box>
+            <Stack direction="row" spacing={1.25} sx={{ alignItems: 'center', justifyContent: 'space-between', minWidth: 0 }}>
+              <Box sx={{ minWidth: 0 }}>
+                <Typography variant="body2" sx={{ fontWeight: 700 }}>AI 搜索</Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.55 }}>
+                  开启后聊天会在用户明显需要最新资料时检索网页；每次实际搜索按后台配置扣点。
+                </Typography>
+                {!aiSearchAvailable ? (
+                  <Typography variant="caption" color="warning.main" sx={{ display: 'block', mt: 0.5 }}>
+                    AI 搜索仅会员可用。
+                  </Typography>
+                ) : isAssistantChat && !agentEnabled ? (
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                    普通助手不会启用搜索；开启 Agent 后可打开。
+                  </Typography>
+                ) : null}
+              </Box>
+              <Switch
+                checked={aiSearchEnabled && !aiSearchSwitchDisabled}
+                disabled={aiSearchSwitchDisabled}
+                onChange={(event) => handleAiSearchToggle(event.target.checked)}
+                slotProps={{ input: { 'aria-label': '开启 AI 搜索' } }}
+              />
+            </Stack>
+          </Box>
 
           <Box>
             <Typography variant="body2" sx={{ fontWeight: 700, mb: 0.75 }}>页面最大宽度</Typography>

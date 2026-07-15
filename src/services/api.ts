@@ -19,6 +19,7 @@ export interface AuthUserResponse {
   assistantArtifactCloudSyncEntitled?: boolean;
   aiProxyEntitled?: boolean;
   agentEntitled?: boolean;
+  aiSearchEntitled?: boolean;
   retentionLimits?: Record<string, { storage: number; recall: number }>;
 }
 
@@ -90,7 +91,27 @@ export interface VipEntitlementInfo {
   assistantArtifactCloudSync: boolean;
   aiProxyEnabled: boolean;
   agentEnabled: boolean;
+  aiSearchEnabled: boolean;
   retentionLimits?: Record<string, { storage: number; recall: number }>;
+}
+
+export interface AiSearchResultItem {
+  title: string;
+  url: string;
+  snippet: string;
+  summary?: string;
+  siteName?: string;
+  siteIcon?: string;
+  publishedAt?: string;
+  imageUrls?: string[];
+}
+
+export interface AiSearchResponse {
+  query: string;
+  providerCode: string;
+  pointCost: number;
+  balanceAfter?: number | null;
+  results: AiSearchResultItem[];
 }
 
 export interface AiUsageRecordItem {
@@ -543,6 +564,18 @@ class ApiClient {
 
   async getPlatformPublicConfig() {
     return this.request<{ site: SitePublicConfig; captcha?: CaptchaPublicConfig }>('GET', '/platform/public-config');
+  }
+
+  async searchWeb(query: string, options?: { count?: number; freshness?: string; include?: string; exclude?: string; source?: string; resourceId?: string }) {
+    return this.request<AiSearchResponse>('POST', '/search/web', {
+      query,
+      count: options?.count,
+      freshness: options?.freshness,
+      include: options?.include,
+      exclude: options?.exclude,
+      source: options?.source,
+      resourceId: options?.resourceId,
+    });
   }
 
   async createLocalCaptchaChallenge() {

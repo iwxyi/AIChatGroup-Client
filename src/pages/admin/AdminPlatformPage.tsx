@@ -28,6 +28,7 @@ const CATEGORY_TABS = [
   { value: 'captcha', label: '验证码' },
   { value: 'sms', label: '短信' },
   { value: 'email', label: '邮箱' },
+  { value: 'search', label: '搜索' },
 ] as const;
 
 type PlatformTab = typeof CATEGORY_TABS[number]['value'];
@@ -64,6 +65,7 @@ const PROVIDER_POPULARITY: Record<string, number> = {
   'email:mailgun': 40,
   'email:awsses': 50,
   'email:console': 90,
+  'search:bocha': 10,
 };
 
 const DEFAULT_ALIPAY_NOTIFY_URL = '${domain}/api/billing/payments/alipay/notify';
@@ -272,6 +274,17 @@ const FIELD_DEFS: Record<string, FieldDef[]> = {
     { key: 'secretAccessKey', label: 'SecretAccessKey', secret: true, required: true },
   ],
   'email:console': [],
+  'search:bocha': [
+    { key: 'apiBaseUrl', label: 'API Base URL', required: true },
+    { key: 'webSearchPath', label: '网页搜索路径' },
+    { key: 'freshness', label: '时间范围' },
+    { key: 'count', label: '默认结果数', type: 'number' },
+    { key: 'summary', label: '返回摘要', type: 'boolean' },
+    { key: 'include', label: '限定网站范围' },
+    { key: 'exclude', label: '排除网站范围' },
+    { key: 'pointCost', label: '单次搜索扣点', type: 'number' },
+    { key: 'apiKey', label: 'API Key', secret: true, required: true },
+  ],
 };
 
 function integrationKey(item: Record<string, unknown>) {
@@ -562,7 +575,7 @@ export default function AdminPlatformPage() {
           <AdminSection title={`${categoryLabel}概览`}>
             <AdminMetricGrid items={integrationMetrics} compact minWidth={132} />
           </AdminSection>
-          <AdminSection title={`${categoryLabel}服务商`} subtitle={category === 'captcha' ? '只会使用一个启用且设为默认的验证码通道，点击服务商行可以编辑配置。' : '点击服务商行可以编辑配置、保存并测试。'} bodySx={{ p: 0 }}>
+          <AdminSection title={`${categoryLabel}服务商`} subtitle={category === 'captcha' ? '只会使用一个启用且设为默认的验证码通道，点击服务商行可以编辑配置。' : category === 'search' ? '搜索平台用于聊天按需搜索；真实搜索会按后台配置扣除 AI 点数。' : '点击服务商行可以编辑配置、保存并测试。'} bodySx={{ p: 0 }}>
             <AdminTableFrame minWidth={760}>
               <Table>
                 <TableHead>
@@ -729,6 +742,12 @@ export default function AdminPlatformPage() {
                     onChange={(event) => setTestDraft((prev) => ({ ...prev, to: event.target.value }))}
                     fullWidth
                   />
+                ) : null}
+                {selected.category === 'search' ? (
+                  <Alert severity="info">聊天按需搜索会在用户会员权益允许时触发；每次成功搜索按“单次搜索扣点”写入 AI 点数流水。</Alert>
+                ) : null}
+                {selectedCapabilities.configurationOnly ? (
+                  <Alert severity="warning">{selectedCapabilities.note || '该服务商当前仅保存配置，暂不支持连接测试。'}</Alert>
                 ) : null}
                 {testResult ? <Alert severity={testResult.severity}>{testResult.message}</Alert> : null}
               </Stack>

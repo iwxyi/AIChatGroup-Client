@@ -119,6 +119,7 @@ const LEDGER_SOURCE_TYPE_LABELS: Record<string, string> = {
   admin_transfer: '后台增减',
   manual_adjustment: '手动调整',
   ai_invocation: 'AI 调用',
+  ai_search: 'AI 搜索',
 };
 
 function getRecord(value: unknown): Record<string, unknown> {

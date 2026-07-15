@@ -8,6 +8,7 @@ import { generateResponse } from './aiClient';
 import { GenerationCancelledError } from './generationCancellation';
 import { attachMessageToActiveBranch } from './messageBranching';
 import { useChatStore } from '../stores/useChatStore';
+import { buildAiSearchPromptBlock } from './aiSearchContext';
 
 const MAX_ASSISTANT_HISTORY = 24;
 const MAX_ASSISTANT_TITLE_CONTEXT = 12;
@@ -515,10 +516,20 @@ export async function runAssistantChatReplyFlow(params: {
   );
   let streamingMessage = { ...placeholder, isStreaming: true };
   params.upsertMessage(streamingMessage);
+  const searchPromptBlock = await buildAiSearchPromptBlock({
+    chat: params.chat,
+    messages: params.currentMessages,
+    enabled: Boolean(params.chat.modeState.assistantCapabilities?.agent && params.chat.modeState.assistantCapabilities?.webSearch),
+    signal: params.signal,
+  });
+  const systemPrompt = [
+    buildAssistantSystemPrompt(),
+    searchPromptBlock,
+  ].filter(Boolean).join('\n\n');
 
   const generated = await generateResponse(
     resolvedApi,
-    buildAssistantSystemPrompt(),
+    systemPrompt,
     toAssistantPromptMessages(params.currentMessages),
     (content) => {
       ensureAssistantReplyStillCurrent(params);
