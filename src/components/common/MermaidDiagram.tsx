@@ -5,13 +5,14 @@ interface MermaidDiagramProps {
   source: string;
   hideLoading?: boolean;
   onRenderSettled?: () => void;
+  onOpenFullscreen?: (payload: { source: string; svg: string; dataUrl: string }) => void;
 }
 
 export function estimateMermaidDiagramHeight(source: string) {
   return Math.min(420, Math.max(160, source.split('\n').length * 24 + 80));
 }
 
-function MermaidDiagram({ source, hideLoading = false, onRenderSettled }: MermaidDiagramProps) {
+function MermaidDiagram({ source, hideLoading = false, onRenderSettled, onOpenFullscreen }: MermaidDiagramProps) {
   const reactId = useId().replace(/[^a-zA-Z0-9_-]/g, '');
   const [svg, setSvg] = useState('');
   const [error, setError] = useState('');
@@ -48,6 +49,12 @@ function MermaidDiagram({ source, hideLoading = false, onRenderSettled }: Mermai
     };
   }, [onRenderSettled, reactId, source]);
 
+  const openFullscreen = () => {
+    if (!svg || !onOpenFullscreen) return;
+    const dataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+    onOpenFullscreen({ source, svg, dataUrl });
+  };
+
   return (
     <Box
       sx={(theme) => ({
@@ -71,12 +78,23 @@ function MermaidDiagram({ source, hideLoading = false, onRenderSettled }: Mermai
         <Box
           sx={{
             minWidth: 0,
+            cursor: onOpenFullscreen ? 'zoom-in' : 'default',
             '& svg': {
               maxWidth: 'min(100%, 680px)',
               maxHeight: 'min(58vh, 520px)',
               height: 'auto',
               display: 'block',
             },
+          }}
+          role={onOpenFullscreen ? 'button' : undefined}
+          tabIndex={onOpenFullscreen ? 0 : undefined}
+          onClick={openFullscreen}
+          onKeyDown={(event) => {
+            if (!onOpenFullscreen) return;
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              openFullscreen();
+            }
           }}
           dangerouslySetInnerHTML={{ __html: svg }}
         />

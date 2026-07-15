@@ -144,10 +144,11 @@ export function NarrativeParagraphContent({ blocks, characters = [], showDevelop
   );
 }
 
-export function MessageContent({ message, onRetryMedia, onOpenImage }: {
+export function MessageContent({ message, onRetryMedia, onOpenImage, onOpenDiagram }: {
   message: Message;
   onRetryMedia?: (message: Message, attachmentId: string) => void | Promise<void>;
   onOpenImage?: (message: Message, attachment: MessageAttachment) => void;
+  onOpenDiagram?: (message: Message, diagram: { source: string; svg: string; dataUrl: string }) => void;
 }) {
   const attachments = message.metadata?.attachments || [];
   const statusChipColor = (status: string | undefined): 'error' | 'success' | 'primary' => {
@@ -175,7 +176,12 @@ export function MessageContent({ message, onRetryMedia, onOpenImage }: {
   return (
     <Box sx={{ display: 'grid', gap: 0.9 }}>
       <Box sx={{ typography: 'body2', wordBreak: 'break-word', userSelect: 'text', WebkitUserSelect: 'text', '& table': { width: '100%', borderCollapse: 'collapse' }, '& th, & td': { border: '1px solid', borderColor: 'divider', px: 0.75, py: 0.4 } }}>
-        <MarkdownText text={message.content} forceRich={message.metadata?.format === 'markdown'} deferDiagrams={Boolean(message.isStreaming)} />
+        <MarkdownText
+          text={message.content}
+          forceRich={message.metadata?.format === 'markdown'}
+          deferDiagrams={Boolean(message.isStreaming)}
+          onOpenDiagram={onOpenDiagram ? (diagram) => onOpenDiagram(message, diagram) : undefined}
+        />
       </Box>
       {attachments.map((attachment) => {
         if (attachment.kind === 'image') {

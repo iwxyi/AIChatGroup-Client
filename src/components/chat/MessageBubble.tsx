@@ -31,6 +31,7 @@ interface MessageBubbleProps {
   onExpressionFeedback?: (message: Message, kind: ExpressionFeedbackKind) => void;
   onRetryMedia?: (message: Message, attachmentId: string) => void | Promise<void>;
   onOpenImage?: (message: Message, attachment: MessageAttachment) => void;
+  onOpenDiagram?: (message: Message, diagram: { source: string; svg: string; dataUrl: string }) => void;
   onCharacterAvatarClick?: (character: AICharacter, anchorEl: HTMLElement) => void;
   pending?: boolean;
   currentUser?: { nickname?: string; avatar?: string };
@@ -66,7 +67,7 @@ function buildWithdrawalDebugTitle(withdrawal: NonNullable<Message['metadata']>[
   );
 }
 
-function MessageBubble({ message, character, characters = [], onDelete, onAnalyze, onExpressionFeedback, onRetryMedia, onOpenImage, onCharacterAvatarClick, pending = false, currentUser, selfMemberId = null, privateConversation = false, branchVersionInfo, onCreateRevision, onSwitchRevision, onOpenArtifact }: MessageBubbleProps) {
+function MessageBubble({ message, character, characters = [], onDelete, onAnalyze, onExpressionFeedback, onRetryMedia, onOpenImage, onOpenDiagram, onCharacterAvatarClick, pending = false, currentUser, selfMemberId = null, privateConversation = false, branchVersionInfo, onCreateRevision, onSwitchRevision, onOpenArtifact }: MessageBubbleProps) {
   const customBubbleStyles = useSettingsStore((state) => state.customBubbleStyles);
   const userBubbleStyleId = useSettingsStore((state) => state.userBubbleStyleId);
   const userBubbleStyle = useSettingsStore((state) => state.userBubbleStyle);
@@ -363,7 +364,7 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
                   </Box>
                 </Tooltip>
               ) : withdrawalNoticeNode
-            ) : <MessageContent message={message} onRetryMedia={onRetryMedia} onOpenImage={onOpenImage} />}
+            ) : <MessageContent message={message} onRetryMedia={onRetryMedia} onOpenImage={onOpenImage} onOpenDiagram={onOpenDiagram} />}
           </Box>
           {artifactRefs.length ? (
             <Box
@@ -416,7 +417,7 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
 
       <Dialog open={viewerOpen} onClose={() => setViewerOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>{message.senderName}</DialogTitle>
-        <DialogContent><MessageContent message={message} onRetryMedia={onRetryMedia} onOpenImage={onOpenImage} /></DialogContent>
+        <DialogContent><MessageContent message={message} onRetryMedia={onRetryMedia} onOpenImage={onOpenImage} onOpenDiagram={onOpenDiagram} /></DialogContent>
       </Dialog>
 
       <Menu
@@ -530,6 +531,7 @@ function areMessageBubblePropsEqual(previous: MessageBubbleProps, next: MessageB
     && previous.onExpressionFeedback === next.onExpressionFeedback
     && previous.onRetryMedia === next.onRetryMedia
     && previous.onOpenImage === next.onOpenImage
+    && previous.onOpenDiagram === next.onOpenDiagram
     && previous.onCharacterAvatarClick === next.onCharacterAvatarClick
     && previous.pending === next.pending
     && previous.currentUser === next.currentUser

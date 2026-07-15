@@ -73,7 +73,17 @@ function MermaidDiagramPlaceholder() {
   );
 }
 
-function RichMarkdownText({ text, softLineBreaks = true, deferDiagrams = false }: { text: string; softLineBreaks?: boolean; deferDiagrams?: boolean }) {
+function RichMarkdownText({
+  text,
+  softLineBreaks = true,
+  deferDiagrams = false,
+  onOpenDiagram,
+}: {
+  text: string;
+  softLineBreaks?: boolean;
+  deferDiagrams?: boolean;
+  onOpenDiagram?: (payload: { source: string; svg: string; dataUrl: string }) => void;
+}) {
   return (
     <Box
       sx={{
@@ -153,7 +163,7 @@ function RichMarkdownText({ text, softLineBreaks = true, deferDiagrams = false }
           pre: ({ children }) => {
             const block = extractCodeBlock(children);
             if (block?.language === 'mermaid' && deferDiagrams) return <MermaidDiagramPlaceholder />;
-            if (block?.language === 'mermaid' && !deferDiagrams) return <MermaidDiagram source={block.source} />;
+            if (block?.language === 'mermaid' && !deferDiagrams) return <MermaidDiagram source={block.source} onOpenFullscreen={onOpenDiagram} />;
             return <pre>{children}</pre>;
           },
           code: ({ children, className, ...props }) => (

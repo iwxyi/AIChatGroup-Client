@@ -13,7 +13,7 @@ import { resolveCharacterOrDeleted } from '../../utils/deletedEntity';
 import { buildChatRenderItems, type ChatRenderItem } from './chatRenderModel';
 import { getVisibleNarrativeDisplayBlocks, isNarrativeRevealAllowed } from './messageListPresentation';
 import type { ExpressionFeedbackKind } from '../../services/characterExpressionFeedback';
-import ImageLightbox from '../common/ImageLightbox';
+import ImageLightbox, { type LightboxImageItem } from '../common/ImageLightbox';
 import { useSettingsStore } from '../../stores/useSettingsStore';
 import { logDeveloperDiagnostic } from '../../services/developerDiagnostics';
 import { buildStoryNodeProgress, type StoryNodeProgressChip } from '../../services/storyNodeProgress';
@@ -707,6 +707,7 @@ export default function MessageList({
   const hasInitialRestorePosition = Boolean(initialScrollPosition && !initialScrollPosition.pinned);
   const [initialViewportReady, setInitialViewportReady] = useState(() => !autoStickToBottom && !hasInitialRestorePosition);
   const [prependStabilizing, setPrependStabilizing] = useState(false);
+  const [diagramViewerItem, setDiagramViewerItem] = useState<LightboxImageItem | null>(null);
   const previousRenderMetricsRef = useRef({
     itemCount: renderItems.length,
     lastItemKey: renderItems.at(-1)?.key ?? null,
@@ -731,13 +732,26 @@ export default function MessageList({
   const virtualMessageItems = messageVirtualizer.getVirtualItems();
 
   const viewerIndex = viewerKey ? chatImageTimeline.findIndex((item) => item.key === viewerKey) : -1;
-  const viewerOpen = viewerIndex >= 0;
+  const viewerImages = diagramViewerItem ? [diagramViewerItem] : chatImageTimeline;
+  const viewerOpen = Boolean(diagramViewerItem) || viewerIndex >= 0;
+  const activeViewerIndex = diagramViewerItem ? 0 : Math.max(0, viewerIndex);
 
   const openChatImage = useCallback((message: Message, attachment: MessageAttachment) => {
+    setDiagramViewerItem(null);
     const key = `${message.id}-${attachment.id}`;
     if (!chatImageTimeline.some((item) => item.key === key)) return;
     setViewerKey(key);
   }, [chatImageTimeline]);
+
+  const openChatDiagram = useCallback((message: Message, diagram: { source: string; svg: string; dataUrl: string }) => {
+    setViewerKey(null);
+    setDiagramViewerItem({
+      key: `${message.id}-diagram-${diagram.source.length}-${diagram.svg.length}`,
+      src: diagram.dataUrl,
+      fullSrc: diagram.dataUrl,
+      alt: '流程图',
+    });
+  }, []);
 
   const loadOlderFromViewer = useCallback(() => {
     if (!onReachTop || isLoadingOlder || !hasMore) return;
@@ -756,6 +770,7 @@ export default function MessageList({
       onExpressionFeedback={item.pending || (options?.message || item.message).type !== 'ai' ? undefined : onExpressionFeedback}
       onRetryMedia={item.pending ? undefined : onRetryMedia}
       onOpenImage={item.pending ? undefined : openChatImage}
+      onOpenDiagram={item.pending ? undefined : openChatDiagram}
       onCharacterAvatarClick={item.pending ? undefined : onCharacterAvatarClick}
       onCreateRevision={item.pending ? undefined : onCreateRevision}
       onSwitchRevision={item.pending ? undefined : onSwitchRevision}
@@ -765,7 +780,7 @@ export default function MessageList({
       selfMemberId={selfMemberId}
       privateConversation={privateConversation}
     />
-  ), [branchVersionInfoByMessageId, characters, currentUser, onAnalyzeMessage, onCharacterAvatarClick, onCreateRevision, onDeleteMessage, onExpressionFeedback, onOpenArtifact, onRetryMedia, onSwitchRevision, openChatImage, privateConversation, selfMemberId]);
+  ), [branchVersionInfoByMessageId, characters, currentUser, onAnalyzeMessage, onCharacterAvatarClick, onCreateRevision, onDeleteMessage, onExpressionFeedback, onOpenArtifact, onRetryMedia, onSwitchRevision, openChatDiagram, openChatImage, privateConversation, selfMemberId]);
 
   const renderMessageItem = useCallback((item: MessageListRenderItem) => {
     const anchorProps = {
@@ -1989,12 +2004,18 @@ export default function MessageList({
       ) : null}
       <ImageLightbox
         open={viewerOpen}
-        images={chatImageTimeline}
-        index={Math.max(0, viewerIndex)}
-        onIndexChange={(index) => setViewerKey(chatImageTimeline[index]?.key || null)}
-        onReachStart={hasMore && !isLoadingOlder ? loadOlderFromViewer : undefined}
+        images={viewerImages}
+        index={activeViewerIndex}
+        onIndexChange={(index) => {
+          if (diagramViewerItem) return;
+          setViewerKey(chatImageTimeline[index]?.key || null);
+        }}
+        onReachStart={!diagramViewerItem && hasMore && !isLoadingOlder ? loadOlderFromViewer : undefined}
         reachStartVersion={messages.length}
-        onClose={() => setViewerKey(null)}
+        onClose={() => {
+          setViewerKey(null);
+          setDiagramViewerItem(null);
+        }}
       />
     </Box>
   );

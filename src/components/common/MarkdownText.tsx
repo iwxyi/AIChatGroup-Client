@@ -30,12 +30,24 @@ function PlainMarkdownText({ text }: { text: string }) {
   );
 }
 
-function MarkdownText({ text, softLineBreaks = true, forceRich = false, deferDiagrams = false }: { text: string; softLineBreaks?: boolean; forceRich?: boolean; deferDiagrams?: boolean }) {
+function MarkdownText({
+  text,
+  softLineBreaks = true,
+  forceRich = false,
+  deferDiagrams = false,
+  onOpenDiagram,
+}: {
+  text: string;
+  softLineBreaks?: boolean;
+  forceRich?: boolean;
+  deferDiagrams?: boolean;
+  onOpenDiagram?: (payload: { source: string; svg: string; dataUrl: string }) => void;
+}) {
   const normalized = normalizeStreamingMarkdown(text);
   if (!forceRich && !shouldUseRichMarkdown(normalized)) return <PlainMarkdownText text={normalized} />;
   return (
     <Suspense fallback={<PlainMarkdownText text={normalized} />}>
-      <RichMarkdownText text={normalized} softLineBreaks={softLineBreaks} deferDiagrams={deferDiagrams} />
+      <RichMarkdownText text={normalized} softLineBreaks={softLineBreaks} deferDiagrams={deferDiagrams} onOpenDiagram={onOpenDiagram} />
     </Suspense>
   );
 }
