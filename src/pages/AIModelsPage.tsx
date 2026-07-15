@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type MouseEvent } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type MouseEvent } from 'react';
 import {
   Box, Typography, TextField, Button,
   FormControl, InputLabel, Select, MenuItem, ListSubheader,
@@ -42,6 +42,10 @@ type AIProviderOption = AIProviderCatalogEntry & {
 
 type ModelDropdownOption = {
   value: string;
+  label?: string;
+  priceLabel?: string;
+  inputPriceLabel?: string;
+  outputPriceLabel?: string;
   group: string;
 };
 
@@ -82,6 +86,17 @@ function blockSecretDrag(event: DragEvent<HTMLInputElement | HTMLTextAreaElement
 
 function blockSecretContextMenu(event: MouseEvent<HTMLInputElement | HTMLTextAreaElement>) {
   event.preventDefault();
+}
+
+function SettingsSyncErrorAlert() {
+  const syncStatus = useSettingsStore((state) => state.syncStatus);
+  const syncError = useSettingsStore((state) => state.syncError);
+  if (syncStatus !== 'error' || !syncError) return null;
+  return (
+    <Alert severity="error" variant="outlined">
+      {syncError}
+    </Alert>
+  );
 }
 
 function fieldSx() {
@@ -147,8 +162,236 @@ function solidPopupPaperSx() {
   };
 }
 
+function buildModelOptionSignature(options: ModelDropdownOption[]) {
+  return options
+    .map((option) => [
+      option.value,
+      option.label || '',
+      option.priceLabel || '',
+      option.inputPriceLabel || '',
+      option.outputPriceLabel || '',
+      option.group,
+    ].join('\u0001'))
+    .join('\u0002');
+}
+
+type ModelAutocompleteProps = {
+  profileId: string;
+  model: string;
+  activeType: AIModelType;
+  options: ModelDropdownOption[];
+  open: boolean;
+  modelLabel: string;
+  placeholder: string;
+  onOpen: () => void;
+  onClose: () => void;
+  onCommitModel: (value: string) => void;
+  setInputRef: (node: HTMLInputElement | null) => void;
+};
+
+const ModelAutocomplete = memo(function ModelAutocomplete({
+  profileId,
+  model,
+  activeType,
+  options,
+  open,
+  modelLabel,
+  placeholder,
+  onOpen,
+  onClose,
+  onCommitModel,
+  setInputRef,
+}: ModelAutocompleteProps) {
+  const centeredForCurrentOpenRef = useRef(false);
+  const selectedModelOption = options.find((item) => item.value === model) || null;
+  const selectedModelLabel = selectedModelOption?.label || model;
+  const firstModelGroup = options[0]?.group || '';
+  const showModelPriceColumn = options.some((item) => Boolean(item.priceLabel));
+  const priceTextSx = {
+    color: (theme: Theme) => `${theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.32)' : 'rgba(0,0,0,0.34)'} !important`,
+  };
+  const handleListboxRef = useCallback((node: HTMLUListElement | null) => {
+    if (!node || centeredForCurrentOpenRef.current) return;
+    centeredForCurrentOpenRef.current = true;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        node
+          .querySelector<HTMLElement>('[aria-selected="true"]')
+          ?.scrollIntoView({ block: 'center' });
+      });
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!open) centeredForCurrentOpenRef.current = false;
+  }, [open]);
+
+  return (
+    <Autocomplete<ModelDropdownOption, false, false, true>
+      freeSolo
+      options={options}
+      open={open}
+      onOpen={onOpen}
+      onClose={onClose}
+      slotProps={{
+        popper: {
+          sx: {
+            width: {
+              xs: 'calc(100vw - 32px) !important',
+              sm: 'min(400px, calc(100vw - 48px)) !important',
+            },
+          },
+        },
+        paper: {
+          sx: solidPopupPaperSx(),
+        },
+        listbox: {
+          ref: handleListboxRef,
+        },
+      }}
+      filterOptions={(items, state) => {
+        const input = state.inputValue.trim();
+        if (!input || input === model || input === selectedModelLabel) return items;
+        const normalizedInput = input.toLowerCase();
+        return items.filter((option) => `${option.label || option.value} ${option.value} ${option.group}`.toLowerCase().includes(normalizedInput));
+      }}
+      groupBy={(option) => option.group}
+      renderGroup={(params) => (
+        <Box component="li" key={params.key} sx={{ listStyle: 'none' }}>
+          <ListSubheader
+            component="div"
+            disableSticky
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1.5,
+              bgcolor: 'background.paper',
+              borderBottom: '1px solid',
+              borderColor: 'divider',
+              color: 'text.secondary',
+              fontSize: 12,
+              fontWeight: 700,
+              lineHeight: 1.15,
+              minHeight: 38,
+              py: 0.5,
+              px: 2,
+            }}
+          >
+            <Box component="span" sx={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {params.group}
+            </Box>
+            {showModelPriceColumn && params.group === firstModelGroup ? (
+              <Box
+                component="span"
+                sx={{
+                  display: 'flex',
+                  justifyContent: 'flex-end',
+                  gap: 0.5,
+                  flexShrink: 0,
+                  minWidth: activeType === 'image' ? 72 : 76,
+                  textAlign: 'right',
+                }}
+              >
+                {activeType === 'image' ? (
+                  <Box component="span" sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'flex-end', gap: 0.25, minWidth: 72, whiteSpace: 'nowrap' }}>
+                    <Box component="span">价格</Box>
+                    <Box component="span" sx={{ ...priceTextSx, fontWeight: 500 }}>(张)</Box>
+                  </Box>
+                ) : (
+                  <Box component="span" sx={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', minWidth: 76, fontSize: 11 }}>
+                    <Box component="span" sx={{ display: 'flex', justifyContent: 'flex-end', gap: 0.25 }}>
+                      <Box component="span" sx={{ width: 30 }}>输入</Box>
+                      <Box component="span" sx={{ width: 40 }}>输出</Box>
+                    </Box>
+                    <Box component="span" sx={{ ...priceTextSx, fontWeight: 500, textAlign: 'right' }}>(万token)</Box>
+                  </Box>
+                )}
+              </Box>
+            ) : null}
+          </ListSubheader>
+          <Box component="ul" sx={{ m: 0, p: 0 }}>
+            {params.children}
+          </Box>
+        </Box>
+      )}
+      getOptionLabel={(option) => {
+        if (typeof option !== 'string') return option.value;
+        return option;
+      }}
+      isOptionEqualToValue={(option, value) => {
+        const optionValue = typeof option === 'string' ? option : option.value;
+        const selectedValue = typeof value === 'string' ? value : value.value;
+        return optionValue === selectedValue;
+      }}
+      value={selectedModelOption}
+      inputValue={model}
+      onChange={(_event, value) => {
+        const nextModel = typeof value === 'string' ? value : (value?.value || '');
+        onCommitModel(nextModel);
+      }}
+      onInputChange={(_event, value, reason) => {
+        if (reason === 'input' || reason === 'clear') {
+          onCommitModel(value);
+        }
+      }}
+      renderOption={(props, option) => (
+        <Box
+          component="li"
+          {...props}
+          data-model-profile-id={profileId}
+          data-model-option-value={option.value}
+          sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}
+        >
+          <Typography component="span" variant="body2" sx={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {option.value}
+          </Typography>
+          {option.priceLabel ? (
+            activeType === 'image' ? (
+              <Typography component="span" variant="caption" sx={{ ...priceTextSx, flexShrink: 0, minWidth: 72, ml: 'auto', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                {option.priceLabel}
+              </Typography>
+            ) : (
+              <Box component="span" sx={{ display: 'flex', justifyContent: 'flex-end', gap: 0.25, flexShrink: 0, minWidth: 76, ml: 'auto', textAlign: 'right' }}>
+                <Typography component="span" variant="caption" sx={{ ...priceTextSx, width: 30, whiteSpace: 'nowrap' }}>
+                  {option.inputPriceLabel || '-'}
+                </Typography>
+                <Typography component="span" variant="caption" sx={{ ...priceTextSx, width: 40, whiteSpace: 'nowrap' }}>
+                  {option.outputPriceLabel || '-'}
+                </Typography>
+              </Box>
+            )
+          ) : null}
+        </Box>
+      )}
+      renderInput={(params) => (
+        <TextField
+          {...params}
+          label={modelLabel}
+          placeholder={placeholder}
+          size="small"
+          fullWidth
+          inputRef={setInputRef}
+          onBlur={onClose}
+          sx={fieldSx()}
+        />
+      )}
+      sx={{ flex: 1, minWidth: 0 }}
+    />
+  );
+}, (prev, next) => (
+  prev.profileId === next.profileId
+  && prev.model === next.model
+  && prev.activeType === next.activeType
+  && prev.open === next.open
+  && prev.modelLabel === next.modelLabel
+  && prev.placeholder === next.placeholder
+  && buildModelOptionSignature(prev.options) === buildModelOptionSignature(next.options)
+));
+
 const OFFICIAL_MODEL_GROUP_ORDER = [
   'gpt-5',
+  'codex',
+  'claude',
   'o',
   'gpt-4.5',
   'gpt-4.1',
@@ -165,6 +408,8 @@ const OFFICIAL_MODEL_GROUP_ORDER = [
 function getOfficialModelGroupKey(model: string) {
   const normalized = model.trim().toLowerCase();
   if (/^gpt-5(?:[.-]|$)/.test(normalized)) return 'gpt-5';
+  if (/^codex(?:[.-]|$)/.test(normalized)) return 'codex';
+  if (/^claude(?:[.-]|$)/.test(normalized)) return 'claude';
   if (/^o\d/.test(normalized)) return 'o';
   if (/^gpt-4\.5(?:[.-]|$)/.test(normalized)) return 'gpt-4.5';
   if (/^gpt-4\.1(?:[.-]|$)/.test(normalized)) return 'gpt-4.1';
@@ -234,11 +479,23 @@ function getNanoBananaVendorGroup(model: AvailableModelInfo, isZh: boolean) {
 }
 
 function buildRemoteModelOption(model: AvailableModelInfo, type: AIModelType, provider: AIProvider, usesOfficialProxy: boolean, isZh: boolean): ModelDropdownOption {
+  const raw = model.raw && typeof model.raw === 'object' && !Array.isArray(model.raw) ? model.raw as Record<string, unknown> : {};
+  const billingDisplay = typeof raw.billingDisplay === 'string' && raw.billingDisplay.trim() ? raw.billingDisplay.trim() : '';
+  const inputPriceLabel = typeof raw.billingInputDisplay === 'string' && raw.billingInputDisplay.trim() ? raw.billingInputDisplay.trim() : '';
+  const outputPriceLabel = typeof raw.billingOutputDisplay === 'string' && raw.billingOutputDisplay.trim() ? raw.billingOutputDisplay.trim() : '';
+  const priceLabel = inputPriceLabel || outputPriceLabel
+    ? `${inputPriceLabel} ${outputPriceLabel}`.trim()
+    : billingDisplay;
+  const label = priceLabel ? `${model.id} ${priceLabel}` : model.id;
   if (type === 'image' && provider === 'official-nanobanana') {
-    return { value: model.id, group: getNanoBananaVendorGroup(model, isZh) };
+    return { value: model.id, label, priceLabel: priceLabel || undefined, inputPriceLabel: inputPriceLabel || undefined, outputPriceLabel: outputPriceLabel || billingDisplay || undefined, group: getNanoBananaVendorGroup(model, isZh) };
   }
   return {
     value: model.id,
+    label,
+    priceLabel: priceLabel || undefined,
+    inputPriceLabel: inputPriceLabel || undefined,
+    outputPriceLabel: outputPriceLabel || undefined,
     group: usesOfficialProxy ? getOfficialModelGroupLabel(model.id, isZh) : (isZh ? '远程可用模型' : 'Available from provider'),
   };
 }
@@ -248,6 +505,8 @@ function getOfficialModelGroupLabel(model: string, isZh: boolean) {
   if (isZh) {
     const labels: Record<(typeof OFFICIAL_MODEL_GROUP_ORDER)[number], string> = {
       'gpt-5': 'GPT-5 系列',
+      codex: 'Codex 系列',
+      claude: 'Claude 系列',
       o: 'o 推理系列',
       'gpt-4.5': 'GPT-4.5 系列',
       'gpt-4.1': 'GPT-4.1 系列',
@@ -264,6 +523,8 @@ function getOfficialModelGroupLabel(model: string, isZh: boolean) {
   }
   const labels: Record<(typeof OFFICIAL_MODEL_GROUP_ORDER)[number], string> = {
     'gpt-5': 'GPT-5',
+    codex: 'Codex',
+    claude: 'Claude',
     o: 'o reasoning',
     'gpt-4.5': 'GPT-4.5',
     'gpt-4.1': 'GPT-4.1',
@@ -427,7 +688,11 @@ function resolveSelectableProviderKey(provider: string, type: AIModelType, provi
 export default function AIModelsPage() {
   const { t, i18n } = useTranslation();
   const { setHeaderActions, setHeaderTitle, setHeaderBackAction, setHideMobileBottomNav } = useLayoutHeaderActions();
-  const settings = useSettingsStore();
+  const aiProfiles = useSettingsStore((state) => state.aiProfiles);
+  const updateAIProfile = useSettingsStore((state) => state.updateAIProfile);
+  const addAIProfile = useSettingsStore((state) => state.addAIProfile);
+  const removeAIProfile = useSettingsStore((state) => state.removeAIProfile);
+  const syncCurrentSettingsToServer = useSettingsStore((state) => state.syncCurrentSettingsToServer);
   const isLoggedIn = useAuthStore((state) => state.isLoggedIn);
   const authMode = useAuthStore((state) => state.authMode);
   const characters = useCharacterStore((state) => state.characters);
@@ -460,30 +725,7 @@ export default function AIModelsPage() {
     severity: 'success',
   });
   const canUseOfficialProviders = authMode === 'cloud' && isLoggedIn;
-  const saveStatusMeta = (() => {
-    if (settings.syncStatus === 'saving') {
-      return {
-        label: i18n.language.startsWith('zh') ? '保存中' : 'Saving',
-        color: 'warning' as const,
-      };
-    }
-    if (settings.syncStatus === 'saved') {
-      return {
-        label: i18n.language.startsWith('zh') ? '已保存' : 'Saved',
-        color: 'success' as const,
-      };
-    }
-    if (settings.syncStatus === 'error') {
-      return {
-        label: i18n.language.startsWith('zh') ? '保存失败' : 'Save failed',
-        color: 'error' as const,
-      };
-    }
-    return {
-      label: i18n.language.startsWith('zh') ? '自动保存' : 'Auto save',
-      color: 'default' as const,
-    };
-  })();
+
   const modelTypeLabels: Record<AIModelType, string> = {
     text: i18n.language.startsWith('zh') ? '文本' : 'Text',
     image: i18n.language.startsWith('zh') ? '图片' : 'Image',
@@ -634,14 +876,16 @@ export default function AIModelsPage() {
     };
   }, [canUseOfficialProviders, i18n.language]);
 
-  const handleModelInputChange = useCallback((profileId: string, value: string) => {
-    const profile = settings.aiProfiles.find((item) => item.id === profileId);
-    settings.updateAIProfile(profileId, {
+  const commitModelValue = useCallback((profileId: string, value: string) => {
+    const { aiProfiles: currentProfiles, updateAIProfile: updateCurrentAIProfile } = useSettingsStore.getState();
+    const profile = currentProfiles.find((item) => item.id === profileId);
+    if (profile?.model === value) return;
+    updateCurrentAIProfile(profileId, {
       model: value,
       ...(profile?.type === 'image' ? { imageCapabilities: inferImageCapabilities(profile.provider, value) } : {}),
       ...(profile?.type === 'text' ? { inputCapabilities: inferTextInputCapabilities(profile.provider, value) } : {}),
     });
-  }, [settings]);
+  }, []);
 
   const refreshAiBalance = useCallback(async (providerKey: string) => {
     if (!canUseOfficialProviders) {
@@ -669,11 +913,11 @@ export default function AIModelsPage() {
   }, [canUseOfficialProviders]);
 
   useEffect(() => {
-    const providers = Array.from(new Set(settings.aiProfiles
+    const providers = Array.from(new Set(aiProfiles
       .filter((profile) => isOfficialProxyProviderKey(profile.provider) || profile.baseUrl.replace(/\/+$/, '') === '/api/ai')
       .map((profile) => profile.provider)));
     providers.forEach((provider) => void refreshAiBalance(provider));
-  }, [isOfficialProxyProviderKey, refreshAiBalance, settings.aiProfiles]);
+  }, [aiProfiles, isOfficialProxyProviderKey, refreshAiBalance]);
 
   useEffect(() => {
     if (characters.length === 0 && !characterLoading) {
@@ -683,7 +927,7 @@ export default function AIModelsPage() {
   }, [characters.length, characterLoading, markCharactersWarm, prefetchCharacters]);
 
   const handleTestConnection = async (profileId: string) => {
-    const profile = settings.aiProfiles.find((item) => item.id === profileId);
+    const profile = aiProfiles.find((item) => item.id === profileId);
     if (!profile) return;
     const profileUsesOfficialProxy = isOfficialProxyProviderKey(profile.provider) || profile.baseUrl.replace(/\/+$/, '') === '/api/ai';
     if (profileUsesOfficialProxy && !canUseOfficialProviders) {
@@ -700,7 +944,7 @@ export default function AIModelsPage() {
       const corsBlocked = isLikelyBrowserCorsError(result.error);
       const shouldSave = result.success || corsBlocked;
       if (shouldSave) {
-        await settings.syncCurrentSettingsToServer();
+        await syncCurrentSettingsToServer();
       }
       const corsHint = i18n.language.startsWith('zh')
         ? '浏览器直连被目标站跨域策略拦截，配置已保存，实际使用建议走服务端代理。'
@@ -755,7 +999,7 @@ export default function AIModelsPage() {
       } else {
         await refreshAiBalance(providerKey);
       }
-      await settings.syncCurrentSettingsToServer();
+      await syncCurrentSettingsToServer();
       setSnackbar({
         open: true,
         message: i18n.language.startsWith('zh') ? 'Key 已申请并分配额度' : 'Key created and quota assigned',
@@ -775,7 +1019,7 @@ export default function AIModelsPage() {
   };
 
   const handleAssignToAllRoles = async (profileId: string) => {
-    const profile = settings.aiProfiles.find((item) => item.id === profileId);
+    const profile = aiProfiles.find((item) => item.id === profileId);
     if (!profile) return;
     if (characters.length === 0 && !characterLoading) {
       await loadCharacters();
@@ -823,7 +1067,7 @@ export default function AIModelsPage() {
   };
 
   const fetchAvailableModels = async (profileId: string, silent = false, force = false) => {
-    const profile = settings.aiProfiles.find((item) => item.id === profileId);
+    const profile = aiProfiles.find((item) => item.id === profileId);
     if (!profile) return false;
     const activeType = profile.type || 'text';
     const providerOptions = getProviderOptionsForType(activeType, profile.provider);
@@ -925,13 +1169,9 @@ export default function AIModelsPage() {
   }, []);
 
   return (
-    <Box sx={{ flex: 1, overflow: 'auto', p: 3, pt: { xs: 1, sm: 1, md: 3 }, pb: { xs: 15, sm: 12 }, width: '100%', maxWidth: 1180, mx: 'auto' }}>
+    <Box sx={{ flex: 1, overflow: 'auto', p: 3, pt: { xs: 1, sm: 1, md: 3 }, pb: { xs: 15, sm: 12 }, width: '100%', maxWidth: 1320, mx: 'auto' }}>
       <PageSection spacing={2}>
-      {settings.syncStatus === 'error' && settings.syncError ? (
-        <Alert severity="error" variant="outlined">
-          {settings.syncError}
-        </Alert>
-      ) : null}
+      <SettingsSyncErrorAlert />
       {officialProvidersError ? (
         <Alert severity="error" variant="outlined">
           {i18n.language.startsWith('zh') ? `官方 AI 供应商列表获取失败：${officialProvidersError}` : `Failed to load official AI providers: ${officialProvidersError}`}
@@ -950,7 +1190,7 @@ export default function AIModelsPage() {
           gap: 2,
         }}
       >
-            {settings.aiProfiles.map((profile, index) => (
+            {aiProfiles.map((profile, index) => (
               <SurfaceCard key={profile.id} sx={modelCardSx()} contentSx={{ display: 'flex', flexDirection: 'column', gap: 1.75 }}>
                   {(() => {
                     const activeType = profile.type || 'text';
@@ -983,7 +1223,7 @@ export default function AIModelsPage() {
                       : null;
                     const requiresApi2dKeyApplication = selectedProvider.key === 'official-gpt' && balanceView?.status === 'unassigned';
                     const checkingApi2dKey = selectedProvider.key === 'official-gpt' && (balanceView?.status === 'idle' || balanceView?.status === 'loading');
-                    const modelOptions = [
+                    const modelOptions: ModelDropdownOption[] = [
                       ...popularModels.map((value) => ({
                         value,
                         group: usesOfficialProxy ? getOfficialModelGroupLabel(value, i18n.language.startsWith('zh')) : groupedModelLabels.popular,
@@ -996,7 +1236,7 @@ export default function AIModelsPage() {
                     <TextField
                       label={i18n.language.startsWith('zh') ? '模型名称' : 'Profile name'}
                       value={profile.name}
-                      onChange={(e) => settings.updateAIProfile(profile.id, { name: e.target.value })}
+                      onChange={(e) => updateAIProfile(profile.id, { name: e.target.value })}
                       size="small"
                       fullWidth
                       sx={fieldSx()}
@@ -1028,7 +1268,7 @@ export default function AIModelsPage() {
                               delete next[profile.id];
                               return next;
                             });
-                            settings.updateAIProfile(profile.id, {
+                            updateAIProfile(profile.id, {
                               type,
                               provider: nextProvider,
                               baseUrl: nextDefaults.baseUrl,
@@ -1050,7 +1290,7 @@ export default function AIModelsPage() {
                           control={(
                             <Checkbox
                               checked={Boolean(profile.isDefault)}
-                              onChange={(e) => settings.updateAIProfile(profile.id, { isDefault: e.target.checked })}
+                              onChange={(e) => updateAIProfile(profile.id, { isDefault: e.target.checked })}
                             />
                           )}
                           label={i18n.language.startsWith('zh') ? '默认' : 'Default'}
@@ -1090,7 +1330,7 @@ export default function AIModelsPage() {
                           delete next[profile.id];
                           return next;
                         });
-                        settings.updateAIProfile(profile.id, {
+                        updateAIProfile(profile.id, {
                           provider,
                           baseUrl: nextDefaults.baseUrl,
                           model: nextDefaults.model,
@@ -1118,7 +1358,7 @@ export default function AIModelsPage() {
                       : t('settings.apiKeyPlaceholder')}
                     value={usesOfficialProxy ? '' : (showKey ? maskSecret(profile.apiKey) : profile.apiKey)}
                     onChange={(e) => {
-                      if (!usesOfficialProxy) settings.updateAIProfile(profile.id, { apiKey: e.target.value });
+                      if (!usesOfficialProxy) updateAIProfile(profile.id, { apiKey: e.target.value });
                     }}
                     type={showKey ? 'text' : 'password'}
                     size="small"
@@ -1165,7 +1405,7 @@ export default function AIModelsPage() {
                         delete next[profile.id];
                         return next;
                       });
-                      settings.updateAIProfile(profile.id, { baseUrl: e.target.value });
+                      updateAIProfile(profile.id, { baseUrl: e.target.value });
                     }}
                     size="small"
                     fullWidth
@@ -1177,68 +1417,26 @@ export default function AIModelsPage() {
                   />
 
                   <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
-                    <Autocomplete
-                      freeSolo
+                    <ModelAutocomplete
+                      profileId={profile.id}
+                      model={profile.model}
+                      activeType={activeType}
                       options={modelOptions}
                       open={Boolean(openModelDropdownIds[profile.id])}
-                      onOpen={() => setOpenModelDropdownIds((prev) => ({ ...prev, [profile.id]: true }))}
+                      onOpen={() => {
+                        setOpenModelDropdownIds((prev) => ({ ...prev, [profile.id]: true }));
+                      }}
                       onClose={() => setOpenModelDropdownIds((prev) => {
                         const next = { ...prev };
                         delete next[profile.id];
                         return next;
                       })}
-                      slotProps={{
-                        paper: {
-                          sx: solidPopupPaperSx(),
-                        },
+                      onCommitModel={(nextModel) => commitModelValue(profile.id, nextModel)}
+                      setInputRef={(node) => {
+                        modelInputRefs.current[profile.id] = node;
                       }}
-                      groupBy={(option) => option.group}
-                      getOptionLabel={(option) => typeof option === 'string' ? option : option.value}
-                      isOptionEqualToValue={(option, value) => {
-                        const optionValue = typeof option === 'string' ? option : option.value;
-                        const selectedValue = typeof value === 'string' ? value : value.value;
-                        return optionValue === selectedValue;
-                      }}
-                      value={profile.model}
-                      onChange={(_event, value) => {
-                        const nextModel = typeof value === 'string' ? value : (value?.value || '');
-                        settings.updateAIProfile(profile.id, {
-                          model: nextModel,
-                          ...(activeType === 'image' ? { imageCapabilities: inferImageCapabilities(profile.provider, nextModel) } : {}),
-                          ...(activeType === 'text' ? { inputCapabilities: inferTextInputCapabilities(profile.provider, nextModel) } : {}),
-                        });
-                      }}
-                      onInputChange={(_event, value, reason) => {
-                        if (reason === 'input' || reason === 'clear') {
-                          handleModelInputChange(profile.id, value);
-                        }
-                      }}
-                      renderOption={(props, option) => (
-                        <Box component="li" {...props}>
-                          {option.value}
-                        </Box>
-                      )}
-                      renderInput={(params) => (
-                        <TextField
-                          {...params}
-                          label={t('settings.model')}
-                          placeholder={modelOptions[0]?.value || (i18n.language.startsWith('zh') ? '可手动输入模型名' : 'Enter any model name')}
-                          size="small"
-                          fullWidth
-                          inputRef={(node) => {
-                            modelInputRefs.current[profile.id] = node;
-                          }}
-                          onBlur={() => {
-                            setOpenModelDropdownIds((prev) => {
-                              const next = { ...prev };
-                              delete next[profile.id];
-                              return next;
-                            });
-                          }}
-                          sx={fieldSx()}
-                        />
-                      )}
-                      sx={{ flex: 1, minWidth: 0 }}
+                      modelLabel={t('settings.model')}
+                      placeholder={modelOptions[0]?.value || (i18n.language.startsWith('zh') ? '可手动输入模型名' : 'Enter any model name')}
                     />
                     <Button
                       variant="outlined"
@@ -1297,7 +1495,7 @@ export default function AIModelsPage() {
                                       const nextCapabilities = buildTextInputCapabilityPatch(profile.provider, profile.model, capabilities, {
                                         [item.key]: e.target.checked,
                                       });
-                                      settings.updateAIProfile(profile.id, { inputCapabilities: nextCapabilities });
+                                      updateAIProfile(profile.id, { inputCapabilities: nextCapabilities });
                                     }}
                                   />
                                 )}
@@ -1353,7 +1551,7 @@ export default function AIModelsPage() {
                                         if (item.key === 'multiReferenceImage' && e.target.checked) {
                                           nextCapabilities.referenceImage = true;
                                         }
-                                        settings.updateAIProfile(profile.id, { imageCapabilities: nextCapabilities });
+                                        updateAIProfile(profile.id, { imageCapabilities: nextCapabilities });
                                       }}
                                     />
                                   )}
@@ -1400,7 +1598,7 @@ export default function AIModelsPage() {
                         color="error"
                         variant="outlined"
                         startIcon={<DeleteIcon />}
-                        onClick={() => settings.removeAIProfile(profile.id)}
+                        onClick={() => removeAIProfile(profile.id)}
                       >
                         {t('common.delete')}
                       </Button>
@@ -1454,7 +1652,7 @@ export default function AIModelsPage() {
         icon={<AddIcon />}
         label={i18n.language.startsWith('zh') ? '添加模型' : 'Add model'}
         ariaLabel={i18n.language.startsWith('zh') ? '添加模型' : 'Add model'}
-        onClick={() => settings.addAIProfile()}
+        onClick={() => addAIProfile()}
         sx={{
           position: 'fixed',
           right: { xs: 20, sm: 28, md: 36 },
