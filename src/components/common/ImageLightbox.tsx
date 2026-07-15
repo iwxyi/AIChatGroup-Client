@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Box, Dialog, IconButton, Typography } from '@mui/material';
+import { Box, Dialog, IconButton, Typography, Zoom } from '@mui/material';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import CloseIcon from '@mui/icons-material/Close';
@@ -121,7 +121,7 @@ export default function ImageLightbox({ open, images, index, onIndexChange, reso
     const deltaX = event.clientX - start.x;
     const deltaY = event.clientY - start.y;
     if (Math.abs(deltaY) > Math.abs(deltaX) * 1.3) return;
-    setDragOffset(Math.max(-120, Math.min(120, deltaX)));
+    setDragOffset(Math.max(-160, Math.min(160, deltaX)));
   };
 
   const finishPointerGesture = (event: React.PointerEvent<HTMLElement>) => {
@@ -149,18 +149,30 @@ export default function ImageLightbox({ open, images, index, onIndexChange, reso
       onClose={onClose}
       maxWidth={false}
       fullScreen
+      slots={{ transition: Zoom }}
       slotProps={{
+        transition: {
+          timeout: { enter: 180, exit: 140 },
+        },
+        backdrop: {
+          sx: (theme) => ({
+            bgcolor: theme.palette.mode === 'light' ? 'rgba(248,250,252,0.72)' : 'rgba(8,12,18,0.74)',
+            backdropFilter: 'blur(24px) saturate(1.18)',
+            WebkitBackdropFilter: 'blur(24px) saturate(1.18)',
+          }),
+        },
         paper: {
-          sx: {
+          sx: (theme) => ({
             m: 0,
             width: '100%',
             height: '100%',
             maxWidth: 'none',
             maxHeight: 'none',
-            bgcolor: 'rgba(5,7,10,0.94)',
+            bgcolor: 'transparent',
             boxShadow: 'none',
             overflow: 'hidden',
-          },
+            color: theme.palette.text.primary,
+          }),
         },
       }}
     >
@@ -188,12 +200,29 @@ export default function ImageLightbox({ open, images, index, onIndexChange, reso
           outline: 'none',
           touchAction: hasMultiple ? 'pan-y pinch-zoom' : 'pinch-zoom',
           overflow: 'hidden',
+          bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.18)' : 'rgba(2,6,23,0.12)',
         }}
       >
         <IconButton
           aria-label="关闭图片"
           onClick={onClose}
-          sx={{ position: 'absolute', top: { xs: 10, sm: 18 }, right: { xs: 10, sm: 18 }, zIndex: 2, color: 'common.white', bgcolor: 'rgba(255,255,255,0.10)', '&:hover': { bgcolor: 'rgba(255,255,255,0.18)' } }}
+          onPointerDown={(event) => event.stopPropagation()}
+          sx={{
+            position: 'absolute',
+            top: { xs: 10, sm: 18 },
+            right: { xs: 10, sm: 18 },
+            zIndex: 3,
+            color: (theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.82)' : 'rgba(248,250,252,0.9)',
+            bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.48)' : 'rgba(15,23,42,0.48)',
+            border: 1,
+            borderColor: (theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.08)' : 'rgba(248,250,252,0.12)',
+            backdropFilter: 'blur(16px) saturate(1.2)',
+            WebkitBackdropFilter: 'blur(16px) saturate(1.2)',
+            boxShadow: (theme) => theme.palette.mode === 'light' ? '0 12px 30px rgba(15,23,42,0.10)' : '0 12px 30px rgba(0,0,0,0.22)',
+            '&:hover': {
+              bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.68)' : 'rgba(30,41,59,0.64)',
+            },
+          }}
         >
           <CloseIcon />
         </IconButton>
@@ -222,13 +251,29 @@ export default function ImageLightbox({ open, images, index, onIndexChange, reso
               alignItems: 'center',
               justifyContent: 'flex-start',
               pl: { xs: 1, sm: 2 },
-              '&:hover .lightbox-edge-icon': canGoPrev ? { bgcolor: 'rgba(255,255,255,0.20)' } : {},
+              '&:hover .lightbox-edge-icon': canGoPrev ? {
+                opacity: 1,
+                transform: 'translateX(0) scale(1)',
+                bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.64)' : 'rgba(30,41,59,0.58)',
+              } : {},
             }}
           >
             <IconButton
               className="lightbox-edge-icon"
               tabIndex={-1}
-              sx={{ color: 'common.white', bgcolor: 'rgba(255,255,255,0.10)', pointerEvents: 'none' }}
+              sx={{
+                color: (theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.76)' : 'rgba(248,250,252,0.86)',
+                bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.42)' : 'rgba(15,23,42,0.42)',
+                border: 1,
+                borderColor: (theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.08)' : 'rgba(248,250,252,0.12)',
+                backdropFilter: 'blur(16px) saturate(1.2)',
+                WebkitBackdropFilter: 'blur(16px) saturate(1.2)',
+                boxShadow: (theme) => theme.palette.mode === 'light' ? '0 14px 34px rgba(15,23,42,0.12)' : '0 14px 34px rgba(0,0,0,0.24)',
+                opacity: { xs: 0.76, sm: 0.86 },
+                transform: { xs: 'translateX(-4px) scale(0.98)', sm: 'translateX(-6px) scale(0.98)' },
+                transition: 'background-color 160ms ease, opacity 160ms ease, transform 160ms ease',
+                pointerEvents: 'none',
+              }}
             >
               <ChevronLeftIcon />
             </IconButton>
@@ -246,8 +291,11 @@ export default function ImageLightbox({ open, images, index, onIndexChange, reso
               maxHeight: '88vh',
               objectFit: 'contain',
               userSelect: 'none',
-              transform: `translateX(${dragOffset}px)`,
-              transition: dragOffset ? 'none' : 'transform 160ms ease',
+              borderRadius: activeSrc.startsWith('data:image/svg') ? 2 : 1.25,
+              boxShadow: (theme) => theme.palette.mode === 'light' ? '0 28px 80px rgba(15,23,42,0.18)' : '0 28px 80px rgba(0,0,0,0.34)',
+              transform: `translateX(${dragOffset}px) scale(${dragOffset ? 0.985 : 1})`,
+              transition: dragOffset ? 'none' : 'transform 180ms cubic-bezier(0.2, 0, 0, 1), opacity 180ms ease',
+              willChange: 'transform',
             }}
           />
         ) : null}
@@ -276,13 +324,29 @@ export default function ImageLightbox({ open, images, index, onIndexChange, reso
               alignItems: 'center',
               justifyContent: 'flex-end',
               pr: { xs: 1, sm: 2 },
-              '&:hover .lightbox-edge-icon': canGoNext ? { bgcolor: 'rgba(255,255,255,0.20)' } : {},
+              '&:hover .lightbox-edge-icon': canGoNext ? {
+                opacity: 1,
+                transform: 'translateX(0) scale(1)',
+                bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.64)' : 'rgba(30,41,59,0.58)',
+              } : {},
             }}
           >
             <IconButton
               className="lightbox-edge-icon"
               tabIndex={-1}
-              sx={{ color: 'common.white', bgcolor: 'rgba(255,255,255,0.10)', pointerEvents: 'none' }}
+              sx={{
+                color: (theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.76)' : 'rgba(248,250,252,0.86)',
+                bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.42)' : 'rgba(15,23,42,0.42)',
+                border: 1,
+                borderColor: (theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.08)' : 'rgba(248,250,252,0.12)',
+                backdropFilter: 'blur(16px) saturate(1.2)',
+                WebkitBackdropFilter: 'blur(16px) saturate(1.2)',
+                boxShadow: (theme) => theme.palette.mode === 'light' ? '0 14px 34px rgba(15,23,42,0.12)' : '0 14px 34px rgba(0,0,0,0.24)',
+                opacity: { xs: 0.76, sm: 0.86 },
+                transform: { xs: 'translateX(4px) scale(0.98)', sm: 'translateX(6px) scale(0.98)' },
+                transition: 'background-color 160ms ease, opacity 160ms ease, transform 160ms ease',
+                pointerEvents: 'none',
+              }}
             >
               <ChevronRightIcon />
             </IconButton>
@@ -290,7 +354,20 @@ export default function ImageLightbox({ open, images, index, onIndexChange, reso
         ) : null}
 
         {hasMultiple ? (
-          <Typography variant="caption" sx={{ position: 'absolute', bottom: { xs: 14, sm: 20 }, color: 'rgba(255,255,255,0.76)' }}>
+          <Typography
+            variant="caption"
+            sx={{
+              position: 'absolute',
+              bottom: { xs: 14, sm: 20 },
+              px: 1.1,
+              py: 0.35,
+              borderRadius: 99,
+              color: (theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.68)' : 'rgba(248,250,252,0.76)',
+              bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.40)' : 'rgba(15,23,42,0.34)',
+              backdropFilter: 'blur(14px) saturate(1.15)',
+              WebkitBackdropFilter: 'blur(14px) saturate(1.15)',
+            }}
+          >
             {safeIndex + 1} / {images.length}
           </Typography>
         ) : null}
