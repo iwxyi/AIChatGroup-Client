@@ -221,11 +221,12 @@ export function NarrativeParagraphContent({ blocks, characters = [], showDevelop
   );
 }
 
-export function MessageContent({ message, onRetryMedia, onOpenImage, onOpenDiagram }: {
+export function MessageContent({ message, onRetryMedia, onOpenImage, onOpenDiagram, compactMediaLayout = false }: {
   message: Message;
   onRetryMedia?: (message: Message, attachmentId: string) => void | Promise<void>;
   onOpenImage?: (message: Message, attachment: MessageAttachment) => void;
   onOpenDiagram?: (message: Message, diagram: { source: string; svg: string; dataUrl: string }) => void;
+  compactMediaLayout?: boolean;
 }) {
   const attachments = message.metadata?.attachments || [];
   const isAttachmentProcessing = (status: string | undefined) => status === 'queued' || status === 'generating' || status === 'placeholder';
@@ -258,7 +259,7 @@ export function MessageContent({ message, onRetryMedia, onOpenImage, onOpenDiagr
     };
   };
   return (
-    <Box sx={{ display: 'grid', gap: 0.9 }}>
+    <Box sx={{ display: 'grid', gap: 0.9, width: compactMediaLayout ? 'fit-content' : 'auto', maxWidth: '100%' }}>
       <Box sx={{ typography: 'body2', wordBreak: 'break-word', userSelect: 'text', WebkitUserSelect: 'text', '& table': { width: '100%', borderCollapse: 'collapse' }, '& th, & td': { border: '1px solid', borderColor: 'divider', px: 0.75, py: 0.4 } }}>
         <MarkdownText
           text={message.content}

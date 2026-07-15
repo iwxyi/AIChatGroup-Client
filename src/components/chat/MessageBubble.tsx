@@ -49,6 +49,7 @@ interface MenuPosition {
 }
 
 const LONG_PRESS_MOVE_THRESHOLD = 12;
+const SHORT_MEDIA_MESSAGE_LENGTH = 48;
 
 function buildWithdrawalDebugTitle(withdrawal: NonNullable<Message['metadata']>['withdrawal'] | null) {
   if (!withdrawal?.originalContent) return '';
@@ -65,6 +66,16 @@ function buildWithdrawalDebugTitle(withdrawal: NonNullable<Message['metadata']>[
       ) : null}
     </Box>
   );
+}
+
+function shouldUseCompactMediaBubble(message: Message) {
+  const attachments = message.metadata?.attachments || [];
+  const hasRenderableMedia = attachments.some((attachment) => attachment.kind === 'image' || attachment.kind === 'audio');
+  if (!hasRenderableMedia) return false;
+  const normalizedContent = message.content.replace(/\s+/g, '').trim();
+  if (!normalizedContent) return true;
+  if (['图片已生成', '图片已生成。', '已生成', '已生成。'].includes(normalizedContent)) return true;
+  return normalizedContent.length <= SHORT_MEDIA_MESSAGE_LENGTH;
 }
 
 function MessageBubble({ message, character, characters = [], onDelete, onAnalyze, onExpressionFeedback, onRetryMedia, onOpenImage, onOpenDiagram, onCharacterAvatarClick, pending = false, currentUser, selfMemberId = null, privateConversation = false, branchVersionInfo, onCreateRevision, onSwitchRevision, onOpenArtifact }: MessageBubbleProps) {
@@ -256,6 +267,7 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
   const useNarrativeParagraph = !isFinalWithdrawn && (!pending || isNarrativeParagraphMessage(message));
   const narrativeParagraphBlocks = useNarrativeParagraph ? getNarrativeDisplayBlocks(message) : [];
   const contentMaxWidth = chatAppearance.maxContentWidthUnlimited ? '100%' : chatAppearance.maxContentWidth;
+  const compactMediaBubble = !isFinalWithdrawn && shouldUseCompactMediaBubble(message);
   const shouldRenderNarrativeReader = hasNarrativeReaderBlocks(narrativeParagraphBlocks);
   if (shouldRenderNarrativeReader || (pending && useNarrativeParagraph)) {
     const narrativeCharacters = characters.length ? characters : effectiveCharacter ? [effectiveCharacter] : [];
@@ -346,6 +358,9 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
           <Box
             {...bubbleHandlers}
             sx={{
+              width: compactMediaBubble ? 'fit-content' : undefined,
+              maxWidth: '100%',
+              justifySelf: compactMediaBubble ? (isUser ? 'end' : 'start') : undefined,
               px: 1.4,
               py: 1,
               borderRadius: bubblePreview?.borderRadius || '18px',
@@ -364,7 +379,7 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
                   </Box>
                 </Tooltip>
               ) : withdrawalNoticeNode
-            ) : <MessageContent message={message} onRetryMedia={onRetryMedia} onOpenImage={onOpenImage} onOpenDiagram={onOpenDiagram} />}
+            ) : <MessageContent message={message} onRetryMedia={onRetryMedia} onOpenImage={onOpenImage} onOpenDiagram={onOpenDiagram} compactMediaLayout={compactMediaBubble} />}
           </Box>
           {artifactRefs.length ? (
             <Box
@@ -417,7 +432,7 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
 
       <Dialog open={viewerOpen} onClose={() => setViewerOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>{message.senderName}</DialogTitle>
-        <DialogContent><MessageContent message={message} onRetryMedia={onRetryMedia} onOpenImage={onOpenImage} onOpenDiagram={onOpenDiagram} /></DialogContent>
+        <DialogContent><MessageContent message={message} onRetryMedia={onRetryMedia} onOpenImage={onOpenImage} onOpenDiagram={onOpenDiagram} compactMediaLayout={compactMediaBubble} /></DialogContent>
       </Dialog>
 
       <Menu
