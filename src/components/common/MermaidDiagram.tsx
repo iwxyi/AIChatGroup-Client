@@ -1,5 +1,5 @@
 import { Box, Button, CircularProgress, Typography } from '@mui/material';
-import { memo, useEffect, useId, useState } from 'react';
+import { memo, useEffect, useId, useRef, useState } from 'react';
 
 interface MermaidDiagramProps {
   source: string;
@@ -12,14 +12,47 @@ export function estimateMermaidDiagramHeight(source: string) {
   return Math.min(420, Math.max(160, source.split('\n').length * 24 + 80));
 }
 
+const MERMAID_RENDER_CACHE_LIMIT = 100;
+const mermaidRenderCache = new Map<string, { svg?: string; error?: string }>();
+
+function cacheMermaidRender(source: string, result: { svg?: string; error?: string }) {
+  if (mermaidRenderCache.has(source)) mermaidRenderCache.delete(source);
+  mermaidRenderCache.set(source, result);
+  while (mermaidRenderCache.size > MERMAID_RENDER_CACHE_LIMIT) {
+    const oldestKey = mermaidRenderCache.keys().next().value;
+    if (oldestKey === undefined) break;
+    mermaidRenderCache.delete(oldestKey);
+  }
+}
+
 function MermaidDiagram({ source, hideLoading = false, onRenderSettled, onOpenFullscreen }: MermaidDiagramProps) {
   const reactId = useId().replace(/[^a-zA-Z0-9_-]/g, '');
-  const [svg, setSvg] = useState('');
-  const [error, setError] = useState('');
+  const cachedRender = mermaidRenderCache.get(source);
+  const [svg, setSvg] = useState(cachedRender?.svg || '');
+  const [error, setError] = useState(cachedRender?.error || '');
   const [showSource, setShowSource] = useState(false);
+  const onRenderSettledRef = useRef(onRenderSettled);
   const reservedHeight = estimateMermaidDiagramHeight(source);
 
   useEffect(() => {
+    onRenderSettledRef.current = onRenderSettled;
+  }, [onRenderSettled]);
+
+  useEffect(() => {
+    const cached = mermaidRenderCache.get(source);
+    if (cached?.svg) {
+      setSvg(cached.svg);
+      setError('');
+      onRenderSettledRef.current?.();
+      return undefined;
+    }
+    if (cached?.error) {
+      setSvg('');
+      setError(cached.error);
+      onRenderSettledRef.current?.();
+      return undefined;
+    }
+
     let cancelled = false;
     setSvg('');
     setError('');
@@ -34,20 +67,23 @@ function MermaidDiagram({ source, hideLoading = false, onRenderSettled, onOpenFu
         });
         const result = await mermaid.render(`mermaid-${reactId}-${Date.now()}`, source);
         if (!cancelled) {
+          cacheMermaidRender(source, { svg: result.svg });
           setSvg(result.svg);
-          onRenderSettled?.();
+          onRenderSettledRef.current?.();
         }
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : String(err));
-          onRenderSettled?.();
+          const nextError = err instanceof Error ? err.message : String(err);
+          cacheMermaidRender(source, { error: nextError });
+          setError(nextError);
+          onRenderSettledRef.current?.();
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [onRenderSettled, reactId, source]);
+  }, [reactId, source]);
 
   const openFullscreen = () => {
     if (!svg || !onOpenFullscreen) return;
