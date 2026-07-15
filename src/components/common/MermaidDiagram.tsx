@@ -15,6 +15,21 @@ export function estimateMermaidDiagramHeight(source: string) {
 const MERMAID_RENDER_CACHE_LIMIT = 100;
 const mermaidRenderCache = new Map<string, { svg?: string; error?: string }>();
 
+function parseSvgIntrinsicSize(svgText: string) {
+  const viewBoxMatch = svgText.match(/\bviewBox=["']\s*[-\d.]+\s+[-\d.]+\s+([\d.]+)\s+([\d.]+)\s*["']/i);
+  if (viewBoxMatch) {
+    const width = Number(viewBoxMatch[1]);
+    const height = Number(viewBoxMatch[2]);
+    if (width > 0 && height > 0) return { width, height };
+  }
+  const widthMatch = svgText.match(/\bwidth=["']([\d.]+)(?:px)?["']/i);
+  const heightMatch = svgText.match(/\bheight=["']([\d.]+)(?:px)?["']/i);
+  const width = Number(widthMatch?.[1] || 0);
+  const height = Number(heightMatch?.[1] || 0);
+  if (width > 0 && height > 0) return { width, height };
+  return { width: 680, height: 420 };
+}
+
 function cacheMermaidRender(source: string, result: { svg?: string; error?: string }) {
   if (mermaidRenderCache.has(source)) mermaidRenderCache.delete(source);
   mermaidRenderCache.set(source, result);
@@ -33,10 +48,22 @@ function MermaidDiagram({ source, hideLoading = false, onRenderSettled, onOpenFu
   const [showSource, setShowSource] = useState(false);
   const onRenderSettledRef = useRef(onRenderSettled);
   const reservedHeight = estimateMermaidDiagramHeight(source);
+  const [viewportHeight, setViewportHeight] = useState(() => (typeof window === 'undefined' ? 900 : window.innerHeight));
+  const svgSize = svg ? parseSvgIntrinsicSize(svg) : null;
+  const svgRatio = svgSize ? svgSize.width / svgSize.height : 1.6;
+  const maxHeight = Math.min(viewportHeight * 0.52, 480);
+  const widthLimitByHeight = Math.max(180, maxHeight * svgRatio);
 
   useEffect(() => {
     onRenderSettledRef.current = onRenderSettled;
   }, [onRenderSettled]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const updateViewportHeight = () => setViewportHeight(window.innerHeight);
+    window.addEventListener('resize', updateViewportHeight);
+    return () => window.removeEventListener('resize', updateViewportHeight);
+  }, []);
 
   useEffect(() => {
     const cached = mermaidRenderCache.get(source);
@@ -113,12 +140,19 @@ function MermaidDiagram({ source, hideLoading = false, onRenderSettled, onOpenFu
       {svg ? (
         <Box
           sx={{
+            width: svgSize
+              ? `min(${Math.ceil(svgSize.width)}px, 100%, 680px, ${Math.ceil(widthLimitByHeight)}px)`
+              : 'fit-content',
+            aspectRatio: `${svgRatio} / 1`,
             minWidth: 0,
+            display: 'grid',
+            placeItems: 'center',
             cursor: onOpenFullscreen ? 'zoom-in' : 'default',
             '& svg': {
-              maxWidth: 'min(100%, 680px)',
-              maxHeight: 'min(58vh, 520px)',
-              height: 'auto',
+              width: '100% !important',
+              height: '100% !important',
+              maxWidth: '100%',
+              maxHeight: '100%',
               display: 'block',
             },
           }}

@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { Box, Button, Chip, LinearProgress, Typography, keyframes } from '@mui/material';
 import type { Message, MessageAttachment, NarrativeBlock } from '../../types/message';
 import type { AICharacter } from '../../types/character';
@@ -51,6 +52,82 @@ function getAttachmentMaxWidth(ratio: number) {
   if (ratio < 1.2) return 360;
   if (ratio < 1.7) return 440;
   return 520;
+}
+
+function getAttachmentKnownSize(attachment: Pick<MessageAttachment, 'width' | 'height'>) {
+  const width = Number(attachment.width || 0);
+  const height = Number(attachment.height || 0);
+  if (width > 0 && height > 0) return { width, height };
+  return null;
+}
+
+function MessageImageAttachment({
+  message,
+  attachment,
+  onOpenImage,
+}: {
+  message: Message;
+  attachment: MessageAttachment;
+  onOpenImage?: (message: Message, attachment: MessageAttachment) => void;
+}) {
+  const knownSize = getAttachmentKnownSize(attachment);
+  const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(knownSize);
+  const [viewportHeight, setViewportHeight] = useState(() => (typeof window === 'undefined' ? 900 : window.innerHeight));
+  const displaySize = naturalSize || knownSize;
+  const ratioValue = displaySize ? displaySize.width / displaySize.height : parseAttachmentRatio(attachment);
+  const maxWidth = getAttachmentMaxWidth(ratioValue);
+  const maxHeight = Math.min(viewportHeight * 0.56, 520);
+  const widthLimitByHeight = Math.max(180, maxHeight * ratioValue);
+  const width = displaySize
+    ? `min(${Math.ceil(displaySize.width)}px, 100%, ${maxWidth}px, ${Math.ceil(widthLimitByHeight)}px)`
+    : `min(100%, ${maxWidth}px)`;
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const updateViewportHeight = () => setViewportHeight(window.innerHeight);
+    window.addEventListener('resize', updateViewportHeight);
+    return () => window.removeEventListener('resize', updateViewportHeight);
+  }, []);
+
+  return (
+    <Box
+      sx={{
+        width,
+        maxWidth: '100%',
+        justifySelf: 'start',
+        borderRadius: 1.5,
+        overflow: 'hidden',
+        bgcolor: 'action.hover',
+      }}
+    >
+      <Box
+        component="img"
+        src={attachment.url}
+        alt={attachment.altText}
+        loading="lazy"
+        decoding="async"
+        onLoad={(event) => {
+          const image = event.currentTarget;
+          if (image.naturalWidth > 0 && image.naturalHeight > 0) {
+            setNaturalSize({ width: image.naturalWidth, height: image.naturalHeight });
+          }
+        }}
+        onClick={() => onOpenImage?.(message, attachment)}
+        sx={{
+          width: '100%',
+          height: 'auto',
+          maxHeight: 'min(56vh, 520px)',
+          objectFit: 'contain',
+          display: 'block',
+          cursor: onOpenImage ? 'zoom-in' : 'default',
+          borderRadius: 1.5,
+          border: '1px solid',
+          borderColor: 'divider',
+          bgcolor: 'action.hover',
+        }}
+      />
+    </Box>
+  );
 }
 
 function NarrativeChoiceCard({ block, showDeveloperDetails = false }: { block: NarrativeBlock; showDeveloperDetails?: boolean }) {
@@ -187,17 +264,7 @@ export function MessageContent({ message, onRetryMedia, onOpenImage, onOpenDiagr
         if (attachment.kind === 'image') {
           if (attachment.status === 'ready' && attachment.url) {
             return (
-              <Box key={attachment.id} sx={getMediaFrameStyle(attachment)}>
-                <Box
-                  component="img"
-                  src={attachment.url}
-                  alt={attachment.altText}
-                  loading="lazy"
-                  decoding="async"
-                  onClick={() => onOpenImage?.(message, attachment)}
-                  sx={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block', cursor: onOpenImage ? 'zoom-in' : 'default' }}
-                />
-              </Box>
+              <MessageImageAttachment key={attachment.id} message={message} attachment={attachment} onOpenImage={onOpenImage} />
             );
           }
           return (
