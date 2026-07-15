@@ -128,7 +128,9 @@ function MermaidDiagram({ source, hideLoading = false, onRenderSettled, onOpenFu
         borderColor: theme.palette.mode === 'light' ? 'rgba(15,23,42,0.10)' : 'rgba(226,232,240,0.14)',
         bgcolor: theme.palette.mode === 'light' ? 'rgba(255,255,255,0.74)' : 'rgba(15,23,42,0.48)',
         overflowX: 'auto',
+        width: svg ? 'fit-content' : 'min(100%, 680px)',
         maxWidth: '100%',
+        boxSizing: 'border-box',
         minHeight: hideLoading || svg || error ? undefined : reservedHeight,
       })}
     >
@@ -141,7 +143,7 @@ function MermaidDiagram({ source, hideLoading = false, onRenderSettled, onOpenFu
         <Box
           sx={{
             width: svgSize
-              ? `min(${Math.ceil(svgSize.width)}px, 100%, 680px, ${Math.ceil(widthLimitByHeight)}px)`
+              ? `min(${Math.ceil(svgSize.width)}px, 680px, ${Math.ceil(widthLimitByHeight)}px)`
               : 'fit-content',
             aspectRatio: `${svgRatio} / 1`,
             minWidth: 0,
