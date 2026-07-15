@@ -16,6 +16,7 @@ import {
   MenuItem,
   Select,
   Stack,
+  Tab,
   Table,
   TableBody,
   TableCell,
@@ -23,6 +24,7 @@ import {
   TableHead,
   TablePagination,
   TableRow,
+  Tabs,
   TextField,
   Tooltip,
   Typography,
@@ -87,6 +89,7 @@ const initialEditDialog: EditKeyDialogState = {
 };
 
 const USAGE_PAGE_SIZE = 10;
+type QuickSetupTarget = 'codex' | 'claude' | 'deepseek';
 
 function formatDateTime(value: number | null | undefined) {
   if (!value) return '-';
@@ -160,7 +163,59 @@ function buildCurlExamples(apiKey: string, baseUrl: string, model: string) {
   -H "Content-Type: application/json" \\
   -d '{"model":"${model}","max_tokens":256,"messages":[{"role":"user","content":"你好"}]}'`,
     },
+    {
+      label: 'Web Search',
+      code: `curl ${baseUrl}/web_search \\
+  -H "Authorization: Bearer ${auth}" \\
+  -H "Content-Type: application/json" \\
+  -d '{"query":"最新世界杯消息","summary":true,"freshness":"noLimit","count":10}'`,
+    },
   ];
+}
+
+function maskApiKey(value: string) {
+  if (!value) return 'pn_xxx';
+  if (value.includes('...')) return value;
+  if (value.length <= 14) return `${value.slice(0, 4)}...`;
+  return `${value.slice(0, 10)}...${value.slice(-6)}`;
+}
+
+function quotePowerShell(value: string) {
+  return value.replace(/`/g, '``').replace(/"/g, '`"');
+}
+
+function quickSetupLines(target: QuickSetupTarget, baseUrl: string, apiKey: string, platform: 'posix' | 'windows') {
+  const openAiBaseUrl = `${baseUrl}/v1`;
+  const anthropicBaseUrl = `${baseUrl}/ai/anthropic`;
+  const value = (key: string, raw: string) => platform === 'windows'
+    ? `$env:${key}="${quotePowerShell(raw)}"`
+    : `export ${key}=${raw}`;
+  const comment = (text: string) => platform === 'windows' ? `# ${text}` : `# ${text}`;
+  if (target === 'claude') {
+    return [
+      value('ANTHROPIC_BASE_URL', anthropicBaseUrl),
+      value('ANTHROPIC_AUTH_TOKEN', apiKey),
+      comment('关闭非必要流量，提升访问速度'),
+      value('CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC', '1'),
+    ].join('\n');
+  }
+  if (target === 'codex') {
+    return [
+      value('OPENAI_BASE_URL', openAiBaseUrl),
+      value('OPENAI_API_KEY', apiKey),
+    ].join('\n');
+  }
+  return [
+    value('DEEPSEEK_BASE_URL', openAiBaseUrl),
+    value('DEEPSEEK_API_KEY', apiKey),
+    value('DEEPSEEK_MODEL', 'deepseek-chat'),
+  ].join('\n');
+}
+
+function quickSetupLabel(target: QuickSetupTarget) {
+  if (target === 'codex') return 'Codex';
+  if (target === 'claude') return 'Claude';
+  return 'DeepSeek';
 }
 
 export default function AIProxyPage() {
@@ -183,13 +238,30 @@ export default function AIProxyPage() {
   const [editDialog, setEditDialog] = useState<EditKeyDialogState>(initialEditDialog);
   const [modelOptions, setModelOptions] = useState<string[]>([]);
   const [examplesOpen, setExamplesOpen] = useState(false);
+  const [quickSetupTarget, setQuickSetupTarget] = useState<QuickSetupTarget>('codex');
+  const [quickSetupPreviewPlatform, setQuickSetupPreviewPlatform] = useState<'posix' | 'windows'>('posix');
+  const [quickSetupRawKey, setQuickSetupRawKey] = useState('');
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'info' }>({ open: false, message: '', severity: 'success' });
 
   const selectedKeyName = useMemo(() => keys.find((item) => item.id === selectedKeyId)?.name || '全部 Key', [keys, selectedKeyId]);
   const sampleKey = keys[0]?.keyMask || '';
   const proxyBaseUrl = useMemo(() => getAiProxyBaseUrl(), []);
+  const displayApiKey = quickSetupRawKey ? maskApiKey(quickSetupRawKey) : (sampleKey || 'pn_xxx');
+  const quickSetupCopyKey = quickSetupRawKey || displayApiKey;
+  const quickSetupDisplayCode = useMemo(
+    () => quickSetupLines(quickSetupTarget, proxyBaseUrl, displayApiKey, quickSetupPreviewPlatform),
+    [displayApiKey, proxyBaseUrl, quickSetupPreviewPlatform, quickSetupTarget],
+  );
+  const quickSetupPosixCode = useMemo(
+    () => quickSetupLines(quickSetupTarget, proxyBaseUrl, quickSetupCopyKey, 'posix'),
+    [proxyBaseUrl, quickSetupCopyKey, quickSetupTarget],
+  );
+  const quickSetupWindowsCode = useMemo(
+    () => quickSetupLines(quickSetupTarget, proxyBaseUrl, quickSetupCopyKey, 'windows'),
+    [proxyBaseUrl, quickSetupCopyKey, quickSetupTarget],
+  );
   const exampleModel = keys[0]?.allowedModels?.[0] || modelOptions[0] || 'deepseek-chat';
-  const curlExamples = useMemo(() => buildCurlExamples(sampleKey, proxyBaseUrl, exampleModel), [exampleModel, proxyBaseUrl, sampleKey]);
+  const curlExamples = useMemo(() => buildCurlExamples(displayApiKey, proxyBaseUrl, exampleModel), [displayApiKey, exampleModel, proxyBaseUrl]);
   const endpointList = useMemo(() => [
     `${proxyBaseUrl}/v1/models`,
     `${proxyBaseUrl}/v1/chat/completions`,
@@ -197,6 +269,7 @@ export default function AIProxyPage() {
     `${proxyBaseUrl}/anthropic/v1/messages`,
     `${proxyBaseUrl}/v1/embeddings`,
     `${proxyBaseUrl}/v1/images/generations`,
+    `${proxyBaseUrl}/web_search`,
   ], [proxyBaseUrl]);
   const allowedModelOptions = useMemo(() => {
     const values = [
@@ -291,6 +364,7 @@ export default function AIProxyPage() {
         rpmLimit: parseOptionalNumber(dialog.rpmLimit),
         allowedModels: normalizeModelList(dialog.allowedModels),
       });
+      setQuickSetupRawKey(result.rawKey);
       setDialog((prev) => ({ ...prev, rawKey: result.rawKey }));
       await loadData();
     } catch (error) {
@@ -372,6 +446,7 @@ export default function AIProxyPage() {
   const rotateEditKey = async () => {
     try {
       const result = await api.rotateAiProxyKey(editDialog.keyId);
+      setQuickSetupRawKey(result.rawKey);
       setEditDialog((prev) => ({ ...prev, status: result.key.status, rawKey: result.rawKey }));
       await loadData();
     } catch (error) {
@@ -476,6 +551,67 @@ export default function AIProxyPage() {
               </TableBody>
             </Table>
           </TableContainer>
+        </SurfaceCard>
+
+        <SurfaceCard>
+          <Stack spacing={1.25}>
+            <Box>
+              <Typography variant="h6" sx={{ fontWeight: 800 }}>快速设置</Typography>
+            </Box>
+            {!quickSetupRawKey ? (
+              <Alert severity="info">真实 Key 只在新建或轮换后显示一次；当前脚本会使用已有 Key 的脱敏值。</Alert>
+            ) : null}
+            <Tabs
+              value={quickSetupTarget}
+              onChange={(_event, value) => setQuickSetupTarget(value)}
+              variant="scrollable"
+              allowScrollButtonsMobile
+            >
+              {(['codex', 'claude', 'deepseek'] as QuickSetupTarget[]).map((target) => (
+                <Tab key={target} value={target} label={quickSetupLabel(target)} />
+              ))}
+            </Tabs>
+            <Box
+              component="pre"
+              sx={{
+                m: 0,
+                p: 1.25,
+                maxHeight: 260,
+                overflowX: 'auto',
+                overflowY: 'auto',
+                fontSize: 12,
+                fontFamily: 'monospace',
+                whiteSpace: 'pre-wrap',
+                overflowWrap: 'anywhere',
+                bgcolor: 'action.hover',
+                borderRadius: 1,
+                border: 1,
+                borderColor: 'divider',
+              }}
+            >
+              {quickSetupDisplayCode}
+            </Box>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+              <Button
+                variant="contained"
+                startIcon={<ContentCopyIcon />}
+                onMouseEnter={() => setQuickSetupPreviewPlatform('posix')}
+                onFocus={() => setQuickSetupPreviewPlatform('posix')}
+                onClick={() => void copyText(quickSetupPosixCode)}
+              >
+                复制 Linux/MacOS
+              </Button>
+              <Button
+                variant="outlined"
+                startIcon={<ContentCopyIcon />}
+                onMouseEnter={() => setQuickSetupPreviewPlatform('windows')}
+                onFocus={() => setQuickSetupPreviewPlatform('windows')}
+                onClick={() => void copyText(quickSetupWindowsCode)}
+              >
+                复制 Windows PowerShell
+              </Button>
+            </Stack>
+          </Stack>
         </SurfaceCard>
 
         <SurfaceCard>
