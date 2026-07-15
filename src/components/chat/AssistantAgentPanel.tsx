@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Box, Button, Chip, CircularProgress, Dialog, DialogContent, DialogTitle, Divider, IconButton, MenuItem, Select, Stack, Switch, Tooltip, Typography } from '@mui/material';
 import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined';
 import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined';
@@ -15,10 +15,13 @@ import KeyboardArrowUpOutlinedIcon from '@mui/icons-material/KeyboardArrowUpOutl
 import LanguageOutlinedIcon from '@mui/icons-material/LanguageOutlined';
 import NavigateBeforeOutlinedIcon from '@mui/icons-material/NavigateBeforeOutlined';
 import NavigateNextOutlinedIcon from '@mui/icons-material/NavigateNextOutlined';
-import OpenInFullOutlinedIcon from '@mui/icons-material/OpenInFullOutlined';
+import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import TableChartOutlinedIcon from '@mui/icons-material/TableChartOutlined';
 import ViewAgendaOutlinedIcon from '@mui/icons-material/ViewAgendaOutlined';
 import ViewListOutlinedIcon from '@mui/icons-material/ViewListOutlined';
+import ZoomInIcon from '@mui/icons-material/ZoomIn';
+import ZoomOutIcon from '@mui/icons-material/ZoomOut';
+import { TransformComponent, TransformWrapper, type ReactZoomPanPinchRef } from 'react-zoom-pan-pinch';
 import FloatingSegmentedTabs from '../common/FloatingSegmentedTabs';
 import MarkdownText from '../common/MarkdownText';
 import MermaidDiagram from '../common/MermaidDiagram';
@@ -247,10 +250,11 @@ function ArtifactThumbnail({ item, mode }: { item: AssistantArtifactItem; mode: 
   );
 }
 
-function ArtifactPreview({ item, version, expanded = false, hideMermaidLoading = false, onMermaidRenderSettled }: {
+function ArtifactPreview({ item, version, expanded = false, fullscreen = false, hideMermaidLoading = false, onMermaidRenderSettled }: {
   item: AssistantArtifactItem;
   version?: AssistantArtifactVersion | null;
   expanded?: boolean;
+  fullscreen?: boolean;
   hideMermaidLoading?: boolean;
   onMermaidRenderSettled?: () => void;
 }) {
@@ -259,7 +263,7 @@ function ArtifactPreview({ item, version, expanded = false, hideMermaidLoading =
     return <Typography variant="body2" color="text.secondary">当前版本为空。</Typography>;
   }
   if (isRenderableMermaid(item, content)) {
-    return <MermaidDiagram source={content} hideLoading={hideMermaidLoading} onRenderSettled={onMermaidRenderSettled} />;
+    return <MermaidDiagram source={content} displayMode={fullscreen ? 'fullscreen' : 'inline'} hideLoading={hideMermaidLoading} onRenderSettled={onMermaidRenderSettled} />;
   }
   if (item.kind === 'document') {
     return <MarkdownText text={content} forceRich />;
@@ -305,6 +309,7 @@ function AssistantArtifactList({ chatId, selectedArtifactId }: { chatId: string;
   const [fullscreenId, setFullscreenId] = useState<string | null>(null);
   const [fullscreenVersionId, setFullscreenVersionId] = useState<string | null>(null);
   const [pendingFullscreenVersionId, setPendingFullscreenVersionId] = useState<string | null>(null);
+  const fullscreenZoomRef = useRef<ReactZoomPanPinchRef | null>(null);
 
   useEffect(() => {
     void ensureAssistantArtifactStoreHydrated();
@@ -345,6 +350,8 @@ function AssistantArtifactList({ chatId, selectedArtifactId }: { chatId: string;
   const fullscreenVersionIndex = fullscreenItem && fullscreenVersion
     ? fullscreenItem.versions.findIndex((version) => version.id === fullscreenVersion.id)
     : -1;
+  const fullscreenContent = getArtifactVersionContent(fullscreenVersion);
+  const fullscreenZoomable = Boolean(fullscreenItem && isRenderableMermaid(fullscreenItem, fullscreenContent));
   const openFullscreen = (item: AssistantArtifactItem) => {
     setFullscreenId(item.id);
     setFullscreenVersionId(getArtifactCurrentVersion(item)?.id || null);
@@ -354,6 +361,27 @@ function AssistantArtifactList({ chatId, selectedArtifactId }: { chatId: string;
     setFullscreenId(null);
     setPendingFullscreenVersionId(null);
   }, []);
+  useEffect(() => {
+    if (!fullscreenItem) return undefined;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!fullscreenZoomable) return;
+      if (event.key === '+' || event.key === '=') {
+        event.preventDefault();
+        fullscreenZoomRef.current?.zoomIn(0.32, 180);
+      } else if (event.key === '-' || event.key === '_') {
+        event.preventDefault();
+        fullscreenZoomRef.current?.zoomOut(0.32, 180);
+      } else if (event.key === '0') {
+        event.preventDefault();
+        fullscreenZoomRef.current?.resetTransform(180);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [fullscreenItem, fullscreenZoomable]);
+  useEffect(() => {
+    fullscreenZoomRef.current?.resetTransform(0);
+  }, [fullscreenId, fullscreenVersionId]);
   useEffect(() => {
     if (!fullscreenItem) setPendingFullscreenVersionId(null);
   }, [fullscreenItem]);
@@ -427,13 +455,6 @@ function AssistantArtifactList({ chatId, selectedArtifactId }: { chatId: string;
           </Tooltip>
         </>
       ) : null}
-      {viewMode === 'list' ? (
-        <Tooltip title="全屏查看">
-          <IconButton size="small" onClick={(event) => { event.stopPropagation(); openFullscreen(item); }}>
-            <OpenInFullOutlinedIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-      ) : null}
       <Tooltip title="复制当前版本">
         <IconButton size="small" onClick={(event) => { event.stopPropagation(); void copyTextToClipboard(getAssistantArtifactCurrentContent(item)); }}>
           <ContentCopyOutlinedIcon fontSize="small" />
@@ -472,14 +493,14 @@ function AssistantArtifactList({ chatId, selectedArtifactId }: { chatId: string;
         role="button"
         tabIndex={0}
         onClick={() => {
-          if (viewMode === 'icons' || viewMode === 'gallery') openFullscreen(item);
-          else setSelectedId(item.id);
+          setSelectedId(item.id);
+          openFullscreen(item);
         }}
         onKeyDown={(event) => {
           if (event.key === 'Enter' || event.key === ' ') {
             event.preventDefault();
-            if (viewMode === 'icons' || viewMode === 'gallery') openFullscreen(item);
-            else setSelectedId(item.id);
+            setSelectedId(item.id);
+            openFullscreen(item);
           }
         }}
         sx={{
@@ -527,17 +548,16 @@ function AssistantArtifactList({ chatId, selectedArtifactId }: { chatId: string;
           {viewMode === 'list' ? (
             <Box>
               {expanded && item.kind !== 'diagram' && item.kind !== 'html' ? <ArtifactPreview item={item} /> : null}
-              {canExpand ? (
+              {canExpand && item.kind !== 'diagram' && item.kind !== 'html' ? (
                 <Button
                   size="small"
                   onClick={(event) => {
                     event.stopPropagation();
-                    if (item.kind === 'diagram' || item.kind === 'html') openFullscreen(item);
-                    else toggleExpanded(item.id);
+                    toggleExpanded(item.id);
                   }}
                   sx={{ mt: expanded ? 1 : 0, px: 0 }}
                 >
-                  {item.kind === 'diagram' || item.kind === 'html' ? '查看' : expanded ? '收起' : '展开'}
+                  {expanded ? '收起' : '展开'}
                 </Button>
               ) : null}
             </Box>
@@ -661,6 +681,19 @@ function AssistantArtifactList({ chatId, selectedArtifactId }: { chatId: string;
                 <IconButton onClick={() => stepFullscreenVersion(1)} disabled={fullscreenVersionIndex < 0 || fullscreenVersionIndex >= fullscreenItem.versions.length - 1 || isFullscreenVersionRendering}>
                   <NavigateNextOutlinedIcon />
                 </IconButton>
+                {fullscreenZoomable ? (
+                  <>
+                    <IconButton onClick={() => fullscreenZoomRef.current?.zoomIn(0.32, 180)} aria-label="放大产物">
+                      <ZoomInIcon />
+                    </IconButton>
+                    <IconButton onClick={() => fullscreenZoomRef.current?.zoomOut(0.32, 180)} aria-label="缩小产物">
+                      <ZoomOutIcon />
+                    </IconButton>
+                    <IconButton onClick={() => fullscreenZoomRef.current?.resetTransform(180)} aria-label="还原产物缩放">
+                      <RestartAltIcon />
+                    </IconButton>
+                  </>
+                ) : null}
                 <IconButton onClick={() => void copyTextToClipboard(getArtifactVersionContent(fullscreenVersion))}>
                   <ContentCopyOutlinedIcon />
                 </IconButton>
@@ -707,26 +740,91 @@ function AssistantArtifactList({ chatId, selectedArtifactId }: { chatId: string;
                 >
                   <CircularProgress size={18} thickness={5} />
                 </Box>
-                <ArtifactPreview item={fullscreenItem} version={fullscreenVersion} expanded />
-                {pendingFullscreenVersion ? (
-                  <Box
-                    aria-hidden
-                    sx={{
-                      position: 'absolute',
-                      inset: 0,
-                      opacity: 0,
-                      pointerEvents: 'none',
-                    }}
-                  >
-                    <ArtifactPreview
-                      item={fullscreenItem}
-                      version={pendingFullscreenVersion}
-                      expanded
-                      hideMermaidLoading
-                      onMermaidRenderSettled={handlePendingFullscreenVersionReady}
-                    />
+                {fullscreenZoomable ? (
+                  <Box sx={{ height: 'calc(100dvh - 86px)', minHeight: 320 }}>
+                    <TransformWrapper
+                      key={`${fullscreenItem.id}:${fullscreenVersion?.id || 'current'}`}
+                      ref={fullscreenZoomRef}
+                      initialScale={1}
+                      minScale={0.5}
+                      maxScale={6}
+                      centerOnInit
+                      centerZoomedOut
+                      limitToBounds
+                      doubleClick={{ mode: 'toggle', step: 1.5, animationTime: 180 }}
+                      wheel={{ step: 0.18 }}
+                      pinch={{ step: 5 }}
+                      panning={{ velocityDisabled: false, allowLeftClickPan: true }}
+                      onInit={(ref) => {
+                        fullscreenZoomRef.current = ref;
+                      }}
+                    >
+                      <TransformComponent
+                        wrapperStyle={{
+                          width: '100%',
+                          height: '100%',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          overflow: 'hidden',
+                        }}
+                        contentStyle={{
+                          width: '100%',
+                          minHeight: '100%',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        <ArtifactPreview item={fullscreenItem} version={fullscreenVersion} expanded fullscreen />
+                        {pendingFullscreenVersion ? (
+                          <Box
+                            aria-hidden
+                            sx={{
+                              position: 'absolute',
+                              inset: 0,
+                              opacity: 0,
+                              pointerEvents: 'none',
+                            }}
+                          >
+                            <ArtifactPreview
+                              item={fullscreenItem}
+                              version={pendingFullscreenVersion}
+                              expanded
+                              fullscreen
+                              hideMermaidLoading
+                              onMermaidRenderSettled={handlePendingFullscreenVersionReady}
+                            />
+                          </Box>
+                        ) : null}
+                      </TransformComponent>
+                    </TransformWrapper>
                   </Box>
-                ) : null}
+                ) : (
+                  <>
+                    <ArtifactPreview item={fullscreenItem} version={fullscreenVersion} expanded fullscreen />
+                    {pendingFullscreenVersion ? (
+                      <Box
+                        aria-hidden
+                        sx={{
+                          position: 'absolute',
+                          inset: 0,
+                          opacity: 0,
+                          pointerEvents: 'none',
+                        }}
+                      >
+                        <ArtifactPreview
+                          item={fullscreenItem}
+                          version={pendingFullscreenVersion}
+                          expanded
+                          fullscreen
+                          hideMermaidLoading
+                          onMermaidRenderSettled={handlePendingFullscreenVersionReady}
+                        />
+                      </Box>
+                    ) : null}
+                  </>
+                )}
               </Box>
             </DialogContent>
           </>

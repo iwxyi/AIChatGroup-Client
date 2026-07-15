@@ -234,11 +234,17 @@ export function MessageContent({ message, onRetryMedia, onOpenImage, onOpenDiagr
     return 'primary';
   };
   const getMediaFrameStyle = (attachment: Pick<MessageAttachment, 'width' | 'height' | 'aspectRatio'>) => {
+    const knownSize = getAttachmentKnownSize(attachment);
     const ratioValue = parseAttachmentRatio(attachment);
     const ratio = `${ratioValue} / 1`;
     const maxWidth = getAttachmentMaxWidth(ratioValue);
+    const viewportHeight = typeof window === 'undefined' ? 900 : window.innerHeight;
+    const maxHeight = Math.min(viewportHeight * 0.56, 520);
+    const widthLimitByHeight = Math.max(180, maxHeight * ratioValue);
     return {
-      width: `min(100%, ${maxWidth}px)`,
+      width: knownSize
+        ? `min(${Math.ceil(knownSize.width)}px, 100%, ${maxWidth}px, ${Math.ceil(widthLimitByHeight)}px)`
+        : `min(100%, ${maxWidth}px)`,
       maxHeight: 'min(56vh, 520px)',
       justifySelf: 'start',
       aspectRatio: ratio,

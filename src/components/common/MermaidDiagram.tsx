@@ -4,6 +4,7 @@ import { memo, useEffect, useId, useRef, useState } from 'react';
 interface MermaidDiagramProps {
   source: string;
   hideLoading?: boolean;
+  displayMode?: 'inline' | 'fullscreen';
   onRenderSettled?: () => void;
   onOpenFullscreen?: (payload: { source: string; svg: string; dataUrl: string }) => void;
 }
@@ -40,7 +41,7 @@ function cacheMermaidRender(source: string, result: { svg?: string; error?: stri
   }
 }
 
-function MermaidDiagram({ source, hideLoading = false, onRenderSettled, onOpenFullscreen }: MermaidDiagramProps) {
+function MermaidDiagram({ source, hideLoading = false, displayMode = 'inline', onRenderSettled, onOpenFullscreen }: MermaidDiagramProps) {
   const reactId = useId().replace(/[^a-zA-Z0-9_-]/g, '');
   const cachedRender = mermaidRenderCache.get(source);
   const [svg, setSvg] = useState(cachedRender?.svg || '');
@@ -48,10 +49,15 @@ function MermaidDiagram({ source, hideLoading = false, onRenderSettled, onOpenFu
   const [showSource, setShowSource] = useState(false);
   const onRenderSettledRef = useRef(onRenderSettled);
   const reservedHeight = estimateMermaidDiagramHeight(source);
-  const [viewportHeight, setViewportHeight] = useState(() => (typeof window === 'undefined' ? 900 : window.innerHeight));
+  const [viewportSize, setViewportSize] = useState(() => ({
+    width: typeof window === 'undefined' ? 1200 : window.innerWidth,
+    height: typeof window === 'undefined' ? 900 : window.innerHeight,
+  }));
   const svgSize = svg ? parseSvgIntrinsicSize(svg) : null;
   const svgRatio = svgSize ? svgSize.width / svgSize.height : 1.6;
-  const maxHeight = Math.min(viewportHeight * 0.52, 480);
+  const inline = displayMode === 'inline';
+  const maxWidth = inline ? 680 : Math.max(320, viewportSize.width - 64);
+  const maxHeight = inline ? Math.min(viewportSize.height * 0.52, 480) : Math.max(260, viewportSize.height - 170);
   const widthLimitByHeight = Math.max(180, maxHeight * svgRatio);
 
   useEffect(() => {
@@ -60,9 +66,9 @@ function MermaidDiagram({ source, hideLoading = false, onRenderSettled, onOpenFu
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
-    const updateViewportHeight = () => setViewportHeight(window.innerHeight);
-    window.addEventListener('resize', updateViewportHeight);
-    return () => window.removeEventListener('resize', updateViewportHeight);
+    const updateViewportSize = () => setViewportSize({ width: window.innerWidth, height: window.innerHeight });
+    window.addEventListener('resize', updateViewportSize);
+    return () => window.removeEventListener('resize', updateViewportSize);
   }, []);
 
   useEffect(() => {
@@ -121,7 +127,7 @@ function MermaidDiagram({ source, hideLoading = false, onRenderSettled, onOpenFu
   return (
     <Box
       sx={(theme) => ({
-        my: 1,
+        my: inline ? 1 : 0,
         p: 1,
         borderRadius: 1.25,
         border: '1px solid',
@@ -131,6 +137,7 @@ function MermaidDiagram({ source, hideLoading = false, onRenderSettled, onOpenFu
         width: svg ? 'fit-content' : 'min(100%, 680px)',
         maxWidth: '100%',
         boxSizing: 'border-box',
+        mx: inline ? undefined : 'auto',
         minHeight: hideLoading || svg || error ? undefined : reservedHeight,
       })}
     >
@@ -143,7 +150,7 @@ function MermaidDiagram({ source, hideLoading = false, onRenderSettled, onOpenFu
         <Box
           sx={{
             width: svgSize
-              ? `min(${Math.ceil(svgSize.width)}px, 680px, ${Math.ceil(widthLimitByHeight)}px)`
+              ? `min(${Math.ceil(svgSize.width)}px, ${Math.ceil(maxWidth)}px, ${Math.ceil(widthLimitByHeight)}px)`
               : 'fit-content',
             aspectRatio: `${svgRatio} / 1`,
             minWidth: 0,

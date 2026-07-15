@@ -3,6 +3,10 @@ import { Box, Dialog, IconButton, Typography, Zoom } from '@mui/material';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import CloseIcon from '@mui/icons-material/Close';
+import RestartAltIcon from '@mui/icons-material/RestartAlt';
+import ZoomInIcon from '@mui/icons-material/ZoomIn';
+import ZoomOutIcon from '@mui/icons-material/ZoomOut';
+import { TransformComponent, TransformWrapper, type ReactZoomPanPinchRef } from 'react-zoom-pan-pinch';
 
 export interface LightboxImageItem {
   key?: string;
@@ -27,8 +31,11 @@ const SWIPE_THRESHOLD = 54;
 
 export default function ImageLightbox({ open, images, index, onIndexChange, resolveImageSrc, onReachStart, reachStartVersion, maxReachStartAttempts = 20, onClose }: ImageLightboxProps) {
   const [dragOffset, setDragOffset] = useState(0);
+  const [zoomScale, setZoomScale] = useState(1);
   const [resolvedActiveSrc, setResolvedActiveSrc] = useState<{ request: string; src: string } | null>(null);
   const pointerStartRef = useRef<{ x: number; y: number; pointerId: number } | null>(null);
+  const activePointerIdsRef = useRef<Set<number>>(new Set());
+  const transformRef = useRef<ReactZoomPanPinchRef | null>(null);
   const lastWheelSwitchAtRef = useRef(0);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const safeIndex = images.length ? Math.min(Math.max(index, 0), images.length - 1) : 0;
@@ -36,6 +43,7 @@ export default function ImageLightbox({ open, images, index, onIndexChange, reso
   const activeSrcRequest = activeImage?.fullSrc || activeImage?.src || '';
   const activeSrc = resolvedActiveSrc?.request === activeSrcRequest ? resolvedActiveSrc.src : activeSrcRequest;
   const hasMultiple = images.length > 1;
+  const canUseGalleryNavigation = zoomScale <= 1.01;
   const canGoPrev = hasMultiple && safeIndex > 0;
   const canGoNext = hasMultiple && safeIndex < images.length - 1;
   const reachStartTokenRef = useRef<string | null>(null);
@@ -43,19 +51,38 @@ export default function ImageLightbox({ open, images, index, onIndexChange, reso
 
   const goPrev = useCallback(() => {
     if (!hasMultiple) return;
+    if (!canUseGalleryNavigation) return;
     if (!canGoPrev) return;
+    transformRef.current?.resetTransform(0);
     onIndexChange(safeIndex - 1);
-  }, [canGoPrev, hasMultiple, onIndexChange, safeIndex]);
+  }, [canGoPrev, canUseGalleryNavigation, hasMultiple, onIndexChange, safeIndex]);
 
   const goNext = useCallback(() => {
+    if (!canUseGalleryNavigation) return;
     if (!canGoNext) return;
+    transformRef.current?.resetTransform(0);
     onIndexChange(safeIndex + 1);
-  }, [canGoNext, onIndexChange, safeIndex]);
+  }, [canGoNext, canUseGalleryNavigation, onIndexChange, safeIndex]);
 
   const handleKeyDown = useCallback((event: KeyboardEvent | React.KeyboardEvent<HTMLElement>) => {
     if (event.key === 'Escape') {
       event.preventDefault();
       onClose();
+      return;
+    }
+    if (event.key === '+' || event.key === '=') {
+      event.preventDefault();
+      transformRef.current?.zoomIn(0.32, 180);
+      return;
+    }
+    if (event.key === '-' || event.key === '_') {
+      event.preventDefault();
+      transformRef.current?.zoomOut(0.32, 180);
+      return;
+    }
+    if (event.key === '0') {
+      event.preventDefault();
+      transformRef.current?.resetTransform(180);
       return;
     }
     if (event.key === 'ArrowLeft') {
@@ -97,8 +124,16 @@ export default function ImageLightbox({ open, images, index, onIndexChange, reso
   useEffect(() => {
     if (!open) {
       pointerStartRef.current = null;
+      activePointerIdsRef.current.clear();
+      setZoomScale(1);
     }
   }, [open]);
+
+  useEffect(() => {
+    setDragOffset(0);
+    setZoomScale(1);
+    transformRef.current?.resetTransform(0);
+  }, [activeSrcRequest]);
 
   useEffect(() => {
     if (!open || !activeSrcRequest || !resolveImageSrc) return undefined;
@@ -110,7 +145,13 @@ export default function ImageLightbox({ open, images, index, onIndexChange, reso
   }, [activeSrcRequest, open, resolveImageSrc]);
 
   const handlePointerDown = (event: React.PointerEvent<HTMLElement>) => {
+    activePointerIdsRef.current.add(event.pointerId);
     if (!hasMultiple) return;
+    if (!canUseGalleryNavigation) return;
+    if (activePointerIdsRef.current.size > 1) {
+      pointerStartRef.current = null;
+      return;
+    }
     pointerStartRef.current = { x: event.clientX, y: event.clientY, pointerId: event.pointerId };
     event.currentTarget.setPointerCapture(event.pointerId);
   };
@@ -125,6 +166,7 @@ export default function ImageLightbox({ open, images, index, onIndexChange, reso
   };
 
   const finishPointerGesture = (event: React.PointerEvent<HTMLElement>) => {
+    activePointerIdsRef.current.delete(event.pointerId);
     const start = pointerStartRef.current;
     if (!start || start.pointerId !== event.pointerId) return;
     pointerStartRef.current = null;
@@ -135,6 +177,7 @@ export default function ImageLightbox({ open, images, index, onIndexChange, reso
   };
 
   const handleWheel = (event: React.WheelEvent<HTMLElement>) => {
+    if (!canUseGalleryNavigation) return;
     if (!hasMultiple || Math.abs(event.deltaX) < Math.max(40, Math.abs(event.deltaY) * 1.5)) return;
     const now = Date.now();
     if (now - lastWheelSwitchAtRef.current < 360) return;
@@ -198,7 +241,7 @@ export default function ImageLightbox({ open, images, index, onIndexChange, reso
           placeItems: 'center',
           p: { xs: 1.5, sm: 3 },
           outline: 'none',
-          touchAction: hasMultiple ? 'pan-y pinch-zoom' : 'pinch-zoom',
+          touchAction: 'none',
           overflow: 'hidden',
           bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.18)' : 'rgba(2,6,23,0.12)',
         }}
@@ -245,13 +288,13 @@ export default function ImageLightbox({ open, images, index, onIndexChange, reso
               p: 0,
               border: 0,
               bgcolor: 'transparent',
-              cursor: canGoPrev ? 'pointer' : 'default',
-              opacity: canGoPrev ? 1 : 0.28,
+              cursor: canGoPrev && canUseGalleryNavigation ? 'pointer' : 'default',
+              opacity: canGoPrev && canUseGalleryNavigation ? 1 : 0.18,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'flex-start',
               pl: { xs: 1, sm: 2 },
-              '&:hover .lightbox-edge-icon': canGoPrev ? {
+              '&:hover .lightbox-edge-icon': canGoPrev && canUseGalleryNavigation ? {
                 opacity: 1,
                 transform: 'translateX(0) scale(1)',
                 bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.64)' : 'rgba(30,41,59,0.58)',
@@ -282,22 +325,72 @@ export default function ImageLightbox({ open, images, index, onIndexChange, reso
 
         {activeImage ? (
           <Box
-            component="img"
-            src={activeSrc}
-            alt={activeImage.alt || ''}
-            draggable={false}
             sx={{
-              maxWidth: '100%',
-              maxHeight: '88vh',
-              objectFit: 'contain',
-              userSelect: 'none',
-              borderRadius: activeSrc.startsWith('data:image/svg') ? 2 : 1.25,
-              boxShadow: (theme) => theme.palette.mode === 'light' ? '0 28px 80px rgba(15,23,42,0.18)' : '0 28px 80px rgba(0,0,0,0.34)',
-              transform: `translateX(${dragOffset}px) scale(${dragOffset ? 0.985 : 1})`,
-              transition: dragOffset ? 'none' : 'transform 180ms cubic-bezier(0.2, 0, 0, 1), opacity 180ms ease',
-              willChange: 'transform',
+              width: '100%',
+              height: '100%',
+              display: 'grid',
+              placeItems: 'center',
+              minWidth: 0,
+              minHeight: 0,
+              zIndex: 1,
             }}
-          />
+          >
+            <TransformWrapper
+              key={activeImage.key || activeSrcRequest}
+              ref={transformRef}
+              initialScale={1}
+              minScale={1}
+              maxScale={6}
+              centerOnInit
+              centerZoomedOut
+              limitToBounds
+              doubleClick={{ mode: 'toggle', step: 1.5, animationTime: 180 }}
+              wheel={{ step: 0.18 }}
+              pinch={{ step: 5 }}
+              panning={{ disabled: canUseGalleryNavigation, velocityDisabled: false, allowLeftClickPan: true }}
+              onTransform={(ref) => setZoomScale(ref.state.scale)}
+              onInit={(ref) => {
+                transformRef.current = ref;
+                setZoomScale(ref.state.scale);
+              }}
+            >
+              <TransformComponent
+                wrapperStyle={{
+                  width: '100%',
+                  height: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  overflow: 'hidden',
+                }}
+                contentStyle={{
+                  width: '100%',
+                  height: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Box
+                  component="img"
+                  src={activeSrc}
+                  alt={activeImage.alt || ''}
+                  draggable={false}
+                  sx={{
+                    maxWidth: '100%',
+                    maxHeight: '88vh',
+                    objectFit: 'contain',
+                    userSelect: 'none',
+                    borderRadius: activeSrc.startsWith('data:image/svg') ? 2 : 1.25,
+                    boxShadow: (theme) => theme.palette.mode === 'light' ? '0 28px 80px rgba(15,23,42,0.18)' : '0 28px 80px rgba(0,0,0,0.34)',
+                    transform: `translateX(${dragOffset}px) scale(${dragOffset ? 0.985 : 1})`,
+                    transition: dragOffset ? 'none' : 'transform 180ms cubic-bezier(0.2, 0, 0, 1), opacity 180ms ease',
+                    willChange: 'transform',
+                  }}
+                />
+              </TransformComponent>
+            </TransformWrapper>
+          </Box>
         ) : null}
 
         {hasMultiple ? (
@@ -318,13 +411,13 @@ export default function ImageLightbox({ open, images, index, onIndexChange, reso
               p: 0,
               border: 0,
               bgcolor: 'transparent',
-              cursor: canGoNext ? 'pointer' : 'default',
-              opacity: canGoNext ? 1 : 0.28,
+              cursor: canGoNext && canUseGalleryNavigation ? 'pointer' : 'default',
+              opacity: canGoNext && canUseGalleryNavigation ? 1 : 0.18,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'flex-end',
               pr: { xs: 1, sm: 2 },
-              '&:hover .lightbox-edge-icon': canGoNext ? {
+              '&:hover .lightbox-edge-icon': canGoNext && canUseGalleryNavigation ? {
                 opacity: 1,
                 transform: 'translateX(0) scale(1)',
                 bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.64)' : 'rgba(30,41,59,0.58)',
@@ -352,6 +445,47 @@ export default function ImageLightbox({ open, images, index, onIndexChange, reso
             </IconButton>
           </Box>
         ) : null}
+
+        <Box
+          sx={{
+            position: 'absolute',
+            top: { xs: 10, sm: 18 },
+            left: { xs: 10, sm: 18 },
+            zIndex: 3,
+            display: 'flex',
+            gap: 0.75,
+          }}
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          {[
+            { label: '放大', icon: <ZoomInIcon />, action: () => transformRef.current?.zoomIn(0.32, 180) },
+            { label: '缩小', icon: <ZoomOutIcon />, action: () => transformRef.current?.zoomOut(0.32, 180) },
+            { label: '还原', icon: <RestartAltIcon />, action: () => transformRef.current?.resetTransform(180) },
+          ].map((item) => (
+            <IconButton
+              key={item.label}
+              aria-label={item.label}
+              onClick={(event) => {
+                event.stopPropagation();
+                item.action();
+              }}
+              sx={{
+                color: (theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.78)' : 'rgba(248,250,252,0.88)',
+                bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.46)' : 'rgba(15,23,42,0.46)',
+                border: 1,
+                borderColor: (theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.08)' : 'rgba(248,250,252,0.12)',
+                backdropFilter: 'blur(16px) saturate(1.2)',
+                WebkitBackdropFilter: 'blur(16px) saturate(1.2)',
+                boxShadow: (theme) => theme.palette.mode === 'light' ? '0 12px 30px rgba(15,23,42,0.10)' : '0 12px 30px rgba(0,0,0,0.22)',
+                '&:hover': {
+                  bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.68)' : 'rgba(30,41,59,0.64)',
+                },
+              }}
+            >
+              {item.icon}
+            </IconButton>
+          ))}
+        </Box>
 
         {hasMultiple ? (
           <Typography
