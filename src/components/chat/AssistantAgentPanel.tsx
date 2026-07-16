@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Box, Button, Chip, CircularProgress, Dialog, DialogContent, DialogTitle, Divider, IconButton, MenuItem, Select, Stack, Switch, Tooltip, Typography } from '@mui/material';
+import { Box, Button, Checkbox, Chip, CircularProgress, Dialog, DialogContent, DialogTitle, Divider, IconButton, MenuItem, Select, Stack, Switch, Tooltip, Typography } from '@mui/material';
 import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined';
 import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined';
 import CloseOutlinedIcon from '@mui/icons-material/CloseOutlined';
@@ -9,13 +9,16 @@ import DataObjectOutlinedIcon from '@mui/icons-material/DataObjectOutlined';
 import DeleteOutlineOutlinedIcon from '@mui/icons-material/DeleteOutlineOutlined';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
+import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import GridViewOutlinedIcon from '@mui/icons-material/GridViewOutlined';
+import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
 import KeyboardArrowDownOutlinedIcon from '@mui/icons-material/KeyboardArrowDownOutlined';
 import KeyboardArrowUpOutlinedIcon from '@mui/icons-material/KeyboardArrowUpOutlined';
 import LanguageOutlinedIcon from '@mui/icons-material/LanguageOutlined';
 import NavigateBeforeOutlinedIcon from '@mui/icons-material/NavigateBeforeOutlined';
 import NavigateNextOutlinedIcon from '@mui/icons-material/NavigateNextOutlined';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
+import RefreshOutlinedIcon from '@mui/icons-material/RefreshOutlined';
 import TableChartOutlinedIcon from '@mui/icons-material/TableChartOutlined';
 import ViewAgendaOutlinedIcon from '@mui/icons-material/ViewAgendaOutlined';
 import ViewListOutlinedIcon from '@mui/icons-material/ViewListOutlined';
@@ -30,6 +33,8 @@ import type { GroupChat } from '../../types/chat';
 import type { AssistantArtifactItem, AssistantArtifactKind, AssistantArtifactVersion } from '../../types/assistantArtifact';
 import { copyTextToClipboard } from '../../utils/clipboard';
 import { ensureAssistantArtifactStoreHydrated, getAssistantArtifactCurrentContent, useAssistantArtifactStore } from '../../stores/useAssistantArtifactStore';
+import { useLocalWorkspaceStore } from '../../stores/useLocalWorkspaceStore';
+import type { LocalWorkspaceFileEntry } from '../../services/localWorkspaceService';
 
 interface AssistantAgentPanelProps {
   chat: GroupChat;
@@ -174,6 +179,22 @@ function artifactPreviewText(item: AssistantArtifactItem) {
   return content.replace(/\s+/g, ' ').slice(0, 420);
 }
 
+function isSelectableLocalWorkspaceFile(entry: LocalWorkspaceFileEntry) {
+  if (entry.kind !== 'file') return false;
+  const mimeType = (entry.mimeType || '').toLowerCase();
+  if (mimeType.startsWith('text/')) return true;
+  if (['application/json', 'application/xml', 'application/javascript', 'application/typescript'].includes(mimeType)) return true;
+  return /\.(md|markdown|txt|json|jsonl|csv|tsv|xml|html|css|js|jsx|ts|tsx|mjs|cjs|py|java|go|rs|php|rb|sh|bash|zsh|sql|yaml|yml|toml|ini|env|mmd|mermaid)$/i.test(entry.path);
+}
+
+function formatFileSize(value?: number) {
+  if (!Number.isFinite(value || NaN)) return '';
+  const size = Number(value);
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`;
+  return `${(size / 1024 / 1024).toFixed(1)} MB`;
+}
+
 function ThumbnailFade() {
   return (
     <Box
@@ -189,6 +210,136 @@ function ThumbnailFade() {
           : 'linear-gradient(to bottom, rgba(15,23,42,0), rgba(15,23,42,0.96))',
       }}
     />
+  );
+}
+
+function AssistantLocalWorkspaceFiles({ chatId }: { chatId: string }) {
+  const directories = useLocalWorkspaceStore((state) => state.directories);
+  const defaultDirectoryId = useLocalWorkspaceStore((state) => state.defaultDirectoryId);
+  const selectedFilePaths = useLocalWorkspaceStore((state) => state.selectedFilePathsByChatId[chatId] || []);
+  const listDefaultDirectoryFiles = useLocalWorkspaceStore((state) => state.listDefaultDirectoryFiles);
+  const toggleSelectedFilePath = useLocalWorkspaceStore((state) => state.toggleSelectedFilePath);
+  const clearSelectedFilePaths = useLocalWorkspaceStore((state) => state.clearSelectedFilePaths);
+  const [files, setFiles] = useState<LocalWorkspaceFileEntry[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const defaultDirectory = useMemo(() => {
+    const id = defaultDirectoryId;
+    return id ? directories.find((item) => item.id === id) || null : null;
+  }, [defaultDirectoryId, directories]);
+  const selectedSet = useMemo(() => new Set(selectedFilePaths), [selectedFilePaths]);
+  const selectableFiles = useMemo(() => files.filter(isSelectableLocalWorkspaceFile).slice(0, 80), [files]);
+
+  const refreshFiles = useCallback(async () => {
+    if (!defaultDirectory) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const next = await listDefaultDirectoryFiles();
+      setFiles(next);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '读取本地文件列表失败');
+    } finally {
+      setLoading(false);
+    }
+  }, [defaultDirectory, listDefaultDirectoryFiles]);
+
+  useEffect(() => {
+    void refreshFiles();
+  }, [refreshFiles]);
+
+  if (!defaultDirectory) return null;
+
+  return (
+    <Box
+      sx={{
+        p: 1.25,
+        border: '1px solid',
+        borderColor: (theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.08)' : 'rgba(226,232,240,0.12)',
+        borderRadius: 1,
+        bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.72)' : 'rgba(15,23,42,0.36)',
+      }}
+    >
+      <Stack spacing={1}>
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between', minWidth: 0 }}>
+          <Box sx={{ minWidth: 0 }}>
+            <Typography variant="body2" sx={{ fontWeight: 800 }}>本地文件</Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }} noWrap>
+              {defaultDirectory.name} · 已选 {selectedFilePaths.length} 个
+            </Typography>
+          </Box>
+          <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
+            {selectedFilePaths.length ? (
+              <Button size="small" variant="text" onClick={() => clearSelectedFilePaths(chatId)} sx={{ minWidth: 0, px: 0.75 }}>
+                清空
+              </Button>
+            ) : null}
+            <Tooltip title="刷新">
+              <span>
+                <IconButton size="small" disabled={loading} onClick={() => void refreshFiles()}>
+                  {loading ? <CircularProgress size={16} /> : <RefreshOutlinedIcon fontSize="small" />}
+                </IconButton>
+              </span>
+            </Tooltip>
+          </Stack>
+        </Stack>
+        {error ? <Typography variant="caption" color="error">{error}</Typography> : null}
+        {!loading && !selectableFiles.length ? (
+          <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.6 }}>
+            当前目录没有可直接读取的文本文件。Office、PDF、图片等需要后续解析工具。
+          </Typography>
+        ) : (
+          <Box sx={{ display: 'grid', gap: 0.5, maxHeight: 220, overflowY: 'auto', pr: 0.25, ...buildScrollableRegionSx() }}>
+            {selectableFiles.map((file) => {
+              const checked = selectedSet.has(file.path);
+              return (
+                <Box
+                  key={file.path}
+                  component="button"
+                  type="button"
+                  onClick={() => toggleSelectedFilePath(chatId, file.path)}
+                  sx={{
+                    width: '100%',
+                    border: '1px solid',
+                    borderColor: checked ? 'primary.main' : 'divider',
+                    borderRadius: 1,
+                    bgcolor: checked ? 'primary.main' : 'background.paper',
+                    color: checked ? 'primary.contrastText' : 'text.primary',
+                    display: 'grid',
+                    gridTemplateColumns: 'auto minmax(0, 1fr) auto',
+                    gap: 0.75,
+                    alignItems: 'center',
+                    p: 0.75,
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Checkbox size="small" checked={checked} tabIndex={-1} sx={{ p: 0, color: checked ? 'inherit' : undefined, '&.Mui-checked': { color: checked ? 'inherit' : undefined } }} />
+                  <Box sx={{ minWidth: 0 }}>
+                    <Typography variant="caption" sx={{ fontWeight: 800, display: 'block' }} noWrap>
+                      {file.name}
+                    </Typography>
+                    <Typography variant="caption" sx={{ display: 'block', opacity: 0.72 }} noWrap>
+                      {file.path}
+                    </Typography>
+                  </Box>
+                  <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', minWidth: 0 }}>
+                    <Typography variant="caption" sx={{ opacity: 0.72, whiteSpace: 'nowrap' }}>{formatFileSize(file.sizeBytes)}</Typography>
+                    <InsertDriveFileOutlinedIcon fontSize="small" />
+                  </Stack>
+                </Box>
+              );
+            })}
+          </Box>
+        )}
+        {files.some((file) => file.kind === 'directory') ? (
+          <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', color: 'text.secondary' }}>
+            <FolderOutlinedIcon sx={{ fontSize: 16 }} />
+            <Typography variant="caption">目录只用于定位文件，不会直接作为正文读取。</Typography>
+          </Stack>
+        ) : null}
+      </Stack>
+    </Box>
   );
 }
 
@@ -867,7 +1018,10 @@ export default function AssistantAgentPanel({ chat, selectedArtifactId = null, o
             </Stack>
           </Box>
           {agentEnabled ? (
-            <AssistantArtifactList chatId={chat.id} selectedArtifactId={selectedArtifactId} />
+            <>
+              <AssistantLocalWorkspaceFiles chatId={chat.id} />
+              <AssistantArtifactList chatId={chat.id} selectedArtifactId={selectedArtifactId} />
+            </>
           ) : (
             <Box sx={{ minHeight: 160, display: 'grid', placeItems: 'center', px: 2, textAlign: 'center', color: 'text.secondary' }}>
               <Typography variant="body2" sx={{ lineHeight: 1.7 }}>

@@ -34,6 +34,7 @@ import {
   updatePendingOperation,
 } from './storeSyncHelpers';
 import { DEFAULT_BASIC_RETENTION_LIMITS, getCurrentRetentionLimits, takeRecentByLimit } from '../services/retentionLimits';
+import { useLocalWorkspaceStore } from './useLocalWorkspaceStore';
 
 function createLocalChatId() {
   return `local-chat-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -75,6 +76,27 @@ function applyLocalChatDelete(chat: GroupChat) {
     ...chat,
     deletedAt: Date.now(),
     updatedAt: Date.now(),
+  });
+}
+
+async function prepareAssistantLocalWorkspaceChatRename(id: string, updates: Partial<GroupChat>, chats: GroupChat[]) {
+  if (typeof updates.name !== 'string') return;
+  const existing = chats.find((chat) => chat.id === id);
+  if (!existing || existing.type !== 'assistant') return;
+  const nextName = updates.name.trim();
+  const previousName = existing.name || '';
+  if (!nextName || nextName === previousName) return;
+  const workspace = useLocalWorkspaceStore.getState();
+  if (workspace.isChatWriteLocked(id)) {
+    throw new Error('本地产物正在读写，请稍后再修改聊天名称');
+  }
+  if (!workspace.getDefaultDirectory()) return;
+  const artifactModule = await import('./useAssistantArtifactStore');
+  const artifacts = artifactModule.useAssistantArtifactStore.getState().getArtifactsForChat(id);
+  await workspace.mirrorAssistantChatRename({
+    chat: { ...existing, name: nextName },
+    previousChatName: previousName,
+    artifacts,
   });
 }
 
@@ -1614,6 +1636,7 @@ export const useChatStore = create<ChatStore>()(
         },
 
         updateChat: async (id, updates) => {
+          await prepareAssistantLocalWorkspaceChatRename(id, updates, get().chats);
           if (shouldSkipCloudSync()) {
             set((state) => ({
               chats: state.chats.map((chat) => chat.id === id ? applyLocalChatUpdate(chat, updates) : chat),

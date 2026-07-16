@@ -10,6 +10,8 @@ import type { SyncChangeScope } from '../services/api';
 import { isCloudSyncEnabled } from '../services/cloudSyncPreference';
 import { isAssistantArtifactCloudSyncEnabled } from '../services/assistantArtifactCloudSyncPreference';
 import { createSyncScopeMetadata } from './syncScopeMetadata';
+import { useChatStore } from './useChatStore';
+import { useLocalWorkspaceStore } from './useLocalWorkspaceStore';
 
 interface AssistantArtifactSnapshot {
   items: AssistantArtifactItem[];
@@ -203,6 +205,22 @@ function scheduleArtifactCloudPush(chatId: string, artifactIds: string[]) {
   }, 0);
 }
 
+function scheduleArtifactLocalWorkspaceWrite(chatId: string, artifacts: AssistantArtifactItem[]) {
+  if (!artifacts.length || typeof window === 'undefined') return;
+  window.setTimeout(() => {
+    const chat = useChatStore.getState().chats.find((item) => item.id === chatId);
+    if (!chat || chat.type !== 'assistant') return;
+    const workspace = useLocalWorkspaceStore.getState();
+    if (!workspace.getDefaultDirectory()) return;
+    void Promise.allSettled(
+      artifacts.map((artifact) => workspace.mirrorAssistantArtifact({ chat, artifact })),
+    ).then((results) => {
+      const rejected = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+      if (rejected) console.warn('[assistant-artifact:local-workspace-write-failed]', rejected.reason);
+    });
+  }, 0);
+}
+
 export const useAssistantArtifactStore = create<AssistantArtifactStore>()(
   persist(
     (set, get) => ({
@@ -270,6 +288,7 @@ export const useAssistantArtifactStore = create<AssistantArtifactStore>()(
           return { items: pruneChatArtifacts(nextItems, chatId) };
         });
         scheduleArtifactCloudPush(chatId, changed.map((item) => item.id));
+        scheduleArtifactLocalWorkspaceWrite(chatId, changed);
         return changed;
       },
 
@@ -369,6 +388,7 @@ export const useAssistantArtifactStore = create<AssistantArtifactStore>()(
             : [item, ...state.items],
         }));
         scheduleArtifactCloudPush(chatId, [item.id]);
+        scheduleArtifactLocalWorkspaceWrite(chatId, [item]);
         return item;
       },
 

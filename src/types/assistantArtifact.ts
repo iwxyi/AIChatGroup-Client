@@ -67,6 +67,20 @@ export interface AssistantArtifactDraft {
 export type AssistantAgentIntent = 'chat' | 'create' | 'update' | 'clarify' | 'search';
 export type AssistantAgentTargetMode = 'single' | 'multi' | 'workspace' | 'selection' | 'unknown';
 
+export interface AssistantAgentLocalFileRef {
+  directoryId: string;
+  path: string;
+}
+
+export interface AssistantAgentLocalFileContext extends AssistantAgentLocalFileRef {
+  name: string;
+  mimeType?: string;
+  sizeBytes: number;
+  content: string;
+  truncated: boolean;
+  originalLength: number;
+}
+
 export interface AssistantAgentChangePlan {
   intent: AssistantAgentIntent;
   assistantMessage?: string;
@@ -81,6 +95,7 @@ export interface AssistantAgentChangePlan {
   requiresConfirmation: boolean;
   clarificationQuestion?: string;
   searchQuery?: string;
+  localFilePaths?: AssistantAgentLocalFileRef[];
   confidence: number;
   rationale?: string;
 }

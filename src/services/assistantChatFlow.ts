@@ -1,6 +1,6 @@
 import type { GroupChat } from '../types/chat';
 import type { Message, MessageAttachment, MessageMetadata } from '../types/message';
-import type { AssistantAgentPatchSet } from '../types/assistantArtifact';
+import type { AssistantAgentLocalFileContext, AssistantAgentPatchSet } from '../types/assistantArtifact';
 import type { APIConfig, AIModelProfile } from '../types/settings';
 import { getUsablePreferredAIProfile } from '../types/settings';
 import { createStreamingLocalMessage, persistLocalFirstMessage } from './chatCommitMessage';
@@ -74,6 +74,51 @@ function buildAssistantSearchResultPromptBlock(params: {
     'Live web search results are available below. Use them when relevant; do not say you cannot browse or cannot access current information. Do not invent citations. Prefer concise synthesis over listing every result.',
     params.results.map(formatAssistantSearchResult).join('\n\n') || 'No usable result items were returned.',
   ].join('\n');
+}
+
+function buildLocalFilePromptBlock(localFiles: AssistantAgentLocalFileContext[]) {
+  return [
+    '## Local Workspace Files',
+    'The user authorized these local files for this request. Use only the content below; do not claim access to files not listed here.',
+    ...localFiles.map((file, index) => [
+      `### File ${index + 1}: ${file.path}`,
+      `Name: ${file.name}`,
+      `MIME: ${file.mimeType || 'unknown'}; sizeBytes: ${file.sizeBytes}; truncated: ${file.truncated}; originalLength: ${file.originalLength}`,
+      '```',
+      file.content,
+      '```',
+    ].join('\n')),
+  ].join('\n\n');
+}
+
+async function generateAssistantLocalFileAnswer(params: {
+  api: APIConfig;
+  chatId: string;
+  userMessage: Message;
+  messages: Message[];
+  localFiles: AssistantAgentLocalFileContext[];
+  signal?: AbortSignal;
+}) {
+  return generateResponse(
+    params.api,
+    [
+      buildAssistantSystemPrompt(),
+      buildLocalFilePromptBlock(params.localFiles),
+      'Answer the latest user request using the authorized local file content above. If the provided file content is insufficient or truncated, say what is missing instead of guessing.',
+    ].join('\n\n'),
+    toAssistantPromptMessages(withLatestUserMessage(params.messages, params.userMessage)),
+    undefined,
+    {
+      responseFormat: 'text',
+      signal: params.signal,
+      aiUsage: {
+        type: 'assistant_chat',
+        label: '助手Agent本地文件回答',
+        scope: 'chat',
+        resourceId: params.chatId,
+      },
+    },
+  );
 }
 
 async function generateAssistantSearchAnswer(params: {
@@ -187,12 +232,20 @@ async function persistAssistantArtifactsFromReply(params: {
   const [
     { planAssistantAgentChange, writeAssistantAgentPatchSet },
     { ensureAssistantArtifactStoreHydrated, useAssistantArtifactStore },
+    { useLocalWorkspaceStore },
   ] = await Promise.all([
     import('./assistantAgentOrchestrator'),
     import('../stores/useAssistantArtifactStore'),
+    import('../stores/useLocalWorkspaceStore'),
   ]);
   await ensureAssistantArtifactStoreHydrated();
   const existingArtifacts = useAssistantArtifactStore.getState().getArtifactsForChat(params.chatId);
+  const localWorkspaceState = useLocalWorkspaceStore.getState();
+  const defaultLocalWorkspaceDirectory = localWorkspaceState.getDefaultDirectory();
+  const selectedLocalWorkspaceFilePaths = localWorkspaceState.getSelectedFilePaths(params.chatId);
+  const localWorkspaceFileRegistry = defaultLocalWorkspaceDirectory
+    ? await localWorkspaceState.listDefaultDirectoryFiles().catch(() => [])
+    : [];
   const plan = await planAssistantAgentChange({
     api: params.api,
     chatId: params.chatId,
@@ -201,9 +254,45 @@ async function persistAssistantArtifactsFromReply(params: {
     existingArtifacts,
     toolCapabilities: {
       webSearch: isAssistantAgentSearchEnabled(params.chat),
+      localWorkspace: Boolean(defaultLocalWorkspaceDirectory),
+      localWorkspaceDirectories: localWorkspaceState.directories.map((directory) => ({
+        id: directory.id,
+        name: directory.name,
+        isDefault: directory.id === defaultLocalWorkspaceDirectory?.id,
+      })),
     },
+    localWorkspaceFileRegistry,
+    interactionFocus: selectedLocalWorkspaceFilePaths.length ? {
+      selectedLocalWorkspaceFiles: selectedLocalWorkspaceFilePaths.map((path) => ({
+        directoryId: defaultLocalWorkspaceDirectory?.id || '',
+        path,
+      })),
+    } : undefined,
     signal: params.signal,
   });
+  const selectedLocalFilePaths = (selectedLocalWorkspaceFilePaths.length
+    ? selectedLocalWorkspaceFilePaths.map((path) => ({ directoryId: defaultLocalWorkspaceDirectory?.id || '', path }))
+    : (plan.localFilePaths || []))
+    .filter((file) => file.directoryId === defaultLocalWorkspaceDirectory?.id)
+    .map((file) => file.path);
+  const localFiles = selectedLocalFilePaths.length
+    ? await localWorkspaceState.readDefaultDirectoryTextFiles(selectedLocalFilePaths).catch(() => [])
+    : [];
+  if (selectedLocalFilePaths.length && !localFiles.length) {
+    const assistantMessage = await persistAssistantFinalMessage({
+      chat: params.chat,
+      chatId: params.chatId,
+      currentMessages: params.messages,
+      content: '我找到了你要处理的本地文件引用，但这些文件当前不可读、不是文本类型，或超过了安全读取限制。请换成文本文件，或缩小文件范围后再试。',
+      timestamp: params.timestamp,
+      upsertMessage: params.upsertMessage,
+    });
+    await params.updateChat(params.chatId, {
+      lastMessageAt: assistantMessage.timestamp,
+      latestMessage: assistantMessage,
+    });
+    return { message: assistantMessage, patchesCommitted: 0 };
+  }
   if (plan.intent === 'search') {
     const query = plan.searchQuery?.trim() || params.userMessage.content.trim();
     const answer = await generateAssistantSearchAnswer({
@@ -229,12 +318,22 @@ async function persistAssistantArtifactsFromReply(params: {
     });
     return { message: assistantMessage, patchesCommitted: 0 };
   }
-  if (plan.intent === 'chat' && plan.assistantMessage?.trim()) {
+  if (plan.intent === 'chat' && (plan.assistantMessage?.trim() || localFiles.length)) {
+    const content = localFiles.length
+      ? (await generateAssistantLocalFileAnswer({
+        api: params.api,
+        chatId: params.chatId,
+        userMessage: params.userMessage,
+        messages: params.messages,
+        localFiles,
+        signal: params.signal,
+      })).trim() || (plan.assistantMessage || '').trim()
+      : (plan.assistantMessage || '').trim();
     const assistantMessage = await persistAssistantFinalMessage({
       chat: params.chat,
       chatId: params.chatId,
       currentMessages: params.messages,
-      content: plan.assistantMessage.trim(),
+      content,
       timestamp: params.timestamp,
       upsertMessage: params.upsertMessage,
     });
@@ -256,6 +355,7 @@ async function persistAssistantArtifactsFromReply(params: {
       userMessage: params.userMessage,
       plan,
       existingArtifacts,
+      localFiles,
       signal: params.signal,
     });
     content = buildAgentArtifactReplyContent(patchSet);

@@ -1,5 +1,6 @@
 import type {
   AssistantAgentChangePlan,
+  AssistantAgentLocalFileContext,
   AssistantAgentMediaTask,
   AssistantAgentPatch,
   AssistantAgentPatchSet,
@@ -25,6 +26,8 @@ const MAX_ASSISTANT_VISIBLE_MESSAGE_CHARS = 12_000;
 const MAX_AGENT_REQUEST_CHARS = 420_000;
 const MAX_TOTAL_TARGET_CONTEXT_CHARS = 180_000;
 const MAX_SINGLE_TARGET_CONTEXT_CHARS = 80_000;
+const MAX_LOCAL_WORKSPACE_FILES_IN_REGISTRY = 160;
+const MAX_LOCAL_FILE_CONTEXT_CHARS = 120_000;
 
 export interface CompactImageAttachmentRef {
   id: string;
@@ -228,6 +231,10 @@ function buildPlannerPrompt() {
     '1. 普通问答输出 intent=chat，并在 assistantMessage 中直接给出用户可见回答。',
     '1a. 如果用户需要最新消息、实时事实、网页资料、外部来源核验，且 toolCapabilities.webSearch=true，必须输出 intent=search，并给 searchQuery。不要在 assistantMessage 中声称无法联网。',
     '1b. 如果需要搜索但 toolCapabilities.webSearch=false，输出 intent=chat，并说明当前未开启搜索能力。',
+    '1c. 如果用户要求处理本地授权文件夹里的文件，而 toolCapabilities.localWorkspace=true，但用户没有明确文件、目录、选择范围或交互焦点，必须输出 intent=clarify；不要假装已经读取文件。',
+    '1d. 如果需要本地文件但 toolCapabilities.localWorkspace=false，输出 intent=chat，并说明当前未授权本地工作区。',
+    '1e. 如果用户明确要求读取、总结、转换、比较或基于本地文件生成产物，且 localWorkspaceFileRegistry 中能定位到文件，必须在 localFilePaths 中列出要读取的文件相对路径。不要选择目录；不要选择未出现在 registry 中的路径。',
+    '1f. 如果 interactionFocus.selectedLocalWorkspaceFiles 非空，优先使用这些用户显式选择的文件；除非用户明确要求别的文件，否则不要改选。',
     '2. 需要创建产物输出 intent=create。',
     '2a. 用户要求生成图片、海报、插画、照片、图像素材，或要求基于上一张/刚才那张/某张参考图生成变体时，也属于 intent=create；Planner 只规划，不输出图片提示词正文。',
     '3. 需要修改一个或多个现有产物输出 intent=update，scope.artifactIds 可以是多个。',
@@ -236,12 +243,13 @@ function buildPlannerPrompt() {
     '6. Planner 不输出产物正文，不输出 patch；只有 intent=chat/clarify 时 assistantMessage 才作为用户可见回复。',
     '',
     '输出格式：',
-    '{"intent":"chat|create|update|clarify|search","assistantMessage":"普通聊天或澄清时的可见回复","searchQuery":"搜索时使用的具体查询；非搜索为空","scope":{"targetMode":"single|multi|workspace|selection|unknown","artifactIds":[]},"operations":[{"kind":"style_change|content_edit|structure_edit|create|export|review|search|other","instruction":"..."}],"requiresConfirmation":false,"clarificationQuestion":"","confidence":0.0,"rationale":"..."}',
+    '{"intent":"chat|create|update|clarify|search","assistantMessage":"普通聊天或澄清时的可见回复","searchQuery":"搜索时使用的具体查询；非搜索为空","localFilePaths":[{"directoryId":"...","path":"相对路径"}],"scope":{"targetMode":"single|multi|workspace|selection|unknown","artifactIds":[]},"operations":[{"kind":"style_change|content_edit|structure_edit|create|export|review|search|other","instruction":"..."}],"requiresConfirmation":false,"clarificationQuestion":"","confidence":0.0,"rationale":"..."}',
   ].join('\n');
 }
 
-function normalizePlan(raw: unknown, existingArtifacts: AssistantArtifactItem[]): AssistantAgentChangePlan {
+function normalizePlan(raw: unknown, existingArtifacts: AssistantArtifactItem[], localWorkspaceFileRegistry: Array<{ directoryId: string; path: string; kind: string }> = []): AssistantAgentChangePlan {
   const existingIds = new Set(existingArtifacts.filter((item) => item.deletedAt == null).map((item) => item.id));
+  const validLocalFileKeys = new Set(localWorkspaceFileRegistry.filter((item) => item.kind === 'file').map((item) => `${item.directoryId}:${item.path}`));
   if (!isRecord(raw)) {
     return {
       intent: 'chat',
@@ -268,6 +276,15 @@ function normalizePlan(raw: unknown, existingArtifacts: AssistantArtifactItem[])
     const instruction = text(item.instruction, 500);
     return instruction ? [{ kind, instruction }] : [];
   }) : [];
+  const localFilePaths = Array.isArray(raw.localFilePaths)
+    ? raw.localFilePaths.flatMap((item): NonNullable<AssistantAgentChangePlan['localFilePaths']> => {
+        if (!isRecord(item)) return [];
+        const directoryId = text(item.directoryId, 160);
+        const path = text(item.path, 480).replace(/^\/+/, '');
+        if (!directoryId || !path || !validLocalFileKeys.has(`${directoryId}:${path}`)) return [];
+        return [{ directoryId, path }];
+      }).slice(0, 12)
+    : [];
   const normalizedIntent = intent === 'update' && artifactIds.length === 0 ? 'clarify' : intent;
   return {
     intent: normalizedIntent,
@@ -277,6 +294,7 @@ function normalizePlan(raw: unknown, existingArtifacts: AssistantArtifactItem[])
     requiresConfirmation: Boolean(raw.requiresConfirmation) || normalizedIntent === 'clarify',
     clarificationQuestion: text(raw.clarificationQuestion, 300),
     searchQuery: text(raw.searchQuery, 300),
+    localFilePaths,
     confidence: numberInRange(raw.confidence, 0),
     rationale: text(raw.rationale, 500),
   };
@@ -287,6 +305,7 @@ function buildWriterPrompt() {
     '你是企业级 Artifact Patch Writer。',
     '必须只输出严格 JSON，不要 Markdown，不要解释。',
     '根据 changePlan、用户输入、最近对话、图片引用注册表、产物注册表和必要的当前版本正文，生成可提交的 patch set。',
+    '如果 localFiles 非空，可以把它们作为用户授权的文件内容使用；localFiles 之外的本地文件都没有读取权限，不能假装知道。',
     '',
     '规则：',
     '1. 只对 changePlan.scope.artifactIds 中的现有产物执行 update。',
@@ -411,6 +430,25 @@ function ensureMediaTaskPlaceholders(assistantMessage: string, mediaTasks: Assis
   return text(content, MAX_ASSISTANT_VISIBLE_MESSAGE_CHARS);
 }
 
+function compactLocalFilesForPrompt(localFiles: AssistantAgentLocalFileContext[] | undefined) {
+  let remaining = MAX_LOCAL_FILE_CONTEXT_CHARS;
+  return (localFiles || []).flatMap((file) => {
+    if (remaining <= 0) return [];
+    const content = file.content.slice(0, remaining);
+    remaining -= content.length;
+    return [{
+      directoryId: file.directoryId,
+      path: file.path,
+      name: file.name,
+      mimeType: file.mimeType || '',
+      sizeBytes: file.sizeBytes,
+      content,
+      truncated: file.truncated || content.length < file.content.length,
+      originalLength: file.originalLength,
+    }];
+  });
+}
+
 function normalizePatchSet(raw: unknown, imageReferenceRegistry = new Map<string, ImageAttachmentRef>()): AssistantAgentPatchSet {
   if (!isRecord(raw)) return { assistantMessage: '没有可提交的产物变更。', patches: [], mediaTasks: [] };
   const patches = Array.isArray(raw.patches) ? raw.patches.slice(0, MAX_PATCHES).flatMap((item): AssistantAgentPatch[] => {
@@ -485,7 +523,19 @@ export async function planAssistantAgentChange(params: {
   interactionFocus?: Record<string, unknown>;
   toolCapabilities?: {
     webSearch?: boolean;
+    localWorkspace?: boolean;
+    localWorkspaceDirectories?: Array<{ id: string; name: string; isDefault: boolean }>;
   };
+  localWorkspaceFileRegistry?: Array<{
+    directoryId: string;
+    path: string;
+    name: string;
+    kind: 'file' | 'directory';
+    depth: number;
+    sizeBytes?: number;
+    mimeType?: string;
+    updatedAt?: number;
+  }>;
   signal?: AbortSignal;
 }) {
   const payload = {
@@ -496,7 +546,10 @@ export async function planAssistantAgentChange(params: {
     artifactRegistry: artifactRegistry(params.existingArtifacts),
     toolCapabilities: {
       webSearch: Boolean(params.toolCapabilities?.webSearch),
+      localWorkspace: Boolean(params.toolCapabilities?.localWorkspace),
     },
+    localWorkspaceRegistry: (params.toolCapabilities?.localWorkspaceDirectories || []).slice(0, 12),
+    localWorkspaceFileRegistry: (params.localWorkspaceFileRegistry || []).slice(0, MAX_LOCAL_WORKSPACE_FILES_IN_REGISTRY),
     interactionFocus: params.interactionFocus || {},
   };
   const raw = await generateResponse(
@@ -516,7 +569,7 @@ export async function planAssistantAgentChange(params: {
       },
     },
   );
-  return normalizePlan(safeJsonParse(raw), params.existingArtifacts);
+  return normalizePlan(safeJsonParse(raw), params.existingArtifacts, params.localWorkspaceFileRegistry);
 }
 
 export async function writeAssistantAgentPatchSet(params: {
@@ -526,6 +579,7 @@ export async function writeAssistantAgentPatchSet(params: {
   userMessage: Message;
   plan: AssistantAgentChangePlan;
   existingArtifacts: AssistantArtifactItem[];
+  localFiles?: AssistantAgentLocalFileContext[];
   signal?: AbortSignal;
 }) {
   const imageReferenceRegistry = buildImageReferenceRegistry([...params.messages, params.userMessage]);
@@ -572,6 +626,7 @@ export async function writeAssistantAgentPatchSet(params: {
     changePlan: params.plan,
     artifactRegistry: artifactRegistry(params.existingArtifacts),
     targetArtifacts,
+    localFiles: compactLocalFilesForPrompt(params.localFiles),
   };
   const raw = await generateResponse(
     params.api,
