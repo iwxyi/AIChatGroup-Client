@@ -42,6 +42,7 @@ import AppSnackbar from '../components/common/AppSnackbar';
 import PageSection from '../components/common/PageSection';
 import SurfaceCard from '../components/common/SurfaceCard';
 import { api, type AiProxyKeyItem, type AiProxyUsageGroupItem, type AiProxyUsageRecordItem } from '../services/api';
+import { copyTextToClipboard } from '../utils/clipboard';
 import { formatAiBalanceAmount, formatAiAmount } from '../utils/aiPoints';
 
 type NewKeyDialogState = {
@@ -259,7 +260,8 @@ export default function AIProxyPage() {
     [proxyBaseUrl, quickSetupCopyKey, quickSetupTarget],
   );
   const exampleModel = keys[0]?.allowedModels?.[0] || modelOptions[0] || 'deepseek-chat';
-  const curlExamples = useMemo(() => buildCurlExamples(displayApiKey, proxyBaseUrl, exampleModel), [displayApiKey, exampleModel, proxyBaseUrl]);
+  const curlDisplayExamples = useMemo(() => buildCurlExamples(displayApiKey, proxyBaseUrl, exampleModel), [displayApiKey, exampleModel, proxyBaseUrl]);
+  const curlCopyExamples = useMemo(() => buildCurlExamples(quickSetupCopyKey, proxyBaseUrl, exampleModel), [exampleModel, proxyBaseUrl, quickSetupCopyKey]);
   const endpointList = useMemo(() => [
     `${proxyBaseUrl}/v1/models`,
     `${proxyBaseUrl}/v1/chat/completions`,
@@ -370,27 +372,17 @@ export default function AIProxyPage() {
     }
   };
 
-  const copyText = async (value: string) => {
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(value);
-      } else {
-        const textarea = document.createElement('textarea');
-        textarea.value = value;
-        textarea.setAttribute('readonly', 'true');
-        textarea.style.position = 'fixed';
-        textarea.style.left = '-9999px';
-        textarea.style.top = '0';
-        document.body.appendChild(textarea);
-        textarea.select();
-        const copied = document.execCommand('copy');
-        document.body.removeChild(textarea);
-        if (!copied) throw new Error('copy failed');
-      }
-      setSnackbar({ open: true, message: '已复制', severity: 'success' });
-    } catch {
+  const copyText = async (value: string, options: { maskedKey?: boolean } = {}) => {
+    const copied = await copyTextToClipboard(value);
+    if (!copied) {
       setSnackbar({ open: true, message: '复制失败，请手动复制', severity: 'error' });
+      return;
     }
+    setSnackbar({
+      open: true,
+      message: options.maskedKey ? '已复制脱敏示例，使用前请替换为真实 Key' : '已复制',
+      severity: options.maskedKey ? 'info' : 'success',
+    });
   };
 
   const openEditKey = (key: AiProxyKeyItem) => {
@@ -595,7 +587,7 @@ export default function AIProxyPage() {
                 startIcon={<ContentCopyIcon />}
                 onMouseEnter={() => setQuickSetupPreviewPlatform('posix')}
                 onFocus={() => setQuickSetupPreviewPlatform('posix')}
-                onClick={() => void copyText(quickSetupPosixCode)}
+                onClick={() => void copyText(quickSetupPosixCode, { maskedKey: !quickSetupRawKey })}
               >
                 复制 Linux/MacOS
               </Button>
@@ -604,7 +596,7 @@ export default function AIProxyPage() {
                 startIcon={<ContentCopyIcon />}
                 onMouseEnter={() => setQuickSetupPreviewPlatform('windows')}
                 onFocus={() => setQuickSetupPreviewPlatform('windows')}
-                onClick={() => void copyText(quickSetupWindowsCode)}
+                onClick={() => void copyText(quickSetupWindowsCode, { maskedKey: !quickSetupRawKey })}
               >
                 复制 Windows PowerShell
               </Button>
@@ -654,12 +646,12 @@ export default function AIProxyPage() {
                   </Box>
                 ))}
               </Box>
-              {curlExamples.map((example) => (
+              {curlDisplayExamples.map((example, index) => (
                 <Box key={example.label} sx={{ border: 1, borderColor: 'divider', borderRadius: 1, overflow: 'hidden' }}>
                   <Stack direction="row" sx={{ px: 1.25, py: 0.75, alignItems: 'center', justifyContent: 'space-between', bgcolor: 'action.hover' }}>
                     <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>{example.label}</Typography>
                     <Tooltip title="复制示例">
-                      <IconButton size="small" onClick={() => void copyText(example.code)}>
+                      <IconButton size="small" onClick={() => void copyText(curlCopyExamples[index]?.code || example.code, { maskedKey: !quickSetupRawKey })}>
                         <ContentCopyIcon fontSize="small" />
                       </IconButton>
                     </Tooltip>
@@ -668,9 +660,9 @@ export default function AIProxyPage() {
                     component="pre"
                     role="button"
                     tabIndex={0}
-                    onClick={() => void copyText(example.code)}
+                    onClick={() => void copyText(curlCopyExamples[index]?.code || example.code, { maskedKey: !quickSetupRawKey })}
                     onKeyDown={(event) => {
-                      if (event.key === 'Enter' || event.key === ' ') void copyText(example.code);
+                      if (event.key === 'Enter' || event.key === ' ') void copyText(curlCopyExamples[index]?.code || example.code, { maskedKey: !quickSetupRawKey });
                     }}
                     sx={{ m: 0, p: 1.25, overflowX: 'auto', fontSize: 12, fontFamily: 'monospace', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', cursor: 'pointer' }}
                   >
