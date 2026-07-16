@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Box,
@@ -1688,6 +1688,11 @@ export default function SettingsPage() {
   const handleToggleDefaultLocalWorkspaceDirectory = (id: string) => {
     setDefaultLocalWorkspaceDirectory(selectedLocalWorkspaceDirectoryId === id ? null : id);
   };
+
+  useEffect(() => {
+    if (!localWorkspaceDirectories.length) return;
+    void useLocalWorkspaceStore.getState().refreshDirectoryStatuses().catch(() => undefined);
+  }, [localWorkspaceDirectories.length]);
 
   const handleAddLocalWorkspaceDirectory = async () => {
     setLocalWorkspaceBusy(true);

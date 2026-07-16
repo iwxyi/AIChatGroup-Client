@@ -8,6 +8,7 @@ import { getLocalDataUserId } from '../services/authStorageScope';
 import { createScopedIndexedDbBufferedJsonStorage } from './storePersistenceScope';
 import {
   getWebDirectoryPickerSupport,
+  getLocalWorkspaceDirectoryPermission,
   isWebDirectoryPickerSupported,
   listLocalWorkspaceFiles,
   pickLocalWorkspaceDirectory,
@@ -38,6 +39,8 @@ interface LocalWorkspaceStore extends LocalWorkspaceSettingsSnapshot {
     previousChatName: string;
     artifacts: AssistantArtifactItem[];
   }) => Promise<void>;
+  refreshDirectoryStatuses: () => Promise<void>;
+  syncDefaultDirectoryArtifacts: () => Promise<void>;
 }
 
 type LocalWorkspaceSet = (
@@ -74,6 +77,21 @@ function withChatWriteLock<T>(set: LocalWorkspaceSet, chatId: string, run: () =>
   });
 }
 
+async function syncAssistantArtifactsToDirectory(directory: LocalWorkspaceDirectoryMeta) {
+  if (typeof window === 'undefined') return;
+  const [{ useAssistantArtifactStore }, { useChatStore }] = await Promise.all([
+    import('./useAssistantArtifactStore'),
+    import('./useChatStore'),
+  ]);
+  const assistantChats = useChatStore.getState().chats.filter((chat) => chat.type === 'assistant');
+  for (const chat of assistantChats) {
+    const artifacts = useAssistantArtifactStore.getState().getArtifactsForChat(chat.id);
+    for (const artifact of artifacts) {
+      await writeAssistantArtifactToLocalWorkspace({ chat, artifact, directory });
+    }
+  }
+}
+
 export const useLocalWorkspaceStore = create<LocalWorkspaceStore>()(
   persist(
     (set, get) => ({
@@ -88,14 +106,21 @@ export const useLocalWorkspaceStore = create<LocalWorkspaceStore>()(
           throw new Error(support.message);
         }
         const directory = await pickLocalWorkspaceDirectory();
+        const hadDirectories = get().directories.length > 0;
         set((state) => {
-          const hadDirectories = state.directories.length > 0;
           const directories = [directory, ...state.directories.filter((item) => item.id !== directory.id)];
           return {
             directories,
             defaultDirectoryId: hadDirectories ? normalizeDefaultDirectoryId(directories, state.defaultDirectoryId) : directory.id,
           };
         });
+        if (!hadDirectories) {
+          void get().syncDefaultDirectoryArtifacts().catch((error) => {
+            get().markDirectoryStatus(directory.id, {
+              lastError: error instanceof Error ? error.message : '回填本地产物失败',
+            });
+          });
+        }
         return directory;
       },
 
@@ -120,6 +145,13 @@ export const useLocalWorkspaceStore = create<LocalWorkspaceStore>()(
             selectedFilePathsByChatId: clearSelectedFilesIfDefaultChanged(state, defaultDirectoryId),
           };
         });
+        if (id) {
+          void get().syncDefaultDirectoryArtifacts().catch((error) => {
+            get().markDirectoryStatus(id, {
+              lastError: error instanceof Error ? error.message : '回填本地产物失败',
+            });
+          });
+        }
       },
 
       markDirectoryStatus: (id, patch) => {
@@ -206,6 +238,41 @@ export const useLocalWorkspaceStore = create<LocalWorkspaceStore>()(
       },
 
       isChatWriteLocked: (chatId) => Boolean(get().chatWriteLocks[chatId]),
+
+      refreshDirectoryStatuses: async () => {
+        const directories = get().directories;
+        if (!directories.length) return;
+        const statuses = await Promise.all(directories.map(async (directory) => ({
+          id: directory.id,
+          permission: await getLocalWorkspaceDirectoryPermission(directory.id),
+        })));
+        set((state) => ({
+          directories: state.directories.map((directory) => {
+            const match = statuses.find((item) => item.id === directory.id);
+            if (!match) return directory;
+            return {
+              ...directory,
+              lastPermissionState: match.permission,
+              lastError: match.permission === 'granted' ? null : directory.lastError,
+              updatedAt: Date.now(),
+            };
+          }),
+        }));
+      },
+
+      syncDefaultDirectoryArtifacts: async () => {
+        const directory = get().getDefaultDirectory();
+        if (!directory) return;
+        try {
+          await syncAssistantArtifactsToDirectory(directory);
+          get().markDirectoryStatus(directory.id, { lastPermissionState: 'granted', lastError: null });
+        } catch (error) {
+          get().markDirectoryStatus(directory.id, {
+            lastError: error instanceof Error ? error.message : '回填本地产物失败',
+          });
+          throw error;
+        }
+      },
 
       mirrorAssistantArtifact: async ({ chat, artifact }) => {
         if (chat.type !== 'assistant') return;

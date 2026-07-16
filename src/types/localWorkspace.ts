@@ -6,7 +6,7 @@ export interface LocalWorkspaceDirectoryMeta {
   provider: LocalWorkspaceProvider;
   addedAt: number;
   updatedAt: number;
-  lastPermissionState?: PermissionState | 'unsupported';
+  lastPermissionState?: PermissionState | 'unsupported' | 'missing';
   lastError?: string | null;
 }
 

@@ -12,6 +12,7 @@ import { isAssistantArtifactCloudSyncEnabled } from '../services/assistantArtifa
 import { createSyncScopeMetadata } from './syncScopeMetadata';
 import { useChatStore } from './useChatStore';
 import { useLocalWorkspaceStore } from './useLocalWorkspaceStore';
+import { removeAssistantArtifactFromLocalWorkspace } from '../services/localWorkspaceService';
 
 interface AssistantArtifactSnapshot {
   items: AssistantArtifactItem[];
@@ -105,13 +106,15 @@ function draftFromPatch(patch: AssistantAgentPatch): AssistantArtifactDraft {
 
 function pruneChatArtifacts(items: AssistantArtifactItem[], chatId: string) {
   const chatItems = items.filter((item) => item.chatId === chatId && item.deletedAt == null).sort((a, b) => b.updatedAt - a.updatedAt);
-  if (chatItems.length <= MAX_ARTIFACTS_PER_CHAT) return items;
+  if (chatItems.length <= MAX_ARTIFACTS_PER_CHAT) return { items, prunedArtifactIds: [] as string[] };
   const keepIds = new Set(chatItems.slice(0, MAX_ARTIFACTS_PER_CHAT).map((item) => item.id));
-  return items.map((item) => (
+  const prunedArtifactIds = chatItems.filter((item) => !keepIds.has(item.id)).map((item) => item.id);
+  const nextItems = items.map((item) => (
     item.chatId === chatId && item.deletedAt == null && !keepIds.has(item.id)
       ? { ...item, deletedAt: Date.now(), updatedAt: Date.now() }
       : item
   ));
+  return { items: nextItems, prunedArtifactIds };
 }
 
 function orderedChatArtifacts(items: AssistantArtifactItem[], chatId: string) {
@@ -221,6 +224,30 @@ function scheduleArtifactLocalWorkspaceWrite(chatId: string, artifacts: Assistan
   }, 0);
 }
 
+function scheduleArtifactLocalWorkspaceDelete(chatId: string, artifactIds: string[]) {
+  if (!artifactIds.length || typeof window === 'undefined') return;
+  window.setTimeout(() => {
+    const chat = useChatStore.getState().chats.find((item) => item.id === chatId);
+    if (!chat || chat.type !== 'assistant') return;
+    const workspace = useLocalWorkspaceStore.getState();
+    if (!workspace.directories.length) return;
+    void Promise.allSettled(
+      workspace.directories.map((directory) => (
+        Promise.all(
+          artifactIds.map((artifactId) => removeAssistantArtifactFromLocalWorkspace({
+            directory,
+            chatId,
+            artifactId,
+          })),
+        )
+      )),
+    ).then((results) => {
+      const rejected = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+      if (rejected) console.warn('[assistant-artifact:local-workspace-delete-failed]', rejected.reason);
+    });
+  }, 0);
+}
+
 export const useAssistantArtifactStore = create<AssistantArtifactStore>()(
   persist(
     (set, get) => ({
@@ -230,6 +257,7 @@ export const useAssistantArtifactStore = create<AssistantArtifactStore>()(
         if (!drafts.length) return [];
         const now = timestamp || Date.now();
         const changed: AssistantArtifactItem[] = [];
+        let prunedArtifactIds: string[] = [];
         set((state) => {
           let nextItems = [...state.items];
           drafts.forEach((draft, index) => {
@@ -285,10 +313,13 @@ export const useAssistantArtifactStore = create<AssistantArtifactStore>()(
               nextItems.unshift(created);
               changed.push(created);
             });
-          return { items: pruneChatArtifacts(nextItems, chatId) };
+          const pruned = pruneChatArtifacts(nextItems, chatId);
+          prunedArtifactIds = pruned.prunedArtifactIds;
+          return { items: pruned.items };
         });
         scheduleArtifactCloudPush(chatId, changed.map((item) => item.id));
         scheduleArtifactLocalWorkspaceWrite(chatId, changed);
+        scheduleArtifactLocalWorkspaceDelete(chatId, prunedArtifactIds);
         return changed;
       },
 
@@ -421,6 +452,7 @@ export const useAssistantArtifactStore = create<AssistantArtifactStore>()(
           items: state.items.map((item) => item.id === artifactId ? { ...item, deletedAt: now, updatedAt: now } : item),
         }));
         if (target) scheduleArtifactCloudPush(target.chatId, [artifactId]);
+        if (target) scheduleArtifactLocalWorkspaceDelete(target.chatId, [artifactId]);
       },
     }),
     {

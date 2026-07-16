@@ -148,6 +148,13 @@ async function getDirectoryHandle(id: string) {
   return record?.handle || null;
 }
 
+export async function getLocalWorkspaceDirectoryPermission(id: string) {
+  const handle = await getDirectoryHandle(id);
+  if (!handle) return 'missing' as const;
+  const permission = await queryDirectoryPermission(handle);
+  return permission;
+}
+
 async function queryDirectoryPermission(handle: DirectoryHandle): Promise<PermissionState | 'unsupported'> {
   const maybeHandle = handle as DirectoryHandle & {
     queryPermission?: (descriptor?: { mode?: 'read' | 'readwrite' }) => Promise<PermissionState>;
@@ -215,6 +222,28 @@ async function removeChildDirectory(parent: DirectoryHandle, name: string) {
   } catch (error) {
     const domError = error as DOMException;
     if (domError?.name !== 'NotFoundError') throw error;
+  }
+}
+
+async function readJsonFile(directory: DirectoryHandle, fileName: string) {
+  try {
+    const fileHandle = await directory.getFileHandle(fileName, { create: false });
+    const file = await fileHandle.getFile();
+    return JSON.parse(await file.text()) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+async function cleanupArtifactDirectoriesById(chatDir: DirectoryHandle, artifactId: string, keepFolderName?: string | null) {
+  const iterator = getDirectoryEntries(chatDir);
+  if (!iterator) return;
+  for await (const [name, handle] of iterator) {
+    if (handle.kind !== 'directory') continue;
+    if (keepFolderName && name === keepFolderName) continue;
+    const artifactMetadata = await readJsonFile(handle as DirectoryHandle, ARTIFACT_METADATA_FILE);
+    if (artifactMetadata?.id !== artifactId) continue;
+    await removeChildDirectory(chatDir, name);
   }
 }
 
@@ -424,10 +453,12 @@ export async function writeAssistantArtifactToLocalWorkspace(ctx: WriteContext) 
       }
       await writeTextFile(targetDir, fileName, file.content || '');
     }
+    await cleanupArtifactDirectoriesById(chatDir, ctx.artifact.id, artifactDirName);
     return;
   }
   const ext = getArtifactExtension(ctx.artifact.kind, ctx.artifact.language || currentVersion?.language);
   await writeTextFile(artifactDir, `content.${ext}`, getArtifactCurrentContent(ctx.artifact));
+  await cleanupArtifactDirectoriesById(chatDir, ctx.artifact.id, artifactDirName);
 }
 
 export async function rewriteAssistantChatWorkspace(params: {
@@ -452,5 +483,29 @@ export async function rewriteAssistantChatWorkspace(params: {
   }
   if (previousFolder && previousFolder !== nextFolder) {
     await removeChildDirectory(chatRoot, previousFolder);
+  }
+}
+
+export async function removeAssistantArtifactFromLocalWorkspace(params: {
+  directory: LocalWorkspaceDirectoryMeta;
+  chatId: string;
+  artifactId: string;
+}) {
+  const rootHandle = await getDirectoryHandle(params.directory.id);
+  if (!rootHandle) throw new Error('本地文件夹授权已失效，请重新授权');
+  const permission = await ensureDirectoryPermission(rootHandle);
+  if (permission !== 'granted') throw new Error('未获得本地文件夹读写权限');
+
+  const chatRoot = await ensureChildDirectory(rootHandle, CHAT_ROOT);
+  const iterator = getDirectoryEntries(chatRoot);
+  if (!iterator) return;
+  for await (const [name, handle] of iterator) {
+    if (handle.kind !== 'directory') continue;
+    const chatDir = handle as DirectoryHandle;
+    const chatMetadata = await readJsonFile(chatDir, ARTIFACT_METADATA_FILE);
+    if (chatMetadata?.chatId && chatMetadata.chatId !== params.chatId) {
+      // artifact.json never exists at chat level; kept for forward compatibility if the layout changes.
+    }
+    await cleanupArtifactDirectoriesById(chatDir, params.artifactId);
   }
 }
