@@ -1968,7 +1968,7 @@ export default function SettingsPage() {
             <Box>
               <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>{i18n.language.startsWith('zh') ? 'AI模型' : 'AI Models'}</Typography>
             </Box>
-            <Button variant="outlined" onClick={() => navigate('/models')}>{i18n.language.startsWith('zh') ? '管理' : 'Manage'}</Button>
+            <Button variant="outlined" onClick={() => navigate('/ai-models')}>{i18n.language.startsWith('zh') ? '管理' : 'Manage'}</Button>
           </Box>
         </SurfaceCard>
 

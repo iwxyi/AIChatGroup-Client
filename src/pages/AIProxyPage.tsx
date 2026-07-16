@@ -185,15 +185,13 @@ function quotePowerShell(value: string) {
 }
 
 function quickSetupLines(target: QuickSetupTarget, baseUrl: string, apiKey: string, platform: 'posix' | 'windows') {
-  const openAiBaseUrl = `${baseUrl}/v1`;
-  const anthropicBaseUrl = `${baseUrl}/ai/anthropic`;
   const value = (key: string, raw: string) => platform === 'windows'
     ? `$env:${key}="${quotePowerShell(raw)}"`
     : `export ${key}=${raw}`;
   const comment = (text: string) => platform === 'windows' ? `# ${text}` : `# ${text}`;
   if (target === 'claude') {
     return [
-      value('ANTHROPIC_BASE_URL', anthropicBaseUrl),
+      value('ANTHROPIC_BASE_URL', baseUrl),
       value('ANTHROPIC_AUTH_TOKEN', apiKey),
       comment('关闭非必要流量，提升访问速度'),
       value('CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC', '1'),
@@ -201,12 +199,12 @@ function quickSetupLines(target: QuickSetupTarget, baseUrl: string, apiKey: stri
   }
   if (target === 'codex') {
     return [
-      value('OPENAI_BASE_URL', openAiBaseUrl),
+      value('OPENAI_BASE_URL', baseUrl),
       value('OPENAI_API_KEY', apiKey),
     ].join('\n');
   }
   return [
-    value('DEEPSEEK_BASE_URL', openAiBaseUrl),
+    value('DEEPSEEK_BASE_URL', baseUrl),
     value('DEEPSEEK_API_KEY', apiKey),
     value('DEEPSEEK_MODEL', 'deepseek-chat'),
   ].join('\n');

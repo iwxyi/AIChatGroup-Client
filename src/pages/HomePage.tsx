@@ -737,7 +737,7 @@ export default function HomePage() {
       value: '待设置',
       icon: <SettingsSuggestIcon />,
       color: 'primary.main',
-      onOpen: () => navigate('/models'),
+      onOpen: () => navigate('/ai-models'),
       attention: true,
     }] : []),
     ...(developerMode ? [{
@@ -820,7 +820,7 @@ export default function HomePage() {
         value: formatAiAmount(balance, provider.publicProvider, { compact: true }),
         icon: <AutoAwesomeIcon />,
         color: 'primary.main',
-        onOpen: () => navigate('/models'),
+        onOpen: () => navigate('/ai-models'),
       }];
     }),
     ...syncStatusStats,

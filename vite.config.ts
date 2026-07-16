@@ -101,6 +101,15 @@ export default defineConfig({
           })
         },
       },
+      '^/(models|responses|embeddings|chat/completions|images/generations|anthropic|web_search)(?:/|$)': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+        configure(proxy) {
+          proxy.on('proxyReq', (proxyRequest, request) => {
+            setForwardedHeaders(proxyRequest, request)
+          })
+        },
+      },
     },
   },
   plugins: [

@@ -464,7 +464,7 @@ function RoutedApp() {
         <Route path="/calendar" element={<RouteElement><CalendarPage /></RouteElement>} />
         <Route path="/moments" element={<RouteElement><MomentsPage /></RouteElement>} />
         <Route path="/market" element={<RouteElement><MarketPage /></RouteElement>} />
-        <Route path="/models" element={<RouteElement><AIModelsPage /></RouteElement>} />
+        <Route path="/ai-models" element={<RouteElement><AIModelsPage /></RouteElement>} />
         <Route path="/ai-proxy" element={<RouteElement><AIProxyPage /></RouteElement>} />
         <Route path="/membership" element={<RouteElement><MembershipPage /></RouteElement>} />
         <Route path="/account" element={<RouteElement><AccountPage /></RouteElement>} />

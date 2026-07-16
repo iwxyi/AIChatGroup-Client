@@ -43,7 +43,7 @@ const navSections: NavItem[][] = [
     { path: '/letters', iconKind: 'letters', labelKey: 'nav.letters' },
   ],
   [
-    { path: '/models', iconKind: 'models', labelKey: 'nav.models' },
+    { path: '/ai-models', iconKind: 'models', labelKey: 'nav.models' },
     { path: '/ai-proxy', iconKind: 'proxy', labelKey: 'nav.aiProxy' },
     { path: '/market', iconKind: 'market', labelKey: 'nav.market' },
     { path: '/membership', iconKind: 'membership', labelKey: 'nav.membership' },
