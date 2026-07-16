@@ -7,7 +7,7 @@ interface AdminAuthStore {
   admin: AdminUser | null;
   isLoggedIn: boolean;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (login: string, password: string) => Promise<void>;
   logout: () => void;
   checkAuth: () => Promise<boolean>;
 }
@@ -19,10 +19,10 @@ export const useAdminAuthStore = create<AdminAuthStore>((set) => ({
   admin: null,
   isLoggedIn: Boolean(initialAdminToken),
   isLoading: Boolean(initialAdminToken),
-  login: async (email, password) => {
+  login: async (login, password) => {
     set({ isLoading: true });
     try {
-      const result = await adminApi.login(email, password);
+      const result = await adminApi.login(login, password);
       adminApi.setToken(result.token);
       set({ token: result.token, admin: result.admin, isLoggedIn: true, isLoading: false });
     } catch (error) {

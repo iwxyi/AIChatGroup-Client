@@ -1,13 +1,29 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  buildAssistantChatDraft,
   buildGroupChatDraft,
   composeGroupMemberIds,
   normalizeOperatorIdsInput,
   stripUserMemberId,
 } from './chatDraftBuilder';
+import { writeAssistantAgentDefaultEnabled } from './assistantAgentPreference';
 import { getRoomTemplate } from './roomTemplates';
 
 describe('chatDraftBuilder composeGroupMemberIds', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function mockLocalStorage() {
+    const values = new Map<string, string>();
+    vi.stubGlobal('localStorage', {
+      getItem: vi.fn((key: string) => values.get(key) ?? null),
+      setItem: vi.fn((key: string, value: string) => values.set(key, value)),
+      removeItem: vi.fn((key: string) => values.delete(key)),
+      clear: vi.fn(() => values.clear()),
+    });
+  }
+
   it('adds user as participant when includeUserAsMember is enabled', () => {
     expect(composeGroupMemberIds(['a', 'b'], true)).toEqual(['a', 'b', 'user']);
   });
@@ -52,6 +68,26 @@ describe('chatDraftBuilder composeGroupMemberIds', () => {
       allowForcedReply: true,
     });
     expect(draft.operatorIds).toEqual(['host_moderator', 'topic_guide_bot']);
+  });
+
+  it('creates plain assistant chats by default', () => {
+    mockLocalStorage();
+    const draft = buildAssistantChatDraft();
+
+    expect(draft.type).toBe('assistant');
+    expect(draft.modeState.assistantCapabilities).toBeUndefined();
+  });
+
+  it('uses the saved Agent preference for new assistant chats', () => {
+    mockLocalStorage();
+    writeAssistantAgentDefaultEnabled(true);
+
+    const draft = buildAssistantChatDraft();
+
+    expect(draft.modeState.assistantCapabilities).toEqual(expect.objectContaining({
+      agent: true,
+      artifacts: true,
+    }));
   });
 
   it('starts story reader rooms without legacy branches or visible role actions', () => {

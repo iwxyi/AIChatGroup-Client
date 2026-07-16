@@ -8,6 +8,7 @@ import {
   DEFAULT_OPEN_CHAT_MODE_STATE,
   createDefaultSessionKind,
 } from '../types/chat';
+import { readAssistantAgentDefaultEnabled } from './assistantAgentPreference';
 import { getRoomTemplateDefaultsBySessionKind, hasTemplateDefault } from './roomTemplates';
 import { normalizeRuntimeSeedLines } from './runtimeSeed';
 
@@ -512,12 +513,22 @@ export function buildDirectChatDraft(characterId: string, characterName: string)
 
 export function buildAssistantChatDraft(): Omit<GroupChat, 'id' | 'createdAt' | 'updatedAt' | 'lastMessageAt'> {
   const sessionKind = createDefaultSessionKind('assistant', 'open_chat');
+  const agentDefaultEnabled = readAssistantAgentDefaultEnabled();
   return {
     type: 'assistant',
     mode: 'open_chat',
     sessionKind,
     modeConfig: { ...DEFAULT_OPEN_CHAT_MODE_CONFIG, allowPrivateThreads: false, allowDirectorInterventions: false, showRoleActions: false },
-    modeState: DEFAULT_OPEN_CHAT_MODE_STATE,
+    modeState: {
+      ...DEFAULT_OPEN_CHAT_MODE_STATE,
+      ...(agentDefaultEnabled ? {
+        assistantCapabilities: {
+          agent: true,
+          artifacts: true,
+          updatedAt: Date.now(),
+        },
+      } : {}),
+    },
     scenarioPackage: { scenarioId: sessionKind.scenarioId, label: '通用助手' },
     scenarioState: {
       turnOrder: [],

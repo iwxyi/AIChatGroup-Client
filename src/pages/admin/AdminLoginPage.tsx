@@ -8,7 +8,7 @@ export default function AdminLoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { login, isLoggedIn, isLoading } = useAdminAuthStore();
-  const [email, setEmail] = useState('');
+  const [loginName, setLoginName] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
@@ -22,7 +22,7 @@ export default function AdminLoginPage() {
     event.preventDefault();
     setError('');
     try {
-      await login(email.trim(), password);
+      await login(loginName.trim(), password);
       navigate(nextPath, { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : '登录失败');
@@ -39,10 +39,10 @@ export default function AdminLoginPage() {
         <Stack spacing={2.25}>
           <Box>
             <Typography variant="h5" sx={{ fontWeight: 800 }}>后台登录</Typography>
-            <Typography variant="body2" color="text.secondary">使用管理员邮箱和密码登录 /admin</Typography>
+            <Typography variant="body2" color="text.secondary">使用管理员用户名或邮箱和密码登录 /admin</Typography>
           </Box>
           {error ? <Alert severity="error">{error}</Alert> : null}
-          <TextField label="邮箱" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" />
+          <TextField label="用户名或邮箱" value={loginName} onChange={(e) => setLoginName(e.target.value)} autoComplete="username" />
           <TextField label="密码" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
           <Button
             type="submit"

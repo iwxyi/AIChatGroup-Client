@@ -8,6 +8,7 @@ const ADMIN_LOGIN_EVENT = 'pneumata-admin-auth-required';
 export type AdminUser = {
   id: string;
   email: string;
+  username?: string;
   displayName: string;
   status: string;
   mfaEnabled?: boolean;
@@ -134,8 +135,8 @@ class AdminApiClient {
     return encoded ? `?${encoded}` : '';
   }
 
-  login(email: string, password: string) {
-    return this.request<{ token: string; admin: AdminUser }>('POST', '/auth/login', { email, password });
+  login(login: string, password: string) {
+    return this.request<{ token: string; admin: AdminUser }>('POST', '/auth/login', { login, password });
   }
 
   me() {
@@ -146,7 +147,7 @@ class AdminApiClient {
     return this.request<{ admin: AdminUser }>('GET', '/auth/profile');
   }
 
-  updateAdminProfile(payload: { email: string; displayName: string; currentPassword?: string }) {
+  updateAdminProfile(payload: { email: string; username?: string; displayName: string; currentPassword?: string }) {
     return this.request<{ admin: AdminUser }>('PUT', '/auth/profile', payload);
   }
 
@@ -170,11 +171,11 @@ class AdminApiClient {
     return this.request<{ admin: AdminManagedUser; loginRecords: AdminLoginRecord[]; roles: AdminRole[] }>('GET', `/admins/${encodeURIComponent(adminUserId)}`);
   }
 
-  createManagedAdminUser(payload: { email: string; displayName: string; password: string; status: string; roleCodes: string[] }) {
+  createManagedAdminUser(payload: { email: string; username?: string; displayName: string; password: string; status: string; roleCodes: string[] }) {
     return this.request<{ admin: AdminManagedUser }>('POST', '/admins', payload);
   }
 
-  updateManagedAdminUser(adminUserId: string, payload: { email: string; displayName: string; status: string; roleCodes: string[] }) {
+  updateManagedAdminUser(adminUserId: string, payload: { email: string; username?: string; displayName: string; status: string; roleCodes: string[] }) {
     return this.request<{ admin: AdminManagedUser }>('PUT', `/admins/${encodeURIComponent(adminUserId)}`, payload);
   }
 
@@ -238,6 +239,13 @@ class AdminApiClient {
 
   testPlatformIntegration(category: string, providerCode: string, payload: Record<string, unknown>) {
     return this.request<Record<string, unknown>>('POST', `/platform/integrations/${encodeURIComponent(category)}/${encodeURIComponent(providerCode)}/test`, payload);
+  }
+
+  getPlatformIntegrationBalance(category: string, providerCode: string) {
+    if (category === 'search') {
+      return this.request<Record<string, unknown>>('GET', `/platform/search/${encodeURIComponent(providerCode)}/balance`);
+    }
+    return this.request<Record<string, unknown>>('GET', `/platform/integrations/${encodeURIComponent(category)}/${encodeURIComponent(providerCode)}/balance`);
   }
 
   getAiProviderConfig(providerCode: string) {

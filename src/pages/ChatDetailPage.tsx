@@ -64,6 +64,7 @@ import { attachMessageToActiveBranch, buildMessageBranchVersionInfoByMessageId, 
 import { projectMergedChatMessages } from '../services/currentChatMessages';
 import { resolveSessionFamilyKey } from '../services/sessionEngineKeys';
 import { isAssistantArtifactCloudSyncEnabled, setAssistantArtifactCloudSyncEnabled } from '../services/assistantArtifactCloudSyncPreference';
+import { writeAssistantAgentDefaultEnabled } from '../services/assistantAgentPreference';
 
 const ChatSidebarPanel = lazy(() => import('../components/chat/ChatSidebarPanel'));
 const AssistantAgentPanel = lazy(() => import('../components/chat/AssistantAgentPanel'));
@@ -189,6 +190,7 @@ function ChatPageSettingsDialog({
   const handleAgentToggle = (enabled: boolean) => {
     if (!chat) return;
     if (enabled && !agentAvailable) return;
+    writeAssistantAgentDefaultEnabled(enabled);
     void updateChat(chat.id, {
       modeState: {
         ...chat.modeState,
@@ -1841,6 +1843,10 @@ export default function ChatDetailPage() {
         ...nextBranchState,
         activeLeafNodeId: activeTail?.metadata?.branching?.nodeId || activeTail?.id || targetNodeId,
       },
+      ...(activeTail ? {
+        lastMessageAt: activeTail.timestamp,
+        latestMessage: activeTail,
+      } : {}),
     });
     if (scrollRestoreRequest) {
       setMessageScrollRequest({
@@ -3048,6 +3054,7 @@ export default function ChatDetailPage() {
                     chat={chat}
                     selectedArtifactId={selectedAssistantArtifactId}
                     onAgentEnabledChange={agentEntitled ? (enabled) => {
+                      writeAssistantAgentDefaultEnabled(enabled);
                       const aiSearchAvailable = authMode === 'cloud' && currentUser?.aiSearchEntitled === true;
                       void updateChat(chat.id, {
                         modeState: {

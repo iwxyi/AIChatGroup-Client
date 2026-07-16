@@ -484,8 +484,8 @@ export default function AIProxyPage() {
         </Box>
 
         <SurfaceCard>
-          <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} sx={{ alignItems: { xs: 'stretch', md: 'center' }, justifyContent: 'space-between' }}>
-            <Box>
+          <Stack direction="row" spacing={1.5} sx={{ alignItems: 'flex-start', justifyContent: 'space-between' }}>
+            <Box sx={{ minWidth: 0, flex: 1 }}>
               <Typography variant="h6" sx={{ fontWeight: 800 }}>API Key</Typography>
               <Box
                 role="button"
@@ -507,7 +507,7 @@ export default function AIProxyPage() {
                 {proxyBaseUrl}
               </Box>
             </Box>
-            <Button startIcon={<AddIcon />} variant="contained" onClick={() => setDialog({ ...initialDialog, open: true })}>
+            <Button size="small" startIcon={<AddIcon />} variant="contained" sx={{ flexShrink: 0, mt: 0.25 }} onClick={() => setDialog({ ...initialDialog, open: true })}>
               新建 Key
             </Button>
           </Stack>

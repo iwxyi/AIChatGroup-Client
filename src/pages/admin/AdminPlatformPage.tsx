@@ -378,6 +378,13 @@ function comparePlatformIntegration(left: Record<string, unknown>, right: Record
   return String(left.displayName || leftKey).localeCompare(String(right.displayName || rightKey), 'zh-CN');
 }
 
+function formatCnyAmount(value: unknown) {
+  const amount = Number(value);
+  return Number.isFinite(amount)
+    ? `${new Intl.NumberFormat('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount)} 元`
+    : '-';
+}
+
 export default function AdminPlatformPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -396,6 +403,11 @@ export default function AdminPlatformPage() {
   const [editor, setEditor] = useState<Record<string, unknown>>({});
   const [testDraft, setTestDraft] = useState<Record<string, string>>({ phone: '', code: '123456', to: '' });
   const [testResult, setTestResult] = useState<{ severity: 'success' | 'error'; message: string } | null>(null);
+  const [balanceLoading, setBalanceLoading] = useState(false);
+  const [balanceResult, setBalanceResult] = useState<{ severity: 'success' | 'error'; message: string } | null>(null);
+  const [searchBalances, setSearchBalances] = useState<Record<string, { remaining: number | null; fetchedAt: number }>>({});
+  const [searchBalanceLoading, setSearchBalanceLoading] = useState<Record<string, boolean>>({});
+  const [searchBalanceErrors, setSearchBalanceErrors] = useState<Record<string, string>>({});
   const [status, setStatus] = useState('inactive');
   const [isDefault, setIsDefault] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -449,6 +461,45 @@ export default function AdminPlatformPage() {
     else setItems([]);
   }, [canReadPlatform]);
 
+  const refreshSearchBalance = async (item: Record<string, unknown>) => {
+    const key = integrationKey(item);
+    setSearchBalanceLoading((prev) => ({ ...prev, [key]: true }));
+    setSearchBalanceErrors((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+    try {
+      const result = await adminApi.getPlatformIntegrationBalance(String(item.category || ''), String(item.providerCode || ''));
+      const remaining = Number(result.remaining);
+      setSearchBalances((prev) => ({
+        ...prev,
+        [key]: {
+          remaining: Number.isFinite(remaining) ? remaining : null,
+          fetchedAt: typeof result.fetchedAt === 'number' ? result.fetchedAt : Date.now(),
+        },
+      }));
+      setSearchBalanceErrors((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+      return result;
+    } catch (balanceError) {
+      setSearchBalanceErrors((prev) => ({ ...prev, [key]: getAdminErrorMessage(balanceError) }));
+      throw balanceError;
+    } finally {
+      setSearchBalanceLoading((prev) => ({ ...prev, [key]: false }));
+    }
+  };
+
+  useEffect(() => {
+    if (category !== 'search' || !canReadPlatform || !visibleItems.length) return;
+    for (const item of visibleItems) {
+      void refreshSearchBalance(item).catch(() => undefined);
+    }
+  }, [category, canReadPlatform, visibleItems]);
+
   useEffect(() => {
     if (searchParams.get('tab') === 'global') {
       navigate('/admin/global-config', { replace: true });
@@ -478,6 +529,7 @@ export default function AdminPlatformPage() {
     setIsDefault(capabilities.runtimeSupported ? Boolean(item.isDefault) : false);
     setEditor(toEditorState(item));
     setTestResult(null);
+    setBalanceResult(null);
     setEditorOpen(true);
   };
 
@@ -542,6 +594,30 @@ export default function AdminPlatformPage() {
     }
   };
 
+  const queryBalance = async () => {
+    if (!selected) return;
+    setBalanceLoading(true);
+    setBalanceResult(null);
+    try {
+      await adminApi.updatePlatformIntegration(String(selected.category || ''), String(selected.providerCode || ''), {
+        ...buildEditorPayload(),
+      });
+      const result = await refreshSearchBalance(selected);
+      await load();
+      const remaining = Number(result.remaining);
+      setBalanceResult({
+        severity: 'success',
+        message: Number.isFinite(remaining)
+          ? `账户余额：${formatCnyAmount(remaining)}`
+          : '余额查询成功，但接口未返回可识别的余额',
+      });
+    } catch (balanceError) {
+      setBalanceResult({ severity: 'error', message: getAdminErrorMessage(balanceError) });
+    } finally {
+      setBalanceLoading(false);
+    }
+  };
+
   return (
     <Stack spacing={2}>
       <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap' }}>
@@ -583,7 +659,7 @@ export default function AdminPlatformPage() {
                     <TableCell>服务商</TableCell>
                     <TableCell>状态</TableCell>
                     <TableCell>默认</TableCell>
-                    <TableCell>配置概览</TableCell>
+                    <TableCell>{category === 'search' ? '余额' : '配置概览'}</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -614,9 +690,28 @@ export default function AdminPlatformPage() {
                       </TableCell>
                       <TableCell>{item.isDefault ? '是' : '-'}</TableCell>
                       <TableCell>
-                        <Typography variant="caption" color="text.secondary">
-                          {integrationCapabilities(item).note || Object.keys((item.config as Record<string, unknown>) || {}).slice(0, 4).join(' / ') || '-'}
-                        </Typography>
+                        {category === 'search' ? (() => {
+                          const key = integrationKey(item);
+                          const balance = searchBalances[key];
+                          const isBalanceLoading = Boolean(searchBalanceLoading[key]);
+                          const balanceError = searchBalanceErrors[key];
+                          return (
+                            <Stack spacing={0.25} sx={{ minWidth: 140 }}>
+                              {balance ? (
+                                <>
+                                  <Typography variant="body2" sx={{ fontWeight: 800 }}>{formatCnyAmount(balance.remaining)}</Typography>
+                                  <Typography variant="caption" color="text.secondary">{new Date(balance.fetchedAt).toLocaleString('zh-CN')}</Typography>
+                                </>
+                              ) : (
+                                <Typography variant="caption" color={balanceError ? 'error' : 'text.secondary'}>{balanceError || (isBalanceLoading ? '查询中' : '未查询')}</Typography>
+                              )}
+                            </Stack>
+                          );
+                        })() : (
+                          <Typography variant="caption" color="text.secondary">
+                            {integrationCapabilities(item).note || Object.keys((item.config as Record<string, unknown>) || {}).slice(0, 4).join(' / ') || '-'}
+                          </Typography>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -744,7 +839,15 @@ export default function AdminPlatformPage() {
                   />
                 ) : null}
                 {selected.category === 'search' ? (
-                  <Alert severity="info">聊天按需搜索会在用户会员权益允许时触发；每次成功搜索按“单次搜索扣点”写入 AI 点数流水。</Alert>
+                  <Stack spacing={1}>
+                    <Alert severity="info">聊天按需搜索会在用户会员权益允许时触发；每次成功搜索按“单次搜索扣点”写入 AI 点数流水。</Alert>
+                    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ alignItems: { xs: 'stretch', sm: 'center' } }}>
+                      <Button variant="outlined" startIcon={<RefreshIcon />} disabled={saving || balanceLoading || !selected} onClick={() => void queryBalance()}>
+                        {balanceLoading ? '查询中' : '查询博查余额'}
+                      </Button>
+                      {balanceResult ? <Alert severity={balanceResult.severity} sx={{ flex: 1 }}>{balanceResult.message}</Alert> : null}
+                    </Stack>
+                  </Stack>
                 ) : null}
                 {selectedCapabilities.configurationOnly ? (
                   <Alert severity="warning">{selectedCapabilities.note || '该服务商当前仅保存配置，暂不支持连接测试。'}</Alert>

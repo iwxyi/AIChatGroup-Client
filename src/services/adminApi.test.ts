@@ -19,7 +19,7 @@ describe('adminApi error messages', () => {
 
   it('surfaces backend login errors instead of a generic failure', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({
-      error: '管理员邮箱或密码错误',
+      error: '管理员用户名、邮箱或密码错误',
     }), {
       status: 401,
       headers: { 'Content-Type': 'application/json' },
@@ -27,7 +27,7 @@ describe('adminApi error messages', () => {
 
     await expect(adminApi.login('admin', 'wrong')).rejects.toMatchObject({
       name: 'ApiError',
-      message: '管理员邮箱或密码错误',
+      message: '管理员用户名、邮箱或密码错误',
       status: 401,
     } satisfies Partial<ApiError>);
   });

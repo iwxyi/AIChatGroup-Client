@@ -35,6 +35,7 @@ import { adminApi, type AdminLoginRecord, type AdminManagedUser, type AdminRole 
 type AdminForm = {
   id: string;
   email: string;
+  username: string;
   displayName: string;
   password: string;
   status: string;
@@ -44,6 +45,7 @@ type AdminForm = {
 const EMPTY_FORM: AdminForm = {
   id: '',
   email: '',
+  username: '',
   displayName: '',
   password: '',
   status: 'active',
@@ -108,6 +110,7 @@ function toForm(admin: AdminManagedUser | null): AdminForm {
   return {
     id: admin.id,
     email: admin.email || '',
+    username: admin.username || '',
     displayName: admin.displayName || '',
     password: '',
     status: admin.status || 'active',
@@ -243,6 +246,7 @@ export default function AdminAdminsPage() {
     try {
       const payload = {
         email: form.email.trim(),
+        username: form.username.trim() || undefined,
         displayName: form.displayName.trim(),
         status: form.status,
         roleCodes: form.roleCodes,
@@ -320,7 +324,7 @@ export default function AdminAdminsPage() {
         <TextField
           size="small"
           label="搜索管理员"
-          placeholder="邮箱或显示名"
+          placeholder="用户名、邮箱或显示名"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
           sx={{ width: { xs: '100%', sm: 320 } }}
@@ -350,7 +354,9 @@ export default function AdminAdminsPage() {
                 <TableCell>
                   <Stack spacing={0.25}>
                     <Typography variant="body2" sx={{ fontWeight: 900 }}>{item.displayName || item.email}</Typography>
-                    <Typography variant="caption" color="text.secondary">{item.email}</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {item.username ? `@${item.username} · ${item.email}` : item.email}
+                    </Typography>
                   </Stack>
                 </TableCell>
                 <TableCell>
@@ -381,6 +387,13 @@ export default function AdminAdminsPage() {
             <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2, bgcolor: 'background.default' }}>
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25}>
                 <TextField label="邮箱" value={form.email} onChange={(event) => setForm((prev) => ({ ...prev, email: event.target.value }))} fullWidth required />
+                <TextField
+                  label="用户名"
+                  value={form.username}
+                  onChange={(event) => setForm((prev) => ({ ...prev, username: event.target.value }))}
+                  helperText="可选。3-80 位，小写字母、数字、点、下划线或短横线。"
+                  fullWidth
+                />
                 <TextField label="显示名" value={form.displayName} onChange={(event) => setForm((prev) => ({ ...prev, displayName: event.target.value }))} fullWidth required />
               </Stack>
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25} sx={{ mt: 1.25 }}>

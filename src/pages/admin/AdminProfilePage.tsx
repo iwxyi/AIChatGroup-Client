@@ -103,7 +103,7 @@ export default function AdminProfilePage() {
   const checkAuth = useAdminAuthStore((s) => s.checkAuth);
   const [profile, setProfile] = useState<AdminUser | null>(storeAdmin);
   const [records, setRecords] = useState<AdminLoginRecord[]>([]);
-  const [profileForm, setProfileForm] = useState({ email: '', displayName: '', currentPassword: '' });
+  const [profileForm, setProfileForm] = useState({ email: '', username: '', displayName: '', currentPassword: '' });
   const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [loading, setLoading] = useState(false);
   const [recordsLoading, setRecordsLoading] = useState(false);
@@ -125,7 +125,8 @@ export default function AdminProfilePage() {
   }, [profile]);
 
   const emailChanged = profileForm.email.trim().toLowerCase() !== String(profile?.email || '').toLowerCase();
-  const canSaveProfile = Boolean(profileForm.email.trim() && profileForm.displayName.trim()) && (!emailChanged || Boolean(profileForm.currentPassword));
+  const usernameChanged = profileForm.username.trim().toLowerCase() !== String(profile?.username || '').toLowerCase();
+  const canSaveProfile = Boolean(profileForm.email.trim() && profileForm.displayName.trim()) && (!(emailChanged || usernameChanged) || Boolean(profileForm.currentPassword));
   const canSavePassword = Boolean(passwordForm.currentPassword && passwordForm.newPassword && passwordForm.confirmPassword)
     && passwordForm.newPassword === passwordForm.confirmPassword
     && passwordForm.newPassword.length >= 8;
@@ -138,6 +139,7 @@ export default function AdminProfilePage() {
       setProfile(result.admin);
       setProfileForm({
         email: result.admin.email || '',
+        username: result.admin.username || '',
         displayName: result.admin.displayName || '',
         currentPassword: '',
       });
@@ -173,12 +175,14 @@ export default function AdminProfilePage() {
     try {
       const result = await adminApi.updateAdminProfile({
         email: profileForm.email.trim(),
+        username: profileForm.username.trim() || undefined,
         displayName: profileForm.displayName.trim(),
         currentPassword: profileForm.currentPassword || undefined,
       });
       setProfile(result.admin);
       setProfileForm({
         email: result.admin.email || '',
+        username: result.admin.username || '',
         displayName: result.admin.displayName || '',
         currentPassword: '',
       });
@@ -231,7 +235,9 @@ export default function AdminProfilePage() {
                 </Typography>
                 <Chip size="small" color={profile?.status === 'active' ? 'success' : 'default'} label={statusLabel(profile?.status || '')} />
               </AdminInlineGroup>
-              <Typography color="text.secondary" sx={{ wordBreak: 'break-word' }}>{profile?.email || '-'}</Typography>
+              <Typography color="text.secondary" sx={{ wordBreak: 'break-word' }}>
+                {profile?.username ? `@${profile.username} · ${profile.email || '-'}` : profile?.email || '-'}
+              </Typography>
             </Stack>
           </Stack>
           <AdminInlineGroup gap={1}>
@@ -275,15 +281,22 @@ export default function AdminProfilePage() {
                     onChange={(event) => setProfileForm((prev) => ({ ...prev, displayName: event.target.value }))}
                   />
                   <TextField
+                    label="用户名"
+                    value={profileForm.username}
+                    fullWidth
+                    onChange={(event) => setProfileForm((prev) => ({ ...prev, username: event.target.value }))}
+                    helperText="可选。用于后台登录，修改用户名需要校验当前密码。"
+                  />
+                  <TextField
                     label="登录邮箱"
                     type="email"
                     value={profileForm.email}
                     required
                     fullWidth
                     onChange={(event) => setProfileForm((prev) => ({ ...prev, email: event.target.value }))}
-                    helperText="邮箱是后台登录账号。修改邮箱需要校验当前密码。"
+                    helperText="邮箱也可用于后台登录。修改邮箱需要校验当前密码。"
                   />
-                  {emailChanged ? (
+                  {emailChanged || usernameChanged ? (
                     <TextField
                       label="当前密码"
                       type="password"
