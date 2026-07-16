@@ -54,8 +54,7 @@ const OFFICIAL_DEEPSEEK_TEXT_MODELS = [
 ];
 
 const OFFICIAL_MOACODE_CODE_MODELS = [
-  'claude-opus-4-6',
-  'claude-sonnet-4-5',
+  'claude-opus-4-8',
   'claude-sonnet-4-0',
   'claude-opus-4-1',
   'claude-opus-4-0',
@@ -179,12 +178,12 @@ export const AI_PROVIDER_CATALOG: AIProviderCatalogEntry[] = [
     label: 'Anthropic (Claude)',
     family: 'Claude',
     defaults: {
-      text: { baseUrl: 'https://api.anthropic.com/v1', model: 'claude-sonnet-4-0' },
-      document: { baseUrl: 'https://api.anthropic.com/v1', model: 'claude-sonnet-4-0' },
+      text: { baseUrl: 'https://api.anthropic.com/v1', model: 'claude-opus-4-8' },
+      document: { baseUrl: 'https://api.anthropic.com/v1', model: 'claude-opus-4-8' },
     },
     popularModels: {
-      text: ['claude-sonnet-4-0', 'claude-3-7-sonnet-latest', 'claude-3-5-haiku-latest'],
-      document: ['claude-sonnet-4-0', 'claude-3-7-sonnet-latest'],
+      text: ['claude-opus-4-8', 'claude-sonnet-4-0', 'claude-3-7-sonnet-latest', 'claude-3-5-haiku-latest'],
+      document: ['claude-opus-4-8', 'claude-sonnet-4-0', 'claude-3-7-sonnet-latest'],
     },
   },
   {
