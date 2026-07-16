@@ -40,6 +40,55 @@ function manualDevUpdatePlugin(): Plugin {
   }
 }
 
+function isPublicAiProxyPath(pathname: string) {
+  return pathname === '/ai'
+    || pathname.startsWith('/ai/')
+    || pathname === '/v1'
+    || pathname.startsWith('/v1/')
+    || pathname === '/models'
+    || pathname.startsWith('/models/')
+    || pathname === '/chat/completions'
+    || pathname.startsWith('/chat/completions/')
+    || pathname === '/responses'
+    || pathname.startsWith('/responses/')
+    || pathname === '/embeddings'
+    || pathname.startsWith('/embeddings/')
+    || pathname === '/images/generations'
+    || pathname.startsWith('/images/generations/')
+    || pathname === '/anthropic'
+    || pathname.startsWith('/anthropic/')
+    || pathname === '/web_search'
+    || pathname.startsWith('/web_search/')
+}
+
+function publicAiProxyCorsPlugin(): Plugin {
+  return {
+    name: 'pneumata-public-ai-proxy-cors',
+    apply: 'serve',
+    configureServer(server) {
+      server.middlewares.use((request, response, next) => {
+        const origin = request.headers.origin
+        const pathname = request.url ? new URL(request.url, 'http://localhost').pathname : ''
+        if (!origin || !isPublicAiProxyPath(pathname)) {
+          next()
+          return
+        }
+
+        response.setHeader('Access-Control-Allow-Origin', origin)
+        response.setHeader('Vary', 'Origin, Access-Control-Request-Headers')
+        response.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
+        response.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+        if (request.method === 'OPTIONS') {
+          response.statusCode = 204
+          response.end()
+          return
+        }
+        next()
+      })
+    },
+  }
+}
+
 function setForwardedHeaders(proxyRequest: { setHeader(name: string, value: string): void }, request: { headers: Record<string, string | string[] | undefined> }) {
   const hostHeader = request.headers.host;
   const host = Array.isArray(hostHeader) ? hostHeader[0] : hostHeader;
@@ -59,6 +108,7 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 5173,
+    cors: false,
     hmr: appUpdateMode === 'auto',
     allowedHosts,
     proxy: {
@@ -113,6 +163,7 @@ export default defineConfig({
     },
   },
   plugins: [
+    publicAiProxyCorsPlugin(),
     react(),
     manualDevUpdatePlugin(),
     VitePWA({
