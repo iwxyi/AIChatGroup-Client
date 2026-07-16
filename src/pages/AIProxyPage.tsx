@@ -102,11 +102,6 @@ function formatDateTime(value: number | null | undefined) {
   }).format(new Date(value));
 }
 
-function formatNumber(value: unknown, digits = 2) {
-  const parsed = Number(value || 0);
-  return Number.isFinite(parsed) ? parsed.toFixed(digits).replace(/\.?0+$/, '') : '0';
-}
-
 function parseOptionalNumber(value: string) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
@@ -460,8 +455,8 @@ export default function AIProxyPage() {
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', md: 'repeat(4, minmax(0, 1fr))' }, gap: 1.5 }}>
           {[
             { label: '当前 AI 点数', value: formatAiBalanceAmount(balance, undefined, { empty: loading ? '加载中' : '-' }) },
-            { label: '今日 API 消耗', value: `${formatNumber(getSummaryAmount(summary, 'today'))} P` },
-            { label: '本月 API 消耗', value: `${formatNumber(getSummaryAmount(summary, 'month'))} P` },
+            { label: '今日 API 消耗', value: formatAiAmount(getSummaryAmount(summary, 'today'), 'moacode') },
+            { label: '本月 API 消耗', value: formatAiAmount(getSummaryAmount(summary, 'month'), 'moacode') },
             { label: '活跃 Key', value: String(summary?.activeKeyCount ?? keys.filter((item) => item.status === 'active').length) },
           ].map((item) => (
             <Box key={item.label}>
@@ -710,7 +705,7 @@ export default function AIProxyPage() {
                     <TableCell>{item.model || '-'}</TableCell>
                     <TableCell>{item.status === 'success' ? '成功' : '失败'}</TableCell>
                     <TableCell align="right">{item.totalTokens || 0}</TableCell>
-                    <TableCell align="right">{formatNumber(item.chargedAmount)} P</TableCell>
+                    <TableCell align="right">{formatAiAmount(item.chargedAmount, 'moacode')}</TableCell>
                   </TableRow>
                 ))}
                 {!records.length && <TableRow><TableCell colSpan={5}>暂无记录</TableCell></TableRow>}
@@ -748,7 +743,7 @@ export default function AIProxyPage() {
                       <TableCell>{item.groupKey}</TableCell>
                       <TableCell align="right">{item.requestCount}</TableCell>
                       <TableCell align="right">{item.totalTokens || 0}</TableCell>
-                      <TableCell align="right">{formatNumber(item.chargedAmount)} P</TableCell>
+                      <TableCell align="right">{formatAiAmount(item.chargedAmount, 'moacode')}</TableCell>
                       <TableCell>{formatDateTime(item.lastUsedAt)}</TableCell>
                     </TableRow>
                   ))}
@@ -786,7 +781,7 @@ export default function AIProxyPage() {
                       <TableCell>{item.groupKey}</TableCell>
                       <TableCell align="right">{item.requestCount}</TableCell>
                       <TableCell align="right">{item.totalTokens || 0}</TableCell>
-                      <TableCell align="right">{formatNumber(item.chargedAmount)} P</TableCell>
+                      <TableCell align="right">{formatAiAmount(item.chargedAmount, 'moacode')}</TableCell>
                       <TableCell>{formatDateTime(item.lastUsedAt)}</TableCell>
                     </TableRow>
                   ))}

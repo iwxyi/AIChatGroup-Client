@@ -29,18 +29,37 @@ function toFiniteNumber(value: unknown) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function formatSmallNonZeroAmount(value: number) {
+  const absolute = Math.abs(value);
+  if (absolute <= 0) return null;
+  const significantDigits = 2;
+  const leadingZeroFractionDigits = Math.max(0, Math.ceil(-Math.log10(absolute)) - 1);
+  const maximumFractionDigits = Math.min(6, Math.max(2, leadingZeroFractionDigits + significantDigits));
+  const rounded = Number(value.toFixed(maximumFractionDigits));
+  if (rounded === 0) return null;
+  return new Intl.NumberFormat('zh-CN', {
+    maximumFractionDigits,
+    minimumFractionDigits: 0,
+    useGrouping: false,
+  }).format(rounded);
+}
+
 export function formatAiAmount(value: unknown, provider: OfficialAiProviderCode, options: FormatAiAmountOptions = {}) {
   const amount = toFiniteNumber(value);
   if (amount == null) return options.empty ?? '-';
   const maximumFractionDigits = getMaximumFractionDigits(provider, options.compact);
   const rounded = Number(amount.toFixed(maximumFractionDigits));
   const displayAmount = Object.is(rounded, -0) ? 0 : rounded;
+  const smallNonZeroAmount = !options.compact && displayAmount === 0 && amount !== 0
+    ? formatSmallNonZeroAmount(amount)
+    : null;
   const formatted = new Intl.NumberFormat('zh-CN', {
     maximumFractionDigits,
     minimumFractionDigits: 0,
     useGrouping: false,
   }).format(displayAmount);
-  return `${options.prefix ?? ''}${formatted}${options.suffix ?? 'P'}`;
+  const visibleAmount = smallNonZeroAmount || formatted;
+  return `${options.prefix ?? ''}${visibleAmount}${options.suffix ?? 'P'}`;
 }
 
 export function formatAiBalanceAmount(balance: Record<string, unknown> | null | undefined, provider?: unknown, options: FormatAiAmountOptions = {}) {
