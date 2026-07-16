@@ -54,6 +54,7 @@ const OFFICIAL_DEEPSEEK_TEXT_MODELS = [
 ];
 
 const OFFICIAL_MOACODE_CODE_MODELS = [
+  'claude-opus-4-6',
   'claude-sonnet-4-5',
   'claude-sonnet-4-0',
   'claude-opus-4-1',
