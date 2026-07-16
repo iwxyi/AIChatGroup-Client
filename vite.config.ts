@@ -77,7 +77,7 @@ function publicAiProxyCorsPlugin(): Plugin {
         response.setHeader('Access-Control-Allow-Origin', origin)
         response.setHeader('Vary', 'Origin, Access-Control-Request-Headers')
         response.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
-        response.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+        response.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,x-api-key,anthropic-version,anthropic-beta,openai-beta')
         if (request.method === 'OPTIONS') {
           response.statusCode = 204
           response.end()
