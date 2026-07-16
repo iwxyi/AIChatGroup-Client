@@ -105,16 +105,6 @@ type UsageStatsFilters = {
   to: string;
 };
 
-type ModelRouteForm = {
-  id: string;
-  matchType: string;
-  pattern: string;
-  providerCode: string;
-  priority: string;
-  enabled: boolean;
-  note: string;
-};
-
 const DEFAULT_USAGE_STATS_FILTERS: UsageStatsFilters = {
   groupBy: 'usage_type',
   usageType: '',
@@ -123,22 +113,6 @@ const DEFAULT_USAGE_STATS_FILTERS: UsageStatsFilters = {
   status: '',
   from: '',
   to: '',
-};
-
-const DEFAULT_MODEL_ROUTE_FORM: ModelRouteForm = {
-  id: '',
-  matchType: 'prefix',
-  pattern: '',
-  providerCode: 'moacode-team',
-  priority: '100',
-  enabled: true,
-  note: '',
-};
-
-const MODEL_ROUTE_MATCH_TYPE_LABELS: Record<string, string> = {
-  exact: '精确',
-  prefix: '前缀',
-  contains: '包含',
 };
 
 const LEDGER_SOURCE_TYPE_LABELS: Record<string, string> = {
@@ -182,35 +156,6 @@ function writeStoredUsageStatsGroupBy(providerCode: string, groupBy: UsageStatsG
 function writeStoredUserStatsGroupBy(providerCode: string, groupBy: UserStatsGroupBy) {
   if (typeof window === 'undefined') return;
   window.localStorage.setItem(`${USER_STATS_GROUP_STORAGE_KEY_PREFIX}.${providerCode}`, groupBy);
-}
-
-function modelRouteToForm(route: Record<string, unknown>): ModelRouteForm {
-  return {
-    id: String(route.id || ''),
-    matchType: String(route.matchType || 'prefix'),
-    pattern: String(route.pattern || ''),
-    providerCode: String(route.providerCode || 'moacode-team'),
-    priority: String(route.priority ?? 100),
-    enabled: route.enabled !== false,
-    note: String(route.note || ''),
-  };
-}
-
-function modelRouteFormToPayload(form: ModelRouteForm) {
-  return {
-    matchType: form.matchType,
-    pattern: form.pattern.trim(),
-    providerCode: form.providerCode.trim(),
-    priority: Number(form.priority || 100),
-    enabled: form.enabled,
-    note: form.note.trim(),
-  };
-}
-
-function getModelRouteProviderLabel(providers: Array<Record<string, unknown>>, providerCode: string) {
-  const provider = providers.find((item) => String(item.code || '') === providerCode);
-  const name = provider ? String(provider.name || provider.public_name || providerCode) : providerCode;
-  return name && name !== providerCode ? `${name} (${providerCode})` : providerCode || '-';
 }
 
 function parseRecord(value: unknown): Record<string, unknown> {
@@ -752,11 +697,6 @@ export default function AdminAIProviderPage() {
   const [publicModelTotal, setPublicModelTotal] = useState(0);
   const [publicModelLoading, setPublicModelLoading] = useState(false);
   const [publicModelError, setPublicModelError] = useState<string | null>(null);
-  const [aiProviders, setAiProviders] = useState<Array<Record<string, unknown>>>([]);
-  const [modelRoutes, setModelRoutes] = useState<Array<Record<string, unknown>>>([]);
-  const [modelRouteForm, setModelRouteForm] = useState<ModelRouteForm>(DEFAULT_MODEL_ROUTE_FORM);
-  const [modelRouteLoading, setModelRouteLoading] = useState(false);
-  const [modelRouteError, setModelRouteError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [keyError, setKeyError] = useState<string | null>(null);
   const [usageStatsError, setUsageStatsError] = useState<string | null>(null);
@@ -767,9 +707,6 @@ export default function AdminAIProviderPage() {
   const nanobananaBalanceSummary = isNanoBanana ? getNanoBananaBalanceSummary(accountBalance) : {};
   const publicModelGroups = buildPublicModelGroups(publicModels);
   const publicModelOptions = buildPublicModelOptions(publicModels);
-  const modelRouteProviderOptions = aiProviders.length
-    ? aiProviders
-    : [{ code: 'deepseek', name: 'DeepSeek' }, { code: 'moacode-team', name: 'Moacode Team' }, { code: 'moacode', name: 'Moacode' }, { code: 'api2d', name: 'API2D' }];
   const hasPublicModelPricing = isMoacode || isNanoBanana;
   const publicModelTabIndex = hasPublicModelPricing ? 1 : -1;
   const userManagementTabIndex = hasPublicModelPricing ? 2 : 1;
@@ -806,23 +743,6 @@ export default function AdminAIProviderPage() {
       setAccountBalanceError(getAdminErrorMessage(loadError));
     } finally {
       setAccountBalanceLoading(false);
-    }
-  };
-
-  const loadModelRoutes = async () => {
-    setModelRouteLoading(true);
-    setModelRouteError(null);
-    try {
-      const [providersResult, routesResult] = await Promise.all([
-        adminApi.getAiProviders(),
-        adminApi.getAiModelRoutes(),
-      ]);
-      setAiProviders(providersResult.items || []);
-      setModelRoutes(routesResult.items || []);
-    } catch (loadError) {
-      setModelRouteError(getAdminErrorMessage(loadError));
-    } finally {
-      setModelRouteLoading(false);
     }
   };
 
@@ -876,7 +796,6 @@ export default function AdminAIProviderPage() {
   useEffect(() => {
     setTab(0);
     void loadConfig();
-    void loadModelRoutes();
     setKeys([]);
     setUserBalances([]);
     setUserBalancePage(0);
@@ -900,8 +819,6 @@ export default function AdminAIProviderPage() {
     setPublicModels([]);
     setPublicModelTotal(0);
     setPublicModelError(null);
-    setModelRouteForm(DEFAULT_MODEL_ROUTE_FORM);
-    setModelRouteError(null);
   }, [providerCode]);
 
   useEffect(() => {
@@ -971,55 +888,6 @@ export default function AdminAIProviderPage() {
       setError(getAdminErrorMessage(saveError));
     } finally {
       setSaving(false);
-    }
-  };
-
-  const saveModelRoute = async () => {
-    const payload = modelRouteFormToPayload(modelRouteForm);
-    if (!payload.pattern) {
-      setModelRouteError('请输入模型匹配内容');
-      return;
-    }
-    if (!payload.providerCode) {
-      setModelRouteError('请选择目标供应商');
-      return;
-    }
-    setModelRouteLoading(true);
-    setModelRouteError(null);
-    try {
-      if (modelRouteForm.id) {
-        await adminApi.updateAiModelRoute(modelRouteForm.id, payload);
-      } else {
-        await adminApi.createAiModelRoute(payload);
-      }
-      setModelRouteForm(DEFAULT_MODEL_ROUTE_FORM);
-      await loadModelRoutes();
-    } catch (saveError) {
-      setModelRouteError(getAdminErrorMessage(saveError));
-    } finally {
-      setModelRouteLoading(false);
-    }
-  };
-
-  const editModelRoute = (route: Record<string, unknown>) => {
-    setModelRouteForm(modelRouteToForm(route));
-    setModelRouteError(null);
-  };
-
-  const deleteModelRoute = async (route: Record<string, unknown>) => {
-    const routeId = String(route.id || '');
-    if (!routeId) return;
-    if (typeof window !== 'undefined' && !window.confirm(`确定删除模型路由 ${String(route.pattern || '')}？`)) return;
-    setModelRouteLoading(true);
-    setModelRouteError(null);
-    try {
-      await adminApi.deleteAiModelRoute(routeId);
-      if (modelRouteForm.id === routeId) setModelRouteForm(DEFAULT_MODEL_ROUTE_FORM);
-      await loadModelRoutes();
-    } catch (deleteError) {
-      setModelRouteError(getAdminErrorMessage(deleteError));
-    } finally {
-      setModelRouteLoading(false);
     }
   };
 
@@ -1272,9 +1140,9 @@ export default function AdminAIProviderPage() {
         <Tab label="用量统计" />
       </Tabs>
       <AdminRequestState
-        loading={loading || saving || keyLoading || userBalanceLoading || userUsageLoading || selectedUserStatsLoading || usageStatsLoading || publicModelLoading || modelRouteLoading}
-        error={tab === 0 ? (error || modelRouteError) : tab === publicModelTabIndex ? publicModelError : tab === userManagementTabIndex ? keyError : usageStatsError}
-        onRetry={tab === 0 ? () => { void loadConfig(); void loadModelRoutes(); } : tab === publicModelTabIndex ? () => void loadPublicModels() : tab === userManagementTabIndex ? (usesInternalLedger ? () => void loadUserBalances() : () => void loadKeys()) : () => void loadUsageStats()}
+        loading={loading || saving || keyLoading || userBalanceLoading || userUsageLoading || selectedUserStatsLoading || usageStatsLoading || publicModelLoading}
+        error={tab === 0 ? error : tab === publicModelTabIndex ? publicModelError : tab === userManagementTabIndex ? keyError : usageStatsError}
+        onRetry={tab === 0 ? () => void loadConfig() : tab === publicModelTabIndex ? () => void loadPublicModels() : tab === userManagementTabIndex ? (usesInternalLedger ? () => void loadUserBalances() : () => void loadKeys()) : () => void loadUsageStats()}
       />
 
       {tab === 0 ? (
@@ -1611,118 +1479,6 @@ export default function AdminAIProviderPage() {
                 </Stack>
               ) : null}
               </Stack>
-          </AdminSection>
-
-          <AdminSection title="模型路由" bodySx={{ p: 0 }}>
-            <Stack spacing={1.25} sx={{ p: 1.25 }}>
-              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '120px minmax(160px, 1fr) minmax(180px, 1fr) 110px 120px' }, gap: 1 }}>
-                <TextField
-                  select
-                  label="匹配"
-                  value={modelRouteForm.matchType}
-                  onChange={(e) => setModelRouteForm((prev) => ({ ...prev, matchType: e.target.value }))}
-                  sx={compactTextFieldSx}
-                >
-                  {Object.entries(MODEL_ROUTE_MATCH_TYPE_LABELS).map(([value, label]) => (
-                    <MenuItem key={value} value={value}>{label}</MenuItem>
-                  ))}
-                </TextField>
-                <TextField
-                  label="模型匹配内容"
-                  value={modelRouteForm.pattern}
-                  onChange={(e) => setModelRouteForm((prev) => ({ ...prev, pattern: e.target.value }))}
-                  placeholder="gpt-"
-                  sx={compactTextFieldSx}
-                />
-                <TextField
-                  select
-                  label="目标供应商"
-                  value={modelRouteForm.providerCode}
-                  onChange={(e) => setModelRouteForm((prev) => ({ ...prev, providerCode: e.target.value }))}
-                  sx={compactTextFieldSx}
-                >
-                  {modelRouteProviderOptions.map((provider) => {
-                    const code = String(provider.code || '');
-                    return <MenuItem key={code} value={code}>{getModelRouteProviderLabel(modelRouteProviderOptions, code)}</MenuItem>;
-                  })}
-                </TextField>
-                <TextField
-                  label="优先级"
-                  type="number"
-                  value={modelRouteForm.priority}
-                  onChange={(e) => setModelRouteForm((prev) => ({ ...prev, priority: e.target.value }))}
-                  sx={compactTextFieldSx}
-                />
-                <Box sx={{ minHeight: 56, display: 'flex', alignItems: 'center' }}>
-                  <FormControlLabel
-                    control={<Switch checked={modelRouteForm.enabled} onChange={(e) => setModelRouteForm((prev) => ({ ...prev, enabled: e.target.checked }))} />}
-                    label="启用"
-                    sx={{ m: 0 }}
-                  />
-                </Box>
-              </Box>
-              <Stack direction={{ xs: 'column', md: 'row' }} spacing={1}>
-                <TextField
-                  label="备注"
-                  value={modelRouteForm.note}
-                  onChange={(e) => setModelRouteForm((prev) => ({ ...prev, note: e.target.value }))}
-                  fullWidth
-                  sx={compactTextFieldSx}
-                />
-                <Button variant="contained" onClick={() => void saveModelRoute()} disabled={modelRouteLoading}>
-                  {modelRouteForm.id ? '保存路由' : '新增路由'}
-                </Button>
-                {modelRouteForm.id ? (
-                  <Button variant="outlined" onClick={() => setModelRouteForm(DEFAULT_MODEL_ROUTE_FORM)} disabled={modelRouteLoading}>
-                    取消编辑
-                  </Button>
-                ) : null}
-              </Stack>
-            </Stack>
-            <AdminTableFrame minWidth={860}>
-              <Table size="small">
-                <TableHead>
-                  <TableRow>
-                    <TableCell>优先级</TableCell>
-                    <TableCell>匹配</TableCell>
-                    <TableCell>模型内容</TableCell>
-                    <TableCell>目标供应商</TableCell>
-                    <TableCell>状态</TableCell>
-                    <TableCell>备注</TableCell>
-                    <TableCell align="right">操作</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {modelRoutes.map((route) => {
-                    const routeId = String(route.id || '');
-                    const routeProviderCode = String(route.providerCode || '');
-                    return (
-                      <TableRow key={routeId || `${String(route.matchType || '')}:${String(route.pattern || '')}:${routeProviderCode}`}>
-                        <TableCell>{String(route.priority ?? '-')}</TableCell>
-                        <TableCell>{MODEL_ROUTE_MATCH_TYPE_LABELS[String(route.matchType || 'prefix')] || String(route.matchType || '-')}</TableCell>
-                        <TableCell>{String(route.pattern || '-')}</TableCell>
-                        <TableCell>{getModelRouteProviderLabel(modelRouteProviderOptions, routeProviderCode)}</TableCell>
-                        <TableCell>{route.enabled === false ? '停用' : '启用'}</TableCell>
-                        <TableCell>{String(route.note || '') || '-'}</TableCell>
-                        <TableCell align="right">
-                          <Stack direction="row" spacing={0.75} sx={{ justifyContent: 'flex-end' }}>
-                            <Button size="small" variant="outlined" onClick={() => editModelRoute(route)} disabled={modelRouteLoading}>编辑</Button>
-                            <Button size="small" color="error" variant="outlined" onClick={() => void deleteModelRoute(route)} disabled={modelRouteLoading}>删除</Button>
-                          </Stack>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                  {!modelRoutes.length ? (
-                    <TableRow>
-                      <TableCell colSpan={7}>
-                        <Typography variant="body2" color="text.secondary">暂无模型路由</Typography>
-                      </TableCell>
-                    </TableRow>
-                  ) : null}
-                </TableBody>
-              </Table>
-            </AdminTableFrame>
           </AdminSection>
 
           {usesInternalLedger ? (
