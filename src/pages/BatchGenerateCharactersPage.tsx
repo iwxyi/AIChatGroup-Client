@@ -753,8 +753,9 @@ export default function BatchGenerateCharactersPage() {
     addCharacters: state.addCharacters,
     updateCharacters: state.updateCharacters,
   })));
-  const [topic, setTopic] = useState('');
-  const [description, setDescription] = useState('');
+  const initialParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
+  const [topic, setTopic] = useState(() => initialParams.get('topic') || '');
+  const [description, setDescription] = useState(() => initialParams.get('description') || '');
   const [candidateCharacters, setCandidateCharacters] = useState<CandidateCharacter[]>([]);
   const [candidateRelationships, setCandidateRelationships] = useState<CandidateRelationship[]>([]);
   const [candidateCircles, setCandidateCircles] = useState<CandidateRelationshipCircle[]>([]);
@@ -786,7 +787,7 @@ export default function BatchGenerateCharactersPage() {
     message: '',
     severity: 'success',
   });
-  const returnTo = new URLSearchParams(location.search).get('returnTo');
+  const returnTo = initialParams.get('returnTo');
 
   useEffect(() => {
     setHeaderTitle(i18n.language.startsWith('zh') ? '批量生成角色' : 'Batch Generate');

@@ -49,6 +49,7 @@ import { resolveRoomTemplateCapabilityDefaults } from '../services/conversationC
 import FloatingSegmentedTabs, { buildFloatingTabContainerSx } from '../components/common/FloatingSegmentedTabs';
 import AppSnackbar from '../components/common/AppSnackbar';
 import ExpandableFab from '../components/common/ExpandableFab';
+import NoCharactersDialog from '../components/common/NoCharactersDialog';
 import VipLimitDialog from '../components/common/VipLimitDialog';
 import SurfaceCard from '../components/common/SurfaceCard';
 import MarketUploadDialog, { type MarketUploadDraft } from '../components/market/MarketUploadDialog';
@@ -218,6 +219,7 @@ export default function CreateChatPage() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [clearMessagesConfirmOpen, setClearMessagesConfirmOpen] = useState(false);
   const [clearMemoryConfirmOpen, setClearMemoryConfirmOpen] = useState(false);
+  const [noCharactersDialogOpen, setNoCharactersDialogOpen] = useState(false);
   const [marketMenuAnchor, setMarketMenuAnchor] = useState<HTMLElement | null>(null);
   const [marketUploadDraft, setMarketUploadDraft] = useState<MarketUploadDraft | null>(null);
   const [marketBundleCharacterPreviews, setMarketBundleCharacterPreviews] = useState<AICharacter[]>([]);
@@ -937,7 +939,20 @@ export default function CreateChatPage() {
   };
   const openBatchGenerate = () => {
     persistDraft();
-    navigate(`/characters/batch-generate?returnTo=${encodeURIComponent(location.pathname + location.search)}`);
+    const params = new URLSearchParams();
+    params.set('returnTo', location.pathname + location.search);
+    const generationTopic = topic.trim() || name.trim();
+    const generationDescription = [
+      storyBackground.trim(),
+      storyOutline.trim(),
+      storyDirection.trim(),
+      focus.trim(),
+      recentEvent.trim(),
+      seedMemoryText.trim(),
+    ].filter(Boolean).join('\n\n');
+    if (generationTopic) params.set('topic', generationTopic);
+    if (generationDescription) params.set('description', generationDescription);
+    navigate(`/characters/batch-generate?${params.toString()}`);
   };
   const closeSnackbar = () => {
     setSnackbar((prev) => ({ ...prev, open: false }));
@@ -1193,6 +1208,10 @@ export default function CreateChatPage() {
     }
     if (!agentEntitled && isAgentRoomTemplate(selectedRoomTemplate)) {
       showError(isZh ? 'Agent 房间仅会员可用。' : 'Agent rooms are available to members only.');
+      return;
+    }
+    if (!editingChat && !marketImportDraft && !hasCustomCharacters) {
+      setNoCharactersDialogOpen(true);
       return;
     }
 
@@ -1609,6 +1628,13 @@ export default function CreateChatPage() {
         limit={vipLimitDialog?.limit}
         helperText={vipLimitDialog?.helperText}
         onClose={() => setVipLimitDialog(null)}
+      />
+      <NoCharactersDialog
+        open={noCharactersDialogOpen}
+        onClose={() => setNoCharactersDialogOpen(false)}
+        returnTo={location.pathname + location.search}
+        batchTopic={topic || name}
+        batchDescription={[storyBackground, storyOutline, storyDirection, focus, recentEvent, seedMemoryText].filter((item) => item.trim()).join('\n\n')}
       />
 
       <MemberSelectionDialog

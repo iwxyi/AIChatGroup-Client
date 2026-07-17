@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Box, Typography, IconButton, Avatar, TextField, InputAdornment } from '@mui/material';
+import { Box, Typography, IconButton, Avatar, TextField, InputAdornment, Button, Stack } from '@mui/material';
 import { isImageAvatar } from '../utils/avatar';
 import SearchIcon from '@mui/icons-material/Search';
 import ChatIcon from '@mui/icons-material/ChatBubbleOutlined';
@@ -10,13 +10,18 @@ import { useCharacterStore } from '../stores/useCharacterStore';
 import { useChatStore } from '../stores/useChatStore';
 import CharacterGroupFilterBar from '../components/character/CharacterGroupFilterBar';
 import EmptyState from '../components/common/EmptyState';
+import NoCharactersDialog from '../components/common/NoCharactersDialog';
 import { getCharacterGroupList, isCharacterInGroup, normalizeCharacterGroup } from '../types/character';
 import { buildDirectChatDraft } from '../services/chatDraftBuilder';
 import { buildInteractiveSurfaceSx, buildListGridSx } from '../styles/interaction';
 
 export default function CreateDirectChatPage() {
   const navigate = useNavigate();
-  const characters = useCharacterStore((state) => state.characters);
+  const { characters, prefetchCharacters, markCharactersWarm } = useCharacterStore(useShallow((state) => ({
+    characters: state.characters,
+    prefetchCharacters: state.prefetchCharacters,
+    markCharactersWarm: state.markCharactersWarm,
+  })));
   const { chats, addChat } = useChatStore(useShallow((state) => ({
     chats: state.chats,
     addChat: state.addChat,
@@ -25,6 +30,7 @@ export default function CreateDirectChatPage() {
   const [search, setSearch] = useState('');
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
   const [creatingId, setCreatingId] = useState<string | null>(null);
+  const [noCharactersDialogOpen, setNoCharactersDialogOpen] = useState(false);
 
 
   useEffect(() => {
@@ -38,15 +44,33 @@ export default function CreateDirectChatPage() {
     };
   }, [navigate, setHeaderActions, setHeaderBackAction, setHeaderTitle]);
 
-  const groupList = useMemo(() => getCharacterGroupList(characters), [characters]);
+  useEffect(() => {
+    let cancelled = false;
+    markCharactersWarm();
+    prefetchCharacters()
+      .finally(() => {
+        if (!cancelled && !useCharacterStore.getState().characters.some((character) => !character.isPreset && !character.deletedAt)) {
+          setNoCharactersDialogOpen(true);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [markCharactersWarm, prefetchCharacters]);
+
+  const availableCharacters = useMemo(
+    () => characters.filter((character) => !character.isPreset && !character.deletedAt),
+    [characters],
+  );
+  const groupList = useMemo(() => getCharacterGroupList(availableCharacters), [availableCharacters]);
   const groupOptions = useMemo(() => groupList.map((group) => ({
     value: group,
     label: group,
-    count: characters.filter((character) => normalizeCharacterGroup(character.group) === group).length,
-  })), [characters, groupList]);
+    count: availableCharacters.filter((character) => normalizeCharacterGroup(character.group) === group).length,
+  })), [availableCharacters, groupList]);
   const customCharacters = useMemo(
-    () => characters.filter((item) => isCharacterInGroup(item, selectedGroup) && item.name.toLowerCase().includes(search.toLowerCase())),
-    [characters, search, selectedGroup]
+    () => availableCharacters.filter((item) => isCharacterInGroup(item, selectedGroup) && item.name.toLowerCase().includes(search.toLowerCase())),
+    [availableCharacters, search, selectedGroup]
   );
 
   const handleCreate = async (characterId: string, characterName: string) => {
@@ -108,7 +132,7 @@ export default function CreateDirectChatPage() {
         />
         <CharacterGroupFilterBar
           allLabel="全部"
-          allCount={characters.length}
+          allCount={availableCharacters.length}
           options={groupOptions}
           selectedValue={selectedGroup}
           onSelect={setSelectedGroup}
@@ -120,6 +144,12 @@ export default function CreateDirectChatPage() {
         <EmptyState
           variant="plain"
           message={search || selectedGroup ? '没有匹配的角色' : '暂无可发起单聊的角色'}
+          action={!search && !selectedGroup ? (
+            <Stack direction="row" spacing={1}>
+              <Button variant="outlined" onClick={() => navigate('/characters')}>角色库</Button>
+              <Button variant="contained" onClick={() => navigate(`/characters/batch-generate?returnTo=${encodeURIComponent('/direct/create')}`)}>批量生成</Button>
+            </Stack>
+          ) : undefined}
         />
       ) : (
         <Box sx={{ ...buildListGridSx(), pt: 0.5 }}>
@@ -156,6 +186,11 @@ export default function CreateDirectChatPage() {
           ))}
         </Box>
       )}
+      <NoCharactersDialog
+        open={noCharactersDialogOpen}
+        onClose={() => setNoCharactersDialogOpen(false)}
+        returnTo="/direct/create"
+      />
     </Box>
   );
 }

@@ -12,6 +12,7 @@ import { useChatStore } from '../stores/useChatStore';
 import { useCharacterStore } from '../stores/useCharacterStore';
 import ChatCard from '../components/chat/ChatCard';
 import EmptyState from '../components/common/EmptyState';
+import NoCharactersDialog from '../components/common/NoCharactersDialog';
 import ListSkeletonGrid from '../components/common/ListSkeletonGrid';
 import ConfirmDialog from '../components/common/ConfirmDialog';
 import FloatingSegmentedTabs, { buildFloatingTabContainerSx } from '../components/common/FloatingSegmentedTabs';
@@ -203,10 +204,21 @@ export default function ChatListPage() {
   const privateChats = useMemo(() => filteredChats.filter((chat) => chat.type === 'ai_direct'), [filteredChats]);
   const assistantChats = useMemo(() => filteredChats.filter((chat) => chat.type === 'assistant'), [filteredChats]);
   const visibleChats = tab === ASSISTANT_TAB ? assistantChats : tab === 0 ? groupedChats : tab === 1 ? userDirectChats : privateChats;
+  const hasCustomCharacters = useMemo(() => characters.some((character) => !character.isPreset && !character.deletedAt), [characters]);
+  const [noCharactersDialogOpen, setNoCharactersDialogOpen] = useState(false);
+  const [noCharactersReturnTo, setNoCharactersReturnTo] = useState('/chats/create');
   const emptyMessage = tab === ASSISTANT_TAB ? '还没有助手会话' : tab === 0 ? t('chat.noGroups') : tab === 1 ? '还没有单聊' : '还没有 AI私聊';
   const createPath = tab === 0 ? '/chats/create' : '/direct/create';
   const createLabel = tab === ASSISTANT_TAB ? '创建助手' : tab === 0 ? t('chat.create') : '创建单聊';
   const showCreateFab = tab !== 2;
+  const openCreateWithCharacterGuard = (path: string) => {
+    if (!hasCustomCharacters) {
+      setNoCharactersReturnTo(path);
+      setNoCharactersDialogOpen(true);
+      return;
+    }
+    navigate(path);
+  };
   const createAssistantChat = async () => {
     if (creatingAssistant) return;
     setCreatingAssistant(true);
@@ -294,10 +306,10 @@ export default function ChatListPage() {
               </Button>
             ) : showCreateFab ? (
               <Stack direction="row" spacing={1}>
-                <Button variant="outlined" onClick={() => navigate('/chats/create')}>
+                <Button variant="outlined" onClick={() => openCreateWithCharacterGuard('/chats/create')}>
                   {t('chat.create')}
                 </Button>
-                <Button variant="outlined" onClick={() => navigate('/direct/create')}>
+                <Button variant="outlined" onClick={() => openCreateWithCharacterGuard('/direct/create')}>
                   创建单聊
                 </Button>
               </Stack>
@@ -346,12 +358,17 @@ export default function ChatListPage() {
               void createAssistantChat();
               return;
             }
-            navigate(createPath);
+            openCreateWithCharacterGuard(createPath);
           }}
           disabled={creatingAssistant}
           sx={floatingActionPositionSx}
         />
       ) : null}
+      <NoCharactersDialog
+        open={noCharactersDialogOpen}
+        onClose={() => setNoCharactersDialogOpen(false)}
+        returnTo={noCharactersReturnTo}
+      />
     </Box>
   );
 }

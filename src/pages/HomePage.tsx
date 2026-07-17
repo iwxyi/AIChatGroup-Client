@@ -25,6 +25,7 @@ import type { SyncScopeSnapshot } from '../stores/syncScopeMetadata';
 import { hasUsableDefaultTextAI } from '../types/settings';
 import ChatCard from '../components/chat/ChatCard';
 import EmptyState from '../components/common/EmptyState';
+import NoCharactersDialog from '../components/common/NoCharactersDialog';
 import SurfaceCard from '../components/common/SurfaceCard';
 import PageSection from '../components/common/PageSection';
 import SectionHeader from '../components/common/SectionHeader';
@@ -519,10 +520,21 @@ export default function HomePage() {
   }, []);
 
   const customCharacters = characters.filter((character) => !character.isPreset);
+  const hasCustomCharacters = customCharacters.length > 0;
+  const [noCharactersDialogOpen, setNoCharactersDialogOpen] = useState(false);
+  const [noCharactersReturnTo, setNoCharactersReturnTo] = useState('/chats/create');
   const totalDirectChats = chats.filter((chat) => chat.type === 'direct' || chat.type === 'ai_direct').length;
   const totalGroupChats = chats.filter((chat) => chat.type === 'group').length;
   const resolveChatListTab = (chat: typeof chats[number]) => chat.type === 'assistant' ? 3 : chat.type === 'group' ? 0 : chat.type === 'ai_direct' ? 2 : 1;
   const openChatFromHome = (chat: typeof chats[number]) => navigate(`/chats/${chat.id}?fromTab=${resolveChatListTab(chat)}`);
+  const openCreateChatWithCharacterGuard = (path: string) => {
+    if (!hasCustomCharacters) {
+      setNoCharactersReturnTo(path);
+      setNoCharactersDialogOpen(true);
+      return;
+    }
+    navigate(path);
+  };
   const recentChatsTitle = '最近会话';
   const recentChatsActionTab = recentChats[0] ? resolveChatListTab(recentChats[0]) : 0;
   const needsAIModelSetup = !hasUsableDefaultTextAI(aiProfiles);
@@ -794,7 +806,7 @@ export default function HomePage() {
       icon: <ChatIcon />,
       color: 'primary.main',
       onOpen: () => navigate('/chats?tab=0'),
-      onCreate: () => navigate('/chats/create'),
+      onCreate: () => openCreateChatWithCharacterGuard('/chats/create'),
       createLabel: t('chat.create'),
     },
     {
@@ -803,7 +815,7 @@ export default function HomePage() {
       icon: <ChatIcon />,
       color: 'primary.main',
       onOpen: () => navigate('/chats?tab=1'),
-      onCreate: () => navigate('/direct/create'),
+      onCreate: () => openCreateChatWithCharacterGuard('/direct/create'),
       createLabel: '创建单聊',
     },
     {
@@ -973,7 +985,7 @@ export default function HomePage() {
             <EmptyState
               icon="🍵"
               message={t('home.noChats')}
-              action={<Button variant="outlined" onClick={() => navigate('/chats/create')}>{t('chat.create')}</Button>}
+              action={<Button variant="outlined" onClick={() => openCreateChatWithCharacterGuard('/chats/create')}>{t('chat.create')}</Button>}
             />
           ) : (
             <Box sx={buildGridSx()}>
@@ -984,6 +996,11 @@ export default function HomePage() {
           )}
         </SurfaceCard>
       </PageSection>
+      <NoCharactersDialog
+        open={noCharactersDialogOpen}
+        onClose={() => setNoCharactersDialogOpen(false)}
+        returnTo={noCharactersReturnTo}
+      />
     </Box>
   );
 }
