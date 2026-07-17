@@ -488,7 +488,14 @@ function buildRemoteModelOption(model: AvailableModelInfo, type: AIModelType, pr
     : billingDisplay;
   const label = priceLabel ? `${model.id} ${priceLabel}` : model.id;
   if (type === 'image' && provider === 'official-nanobanana') {
-    return { value: model.id, label, priceLabel: priceLabel || undefined, inputPriceLabel: inputPriceLabel || undefined, outputPriceLabel: outputPriceLabel || billingDisplay || undefined, group: getNanoBananaVendorGroup(model, isZh) };
+    return {
+      value: model.id,
+      label,
+      priceLabel: priceLabel || undefined,
+      inputPriceLabel: inputPriceLabel || undefined,
+      outputPriceLabel: outputPriceLabel || billingDisplay || undefined,
+      group: getNanoBananaVendorGroup(model, isZh),
+    };
   }
   return {
     value: model.id,
