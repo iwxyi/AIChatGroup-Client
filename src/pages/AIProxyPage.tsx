@@ -169,41 +169,24 @@ function buildCurlExamples(apiKey: string, baseUrl: string, model: string) {
   ];
 }
 
-function maskApiKey(value: string) {
-  if (!value) return 'pn_xxx';
-  if (value.includes('...')) return value;
-  if (value.length <= 14) return `${value.slice(0, 4)}...`;
-  return `${value.slice(0, 10)}...${value.slice(-6)}`;
+function shellSingleQuote(value: string) {
+  return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
-function quotePowerShell(value: string) {
-  return value.replace(/`/g, '``').replace(/"/g, '`"');
+function powershellSingleQuote(value: string) {
+  return `'${value.replace(/'/g, "''")}'`;
 }
 
 function quickSetupLines(target: QuickSetupTarget, baseUrl: string, apiKey: string, platform: 'posix' | 'windows') {
-  const value = (key: string, raw: string) => platform === 'windows'
-    ? `$env:${key}="${quotePowerShell(raw)}"`
-    : `export ${key}=${raw}`;
-  const comment = (text: string) => platform === 'windows' ? `# ${text}` : `# ${text}`;
-  if (target === 'claude') {
-    return [
-      value('ANTHROPIC_BASE_URL', baseUrl),
-      value('ANTHROPIC_AUTH_TOKEN', apiKey),
-      comment('关闭非必要流量，提升访问速度'),
-      value('CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC', '1'),
-    ].join('\n');
+  const scriptName = target === 'claude'
+    ? 'setup-claude-code'
+    : target === 'codex'
+      ? 'setup-codex'
+      : 'setup-deepseek';
+  if (platform === 'windows') {
+    return `& { $base=${powershellSingleQuote(baseUrl)}; $url=${powershellSingleQuote(baseUrl)}; $key=${powershellSingleQuote(apiKey)}; iwr -useb $base/${scriptName}.ps1 | iex }`;
   }
-  if (target === 'codex') {
-    return [
-      value('OPENAI_BASE_URL', baseUrl),
-      value('OPENAI_API_KEY', apiKey),
-    ].join('\n');
-  }
-  return [
-    value('DEEPSEEK_BASE_URL', baseUrl),
-    value('DEEPSEEK_API_KEY', apiKey),
-    value('DEEPSEEK_MODEL', 'deepseek-chat'),
-  ].join('\n');
+  return `curl -s ${shellSingleQuote(`${baseUrl}/${scriptName}.sh`)} | bash -s -- --url ${shellSingleQuote(baseUrl)} --key ${shellSingleQuote(apiKey)}`;
 }
 
 function quickSetupLabel(target: QuickSetupTarget) {
@@ -235,28 +218,22 @@ export default function AIProxyPage() {
   const [quickSetupTarget, setQuickSetupTarget] = useState<QuickSetupTarget>('codex');
   const [quickSetupPreviewPlatform, setQuickSetupPreviewPlatform] = useState<'posix' | 'windows'>('posix');
   const [quickSetupRawKey, setQuickSetupRawKey] = useState('');
+  const [quickSetupRawKeyId, setQuickSetupRawKeyId] = useState('');
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'info' }>({ open: false, message: '', severity: 'success' });
 
   const selectedKeyName = useMemo(() => keys.find((item) => item.id === selectedKeyId)?.name || '全部 Key', [keys, selectedKeyId]);
-  const sampleKey = keys[0]?.keyMask || '';
   const proxyBaseUrl = useMemo(() => getAiProxyBaseUrl(), []);
-  const displayApiKey = quickSetupRawKey ? maskApiKey(quickSetupRawKey) : (sampleKey || 'pn_xxx');
-  const quickSetupCopyKey = quickSetupRawKey || displayApiKey;
+  const sampleKey = keys[0]?.keyMask || '';
+  const quickSetupDisplayKey = quickSetupRawKey || '请先新建或轮换 Key';
+  const curlDisplayKey = quickSetupRawKey || sampleKey || 'your-api-key';
+  const curlCopyKey = quickSetupRawKey || 'your-api-key';
   const quickSetupDisplayCode = useMemo(
-    () => quickSetupLines(quickSetupTarget, proxyBaseUrl, displayApiKey, quickSetupPreviewPlatform),
-    [displayApiKey, proxyBaseUrl, quickSetupPreviewPlatform, quickSetupTarget],
-  );
-  const quickSetupPosixCode = useMemo(
-    () => quickSetupLines(quickSetupTarget, proxyBaseUrl, quickSetupCopyKey, 'posix'),
-    [proxyBaseUrl, quickSetupCopyKey, quickSetupTarget],
-  );
-  const quickSetupWindowsCode = useMemo(
-    () => quickSetupLines(quickSetupTarget, proxyBaseUrl, quickSetupCopyKey, 'windows'),
-    [proxyBaseUrl, quickSetupCopyKey, quickSetupTarget],
+    () => quickSetupLines(quickSetupTarget, proxyBaseUrl, quickSetupDisplayKey, quickSetupPreviewPlatform),
+    [proxyBaseUrl, quickSetupDisplayKey, quickSetupPreviewPlatform, quickSetupTarget],
   );
   const exampleModel = keys[0]?.allowedModels?.[0] || modelOptions[0] || 'deepseek-chat';
-  const curlDisplayExamples = useMemo(() => buildCurlExamples(displayApiKey, proxyBaseUrl, exampleModel), [displayApiKey, exampleModel, proxyBaseUrl]);
-  const curlCopyExamples = useMemo(() => buildCurlExamples(quickSetupCopyKey, proxyBaseUrl, exampleModel), [exampleModel, proxyBaseUrl, quickSetupCopyKey]);
+  const curlDisplayExamples = useMemo(() => buildCurlExamples(curlDisplayKey, proxyBaseUrl, exampleModel), [curlDisplayKey, exampleModel, proxyBaseUrl]);
+  const curlCopyExamples = useMemo(() => buildCurlExamples(curlCopyKey, proxyBaseUrl, exampleModel), [curlCopyKey, exampleModel, proxyBaseUrl]);
   const endpointList = useMemo(() => [
     `${proxyBaseUrl}/v1/models`,
     `${proxyBaseUrl}/v1/chat/completions`,
@@ -360,6 +337,7 @@ export default function AIProxyPage() {
         allowedModels: normalizeModelList(dialog.allowedModels),
       });
       setQuickSetupRawKey(result.rawKey);
+      setQuickSetupRawKeyId(result.key.id);
       setDialog((prev) => ({ ...prev, rawKey: result.rawKey }));
       await loadData();
     } catch (error) {
@@ -378,6 +356,33 @@ export default function AIProxyPage() {
       message: options.maskedKey ? '已复制脱敏示例，使用前请替换为真实 Key' : '已复制',
       severity: options.maskedKey ? 'info' : 'success',
     });
+  };
+
+  const copyQuickSetupScript = async (platform: 'posix' | 'windows') => {
+    setQuickSetupPreviewPlatform(platform);
+    if (!quickSetupRawKey) {
+      setSnackbar({ open: true, message: '请先新建或轮换 Key，获取明文 Key 后再复制安装脚本', severity: 'error' });
+      return;
+    }
+    try {
+      const result = await api.getAiProxySetupScript({
+        target: quickSetupTarget,
+        platform,
+        apiKey: quickSetupRawKey,
+      });
+      const copied = await copyTextToClipboard(result.script);
+      if (!copied) {
+        setSnackbar({ open: true, message: '复制失败，请手动复制', severity: 'error' });
+        return;
+      }
+      setSnackbar({
+        open: true,
+        message: '已复制安装脚本',
+        severity: 'success',
+      });
+    } catch (error) {
+      setSnackbar({ open: true, message: error instanceof Error ? error.message : '获取安装脚本失败', severity: 'error' });
+    }
   };
 
   const openEditKey = (key: AiProxyKeyItem) => {
@@ -432,6 +437,7 @@ export default function AIProxyPage() {
     try {
       const result = await api.rotateAiProxyKey(editDialog.keyId);
       setQuickSetupRawKey(result.rawKey);
+      setQuickSetupRawKeyId(result.key.id);
       setEditDialog((prev) => ({ ...prev, status: result.key.status, rawKey: result.rawKey }));
       await loadData();
     } catch (error) {
@@ -471,7 +477,14 @@ export default function AIProxyPage() {
         <SurfaceCard>
           <Stack direction="row" spacing={1.5} sx={{ alignItems: 'flex-start', justifyContent: 'space-between' }}>
             <Box sx={{ minWidth: 0, flex: 1 }}>
-              <Typography variant="h6" sx={{ fontWeight: 800 }}>API Key</Typography>
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ alignItems: { xs: 'flex-start', sm: 'center' } }}>
+                <Typography variant="h6" sx={{ fontWeight: 800 }}>API Key</Typography>
+                {quickSetupRawKey ? (
+                  <Button size="small" startIcon={<ContentCopyIcon />} onClick={() => void copyText(quickSetupRawKey)}>
+                    复制最新 Key
+                  </Button>
+                ) : null}
+              </Stack>
               <Box
                 role="button"
                 tabIndex={0}
@@ -514,7 +527,9 @@ export default function AIProxyPage() {
                 {keys.map((key) => (
                   <TableRow key={key.id} hover selected={selectedKeyId === key.id} onClick={() => handleSelectKey(key.id)}>
                     <TableCell>{key.name}</TableCell>
-                    <TableCell sx={{ fontFamily: 'monospace' }}>{key.keyMask}</TableCell>
+                    <TableCell sx={{ fontFamily: 'monospace', overflowWrap: 'anywhere' }}>
+                      {quickSetupRawKey && quickSetupRawKeyId === key.id ? quickSetupRawKey : key.keyMask}
+                    </TableCell>
                     <TableCell><StatusChip status={key.status} /></TableCell>
                     <TableCell>{key.allowedModels?.length ? `${key.allowedModels.length} 个模型` : '跟随账号'}</TableCell>
                     <TableCell align="right">{formatAiAmount(key.usage?.todayChargedAmount || 0, 'moacode')}</TableCell>
@@ -544,7 +559,7 @@ export default function AIProxyPage() {
               <Typography variant="h6" sx={{ fontWeight: 800 }}>快速设置</Typography>
             </Box>
             {!quickSetupRawKey ? (
-              <Alert severity="info">真实 Key 只在新建或轮换后显示一次；当前脚本会使用已有 Key 的脱敏值。</Alert>
+              <Alert severity="info">真实 Key 只在新建或轮换后显示一次；获取明文 Key 后才能复制安装脚本。</Alert>
             ) : null}
             <Tabs
               value={quickSetupTarget}
@@ -582,7 +597,7 @@ export default function AIProxyPage() {
                 startIcon={<ContentCopyIcon />}
                 onMouseEnter={() => setQuickSetupPreviewPlatform('posix')}
                 onFocus={() => setQuickSetupPreviewPlatform('posix')}
-                onClick={() => void copyText(quickSetupPosixCode, { maskedKey: !quickSetupRawKey })}
+                onClick={() => void copyQuickSetupScript('posix')}
               >
                 复制 Linux/MacOS
               </Button>
@@ -591,7 +606,7 @@ export default function AIProxyPage() {
                 startIcon={<ContentCopyIcon />}
                 onMouseEnter={() => setQuickSetupPreviewPlatform('windows')}
                 onFocus={() => setQuickSetupPreviewPlatform('windows')}
-                onClick={() => void copyText(quickSetupWindowsCode, { maskedKey: !quickSetupRawKey })}
+                onClick={() => void copyQuickSetupScript('windows')}
               >
                 复制 Windows PowerShell
               </Button>

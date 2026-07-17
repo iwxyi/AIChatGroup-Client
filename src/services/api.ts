@@ -183,6 +183,12 @@ export interface AiProxyKeyCreateResponse {
   rawKey: string;
 }
 
+export interface AiProxySetupScriptResponse {
+  target: 'codex' | 'claude' | 'deepseek';
+  platform: 'posix' | 'windows';
+  script: string;
+}
+
 export interface AiProxyUsageRecordItem {
   id: string;
   keyId: string | null;
@@ -698,6 +704,10 @@ class ApiClient {
 
   async getAiProxyBalance() {
     return this.request<Record<string, unknown>>('GET', '/ai-proxy/balance');
+  }
+
+  async getAiProxySetupScript(data: { target: 'codex' | 'claude' | 'deepseek'; platform: 'posix' | 'windows'; apiKey?: string }) {
+    return this.request<AiProxySetupScriptResponse>('POST', '/ai-proxy/setup-script', data);
   }
 
   async getAiProxyUsageSummary() {

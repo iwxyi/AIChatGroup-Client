@@ -59,6 +59,7 @@ function isPublicAiProxyPath(pathname: string) {
     || pathname.startsWith('/anthropic/')
     || pathname === '/web_search'
     || pathname.startsWith('/web_search/')
+    || /^\/setup-[^/]+\.(?:sh|ps1)$/.test(pathname)
 }
 
 function publicAiProxyCorsPlugin(): Plugin {
@@ -152,6 +153,15 @@ export default defineConfig({
         },
       },
       '^/(models|responses|embeddings|chat/completions|images/generations|anthropic|web_search)(?:/|$)': {
+        target: 'http://localhost:5170',
+        changeOrigin: true,
+        configure(proxy) {
+          proxy.on('proxyReq', (proxyRequest, request) => {
+            setForwardedHeaders(proxyRequest, request)
+          })
+        },
+      },
+      '^/setup-[^/]+\\.(sh|ps1)$': {
         target: 'http://localhost:5170',
         changeOrigin: true,
         configure(proxy) {
