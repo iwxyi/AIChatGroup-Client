@@ -113,7 +113,7 @@ export default defineConfig({
     allowedHosts,
     proxy: {
       '/api': {
-        target: 'http://localhost:3001',
+        target: 'http://localhost:5170',
         changeOrigin: true,
         configure(proxy) {
           proxy.on('proxyReq', (proxyRequest, request) => {
@@ -125,7 +125,7 @@ export default defineConfig({
         },
       },
       '/uploads': {
-        target: 'http://localhost:3001',
+        target: 'http://localhost:5170',
         changeOrigin: true,
         configure(proxy) {
           proxy.on('proxyReq', (proxyRequest, request) => {
@@ -134,7 +134,7 @@ export default defineConfig({
         },
       },
       '^/ai(?:/|$)': {
-        target: 'http://localhost:3001',
+        target: 'http://localhost:5170',
         changeOrigin: true,
         configure(proxy) {
           proxy.on('proxyReq', (proxyRequest, request) => {
@@ -143,7 +143,7 @@ export default defineConfig({
         },
       },
       '^/v1(?:/|$)': {
-        target: 'http://localhost:3001',
+        target: 'http://localhost:5170',
         changeOrigin: true,
         configure(proxy) {
           proxy.on('proxyReq', (proxyRequest, request) => {
@@ -152,7 +152,7 @@ export default defineConfig({
         },
       },
       '^/(models|responses|embeddings|chat/completions|images/generations|anthropic|web_search)(?:/|$)': {
-        target: 'http://localhost:3001',
+        target: 'http://localhost:5170',
         changeOrigin: true,
         configure(proxy) {
           proxy.on('proxyReq', (proxyRequest, request) => {
