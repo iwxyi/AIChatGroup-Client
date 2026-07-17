@@ -41,6 +41,7 @@ type AdminAiUserUsageDialogProps = {
   open: boolean;
   user: Record<string, unknown> | null;
   providerCode?: string;
+  sharedPointMode?: boolean;
   onClose: () => void;
   onTransferPoints?: (userId: string, amount: number, reason: string) => Promise<Record<string, unknown>>;
   onChanged?: () => void | Promise<void>;
@@ -222,6 +223,7 @@ export default function AdminAiUserUsageDialog({
   open,
   user,
   providerCode = 'all',
+  sharedPointMode = false,
   onClose,
   onTransferPoints,
   onChanged,
@@ -240,7 +242,10 @@ export default function AdminAiUserUsageDialog({
   const [statsLoading, setStatsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const title = useMemo(() => `${formatProviderLabel(providerCode)}额度详情`, [providerCode]);
+  const usePointCopy = sharedPointMode || providerCode === 'all';
+  const title = useMemo(() => (
+    usePointCopy ? `${formatProviderLabel(providerCode)}点数详情` : `${formatProviderLabel(providerCode)}额度详情`
+  ), [providerCode, usePointCopy]);
 
   const loadUsage = async (nextInvocationPage = invocationPage, nextLedgerPage = ledgerPage) => {
     if (!userId) return;
@@ -308,12 +313,12 @@ export default function AdminAiUserUsageDialog({
     if (!userId || !onTransferPoints) return;
     const amount = Number(pointDraft);
     if (!Number.isFinite(amount) || amount === 0) {
-      setError('请输入非 0 的额度，负数表示扣除');
+      setError(`请输入非 0 的${usePointCopy ? '点数' : '额度'}，负数表示扣除`);
       return;
     }
     const reason = pointReasonDraft.trim();
     if (!reason) {
-      setError('请输入增减额度原因');
+      setError(`请输入增减${usePointCopy ? '点数' : '额度'}原因`);
       return;
     }
     setLoading(true);
@@ -368,11 +373,11 @@ export default function AdminAiUserUsageDialog({
               </Box>
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: { xs: 1.5, sm: 3 }, ml: 'auto', flex: '0 0 auto' }}>
                 <Box sx={{ textAlign: 'right', minWidth: 92 }}>
-                  <Typography variant="caption" color="text.secondary">剩余额度</Typography>
+                  <Typography variant="caption" color="text.secondary">剩余{usePointCopy ? '点数' : '额度'}</Typography>
                   <Typography variant="h6" sx={{ fontWeight: 900, lineHeight: 1.15, whiteSpace: 'nowrap' }}>{formatPoint(user.balanceAmount ?? user.balance_amount ?? user.aiBalanceAmount, providerCode)}</Typography>
                 </Box>
                 <Box sx={{ textAlign: 'right', minWidth: 92 }}>
-                  <Typography variant="caption" color="text.secondary">已使用额度</Typography>
+                  <Typography variant="caption" color="text.secondary">已使用{usePointCopy ? '点数' : '额度'}</Typography>
                   <Typography variant="h6" sx={{ fontWeight: 900, lineHeight: 1.15, whiteSpace: 'nowrap' }}>{formatPoint(user.usedAmount ?? user.used_amount ?? user.aiUsedAmount, providerCode)}</Typography>
                 </Box>
               </Box>
@@ -382,9 +387,9 @@ export default function AdminAiUserUsageDialog({
           <AdminInlineGroup>
             {onTransferPoints ? (
               <>
-                <TextField size="small" label="增减额度" value={pointDraft} onChange={(event) => setPointDraft(event.target.value)} placeholder="负数扣除" sx={{ flex: '0 1 180px', minWidth: 140 }} />
+                <TextField size="small" label={`增减${usePointCopy ? '点数' : '额度'}`} value={pointDraft} onChange={(event) => setPointDraft(event.target.value)} placeholder="负数扣除" sx={{ flex: '0 1 180px', minWidth: 140 }} />
                 <TextField size="small" label="原因" value={pointReasonDraft} onChange={(event) => setPointReasonDraft(event.target.value)} placeholder="例如补偿、退款扣回" sx={{ flex: '1 1 220px', minWidth: 180 }} />
-                <Button variant="contained" disabled={loading || !pointDraft.trim() || !pointReasonDraft.trim()} onClick={() => void transferPoints()} sx={{ height: 40 }}>增减额度</Button>
+                <Button variant="contained" disabled={loading || !pointDraft.trim() || !pointReasonDraft.trim()} onClick={() => void transferPoints()} sx={{ height: 40 }}>增减{usePointCopy ? '点数' : '额度'}</Button>
               </>
             ) : null}
             <Button variant="outlined" disabled={loading || !userId} onClick={() => void loadUsage()} sx={{ height: 40 }}>刷新明细</Button>
@@ -397,14 +402,14 @@ export default function AdminAiUserUsageDialog({
               writeStoredTab(providerCode, value);
             }}
           >
-            <Tab label="额度流水" />
+            <Tab label={`${usePointCopy ? '点数' : '额度'}流水`} />
             <Tab label="调用消耗" />
             <Tab label="用量统计" />
           </Tabs>
 
           {tab === 0 ? (
             <Stack spacing={1}>
-              {!usage?.quotaLedger.length && !loading ? <Alert severity="info">暂无额度流水</Alert> : null}
+              {!usage?.quotaLedger.length && !loading ? <Alert severity="info">暂无{usePointCopy ? '点数' : '额度'}流水</Alert> : null}
               {usage?.quotaLedger.length ? (
                 <AdminResponsiveTable minWidth={720}>
                   <Table size="small">
@@ -412,7 +417,7 @@ export default function AdminAiUserUsageDialog({
                       <TableRow>
                         <TableCell>来源</TableCell>
                         {providerCode === 'all' ? <TableCell>模型</TableCell> : null}
-                        <TableCell>额度</TableCell>
+                        <TableCell>{usePointCopy ? '点数' : '额度'}</TableCell>
                         <TableCell>余额</TableCell>
                         <TableCell>时间</TableCell>
                       </TableRow>

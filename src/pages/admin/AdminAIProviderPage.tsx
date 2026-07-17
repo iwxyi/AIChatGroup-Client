@@ -1136,7 +1136,7 @@ export default function AdminAIProviderPage() {
       <Tabs value={tab} onChange={(_event, value) => setTab(value)}>
         <Tab label="配置" />
         {hasPublicModelPricing ? <Tab label="模型价格" /> : null}
-        <Tab label={usesInternalLedger ? '用户点数' : 'Key 查询'} />
+        <Tab label={usesInternalLedger ? '通用点数' : 'Key 查询'} />
         <Tab label="用量统计" />
       </Tabs>
       <AdminRequestState
@@ -1775,7 +1775,7 @@ export default function AdminAIProviderPage() {
               <TextField size="small" label="搜索用户" value={userBalanceSearch} onChange={(e) => setUserBalanceSearch(e.target.value)} sx={{ width: { xs: 180, sm: 260 } }} />
               <Button variant="contained" disabled={userBalanceLoading} onClick={() => void loadUserBalances(0, userBalanceRowsPerPage)} sx={{ minWidth: 88, height: 40 }}>查询</Button>
             </Stack>
-            <AdminSection title="用户点数" bodySx={{ p: 0 }}>
+            <AdminSection title="通用点数" bodySx={{ p: 0 }}>
             <AdminTableFrame minWidth={760}>
               <Table size="small">
                 <TableHead>
@@ -2060,6 +2060,7 @@ export default function AdminAIProviderPage() {
           return result;
         }}
         onChanged={() => loadUserBalances(userBalancePage, userBalanceRowsPerPage)}
+        sharedPointMode={usesInternalLedger}
       />
       <Dialog open={createDialogOpen} onClose={() => setCreateDialogOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle>创建 Key</DialogTitle>

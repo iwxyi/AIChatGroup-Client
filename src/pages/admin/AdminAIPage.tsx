@@ -125,6 +125,11 @@ function formatOpsPoints(value: unknown) {
   return `${formatOpsNumber(value, 2)}P`;
 }
 
+function formatConfigPoints(value: string) {
+  if (value.trim() === '') return '0P';
+  return `${formatOpsNumber(Number(value), 2)}P`;
+}
+
 function formatOpsPercent(value: unknown) {
   const parsed = Number(value || 0);
   if (!Number.isFinite(parsed)) return '0%';
@@ -239,6 +244,48 @@ function OpsSummaryPanel({
           <OpsRankingTable title="用途排行" rows={asArray(summary?.usages)} />
           <OpsRankingTable title="高消耗用户" rows={asArray(summary?.users)} labelBuilder={(row) => String(row.userNickname || row.userPhone || row.userId || row.label || '-')} />
         </Stack>
+      </Stack>
+    </AdminSection>
+  );
+}
+
+function GlobalPointConfigPanel({
+  form,
+  loading,
+  error,
+  onOpen,
+  onRetry,
+}: {
+  form: {
+    defaultProvisionEnabled: boolean;
+    defaultGrantAmount: string;
+  };
+  loading: boolean;
+  error: string | null;
+  onOpen: () => void;
+  onRetry: () => void;
+}) {
+  const metricItems: AdminMetricItem[] = [
+    buildOpsMetricItem({
+      label: '注册默认点数',
+      value: formatConfigPoints(form.defaultGrantAmount),
+      subValue: form.defaultProvisionEnabled ? '自动发放' : '未启用',
+      tone: form.defaultProvisionEnabled ? 'success' : 'warning',
+    }),
+    buildOpsMetricItem({
+      label: '自动发放',
+      value: form.defaultProvisionEnabled ? '开启' : '关闭',
+      tone: 'default',
+    }),
+  ];
+  return (
+    <AdminSection
+      title="通用点数配置"
+      action={<Button variant="outlined" size="small" onClick={onOpen}>编辑点数配置</Button>}
+    >
+      <Stack spacing={1.25}>
+        <AdminRequestState loading={loading} error={error} onRetry={onRetry} />
+        <AdminMetricGrid items={metricItems} minWidth={132} compact />
       </Stack>
     </AdminSection>
   );
@@ -472,7 +519,7 @@ export default function AdminAIPage() {
   const [opsSummary, setOpsSummary] = useState<Record<string, unknown> | null>(null);
   const [globalDialogOpen, setGlobalDialogOpen] = useState(false);
   const [globalForm, setGlobalForm] = useState({
-    defaultProvisionEnabled: false,
+    defaultProvisionEnabled: true,
     defaultGrantAmount: '',
     defaultDailyQuota: '',
     defaultMonthlyQuota: '',
@@ -595,7 +642,7 @@ export default function AdminAIPage() {
       const result = await adminApi.getPlatformGlobalConfig();
       const ai = result.ai || {};
       setGlobalForm({
-        defaultProvisionEnabled: Boolean(ai.defaultProvisionEnabled),
+        defaultProvisionEnabled: ai.defaultProvisionEnabled == null ? true : Boolean(ai.defaultProvisionEnabled),
         defaultGrantAmount: ai.defaultGrantAmount == null ? '' : String(ai.defaultGrantAmount),
         defaultDailyQuota: ai.defaultDailyQuota == null ? '' : String(ai.defaultDailyQuota),
         defaultMonthlyQuota: ai.defaultMonthlyQuota == null ? '' : String(ai.defaultMonthlyQuota),
@@ -627,7 +674,7 @@ export default function AdminAIPage() {
         },
       });
       setGlobalDialogOpen(false);
-      await loadProviders();
+      await loadGlobalConfig();
     } catch (saveError) {
       setGlobalError(getAdminErrorMessage(saveError));
     } finally {
@@ -639,6 +686,7 @@ export default function AdminAIPage() {
     void loadProviders();
     void loadModelRoutes();
     void loadOpsSummary();
+    void loadGlobalConfig();
   }, []);
 
   const providerMetricItems = [
@@ -651,11 +699,18 @@ export default function AdminAIPage() {
     <Stack spacing={1.5}>
       <AdminSection
         title="AI 供应商运营"
-        subtitle="管理官方 AI 供应商、余额状态和默认分配策略"
-        action={<Button variant="outlined" size="small" onClick={openGlobalDialog}>全局配置</Button>}
+        subtitle="供应商、余额、模型路由"
       >
         <AdminMetricGrid items={providerMetricItems} minWidth={132} compact />
       </AdminSection>
+
+      <GlobalPointConfigPanel
+        form={globalForm}
+        loading={globalLoading}
+        error={globalError}
+        onOpen={openGlobalDialog}
+        onRetry={() => void loadGlobalConfig()}
+      />
 
       <OpsSummaryPanel summary={opsSummary} loading={opsLoading} error={opsError} onRetry={() => void loadOpsSummary()} />
 
@@ -689,26 +744,21 @@ export default function AdminAIPage() {
       </AdminSection>
 
       <Dialog open={globalDialogOpen} onClose={() => setGlobalDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>AI 全局配置</DialogTitle>
+        <DialogTitle>通用点数配置</DialogTitle>
         <DialogContent>
           <Stack spacing={1.5} sx={{ pt: 1 }}>
             <AdminRequestState loading={globalLoading} error={globalError} onRetry={() => void loadGlobalConfig()} />
             <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2 }}>
               <Stack spacing={1.25}>
-                <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>新用户默认分配额度</Typography>
+                <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>新用户默认发放</Typography>
                 <FormControlLabel
                   control={<Switch checked={globalForm.defaultProvisionEnabled} onChange={(event) => setGlobalForm((prev) => ({ ...prev, defaultProvisionEnabled: event.target.checked }))} />}
                   label="新用户注册后自动开通默认 AI 权益并分配额度"
                 />
-                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25}>
-                  <TextField label="默认点数" value={globalForm.defaultGrantAmount} onChange={(event) => setGlobalForm((prev) => ({ ...prev, defaultGrantAmount: event.target.value }))} fullWidth />
-                  <TextField label="每日额度" value={globalForm.defaultDailyQuota} onChange={(event) => setGlobalForm((prev) => ({ ...prev, defaultDailyQuota: event.target.value }))} fullWidth />
-                  <TextField label="每月额度" value={globalForm.defaultMonthlyQuota} onChange={(event) => setGlobalForm((prev) => ({ ...prev, defaultMonthlyQuota: event.target.value }))} fullWidth />
-                </Stack>
-                <TextField label="默认计划编码" value={globalForm.defaultPlanCode} onChange={(event) => setGlobalForm((prev) => ({ ...prev, defaultPlanCode: event.target.value }))} fullWidth />
+                <TextField label="默认点数" value={globalForm.defaultGrantAmount} onChange={(event) => setGlobalForm((prev) => ({ ...prev, defaultGrantAmount: event.target.value }))} fullWidth />
               </Stack>
             </Paper>
-            <Button variant="contained" disabled={globalSaving || globalLoading} onClick={() => void saveGlobalConfig()}>保存全局配置</Button>
+            <Button variant="contained" disabled={globalSaving || globalLoading} onClick={() => void saveGlobalConfig()}>保存点数配置</Button>
           </Stack>
         </DialogContent>
       </Dialog>
