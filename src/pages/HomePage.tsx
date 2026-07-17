@@ -458,6 +458,7 @@ export default function HomePage() {
   const activeDiaryJobs = artifactJobs.filter((job) => job.kind === 'diary' && (job.status === 'pending' || job.status === 'running')).length;
   const authMode = useAuthStore((state) => state.authMode);
   const isLoggedIn = useAuthStore((state) => state.isLoggedIn);
+  const user = useAuthStore((state) => state.user);
   const [avatarQueueSummary, setAvatarQueueSummary] = useState<AvatarGenerationQueueSummary>(() => avatarGenerationQueue.getSummary());
   const [cloudSyncEnabled, setCloudSyncEnabledState] = useState(() => isCloudSyncEnabled());
   const [workerEntries, setWorkerEntries] = useState(() => getRegisteredSyncWorkerEntries());
@@ -567,6 +568,7 @@ export default function HomePage() {
       .filter((provider): provider is OfficialBalanceProviderInfo => Boolean(provider));
   }, [aiProfiles, officialProviderAccess]);
   const canQueryAiPoints = !needsLogin && enabledOfficialBalanceProviders.length > 0;
+  const needsNicknameSetup = !needsLogin && !String(user?.nickname || '').trim();
   const needsOwnCharacter = characters.length > 0 && customCharacters.length === 0;
   const hasActiveAvatarTasks = avatarQueueSummary.active > 0;
   const knownMessages = useMemo(() => [
@@ -778,6 +780,14 @@ export default function HomePage() {
 
   const stats: HomeOverviewCard[] = [
     ...attentionStats,
+    ...(needsNicknameSetup ? [{
+      label: '未设置用户昵称',
+      value: '待设置',
+      icon: <PersonIcon />,
+      color: 'primary.main',
+      onOpen: () => navigate('/account'),
+      attention: true,
+    }] : []),
     {
       label: t('home.totalChats'),
       value: totalGroupChats,

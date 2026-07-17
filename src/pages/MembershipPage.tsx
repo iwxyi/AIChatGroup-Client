@@ -1299,8 +1299,7 @@ export default function MembershipPage() {
                     sx={{
                       borderRadius: membershipRadius.card,
                       height: '100%',
-                      opacity: 0.72,
-                      bgcolor: (theme) => alpha(theme.palette.action.disabledBackground, theme.palette.mode === 'dark' ? 0.16 : 0.28),
+                      cursor: 'default',
                     }}
                   >
                     <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 0.9, height: '100%', p: 1.25, '&:last-child': { pb: 1.25 } }}>

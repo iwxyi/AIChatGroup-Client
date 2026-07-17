@@ -537,13 +537,19 @@ export default function AccountPage() {
             </Box>
 
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-              <Box sx={{ ...rowSx, gap: 2, justifyContent: 'flex-start' }}>
-                <Box sx={compactRowSx} onClick={openAvatarDialog}>
+              <Box sx={{ ...rowSx, gap: 2, justifyContent: 'flex-start' }} onClick={openNicknameDialog}>
+                <Box
+                  sx={compactRowSx}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    openAvatarDialog();
+                  }}
+                >
                   <Avatar src={isImageAvatar ? avatar : undefined} sx={{ width: 52, height: 52, fontSize: '1.5rem' }}>
                     {isImageAvatar ? undefined : avatar}
                   </Avatar>
                 </Box>
-                <Box sx={compactRowSx} onClick={openNicknameDialog}>
+                <Box sx={{ minWidth: 0 }}>
                   <Typography variant="body1" sx={{ minWidth: 0, fontWeight: 600 }} noWrap>
                     {authMode === 'local' ? (i18n.language.startsWith('zh') ? '本地用户' : 'Local user') : (user?.nickname || '-')}
                   </Typography>
