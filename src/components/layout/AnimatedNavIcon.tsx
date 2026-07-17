@@ -49,27 +49,17 @@ const iconSx: SystemStyleObject<Theme> = {
       'transform 320ms cubic-bezier(.16,1,.3,1)',
     ].join(', '),
   },
-  '& .surface': {
-    fill: 'currentColor',
-    fillOpacity: 0.08,
-    stroke: 'none',
-  },
-  '& .secondary-surface': {
-    fill: 'currentColor',
-    fillOpacity: 0.1,
-    stroke: 'none',
-    opacity: 0.72,
-  },
-  '& .detail-fill': {
-    fill: 'currentColor',
-    fillOpacity: 0.14,
-    stroke: 'none',
-    opacity: 0.72,
+  '& .surface, & .secondary-surface, & .detail-fill': {
+    fill: 'none',
+    fillOpacity: 0,
+    stroke: 'currentColor',
+    opacity: 1,
   },
   '& .accent-surface': {
-    fill: 'var(--nav-icon-accent)',
-    fillOpacity: 0.14,
-    stroke: 'none',
+    fill: 'none',
+    fillOpacity: 0,
+    stroke: 'var(--nav-icon-accent)',
+    opacity: 1,
   },
   '& .accent': {
     stroke: 'var(--nav-icon-accent)',
@@ -80,20 +70,6 @@ const iconSx: SystemStyleObject<Theme> = {
   },
   '& .secondary': {
     opacity: 0.68,
-  },
-  '&.is-active .surface, .PneumataNavButton:hover & .surface': {
-    fillOpacity: 0.13,
-  },
-  '&.is-active .secondary-surface, .PneumataNavButton:hover & .secondary-surface': {
-    fillOpacity: 0.14,
-    opacity: 0.82,
-  },
-  '&.is-active .detail-fill, .PneumataNavButton:hover & .detail-fill': {
-    fillOpacity: 0.2,
-    opacity: 0.82,
-  },
-  '&.is-active .accent-surface, .PneumataNavButton:hover & .accent-surface': {
-    fillOpacity: 0.2,
   },
   '&.is-active .accent, .PneumataNavButton:hover & .accent': {
     opacity: 1,
