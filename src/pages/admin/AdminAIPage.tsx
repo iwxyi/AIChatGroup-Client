@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Box, Button, Chip, Dialog, DialogContent, DialogTitle, FormControlLabel, MenuItem, Paper, Stack, Switch, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography } from '@mui/material';
+import { Box, Button, Chip, Dialog, DialogContent, DialogTitle, FormControlLabel, MenuItem, Paper, Stack, Switch, Table, TableBody, TableCell, TableHead, TableRow, TextField, Tooltip, Typography } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import AdminRequestState, { getAdminErrorMessage } from '../../components/admin/AdminRequestState';
 import { AdminMetricGrid, AdminSection, AdminTableFrame, type AdminMetricItem } from '../../components/admin/AdminSurface';
@@ -283,7 +283,15 @@ function ProviderTable({
                   {balance?.loading ? (
                     <Typography variant="body2" color="text.secondary">查询中</Typography>
                   ) : balance?.error ? (
-                    <Typography variant="body2" color="error.main">{balance.error}</Typography>
+                    <Tooltip title={balance.error} arrow placement="top">
+                      <Typography
+                        variant="body2"
+                        color="text.secondary"
+                        sx={{ display: 'inline-flex', fontWeight: 800, cursor: 'help' }}
+                      >
+                        —
+                      </Typography>
+                    </Tooltip>
                   ) : (
                     <Typography variant="body2" sx={{ fontWeight: 800 }}>{balance?.value || '-'}</Typography>
                   )}
