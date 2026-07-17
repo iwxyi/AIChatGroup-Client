@@ -83,7 +83,11 @@ class AdminApiClient {
   private async parseErrorResponse(response: Response): Promise<{ error: string; code?: string }> {
     try {
       const error = await this.parseJsonResponse<{ error?: string; code?: string; detail?: string }>(response);
-      const detail = typeof error.detail === 'string' && error.detail ? `（${error.detail}）` : '';
+      const detailText = typeof error.detail === 'string' ? error.detail.trim() : '';
+      const normalizedDetail = detailText.trimStart().toLowerCase();
+      const detail = detailText && !normalizedDetail.startsWith('<!doctype') && !normalizedDetail.startsWith('<html') && !normalizedDetail.includes('<title>')
+        ? `（${detailText.length > 180 ? `${detailText.slice(0, 180)}...` : detailText}）`
+        : '';
       return {
         error: `${error.error || `HTTP ${response.status}`}${detail}`,
         code: error.code,
