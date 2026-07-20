@@ -707,6 +707,7 @@ export async function runAssistantChatReplyFlow(params: {
       try {
         const { tryRunAssistantAppCommand } = await import('../features/assistantAppTools/assistantAppToolBridge');
         const appCommandResult = await tryRunAssistantAppCommand({
+          chatId: params.chatId,
           input: userMessage.content,
           apiConfig: resolvedApi,
           aiProfiles: params.aiProfiles,

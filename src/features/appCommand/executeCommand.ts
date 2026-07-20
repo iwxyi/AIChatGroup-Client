@@ -10,7 +10,8 @@ import type { AICharacter } from '../../types/character';
 import { DEFAULT_CHARACTER_BEHAVIOR, DEFAULT_CHARACTER_INTERVENTION, DEFAULT_CHARACTER_MEMORY, DEFAULT_PERSONALITY } from '../../types/character';
 import { getUsablePreferredAIProfile } from '../../types/settings';
 import { formatAiBalanceAmount } from '../../utils/aiPoints';
-import type { AppCommandContext, AppCommandExecutionResult, AppCommandRoute, LocalActionPlan, PlannedCharacter } from './commandTypes';
+import type { AppCommandCandidate, AppCommandChoice, AppCommandContext, AppCommandExecutionResult, AppCommandRoute, LocalActionPlan, PlannedCharacter } from './commandTypes';
+import { savePendingAppCommand } from './pendingCommandStore';
 import { resolveSecretRef } from './secretRedaction';
 
 function clean(value?: string | null) {
@@ -92,6 +93,22 @@ function scoreText(text: string, query: string) {
   return target.split(/\s+/).filter((part) => part && source.includes(part)).length;
 }
 
+function getPendingScopeKey(context: AppCommandContext) {
+  return context.source === 'assistant' ? `assistant:${context.chatId || 'default'}` : 'home';
+}
+
+function savePendingRoute(context: AppCommandContext, route: AppCommandRoute, secrets: Record<string, string>, candidates?: AppCommandCandidate[], choices?: AppCommandChoice[]) {
+  savePendingAppCommand({
+    scopeKey: getPendingScopeKey(context),
+    source: context.source,
+    input: context.input,
+    route,
+    secrets,
+    candidates,
+    choices,
+  });
+}
+
 async function openExistingChat(plan: LocalActionPlan, navigate?: NavigateFunction): Promise<AppCommandExecutionResult> {
   const query = clean(plan.chatQuery || plan.groupTopic || plan.characterName || plan.title);
   const chats = useChatStore.getState().chats;
@@ -109,9 +126,41 @@ async function openExistingChat(plan: LocalActionPlan, navigate?: NavigateFuncti
     })
     .filter((item) => item.score > 0)
     .sort((a, b) => b.score - a.score);
-  const best = ranked[0]?.chat;
+  const top = ranked.slice(0, 5);
+  const best = top[0]?.chat;
   if (!best) {
     return { status: 'info', title: '没有找到会话', message: query ? `没有找到和“${query}”相关的会话。` : '没有找到可打开的会话。' };
+  }
+  const candidates: AppCommandCandidate[] = top.map(({ chat, score }) => {
+    const tab = chat.type === 'assistant' ? 3 : chat.type === 'direct' ? 1 : 0;
+    return {
+      id: chat.id,
+      label: chat.name,
+      description: [chat.type === 'group' ? '群聊' : chat.type === 'direct' ? '单聊' : '助手', chat.topic].filter(Boolean).join(' · '),
+      url: chatUrl(chat.id, tab),
+      score,
+      kind: chat.type,
+    };
+  });
+  const secondScore = top[1]?.score || 0;
+  const typeMismatch = plan.chatTypePreference && plan.chatTypePreference !== 'any' && best.type !== plan.chatTypePreference;
+  if ((secondScore > 0 && ranked[0].score - secondScore <= 2) || typeMismatch) {
+    return {
+      status: 'needs_confirmation',
+      title: typeMismatch ? '找到的会话类型不完全匹配' : '找到多个相近会话',
+      message: typeMismatch
+        ? `最相关的是“${best.name}”，但它不是你指定的${plan.chatTypePreference === 'group' ? '群聊' : plan.chatTypePreference === 'direct' ? '单聊' : '助手会话'}。`
+        : `找到多个和“${query}”相近的会话，请确认要打开哪一个。`,
+      candidates,
+      choices: candidates.map((candidate) => ({
+        id: candidate.id,
+        label: candidate.label,
+        description: candidate.description,
+        url: candidate.url,
+        kind: 'execute' as const,
+      })).slice(0, 5),
+      choicePresentation: candidates.length > 4 ? 'select' : 'chips',
+    };
   }
   const tab = best.type === 'assistant' ? 3 : best.type === 'direct' ? 1 : 0;
   const url = chatUrl(best.id, tab);
@@ -122,6 +171,42 @@ async function openExistingChat(plan: LocalActionPlan, navigate?: NavigateFuncti
     message: `已打开 ${best.name}。`,
     markdown: `已找到会话：${markdownChatLink(best.name, best.id, tab)}`,
     navigateTo: url,
+    candidates,
+  };
+}
+
+async function executeChoice(plan: LocalActionPlan, choice: AppCommandChoice, context: AppCommandContext, secrets: Record<string, string>): Promise<AppCommandExecutionResult> {
+  if (choice.kind === 'cancel') {
+    return { status: 'info', title: '已取消', message: '已取消本次操作。' };
+  }
+  if (choice.kind === 'confirm' && !choice.plan) {
+    return executeAppCommandRoute(contextToRoute(plan), context, secrets);
+  }
+  if (choice.url && !choice.plan) {
+    context.navigate?.(choice.url);
+    return { status: 'success', title: '已打开', message: '已打开对应页面。', navigateTo: choice.url };
+  }
+  const nextPlan = choice.plan?.plan
+    ? { ...plan, ...choice.plan.plan, action: choice.plan.action || plan.action }
+    : plan;
+  const nextRoute: AppCommandRoute = {
+    mode: 'local_action',
+    action: nextPlan.action,
+    plan: nextPlan,
+    riskLevel: 'medium',
+    requiresConfirmation: choice.kind === 'confirm' ? false : true,
+    confirmationText: choice.plan?.confirmationText,
+  };
+  return executeAppCommandRoute(nextRoute, context, secrets);
+}
+
+function contextToRoute(plan: LocalActionPlan): AppCommandRoute {
+  return {
+    mode: 'local_action',
+    action: plan.action,
+    plan,
+    riskLevel: 'medium',
+    requiresConfirmation: false,
   };
 }
 
@@ -237,23 +322,41 @@ export async function executeAppCommandRoute(route: AppCommandRoute, context: Ap
     };
   }
   const plan = route.plan;
-  if (route.requiresConfirmation && context.source === 'home') {
+  if (route.choices?.length && route.requiresConfirmation) {
+    savePendingRoute(context, route, secrets, undefined, route.choices);
+    return {
+      status: 'needs_confirmation',
+      title: plan.title || '请选择操作',
+      message: route.confirmationText || plan.summary || '请选择一种执行方式。',
+      choices: route.choices,
+    };
+  }
+  if (route.requiresConfirmation) {
+    savePendingRoute(context, route, secrets, undefined, route.choices);
     return {
       status: 'needs_confirmation',
       title: plan.title || '确认执行',
       message: route.confirmationText || plan.summary || '这个操作会创建或修改内容，确认后继续执行。',
+      choices: route.choices,
     };
   }
-  if (plan.action === 'create_direct_chat') return createDirectChat(plan, context);
-  if (plan.action === 'create_group_chat') return createGroupChat(plan, context);
-  if (plan.action === 'create_character' || plan.action === 'create_characters') return createCharacters(plan, context);
-  if (plan.action === 'open_existing_chat') return openExistingChat(plan, context.navigate);
-  if (plan.action === 'query_ai_balance') return queryAiBalance();
-  if (plan.action === 'update_theme') return updateTheme(plan);
-  if (plan.action === 'set_ai_model_key') return setAiModelKey(plan, secrets);
-  if (plan.action === 'navigate' && plan.routePath) {
-    context.navigate?.(plan.routePath);
-    return { status: 'success', title: '已打开页面', message: '已为你打开对应页面。', navigateTo: plan.routePath };
+  const selectedChoice = route.choices?.find((choice) => choice.kind !== 'cancel' && choice.kind !== 'confirm' && choice.plan);
+  if (selectedChoice && (route.choices?.length || 0) > 1 && route.requiresConfirmation === false) {
+    return executeChoice(plan, selectedChoice, context, secrets);
   }
-  return { status: 'info', title: '暂不支持', message: '这个动作暂时无法直接执行，已建议交给助手处理。' };
+  let result: AppCommandExecutionResult;
+  if (plan.action === 'create_direct_chat') result = await createDirectChat(plan, context);
+  else if (plan.action === 'create_group_chat') result = await createGroupChat(plan, context);
+  else if (plan.action === 'create_character' || plan.action === 'create_characters') result = await createCharacters(plan, context);
+  else if (plan.action === 'open_existing_chat') result = await openExistingChat(plan, context.navigate);
+  else if (plan.action === 'query_ai_balance') result = await queryAiBalance();
+  else if (plan.action === 'update_theme') result = updateTheme(plan);
+  else if (plan.action === 'set_ai_model_key') result = setAiModelKey(plan, secrets);
+  else if (plan.action === 'navigate' && plan.routePath) {
+    context.navigate?.(plan.routePath);
+    result = { status: 'success', title: '已打开页面', message: '已为你打开对应页面。', navigateTo: plan.routePath };
+  }
+  else result = { status: 'info', title: '暂不支持', message: '这个动作暂时无法直接执行，已建议交给助手处理。' };
+  if (result.status === 'needs_confirmation') savePendingRoute(context, route, secrets, result.candidates, result.choices);
+  return result;
 }

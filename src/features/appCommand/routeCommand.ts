@@ -1,6 +1,6 @@
 import { generateResponse } from '../../services/aiClient';
 import { getUsablePreferredAIProfile } from '../../types/settings';
-import type { AppCommandContext, AppCommandRoute, LocalActionPlan, PlannedCharacter } from './commandTypes';
+import type { AppCommandChoice, AppCommandContext, AppCommandRoute, LocalActionPlan, PlannedCharacter } from './commandTypes';
 import { redactCommandSecrets } from './secretRedaction';
 
 function extractJsonObject(text: string) {
@@ -61,6 +61,33 @@ function normalizePlan(raw: Record<string, unknown>): LocalActionPlan {
   };
 }
 
+function normalizeChoices(value: unknown): AppCommandChoice[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item, index): AppCommandChoice[] => {
+    if (!item || typeof item !== 'object') return [];
+    const record = item as Record<string, unknown>;
+    const label = shortText(record.label, 64);
+    if (!label) return [];
+    const kind = record.kind === 'cancel' || record.kind === 'confirm' || record.kind === 'clarify' ? record.kind : 'execute';
+    const rawPlan = record.plan && typeof record.plan === 'object' ? record.plan as Record<string, unknown> : record;
+    const action = shortText(record.action ?? rawPlan.action, 60) as LocalActionPlan['action'];
+    const plan = action ? normalizePlan({ action, plan: rawPlan }) : undefined;
+    return [{
+      id: shortText(record.id, 40) || `choice-${index + 1}`,
+      label,
+      description: shortText(record.description, 180),
+      kind,
+      input: shortText(record.input, 300),
+      url: shortText(record.url, 240),
+      plan: plan ? {
+        action: plan.action,
+        plan,
+        confirmationText: shortText(record.confirmationText ?? record.confirmation_text, 260),
+      } : undefined,
+    }];
+  }).slice(0, 10);
+}
+
 function normalizeRoute(raw: unknown, fallbackInput: string): AppCommandRoute {
   if (!raw || typeof raw !== 'object') {
     return { mode: 'assistant_agent', initialMessage: fallbackInput, reason: 'planner_empty' };
@@ -99,6 +126,8 @@ function normalizeRoute(raw: unknown, fallbackInput: string): AppCommandRoute {
     riskLevel,
     requiresConfirmation: Boolean(record.requiresConfirmation ?? record.requires_confirmation ?? riskLevel !== 'low'),
     confirmationText: shortText(record.confirmationText ?? record.confirmation_text, 260),
+    choices: normalizeChoices(record.choices),
+    choicePresentation: record.choicePresentation === 'list' || record.choicePresentation === 'select' ? record.choicePresentation : undefined,
   };
 }
 
@@ -107,6 +136,7 @@ function buildPlannerPrompt(source: AppCommandContext['source']) {
     '你是 Sense Murmur 的应用指令规划器。你只输出严格 JSON，不要 Markdown，不要解释。',
     '你负责理解用户自然语言，把请求路由成受控应用动作或助手 Agent。不要生成正文内容，不要编造资源 ID。',
     '如果请求可由站内工具直接完成，输出 local_action。若是普通问答、生成图片、长任务、文件分析、开放写作、需要多轮讨论或你不确定，输出 assistant_agent。',
+    '如果用户意图有多个合理执行方式，仍输出 local_action，但必须提供 choices。每个 choice 是一个用户可点击操作，可以带自己的 action/plan。',
     '可用 local_action:',
     '- create_character: 创建单个角色。',
     '- create_characters: 批量创建角色。',
@@ -121,8 +151,12 @@ function buildPlannerPrompt(source: AppCommandContext['source']) {
     source === 'home'
       ? '首页来源：medium/high 需要确认；assistant_agent 会跳转到助手会话。'
       : '助手来源：可以把创建类动作规划出来，让助手和用户确认后执行；若用户已明确要求立即创建，也可以 local_action。',
+    'choices 规则：',
+    '- 简单确认可返回 choices=[{"id":"confirm","label":"创建角色和群聊","kind":"confirm"},{"id":"cancel","label":"取消","kind":"cancel"}]。',
+    '- 不确定用户要做什么时，返回多个 execute choices，例如“只创建角色”“只创建群聊”“创建角色+群聊”，每个 choice 带 action 和 plan。',
+    '- choice 的 label 是用户可见按钮文字，短而明确；description 可说明影响。',
     '输出格式：',
-    '{"mode":"local_action","action":"create_group_chat","riskLevel":"medium","requiresConfirmation":true,"confirmationText":"...","plan":{"action":"create_group_chat","title":"...","summary":"...","groupName":"...","groupTopic":"...","groupStyle":"free","characters":[{"name":"秦始皇","group":"皇帝","roleHint":"..."}]}}',
+    '{"mode":"local_action","action":"create_group_chat","riskLevel":"medium","requiresConfirmation":true,"confirmationText":"...","plan":{"action":"create_group_chat","title":"...","summary":"...","groupName":"...","groupTopic":"...","groupStyle":"free","characters":[{"name":"秦始皇","group":"皇帝","roleHint":"..."}]},"choices":[{"id":"create-both","label":"创建角色+群聊","kind":"confirm"},{"id":"characters-only","label":"只创建角色","kind":"execute","action":"create_characters","plan":{"action":"create_characters","characters":[{"name":"秦始皇"}]}},{"id":"cancel","label":"取消","kind":"cancel"}]}',
     '或：',
     '{"mode":"assistant_agent","initialMessage":"用户原始请求","preferredAgentMode":"chat|image|research|tool","reason":"..."}',
   ].join('\n');

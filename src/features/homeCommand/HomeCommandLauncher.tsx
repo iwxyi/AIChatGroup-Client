@@ -5,7 +5,7 @@ import SendIcon from '@mui/icons-material/Send';
 import { useNavigate } from 'react-router-dom';
 import SurfaceCard from '../../components/common/SurfaceCard';
 import { transition, motion } from '../../styles/motion';
-import type { AppCommandRoute } from '../appCommand/commandTypes';
+import type { AppCommandCandidate, AppCommandChoice, AppCommandRoute } from '../appCommand/commandTypes';
 import { HOME_COMMAND_PLACEHOLDERS } from './placeholders';
 
 type PendingConfirmation = {
@@ -14,6 +14,8 @@ type PendingConfirmation = {
   secrets: Record<string, string>;
   title: string;
   message: string;
+  candidates?: AppCommandCandidate[];
+  choices?: AppCommandChoice[];
 };
 
 type CommandFeedback = {
@@ -21,6 +23,30 @@ type CommandFeedback = {
   title: string;
   message: string;
 };
+
+function buildDefaultChoices(pending: PendingConfirmation): AppCommandChoice[] {
+  if (pending.choices?.length) return pending.choices;
+  if (pending.candidates?.length) {
+    return pending.candidates.map((candidate) => ({
+      id: candidate.id,
+      label: candidate.label,
+      description: candidate.description,
+      url: candidate.url,
+      kind: 'execute',
+    }));
+  }
+  return [
+    { id: 'confirm', label: pending.title || '确认执行', kind: 'confirm' },
+    { id: 'cancel', label: '取消', kind: 'cancel' },
+  ];
+}
+
+function resolveChoicePresentation(choices: AppCommandChoice[]) {
+  const longest = Math.max(...choices.map((choice) => choice.label.length + (choice.description?.length || 0)), 0);
+  if (choices.length > 5) return 'select';
+  if (choices.length > 3 || longest > 18) return 'list';
+  return 'chips';
+}
 
 export default function HomeCommandLauncher() {
   const navigate = useNavigate();
@@ -62,6 +88,8 @@ export default function HomeCommandLauncher() {
           secrets: handled.secrets,
           title: handled.result.title,
           message: handled.result.message,
+          candidates: handled.result.candidates,
+          choices: handled.result.choices,
         });
       } else {
         setFeedback({ severity: handled.result.status === 'success' ? 'success' : 'info', title: handled.result.title, message: handled.result.message });
@@ -81,14 +109,66 @@ export default function HomeCommandLauncher() {
     try {
       const { confirmHomeCommand } = await import('./handleHomeCommand');
       const result = await confirmHomeCommand(pending.input, pending.route, pending.secrets, navigate);
-      setFeedback({ severity: result.status === 'success' ? 'success' : 'info', title: result.title, message: result.message });
-      setPending(null);
-      setInput('');
+      if (result.status === 'needs_confirmation') {
+        setPending({
+          ...pending,
+          title: result.title,
+          message: result.message,
+          candidates: result.candidates,
+          choices: result.choices,
+        });
+      } else {
+        setFeedback({ severity: result.status === 'success' ? 'success' : 'info', title: result.title, message: result.message });
+        setPending(null);
+        setInput('');
+      }
     } catch (error) {
       setFeedback({ severity: 'error', title: '执行失败', message: error instanceof Error ? error.message : String(error) });
     } finally {
       setLoading(false);
     }
+  };
+
+  const choose = async (choice: AppCommandChoice) => {
+    if (!pending || loading) return;
+    if (choice.kind === 'cancel') {
+      setPending(null);
+      return;
+    }
+    if (choice.url && !choice.plan) {
+      navigate(choice.url);
+      setPending(null);
+      setInput('');
+      return;
+    }
+    if (choice.plan && pending.route.mode === 'local_action') {
+      const nextPlan = {
+        ...pending.route.plan,
+        ...(choice.plan.plan || {}),
+        action: choice.plan.action || choice.plan.plan?.action || pending.route.plan.action,
+      };
+      const nextRoute: AppCommandRoute = {
+        ...pending.route,
+        action: nextPlan.action,
+        plan: nextPlan,
+        requiresConfirmation: false,
+      };
+      setLoading(true);
+      setFeedback(null);
+      try {
+        const { confirmHomeCommand } = await import('./handleHomeCommand');
+        const result = await confirmHomeCommand(pending.input, nextRoute, pending.secrets, navigate);
+        setFeedback({ severity: result.status === 'success' ? 'success' : 'info', title: result.title, message: result.message });
+        setPending(null);
+        setInput('');
+      } catch (error) {
+        setFeedback({ severity: 'error', title: '执行失败', message: error instanceof Error ? error.message : String(error) });
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+    await confirm();
   };
 
   return (
@@ -144,17 +224,36 @@ export default function HomeCommandLauncher() {
         </Box>
         <Collapse in={Boolean(pending)}>
           {pending ? (
-            <Alert
-              severity="info"
-              action={(
-                <Box sx={{ display: 'flex', gap: 1 }}>
-                  <Button size="small" color="inherit" disabled={loading} onClick={() => setPending(null)}>取消</Button>
-                  <Button size="small" variant="contained" disabled={loading} onClick={() => void confirm()}>确认</Button>
-                </Box>
-              )}
-            >
+            <Alert severity="info">
               <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>{pending.title}</Typography>
               <Typography variant="body2">{pending.message}</Typography>
+              {(() => {
+                const choices = buildDefaultChoices(pending);
+                const presentation = resolveChoicePresentation(choices);
+                if (presentation === 'list') {
+                  return (
+                    <Box sx={{ display: 'grid', gap: 0.75, mt: 1 }}>
+                      {choices.map((choice) => (
+                        <Button key={choice.id} size="small" variant={choice.kind === 'cancel' ? 'text' : 'outlined'} onClick={() => void choose(choice)} sx={{ justifyContent: 'flex-start', textAlign: 'left' }}>
+                          <Box sx={{ minWidth: 0 }}>
+                            <Typography variant="body2" sx={{ fontWeight: 700 }}>{choice.label}</Typography>
+                            {choice.description ? <Typography variant="caption" color="text.secondary">{choice.description}</Typography> : null}
+                          </Box>
+                        </Button>
+                      ))}
+                    </Box>
+                  );
+                }
+                return (
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75, mt: 1 }}>
+                    {choices.map((choice) => (
+                      <Button key={choice.id} size="small" variant={choice.kind === 'cancel' ? 'text' : 'outlined'} onClick={() => void choose(choice)}>
+                        {choice.label}
+                      </Button>
+                    ))}
+                  </Box>
+                );
+              })()}
             </Alert>
           ) : null}
         </Collapse>

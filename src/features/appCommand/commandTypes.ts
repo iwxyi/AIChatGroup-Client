@@ -23,6 +23,24 @@ export interface PlannedCharacter {
   roleHint?: string;
 }
 
+export interface AppCommandChoicePlan {
+  action?: LocalActionPlan['action'];
+  plan?: Partial<LocalActionPlan>;
+  confirmationText?: string;
+}
+
+export type AppCommandChoiceKind = 'confirm' | 'cancel' | 'execute' | 'clarify';
+
+export interface AppCommandChoice {
+  id: string;
+  label: string;
+  description?: string;
+  kind?: AppCommandChoiceKind;
+  plan?: AppCommandChoicePlan;
+  input?: string;
+  url?: string;
+}
+
 export interface LocalActionPlan {
   action: Exclude<AppCommandAction, 'assistant_chat'>;
   title?: string;
@@ -49,6 +67,8 @@ export type AppCommandRoute =
       riskLevel: AppCommandRiskLevel;
       requiresConfirmation: boolean;
       confirmationText?: string;
+      choices?: AppCommandChoice[];
+      choicePresentation?: 'chips' | 'list' | 'select';
     }
   | {
       mode: 'assistant_agent';
@@ -59,17 +79,30 @@ export type AppCommandRoute =
 
 export type AppCommandExecutionStatus = 'success' | 'info' | 'needs_confirmation';
 
+export interface AppCommandCandidate {
+  id: string;
+  label: string;
+  description?: string;
+  url?: string;
+  score?: number;
+  kind?: string;
+}
+
 export interface AppCommandExecutionResult {
   status: AppCommandExecutionStatus;
   title: string;
   message: string;
   markdown?: string;
   navigateTo?: string;
+  candidates?: AppCommandCandidate[];
+  choices?: AppCommandChoice[];
+  choicePresentation?: 'chips' | 'list' | 'select';
 }
 
 export interface AppCommandContext {
   source: CommandSource;
   input: string;
+  chatId?: string;
   navigate?: NavigateFunction;
   apiConfig: APIConfig;
   aiProfiles: AIModelProfile[];
