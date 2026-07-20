@@ -1,7 +1,7 @@
 {
   "app": {
-    "name": "Pneumata",
-    "fullName": "Pneumata",
+    "name": "Sense Murmur",
+    "fullName": "Sense Murmur",
     "tagline": "AI 社交世界模拟平台"
   },
   "nav": {
@@ -22,7 +22,7 @@
     "signInSync": "点击登录并同步"
   },
   "home": {
-    "title": "欢迎来到 Pneumata",
+    "title": "欢迎来到 Sense Murmur",
     "recentChats": "最近活跃",
     "quickCreate": "快速创建",
     "noChats": "还没有群聊，创建一个开始吧！",

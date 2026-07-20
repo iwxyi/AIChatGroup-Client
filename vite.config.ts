@@ -180,8 +180,8 @@ export default defineConfig({
       registerType: appUpdateMode === 'prompt' ? 'prompt' : 'autoUpdate',
       includeAssets: ['favicon.svg', 'logo-192.png', 'logo-512.png'],
       manifest: {
-        name: 'Pneumata',
-        short_name: 'Pneumata',
+        name: 'Sense Murmur',
+        short_name: 'SenseMurmur',
         description: 'AI Multi-Agent Social World Simulation Platform',
         theme_color: '#6750A4',
         background_color: '#FEF7FF',

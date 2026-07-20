@@ -7,7 +7,7 @@ import { scopedStorageKey } from '../constants/brand';
 const savedLang = localStorage.getItem(scopedStorageKey('language')) || 'zh';
 
 function getDocumentTitle(language: string) {
-  return language.startsWith('zh') ? '生息：Pneumata' : 'Pneumata';
+  return language.startsWith('zh') ? '生息：Sense Murmur' : 'Sense Murmur';
 }
 
 function updateDocumentTitle(language: string) {

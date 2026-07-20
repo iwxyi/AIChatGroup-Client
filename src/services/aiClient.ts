@@ -1201,7 +1201,7 @@ async function synthesizeMicrosoftSpeech(config: APIConfig, options: SpeechSynth
       'Content-Type': 'application/ssml+xml',
       'Ocp-Apim-Subscription-Key': config.apiKey,
       'X-Microsoft-OutputFormat': 'audio-24khz-48kbitrate-mono-mp3',
-      'User-Agent': 'Pneumata',
+      'User-Agent': 'SenseMurmur',
     },
     body: ssml,
   });

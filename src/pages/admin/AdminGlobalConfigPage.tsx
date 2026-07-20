@@ -11,9 +11,9 @@ import { useAdminAuthStore } from '../../stores/useAdminAuthStore';
 import AdminConfigMigrationPage from './AdminConfigMigrationPage';
 
 const DEFAULT_SITE_CONFIG: SitePublicConfig = {
-  siteName: 'Pneumata',
-  siteTitle: '生息：Pneumata',
-  siteDescription: 'Pneumata - AI Multi-Agent Social World Simulation Platform',
+  siteName: 'Sense Murmur',
+  siteTitle: '生息：Sense Murmur',
+  siteDescription: 'Sense Murmur - AI Multi-Agent Social World Simulation Platform',
   faviconUrl: '/favicon.svg',
   themeColor: '#6750A4',
 };

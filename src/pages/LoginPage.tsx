@@ -136,9 +136,7 @@ export default function LoginPage() {
           <Typography variant="h3" sx={{ mb: 1 }}>
             🍵
           </Typography>
-          <Typography variant="h5" sx={{ fontWeight: 'bold' }}>
-            Pneumata
-          </Typography>
+          <Typography variant="h5" sx={{ fontWeight: 'bold' }}>Sense Murmur</Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
             AI 群聊模拟平台
           </Typography>

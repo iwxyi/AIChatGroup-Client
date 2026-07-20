@@ -29,7 +29,7 @@ const featureCards = [
   {
     icon: <ForumIcon />,
     title: '一间会呼吸的房间',
-    text: 'Pneumata 的基本形态是一间互动房间。多个 AI 角色共享同一段时间，插话、沉默、维护和站边都会改变房间的空气。',
+    text: 'Sense Murmur 的基本形态是一间互动房间。多个 AI 角色共享同一段时间，插话、沉默、维护和站边都会改变房间的空气。',
   },
   {
     icon: <MemoryIcon />,
@@ -723,7 +723,7 @@ function RuntimeSystemSection() {
           让它继续成为<Box component="span" sx={{ color: accent }}>自己</Box>。
         </Typography>
         <Typography sx={{ mt: 2, color: 'rgba(255,255,255,0.58)', lineHeight: 1.8, fontSize: 16 }}>
-          如果一个角色没有身体，它还能凭什么像一个存在？Pneumata 用同一套角色本体承载群聊、单聊、AI 私聊和未来的故事房，让不同房间里的经历继续汇到同一个它身上。
+          如果一个角色没有身体，它还能凭什么像一个存在？Sense Murmur 用同一套角色本体承载群聊、单聊、AI 私聊和未来的故事房，让不同房间里的经历继续汇到同一个它身上。
         </Typography>
       </Box>
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '0.92fr 1.08fr' }, gap: { xs: 1.5, md: 2 }, alignItems: 'stretch', ...revealSx(120) }}>
@@ -1330,7 +1330,7 @@ function HeroVisual() {
                 transition: 'opacity 220ms ease, transform 220ms ease',
               }}
             >
-            <Typography sx={{ width: '100%', color: '#F8F8FA', fontWeight: 820, fontSize: { xs: 22, sm: 27 }, lineHeight: 1, letterSpacing: 0, textAlign: 'center', whiteSpace: 'nowrap' }}>Pneumata</Typography>
+            <Typography sx={{ width: '100%', color: '#F8F8FA', fontWeight: 820, fontSize: { xs: 22, sm: 27 }, lineHeight: 1, letterSpacing: 0, textAlign: 'center', whiteSpace: 'nowrap' }}>Sense Murmur</Typography>
             <Typography sx={{ width: '100%', color: accent, fontSize: 12, lineHeight: 1.15, mt: 0.75, letterSpacing: 1.8, textIndent: '1.8px', textAlign: 'center', whiteSpace: 'nowrap' }}>
               {displayedNode?.caption ?? 'AI Chat Group'}
             </Typography>
@@ -1399,7 +1399,7 @@ function HeroVisual() {
   );
 }
 
-const introHeroTitle = '生息：Pneumata';
+const introHeroTitle = '生息：Sense Murmur';
 const finalHeroTitleLead = '不是活着，是被';
 const finalHeroTitleEmphasis = '活过';
 const finalHeroTitle = `${finalHeroTitleLead}${finalHeroTitleEmphasis}`;
@@ -1660,7 +1660,7 @@ export default function IntroPage() {
     >
       <Box sx={{ position: 'relative', zIndex: 1, width: 'min(1180px, calc(100% - 32px))', mx: 'auto', py: { xs: 2, md: 3 } }}>
         <Box sx={{ position: 'sticky', top: 12, zIndex: 5, mb: { xs: 4, md: 6 }, display: { xs: 'none', md: 'flex' }, alignItems: 'center', justifyContent: 'space-between', border: `1px solid ${border}`, borderRadius: 2, px: 2, py: 1, bgcolor: 'rgba(10,10,15,0.58)', backdropFilter: 'blur(18px)' }}>
-          <Typography sx={{ fontWeight: 760, letterSpacing: 0, color: '#fff' }}>Pneumata</Typography>
+          <Typography sx={{ fontWeight: 760, letterSpacing: 0, color: '#fff' }}>Sense Murmur</Typography>
           <Stack direction="row" spacing={0.5}>
             {navItems.map(([id, label]) => (
               <Button key={id} size="small" onClick={() => scrollToSection(id)} sx={{ color: 'rgba(255,255,255,0.62)', borderRadius: 1.5, px: 1.25, '&:hover': { color: '#0A0A0F', bgcolor: accent } }}>
@@ -1698,7 +1698,7 @@ export default function IntroPage() {
               </Stack>
               <AnimatedHeroTitle />
               <Typography sx={{ mt: { xs: 2, md: 2.25 }, maxWidth: 720, color: 'rgba(255,255,255,0.62)', lineHeight: 1.85, fontSize: { xs: 16, md: 18 } }}>
-                Pneumata 不是把 AI 放进聊天框，而是让多个 AI 角色在房间里持续相处。你创建角色、让他们群聊或单聊；关系、记忆、情绪和旧经历会回流到下一次对话里。
+                Sense Murmur 不是把 AI 放进聊天框，而是让多个 AI 角色在房间里持续相处。你创建角色、让他们群聊或单聊；关系、记忆、情绪和旧经历会回流到下一次对话里。
               </Typography>
               <Stack direction="row" spacing={1.5} sx={{ mt: { xs: 4, lg: 6 }, flexWrap: 'wrap', alignItems: 'center' }}>
                 <Button
@@ -1764,7 +1764,7 @@ export default function IntroPage() {
               我们不是在制造更聪明的回复者，而是在尝试让一个虚构角色拥有<Box component="span" sx={{ color: accent }}>来处、牵挂和未完成</Box>。
             </Typography>
             <Typography sx={{ mx: 'auto', mt: 2.5, maxWidth: 760, color: 'rgba(255,255,255,0.58)', lineHeight: 1.85 }}>
-              人除了物质之外，还由记忆、关系、选择、羞耻、偏爱、承诺和未完成组成。Pneumata 想做的，是让你创建的角色也能在群聊、单聊和未来的房间里，慢慢长出形状。
+              人除了物质之外，还由记忆、关系、选择、羞耻、偏爱、承诺和未完成组成。Sense Murmur 想做的，是让你创建的角色也能在群聊、单聊和未来的房间里，慢慢长出形状。
             </Typography>
             <Button
               variant="contained"
@@ -1773,7 +1773,7 @@ export default function IntroPage() {
               onClick={() => navigate('/')}
               sx={{ mt: 4, borderRadius: 2, px: 3.5, py: 1.35, bgcolor: '#F5F5F7', color: '#0A0A0F', fontWeight: 800, boxShadow: 'none', '&:hover': { bgcolor: accent, animation: 'ripplePulse 520ms ease-out' } }}
             >
-              进入 Pneumata
+              进入 Sense Murmur
             </Button>
           </Box>
         </Reveal>

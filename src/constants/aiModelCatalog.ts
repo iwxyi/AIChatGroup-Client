@@ -95,7 +95,7 @@ export const AI_PROVIDER_CATALOG: AIProviderCatalogEntry[] = [
   {
     key: 'official-deepseek',
     label: '官方1（DeepSeek）',
-    family: 'Pneumata DeepSeek',
+    family: 'SenseMurmur DeepSeek',
     defaults: {
       text: { baseUrl: '/api/ai', model: 'deepseek-chat' },
       document: { baseUrl: '/api/ai', model: 'deepseek-chat' },
@@ -108,7 +108,7 @@ export const AI_PROVIDER_CATALOG: AIProviderCatalogEntry[] = [
   {
     key: 'official-moacode',
     label: '官方2（Claude/GPT）',
-    family: 'Pneumata Claude/GPT',
+    family: 'SenseMurmur Claude/GPT',
     defaults: {
       text: { baseUrl: '/api/ai', model: 'gpt-5.5' },
       document: { baseUrl: '/api/ai', model: 'gpt-5.5' },
@@ -121,7 +121,7 @@ export const AI_PROVIDER_CATALOG: AIProviderCatalogEntry[] = [
   {
     key: 'official-moacode-team',
     label: '官方团队（Claude/GPT）',
-    family: 'Pneumata Claude/GPT Team',
+    family: 'SenseMurmur Claude/GPT Team',
     defaults: {
       text: { baseUrl: '/api/ai', model: 'gpt-5.5' },
       document: { baseUrl: '/api/ai', model: 'gpt-5.5' },
@@ -134,7 +134,7 @@ export const AI_PROVIDER_CATALOG: AIProviderCatalogEntry[] = [
   {
     key: 'official-nanobanana',
     label: '官方图片（NanoBanana）',
-    family: 'Pneumata NanoBanana',
+    family: 'SenseMurmur NanoBanana',
     defaults: {
       image: { baseUrl: '/api/ai', model: 'gemini-3-pro-image-preview' },
     },
@@ -145,7 +145,7 @@ export const AI_PROVIDER_CATALOG: AIProviderCatalogEntry[] = [
   {
     key: 'official-gpt',
     label: '官方4（API2D）',
-    family: 'Pneumata API2D',
+    family: 'SenseMurmur API2D',
     defaults: {
       text: { baseUrl: '/api/ai', model: 'gpt-5.5' },
       document: { baseUrl: '/api/ai', model: 'gpt-5.5' },

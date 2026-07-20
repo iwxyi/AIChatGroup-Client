@@ -1,7 +1,7 @@
 {
   "app": {
-    "name": "Pneumata",
-    "fullName": "Pneumata",
+    "name": "Sense Murmur",
+    "fullName": "Sense Murmur",
     "tagline": "AI Social World Simulation"
   },
   "nav": {
@@ -22,7 +22,7 @@
     "signInSync": "Sign in & sync"
   },
   "home": {
-    "title": "Welcome to Pneumata",
+    "title": "Welcome to Sense Murmur",
     "recentChats": "Recent Active",
     "quickCreate": "Quick Create",
     "noChats": "No chats yet. Create one to get started!",

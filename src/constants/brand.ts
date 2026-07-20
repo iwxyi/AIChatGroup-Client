@@ -1,6 +1,6 @@
-export const APP_NAME = 'Pneumata';
-export const APP_TITLE = 'Pneumata';
-export const APP_DESCRIPTION = 'Pneumata - AI multi-agent social world simulation platform';
+export const APP_NAME = 'Sense Murmur';
+export const APP_TITLE = 'Sense Murmur';
+export const APP_DESCRIPTION = 'Sense Murmur - AI multi-agent social world simulation platform';
 
 const LEGACY_LOWER_BRAND = ['mira', 'getea'].join('');
 const LEGACY_CAMEL_BRAND = ['mira', 'geTea'].join('');

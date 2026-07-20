@@ -1953,8 +1953,8 @@ export default function SettingsPage() {
           </Button>
           <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
             {i18n.language.startsWith('zh')
-              ? '把旧品牌前缀的本地存储和临时草稿一次性搬到 Pneumata 前缀，完成后刷新页面重新加载。'
-              : 'Move old brand-prefixed local storage and session drafts to the Pneumata prefix, then reload.'}
+              ? '把旧品牌前缀的本地存储和临时草稿一次性搬到当前应用前缀，完成后刷新页面重新加载。'
+              : 'Move old brand-prefixed local storage and session drafts to the current app prefix, then reload.'}
           </Typography>
         </Box>
         <Box sx={buildDeveloperSwitchGroupsSx()}>
@@ -2497,7 +2497,7 @@ export default function SettingsPage() {
 
         <SurfaceCard contentSx={buildCardBodySx()}>
           <SectionHeader title={t('settings.about')} dense />
-          <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.75 }}>Pneumata</Typography>
+          <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.75 }}>Sense Murmur</Typography>
           <Chip size="small" label="v1.0.0" variant="outlined" onClick={() => navigate('/intro')} sx={{ cursor: 'pointer' }} />
         </SurfaceCard>
 
