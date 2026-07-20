@@ -85,6 +85,11 @@ type PendingStoryChoiceVisual = {
   selectedValue: string;
   options: NarrativeStoryChoiceOption[];
 };
+type HomeCommandAssistantLocationState = {
+  homeCommandInitialMessage?: string;
+  homeCommandStartAgent?: boolean;
+  homeCommandPreferredMode?: 'chat' | 'image' | 'research' | 'tool';
+};
 
 function getMessageListElementScrollTimestamp(element: HTMLElement) {
   const raw = element.dataset.scrollTimestamp || element.closest<HTMLElement>('[data-scroll-timestamp]')?.dataset.scrollTimestamp;
@@ -898,6 +903,7 @@ export default function ChatDetailPage() {
   const pendingStoryChoiceRef = useRef<string | null>(null);
   const pendingStoryChoiceVisualTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isStoryReaderAtTailRef = useRef(true);
+  const consumedHomeCommandRef = useRef<string | null>(null);
   const lastReadingPositionPersistRef = useRef<{ chatId: string; key: string; at: number } | null>(null);
   const openedChatWindowRef = useRef<{ chatId: string; requestKey: string; openedAt: number; restored: boolean } | null>(null);
   const storyEntryReadingPositionRef = useRef<{ chatId: string; key: string; position: MessageListScrollPosition } | null>(null);
@@ -2054,6 +2060,33 @@ export default function ChatDetailPage() {
       startConversationLoopIfNeeded(chat);
     });
   }, [addMessageStable, aiProfiles, api, appendEventMessage, appendEventMessageStable, appendEventMessagesStable, appendLocalInterceptionHint, applyChatRuntimeDelta, characters, chat, chats, commitPersistedManualRuntime, currentChatMessages, currentUser?.nickname, enqueueManualInput, getNextMessageTimestamp, id, recordSpeak, showErrorToast, startConversationLoopIfNeeded, updateCharacter, updateCharacters, updateChat, upsertMessageStable]);
+
+  useEffect(() => {
+    if (!chat || !id || chat.type !== 'assistant') return;
+    const state = location.state as HomeCommandAssistantLocationState | null;
+    const initialMessage = state?.homeCommandInitialMessage?.trim();
+    if (!initialMessage) return;
+    const consumeKey = `${id}:${initialMessage}`;
+    if (consumedHomeCommandRef.current === consumeKey) return;
+    consumedHomeCommandRef.current = consumeKey;
+    navigate({ pathname: location.pathname, search: location.search, hash: location.hash }, { replace: true, state: null });
+    if (state?.homeCommandStartAgent && agentEntitled) {
+      writeAssistantAgentDefaultEnabled(true);
+      void updateChat(id, {
+        modeState: {
+          ...chat.modeState,
+          assistantCapabilities: {
+            ...chat.modeState.assistantCapabilities,
+            agent: true,
+            artifacts: true,
+            webSearch: true,
+            updatedAt: Date.now(),
+          },
+        },
+      });
+    }
+    void handleMemberSpeakSend(initialMessage);
+  }, [agentEntitled, chat, handleMemberSpeakSend, id, location.hash, location.pathname, location.search, location.state, navigate, updateChat]);
 
   const handleGuideSend = useCallback(async (content: string, attachments: MessageAttachment[] = []) => {
     if (!chat || !id) return;

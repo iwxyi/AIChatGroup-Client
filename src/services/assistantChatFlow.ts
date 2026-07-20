@@ -701,6 +701,41 @@ export async function runAssistantChatReplyFlow(params: {
     currentMessages: params.currentMessages,
     updateChat: params.updateChat,
   });
+  if (params.chat.modeState.assistantCapabilities?.agent) {
+    const userMessage = latestUserMessage(params.currentMessages);
+    if (userMessage) {
+      try {
+        const { tryRunAssistantAppCommand } = await import('../features/assistantAppTools/assistantAppToolBridge');
+        const appCommandResult = await tryRunAssistantAppCommand({
+          input: userMessage.content,
+          apiConfig: resolvedApi,
+          aiProfiles: params.aiProfiles,
+        });
+        if (appCommandResult) {
+          const persisted = await persistAssistantFinalMessage({
+            chat: params.chat,
+            chatId: params.chatId,
+            currentMessages: params.currentMessages,
+            content: appCommandResult.content,
+            metadata: {
+              assistant: {
+                mode: 'general',
+              },
+            },
+            timestamp: params.timestamp,
+            upsertMessage: params.upsertMessage,
+          });
+          await params.updateChat(params.chatId, {
+            lastMessageAt: persisted.timestamp,
+            latestMessage: persisted,
+          });
+          return persisted;
+        }
+      } catch (error) {
+        console.warn('[assistant-app-command:skip]', error);
+      }
+    }
+  }
   if (isAssistantAgentArtifactEnabled(params.chat)) {
     const userMessage = latestUserMessage(params.currentMessages);
     if (userMessage) {

@@ -29,6 +29,7 @@ import NoCharactersDialog from '../components/common/NoCharactersDialog';
 import SurfaceCard from '../components/common/SurfaceCard';
 import PageSection from '../components/common/PageSection';
 import SectionHeader from '../components/common/SectionHeader';
+import HomeCommandLauncher from '../features/homeCommand/HomeCommandLauncher';
 import { avatarGenerationQueue, type AvatarGenerationQueueSummary } from '../services/avatarGenerationQueue';
 import type { HomeCompanionshipSnapshot } from '../services/companionshipProjection';
 import { shouldShowCompanionshipStatusHints } from '../services/companionshipStatusVisibility';
@@ -873,6 +874,8 @@ export default function HomePage() {
             ))}
           </Box>
         </SurfaceCard>
+
+        <HomeCommandLauncher />
 
         {ongoingActivities.length ? (
           <SurfaceCard>
