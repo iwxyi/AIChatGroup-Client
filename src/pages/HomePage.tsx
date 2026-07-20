@@ -463,7 +463,7 @@ export default function HomePage() {
   const [avatarQueueSummary, setAvatarQueueSummary] = useState<AvatarGenerationQueueSummary>(() => avatarGenerationQueue.getSummary());
   const [cloudSyncEnabled, setCloudSyncEnabledState] = useState(() => isCloudSyncEnabled());
   const [workerEntries, setWorkerEntries] = useState(() => getRegisteredSyncWorkerEntries());
-  const [aiBalances, setAiBalances] = useState<Partial<Record<OfficialBalanceProvider, number | null>>>({});
+  const [aiPointBalance, setAiPointBalance] = useState<number | null | undefined>(undefined);
   const [officialProviderAccess, setOfficialProviderAccess] = useState<Record<string, OfficialBalanceProviderInfo> | null>(null);
   const [companionshipSnapshot, setCompanionshipSnapshot] = useState<HomeCompanionshipSnapshot | null>(null);
   const [calendarNow, setCalendarNow] = useState(() => Date.now());
@@ -579,7 +579,8 @@ export default function HomePage() {
       .map((key) => officialProviderAccess[key])
       .filter((provider): provider is OfficialBalanceProviderInfo => Boolean(provider));
   }, [aiProfiles, officialProviderAccess]);
-  const canQueryAiPoints = !needsLogin && enabledOfficialBalanceProviders.length > 0;
+  const primaryOfficialBalanceProvider = enabledOfficialBalanceProviders[0] || null;
+  const canQueryAiPoints = !needsLogin && Boolean(primaryOfficialBalanceProvider);
   const needsNicknameSetup = !needsLogin && !String(user?.nickname || '').trim();
   const needsOwnCharacter = characters.length > 0 && customCharacters.length === 0;
   const hasActiveAvatarTasks = avatarQueueSummary.active > 0;
@@ -669,33 +670,21 @@ export default function HomePage() {
     .sort((left, right) => (left.endAt || Number.MAX_SAFE_INTEGER) - (right.endAt || Number.MAX_SAFE_INTEGER))
     .slice(0, 4), [calendarNow, characters, chats]);
   useEffect(() => {
-    if (!canQueryAiPoints) {
-      setAiBalances({});
+    if (!canQueryAiPoints || !primaryOfficialBalanceProvider) {
+      setAiPointBalance(undefined);
       return;
     }
     let cancelled = false;
-    const activeProviderKeys = new Set(enabledOfficialBalanceProviders.map((provider) => provider.key));
-    setAiBalances((prev) => Object.fromEntries(
-      Object.entries(prev).filter(([providerKey]) => activeProviderKeys.has(providerKey as OfficialBalanceProvider)),
-    ) as Partial<Record<OfficialBalanceProvider, number | null>>);
+    setAiPointBalance(undefined);
     const loadBalances = () => {
-      enabledOfficialBalanceProviders.forEach((provider) => {
-        api.getAiBalance(provider.publicProvider)
-          .then((balance) => {
-            const raw = balance.availableBalance ?? balance.available_balance;
-            if (!cancelled) {
-              setAiBalances((prev) => ({
-                ...prev,
-                [provider.key]: typeof raw === 'number' && Number.isFinite(raw) ? raw : null,
-              }));
-            }
-          })
-          .catch(() => {
-            if (!cancelled) {
-              setAiBalances((prev) => ({ ...prev, [provider.key]: null }));
-            }
-          });
-      });
+      api.getAiBalance(primaryOfficialBalanceProvider.publicProvider)
+        .then((balance) => {
+          const raw = balance.availableBalance ?? balance.available_balance;
+          if (!cancelled) setAiPointBalance(typeof raw === 'number' && Number.isFinite(raw) ? raw : null);
+        })
+        .catch(() => {
+          if (!cancelled) setAiPointBalance(null);
+        });
     };
     const scheduler = (window as typeof window & {
       requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
@@ -708,7 +697,7 @@ export default function HomePage() {
       if (idleHandle != null) window.cancelIdleCallback?.(idleHandle);
       if (timeoutHandle != null) window.clearTimeout(timeoutHandle);
     };
-  }, [canQueryAiPoints, enabledOfficialBalanceProviders]);
+  }, [canQueryAiPoints, primaryOfficialBalanceProvider]);
 
   const syncStatusStats: HomeOverviewCard[] = (!needsLogin && cloudSyncEnabled) ? [
     ...(syncUploadingCount > 0 ? [{
@@ -834,17 +823,16 @@ export default function HomePage() {
       color: 'primary.main',
       onOpen: () => navigate('/chats?tab=0'),
     },
-    ...enabledOfficialBalanceProviders.flatMap((provider) => {
-      const balance = aiBalances[provider.key];
-      if (balance === null || balance === undefined) return [];
+    ...(() => {
+      if (!primaryOfficialBalanceProvider || aiPointBalance === null || aiPointBalance === undefined) return [];
       return [{
-        label: provider.label,
-        value: formatAiAmount(balance, provider.publicProvider, { compact: true }),
+        label: 'AI点数',
+        value: formatAiAmount(aiPointBalance, primaryOfficialBalanceProvider.publicProvider, { compact: true }),
         icon: <AutoAwesomeIcon />,
         color: 'primary.main',
         onOpen: () => navigate('/ai-models'),
       }];
-    }),
+    })(),
     ...syncStatusStats,
   ];
 
