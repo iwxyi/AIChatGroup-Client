@@ -596,10 +596,6 @@ function resolveLegacyOfficialProviderKey(provider: string) {
   return provider;
 }
 
-function isNanoBananaOfficialProviderKey(provider: string) {
-  return provider === 'official-nanobanana';
-}
-
 function buildOnlineOfficialProviderOption(provider: OfficialAiProviderInfo): (AIProviderOption & { sortOrder: number }) | null {
   if (!provider.officialProvider?.trim()) return null;
   const providerKey = provider.officialProvider.trim() as AIProvider;
@@ -626,9 +622,8 @@ function buildOnlineOfficialProviderOption(provider: OfficialAiProviderInfo): (A
     },
   };
   const remoteDefaultModel = provider.defaultModel || '';
-  const imageDefaultModel = isImageModelName(remoteDefaultModel)
-    ? remoteDefaultModel
-    : (catalogEntry.defaults.image?.model || '');
+  const remoteImageDefaultModel = provider.imageDefaultModel || (isImageModelName(remoteDefaultModel) ? remoteDefaultModel : '');
+  const imageDefaultModel = remoteImageDefaultModel || catalogEntry.defaults.image?.model || '';
   const textDefaultModel = !isImageModelName(remoteDefaultModel)
     ? remoteDefaultModel
     : (catalogEntry.defaults.text?.model || '');
@@ -783,8 +778,15 @@ export default function AIModelsPage() {
   const getProviderOptionsForType = useCallback((type: AIModelType, selectedProvider?: string): AIProviderOption[] => {
     const nonOfficialOptions = getProvidersForType(type).filter((item) => !isOfficialProviderKey(item.key) && !onlineOfficialProviderKeySet.has(item.key));
     const visibleOfficialOptions = !canUseOfficialProviders
-      ? getProvidersForType(type)
-        .filter((item) => isOfficialProviderKey(item.key) && (!item.hidden || item.key === selectedProvider))
+      ? onlineOfficialProviderOptions
+        .filter((item) => {
+          const resolvedSelected = resolveLegacyOfficialProviderKey(selectedProvider || '');
+          const isSelected = item.key === selectedProvider || item.key === resolvedSelected;
+          return (
+            providerSupportsType(item, type)
+            || isSelected
+          ) && (!item.hidden || isSelected);
+        })
         .map((item) => ({
           ...item,
           label: `${item.label}（登录后可用）`,
@@ -795,9 +797,6 @@ export default function AIModelsPage() {
         : onlineOfficialProviderOptions.filter((item) => {
           const resolvedSelected = resolveLegacyOfficialProviderKey(selectedProvider || '');
           const isSelected = item.key === selectedProvider || item.key === resolvedSelected;
-          if (type === 'image') {
-            return isNanoBananaOfficialProviderKey(item.key) && (!item.hidden || isSelected);
-          }
           return (
             providerSupportsType(item, type)
             || isSelected
@@ -855,17 +854,10 @@ export default function AIModelsPage() {
 
   useEffect(() => {
     let active = true;
-    if (!canUseOfficialProviders) {
-      setOfficialProviders([]);
-      setOfficialProvidersError(null);
-      setOfficialProvidersLoading(false);
-      return () => {
-        active = false;
-      };
-    }
     setOfficialProvidersLoading(true);
     setOfficialProvidersError(null);
-    api.getOfficialAiProviders()
+    const request = canUseOfficialProviders ? api.getOfficialAiProviders() : api.getPublicOfficialAiProviders();
+    request
       .then((result) => {
         if (!active) return;
         setOfficialProviders(Array.isArray(result.items) ? result.items : []);

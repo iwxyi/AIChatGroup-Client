@@ -649,6 +649,7 @@ export default function AdminAIProviderPage() {
     nanobananaAspectRatio: '',
     nanobananaImageSize: '1K',
     nanobananaAccountUserId: '',
+    moacodeImageModelsEnabled: false,
     nanobananaPricing: {
       pointValue: DEFAULT_NANOBANANA_POINT_VALUE,
       billingMultiplier: DEFAULT_NANOBANANA_BILLING_MULTIPLIER,
@@ -754,6 +755,7 @@ export default function AdminAIProviderPage() {
       const adminToken = typeof config.adminToken === 'string' ? config.adminToken : '';
       const forwardKey = typeof config.forwardKey === 'string' ? config.forwardKey : '';
       const nanobananaDefaults = toNanoBananaDefaultsForm(config.metadata);
+      const providerMetadata = getRecord(config.metadata);
       setProviderConfig(config);
       setLoadedSecrets({ adminToken, forwardKey });
       setForm({
@@ -779,6 +781,7 @@ export default function AdminAIProviderPage() {
         nanobananaAspectRatio: nanobananaDefaults.aspectRatio,
         nanobananaImageSize: nanobananaDefaults.imageSize,
         nanobananaAccountUserId: nanobananaDefaults.accountUserId,
+        moacodeImageModelsEnabled: providerMetadata.moacodeImageModelsEnabled === true,
         nanobananaPricing: toNanoBananaPricingForm(config.tokenPricing),
       });
       if (canQueryAccountBalance && (isApi2d || isMoacode || isNanoBanana ? config.forwardKeyConfigured : config.adminTokenConfigured)) void loadAccountBalance();
@@ -854,9 +857,15 @@ export default function AdminAIProviderPage() {
       };
       if (isNanoBanana) payload.tokenPricing = buildNanoBananaPricing(form.nanobananaPricing);
       else if (usesInternalLedger) payload.tokenPricing = buildInternalLedgerTokenPricing(providerCode, form.deepseekPricing);
-      if (isNanoBanana) {
+      if (isMoacode) {
         payload.metadata = {
           ...getRecord(providerConfig?.metadata),
+          moacodeImageModelsEnabled: form.moacodeImageModelsEnabled,
+        };
+      }
+      if (isNanoBanana) {
+        payload.metadata = {
+          ...getRecord(payload.metadata || providerConfig?.metadata),
           nanobananaDefaults: {
             aspectRatio: form.nanobananaAspectRatio || '',
             imageSize: form.nanobananaImageSize || '1K',
@@ -882,6 +891,7 @@ export default function AdminAIProviderPage() {
         nanobananaAspectRatio: updatedNanoBananaDefaults.aspectRatio,
         nanobananaImageSize: updatedNanoBananaDefaults.imageSize,
         nanobananaAccountUserId: updatedNanoBananaDefaults.accountUserId,
+        moacodeImageModelsEnabled: getRecord(updated.metadata).moacodeImageModelsEnabled === true,
         nanobananaPricing: toNanoBananaPricingForm(updated.tokenPricing),
       }));
     } catch (saveError) {
@@ -1248,6 +1258,17 @@ export default function AdminAIProviderPage() {
                   )}
                 />
               </Box>
+              {isMoacode ? (
+                <FormControlLabel
+                  control={(
+                    <Switch
+                      checked={form.moacodeImageModelsEnabled}
+                      onChange={(event) => setForm((prev) => ({ ...prev, moacodeImageModelsEnabled: event.target.checked }))}
+                    />
+                  )}
+                  label="启用图片模型"
+                />
+              ) : null}
               <Box sx={endpointGridSx}>
                 <TextField label="AI 调用 Base URL" value={form.baseUrl} onChange={(e) => setForm((prev) => ({ ...prev, baseUrl: e.target.value }))} fullWidth sx={compactTextFieldSx} />
                 {isApi2d || isMoacode ? (

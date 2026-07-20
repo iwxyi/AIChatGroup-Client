@@ -61,6 +61,7 @@ export interface OfficialAiProviderInfo {
   label: string;
   family: string;
   defaultModel: string;
+  imageDefaultModel?: string;
   hidden?: boolean;
   sortOrder?: number;
   defaultForAssignment?: boolean;
@@ -675,6 +676,10 @@ class ApiClient {
 
   async getOfficialAiProviders() {
     return this.request<{ items: OfficialAiProviderInfo[] }>('GET', '/ai/providers');
+  }
+
+  async getPublicOfficialAiProviders() {
+    return this.request<{ items: OfficialAiProviderInfo[] }>('GET', '/ai/providers/public');
   }
 
   async getOfficialAiModels(provider?: string | null) {
