@@ -1640,6 +1640,9 @@ export default function SettingsPage() {
   const setDefaultLocalWorkspaceDirectory = useLocalWorkspaceStore((state) => state.setDefaultDirectory);
   const user = useAuthStore((s) => s.user);
   const authMode = useAuthStore((s) => s.authMode);
+  const developerModeDenied = authMode === 'cloud' && user?.developerModeEntitled === false;
+  const developerModeAvailable = !developerModeDenied && (settings.developerMode || settings.developerModeEntitled || user?.developerModeEntitled === true);
+  const refreshDeveloperEntitlement = settings.refreshDeveloperEntitlement;
   const [userBubblePickerOpen, setUserBubblePickerOpen] = useState(false);
   const [clearConfirm, setClearConfirm] = useState(false);
   const [backupDialogOpen, setBackupDialogOpen] = useState(false);
@@ -1655,6 +1658,7 @@ export default function SettingsPage() {
   const [expandedRestoreKeys, setExpandedRestoreKeys] = useState<BackupSectionKey[]>(DEFAULT_EXPANDED_KEYS);
   const [showAllThemePresets, setShowAllThemePresets] = useState(false);
   const [localWorkspaceBusy, setLocalWorkspaceBusy] = useState(false);
+  const [developerEntitlementRefreshRequested, setDeveloperEntitlementRefreshRequested] = useState(false);
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
     open: false,
     message: '',
@@ -1723,6 +1727,16 @@ export default function SettingsPage() {
     if (!localWorkspaceDirectories.length) return;
     void useLocalWorkspaceStore.getState().refreshDirectoryStatuses().catch(() => undefined);
   }, [localWorkspaceDirectories.length]);
+
+  useEffect(() => {
+    setDeveloperEntitlementRefreshRequested(false);
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (authMode !== 'cloud' || developerEntitlementRefreshRequested) return;
+    setDeveloperEntitlementRefreshRequested(true);
+    void refreshDeveloperEntitlement();
+  }, [authMode, developerEntitlementRefreshRequested, refreshDeveloperEntitlement]);
 
   const handleAddLocalWorkspaceDirectory = async () => {
     setLocalWorkspaceBusy(true);
@@ -1967,21 +1981,26 @@ export default function SettingsPage() {
     window.setTimeout(() => window.location.reload(), 800);
   };
 
-  const developerToolsSection = settings.developerModeEntitled ? (
+  const developerToolsSection = (
     <SurfaceCard id="settings-card-advanced" contentSx={buildCardBodySx()}>
       <Box sx={buildDeveloperBodySx()}>
         <SectionHeader
-          title={i18n.language.startsWith('zh') ? '高级' : 'Advanced'}
+          title={i18n.language.startsWith('zh') ? '开发者模式' : 'Developer mode'}
           subtitle={i18n.language.startsWith('zh')
             ? '这些开关用于排查运行逻辑，会显示事件、证据、分数和调试提示。普通使用可以保持关闭。'
             : 'These switches expose events, evidence, metrics, and debug hints for runtime inspection. Leave them off for everyday use.'}
         />
         <FormControlLabel
           sx={{ m: 0 }}
-          control={<Switch checked={settings.developerMode} onChange={(e) => settings.setDeveloperMode(e.target.checked)} />}
+          control={<Switch checked={!developerModeDenied && settings.developerMode} disabled={!developerModeAvailable} onChange={(e) => settings.setDeveloperMode(e.target.checked)} />}
           label={i18n.language.startsWith('zh') ? '开发者模式' : 'Developer mode'}
         />
-        {settings.developerMode ? (
+        {!developerModeAvailable ? (
+          <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
+            {i18n.language.startsWith('zh') ? '当前尚未确认开发者权限，因此无法开启。' : 'Developer access has not been confirmed for the current account.'}
+          </Typography>
+        ) : null}
+        {developerModeAvailable && settings.developerMode ? (
           <>
         <StatChipRow items={buildDeveloperChips(i18n.language)} />
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'auto minmax(0, 1fr)' }, gap: 1.25, alignItems: 'center', p: 1.25, borderRadius: 2, border: '1px solid', borderColor: 'divider', bgcolor: 'background.default' }}>
@@ -2038,7 +2057,7 @@ export default function SettingsPage() {
         ) : null}
       </Box>
     </SurfaceCard>
-  ) : null;
+  );
 
   return (
     <Box sx={buildPageSx()}>
@@ -2400,7 +2419,6 @@ export default function SettingsPage() {
           </Box>
         </SurfaceCard>
 
-        {developerToolsSection}
           </>
         ) : null}
 
@@ -2573,6 +2591,8 @@ export default function SettingsPage() {
             </Box>
           </Box>
         </SurfaceCard>
+
+        {developerToolsSection}
 
         <SurfaceCard id="settings-card-about" contentSx={buildCardBodySx()}>
           <SectionHeader title={t('settings.about')} dense />

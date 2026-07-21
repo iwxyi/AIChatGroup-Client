@@ -20,6 +20,7 @@ interface User {
   aiProxyEntitled?: boolean;
   agentEntitled?: boolean;
   aiSearchEntitled?: boolean;
+  developerModeEntitled?: boolean;
   retentionLimits?: Record<string, { storage: number; recall: number }>;
 }
 
@@ -155,6 +156,16 @@ function applyCloudSyncEntitlement(user: User | null) {
   }
   if (user?.assistantArtifactCloudSyncEntitled === false) {
     setAssistantArtifactCloudSyncEnabled(false);
+  }
+  if (user?.developerModeEntitled !== undefined) {
+    useSettingsStore.setState((state) => user.developerModeEntitled
+      ? { ...state, developerModeEntitled: true }
+      : {
+          ...state,
+          developerModeEntitled: false,
+          developerMode: false,
+          memoryUI: { ...state.memoryUI, showDeveloperMemory: false },
+        });
   }
 }
 
