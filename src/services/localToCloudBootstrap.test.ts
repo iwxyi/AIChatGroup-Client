@@ -157,6 +157,116 @@ describe('localToCloudBootstrap', () => {
     expect(plan.chatsAlreadyRemote.map((item) => item.id)).toEqual(['local-chat-12345678', 'cloud-chat']);
   });
 
+  it('marks already-remote chats with local world runtime data for patching', () => {
+    const plan = bootstrap.createBootstrapReconcilePlan(
+      snapshot({
+        chats: [
+          chat('local-chat-12345678', '跨设备群聊', {
+            runtimeEventsV2: [{
+              id: 'local-moment',
+              conversationId: 'local-chat-12345678',
+              kind: 'artifact',
+              actorIds: ['char-a'],
+              targetIds: [],
+              visibility: 'public',
+              summary: '本地朋友圈',
+              createdAt: 2,
+              payload: { eventKind: 'post_moment', artifactType: 'moment_text', text: '本地动态' },
+            }],
+          }),
+        ],
+      }),
+      {
+        characters: [],
+        chats: [
+          { id: 'cloud-group-1', name: '跨设备群聊', deletedAt: null },
+        ],
+      },
+    );
+
+    expect(plan.chatsToCreate).toEqual([]);
+    expect(plan.chatsToPatchRuntime.map((item) => item.id)).toEqual(['local-chat-12345678']);
+  });
+
+  it('patches already-remote chats with merged local moment runtime events during bootstrap', async () => {
+    localStore.clear();
+    const originalApi = await import('./api');
+    const getSyncChanges = vi.spyOn(originalApi.api, 'getSyncChanges').mockImplementation(async ({ scope }) => {
+      if (scope === 'chats.summary') {
+        return {
+          status: 'modified',
+          scope,
+          cursor: 'chats',
+          revision: 'chats',
+          changes: [{
+            entity: 'chat_summary',
+            id: 'cloud-group-1',
+            updatedAt: 1,
+            deletedAt: null,
+            patch: { id: 'cloud-group-1', name: '跨设备群聊', type: 'group', deletedAt: null },
+          }],
+        } as Awaited<ReturnType<typeof originalApi.api.getSyncChanges>>;
+      }
+      return {
+        status: 'modified',
+        scope,
+        cursor: 'characters',
+        revision: 'characters',
+        changes: [],
+      } as Awaited<ReturnType<typeof originalApi.api.getSyncChanges>>;
+    });
+    const getChat = vi.spyOn(originalApi.api, 'getChat').mockResolvedValue(chat('cloud-group-1', '跨设备群聊', {
+      runtimeEventsV2: [{
+        id: 'remote-moment',
+        conversationId: 'cloud-group-1',
+        kind: 'artifact',
+        actorIds: ['char-a'],
+        targetIds: [],
+        visibility: 'public',
+        summary: '云端朋友圈',
+        createdAt: 1,
+        payload: { eventKind: 'post_moment', artifactType: 'moment_text', text: '云端动态' },
+      }],
+    }) as unknown as Awaited<ReturnType<typeof originalApi.api.getChat>>);
+    const syncChatPatch = vi.spyOn(originalApi.api, 'syncChatPatch').mockResolvedValue({
+      success: true,
+      chat: {},
+    });
+    const syncSettings = vi.spyOn((await import('../stores/useSettingsStore')).useSettingsStore.getState(), 'syncCurrentSettingsToServer').mockResolvedValue(undefined);
+
+    await bootstrap.bootstrapLocalDataToCloud(snapshot({
+      settingsShouldUpload: false,
+      chats: [chat('local-chat-12345678', '跨设备群聊', {
+        runtimeEventsV2: [{
+          id: 'local-moment',
+          conversationId: 'local-chat-12345678',
+          kind: 'artifact',
+          actorIds: ['char-a'],
+          targetIds: [],
+          visibility: 'public',
+          summary: '本地朋友圈',
+          createdAt: 2,
+          payload: { eventKind: 'post_moment', artifactType: 'moment_text', text: '本地动态' },
+        }],
+      })],
+    }));
+
+    expect(getChat).toHaveBeenCalledWith('cloud-group-1');
+    expect(syncChatPatch).toHaveBeenCalledWith('cloud-group-1', expect.objectContaining({
+      patch: expect.objectContaining({
+        runtimeEventsV2: expect.arrayContaining([
+          expect.objectContaining({ id: 'remote-moment' }),
+          expect.objectContaining({ id: 'local-moment', conversationId: 'cloud-group-1' }),
+        ]),
+      }),
+    }));
+
+    getSyncChanges.mockRestore();
+    getChat.mockRestore();
+    syncChatPatch.mockRestore();
+    syncSettings.mockRestore();
+  });
+
   it('maps local-id chats skipped by bootstrap to the matching remote chat id for message upload', async () => {
     localStore.clear();
     const originalApi = await import('./api');
