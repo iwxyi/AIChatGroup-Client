@@ -9,6 +9,9 @@ export type AppCommandAction =
   | 'create_group_chat'
   | 'create_direct_chat'
   | 'open_existing_chat'
+  | 'read_character_info'
+  | 'compare_characters'
+  | 'update_characters'
   | 'query_ai_balance'
   | 'update_theme'
   | 'set_ai_model_key'
@@ -52,6 +55,11 @@ export interface LocalActionPlan {
   groupStyle?: 'free' | 'debate' | 'brainstorm' | 'roleplay';
   chatQuery?: string;
   chatTypePreference?: 'group' | 'direct' | 'assistant' | 'any';
+  characterQuery?: string;
+  sourceGroup?: string;
+  targetGroup?: string;
+  updateInstruction?: string;
+  compareQuestion?: string;
   theme?: 'light' | 'dark' | 'system';
   providerHint?: string;
   modelHint?: string;
@@ -71,10 +79,32 @@ export type AppCommandRoute =
       choicePresentation?: 'chips' | 'list' | 'select';
     }
   | {
+      mode: 'workflow';
+      title?: string;
+      summary?: string;
+      steps: Array<{
+        action: LocalActionPlan['action'];
+        plan: LocalActionPlan;
+        riskLevel: AppCommandRiskLevel;
+        requiresConfirmation: boolean;
+        confirmationText?: string;
+      }>;
+      riskLevel: AppCommandRiskLevel;
+      requiresConfirmation: boolean;
+      confirmationText?: string;
+      choices?: AppCommandChoice[];
+      choicePresentation?: 'chips' | 'list' | 'select';
+    }
+  | {
       mode: 'assistant_agent';
       initialMessage: string;
       preferredAgentMode?: 'chat' | 'image' | 'research' | 'tool';
       reason?: string;
+    }
+  | {
+      mode: 'final_response';
+      title: string;
+      message: string;
     };
 
 export type AppCommandExecutionStatus = 'success' | 'info' | 'needs_confirmation';

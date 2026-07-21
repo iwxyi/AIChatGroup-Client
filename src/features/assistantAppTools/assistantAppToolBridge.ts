@@ -2,17 +2,23 @@ import type { APIConfig, AIModelProfile } from '../../types/settings';
 import { executeAppCommandRoute } from '../appCommand/executeCommand';
 import type { AppCommandChoice, AppCommandExecutionResult, AppCommandRoute, LocalActionPlan } from '../appCommand/commandTypes';
 import { clearPendingAppCommand, getPendingAppCommand, isCancellationText, isConfirmationText } from '../appCommand/pendingCommandStore';
-import { routeAppCommand } from '../appCommand/routeCommand';
+import { runAppCommandAgent } from '../appCommand/runCommandAgent';
 
 function formatResult(result: AppCommandExecutionResult) {
   const candidateBlock = result.candidates?.length
     ? [
         '',
         '候选：',
-        ...result.candidates.map((item, index) => `${index + 1}. ${item.url ? `[${item.label}](${item.url})` : item.label}${item.description ? ` - ${item.description}` : ''}`),
+        ...result.candidates.map((item, index) => `${index + 1}. ${formatOpenTarget(item.label, item.url)}${item.description ? ` - ${item.description}` : ''}`),
       ].join('\n')
     : '';
   return `${result.markdown || result.message}${candidateBlock}`;
+}
+
+function formatOpenTarget(label: string, url?: string) {
+  const cleanLabel = label.trim();
+  const visibleLabel = cleanLabel && !/^https?:\/\//i.test(cleanLabel) && !cleanLabel.startsWith('/') ? cleanLabel : '打开页面';
+  return url ? `[${visibleLabel}](${url})` : visibleLabel;
 }
 
 function parseCandidateIndex(input: string) {
@@ -29,13 +35,19 @@ function parseChoiceId(input: string) {
 }
 
 function buildChoiceRoute(baseRoute: AppCommandRoute, choice: AppCommandChoice): AppCommandRoute | null {
-  if (baseRoute.mode !== 'local_action') return null;
   if (choice.kind === 'cancel') return null;
   if (choice.kind === 'confirm' && !choice.plan) {
+    if (baseRoute.mode !== 'local_action' && baseRoute.mode !== 'workflow') return null;
     return { ...baseRoute, requiresConfirmation: false };
   }
+  if (baseRoute.mode !== 'local_action' && baseRoute.mode !== 'workflow') return null;
   if (!choice.plan?.plan && !choice.plan?.action) return null;
-  const basePlan = baseRoute.plan;
+  const basePlan = baseRoute.mode === 'local_action'
+    ? baseRoute.plan
+    : choice.plan?.plan?.action
+      ? choice.plan.plan as LocalActionPlan
+      : null;
+  if (!basePlan) return null;
   const nextPlan: LocalActionPlan = {
     ...basePlan,
     ...(choice.plan.plan || {}),
@@ -50,6 +62,51 @@ function buildChoiceRoute(baseRoute: AppCommandRoute, choice: AppCommandChoice):
   };
 }
 
+async function executePendingChoice(params: {
+  chatId: string;
+  choice: AppCommandChoice;
+  apiConfig: APIConfig;
+  aiProfiles: AIModelProfile[];
+}) {
+  const scopeKey = `assistant:${params.chatId}`;
+  const pending = getPendingAppCommand(scopeKey);
+  if (!pending) return { title: '操作已过期', content: '这个操作已经不在等待确认了，请重新描述你的需求。' };
+  clearPendingAppCommand(scopeKey);
+  if (params.choice.kind === 'cancel') return { title: '已取消', content: '已取消本次操作。' };
+  if (params.choice.url && !params.choice.plan) {
+    return {
+      title: '已找到可打开项',
+      content: `可以打开：${formatOpenTarget(params.choice.label, params.choice.url)}${params.choice.description ? `\n\n${params.choice.description}` : ''}`,
+    };
+  }
+  const choiceRoute = buildChoiceRoute(pending.route, params.choice);
+  if (!choiceRoute) return { title: '无法执行选项', content: '这个选项缺少可执行计划，请重新描述你的需求。' };
+  const result = await executeAppCommandRoute(
+    choiceRoute,
+    {
+      source: 'assistant',
+      chatId: params.chatId,
+      input: pending.input,
+      apiConfig: params.apiConfig,
+      aiProfiles: params.aiProfiles,
+    },
+    pending.secrets,
+  );
+  return { title: result.title, content: formatResult(result) };
+}
+
+export async function runPendingAssistantAppCommandChoice(params: {
+  chatId: string;
+  choiceId: string;
+  apiConfig: APIConfig;
+  aiProfiles: AIModelProfile[];
+}) {
+  const pending = getPendingAppCommand(`assistant:${params.chatId}`);
+  const choice = pending?.choices?.find((item) => item.id === params.choiceId);
+  if (!choice) return { title: '操作已过期', content: '这个选项已经不可用，请重新描述你的需求。' };
+  return executePendingChoice({ ...params, choice });
+}
+
 export async function tryRunAssistantAppCommand(params: {
   chatId: string;
   input: string;
@@ -62,28 +119,7 @@ export async function tryRunAssistantAppCommand(params: {
     const choiceId = parseChoiceId(params.input);
     const choice = choiceId ? pending.choices?.find((item) => item.id === choiceId) : null;
     if (choice) {
-      clearPendingAppCommand(scopeKey);
-      if (choice.kind === 'cancel') return { title: '已取消', content: '已取消本次操作。' };
-      if (choice.url) {
-        return {
-          title: '已找到可打开项',
-          content: `可以打开： [${choice.label}](${choice.url})${choice.description ? `\n\n${choice.description}` : ''}`,
-        };
-      }
-      const choiceRoute = buildChoiceRoute(pending.route, choice);
-      if (!choiceRoute) return { title: '无法执行选项', content: '这个选项缺少可执行计划，请重新描述你的需求。' };
-      const result = await executeAppCommandRoute(
-        choiceRoute,
-        {
-          source: 'assistant',
-          chatId: params.chatId,
-          input: pending.input,
-          apiConfig: params.apiConfig,
-          aiProfiles: params.aiProfiles,
-        },
-        pending.secrets,
-      );
-      return { title: result.title, content: formatResult(result) };
+      return executePendingChoice({ ...params, choice });
     }
     if (isCancellationText(params.input)) {
       clearPendingAppCommand(scopeKey);
@@ -95,12 +131,12 @@ export async function tryRunAssistantAppCommand(params: {
       clearPendingAppCommand(scopeKey);
       return {
         title: '已找到可打开项',
-        content: `可以打开： [${candidate.label}](${candidate.url})${candidate.description ? `\n\n${candidate.description}` : ''}`,
+        content: `可以打开：${formatOpenTarget(candidate.label, candidate.url)}${candidate.description ? `\n\n${candidate.description}` : ''}`,
       };
     }
     if (isConfirmationText(params.input)) {
       clearPendingAppCommand(scopeKey);
-      const route = pending.route.mode === 'local_action'
+      const route = pending.route.mode === 'local_action' || pending.route.mode === 'workflow'
         ? { ...pending.route, requiresConfirmation: false }
         : pending.route;
       const result = await executeAppCommandRoute(
@@ -132,25 +168,15 @@ export async function tryRunAssistantAppCommand(params: {
       ].join('\n'),
     };
   }
-  const routed = await routeAppCommand({
+  const routed = await runAppCommandAgent({
     source: 'assistant',
     chatId: params.chatId,
     input: params.input,
     apiConfig: params.apiConfig,
     aiProfiles: params.aiProfiles,
   });
-  if (routed.route.mode !== 'local_action') return null;
-  const result = await executeAppCommandRoute(
-    routed.route,
-    {
-      source: 'assistant',
-      chatId: params.chatId,
-      input: params.input,
-      apiConfig: params.apiConfig,
-      aiProfiles: params.aiProfiles,
-    },
-    routed.secrets,
-  );
+  if (routed.route.mode === 'assistant_agent') return null;
+  const result = routed.result;
   return {
     title: result.title,
     content: result.status === 'needs_confirmation'

@@ -4,8 +4,7 @@ import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import SendIcon from '@mui/icons-material/Send';
 import { useNavigate } from 'react-router-dom';
 import SurfaceCard from '../../components/common/SurfaceCard';
-import { transition, motion } from '../../styles/motion';
-import type { AppCommandCandidate, AppCommandChoice, AppCommandRoute } from '../appCommand/commandTypes';
+import type { AppCommandCandidate, AppCommandChoice, AppCommandRoute, LocalActionPlan } from '../appCommand/commandTypes';
 import { HOME_COMMAND_PLACEHOLDERS } from './placeholders';
 
 type PendingConfirmation = {
@@ -65,7 +64,6 @@ export default function HomeCommandLauncher() {
   }, []);
 
   const placeholder = useMemo(() => HOME_COMMAND_PLACEHOLDERS[placeholderIndex], [placeholderIndex]);
-
   const preload = () => {
     if (preloadedRef.current) return;
     preloadedRef.current = true;
@@ -141,16 +139,27 @@ export default function HomeCommandLauncher() {
       setInput('');
       return;
     }
-    if (choice.plan && pending.route.mode === 'local_action') {
-      const nextPlan = {
-        ...pending.route.plan,
+    if (choice.plan && (pending.route.mode === 'local_action' || pending.route.mode === 'workflow')) {
+      const basePlan = pending.route.mode === 'local_action'
+        ? pending.route.plan
+        : choice.plan.plan?.action
+          ? choice.plan.plan
+          : null;
+      const action = choice.plan.action || choice.plan.plan?.action || basePlan?.action;
+      if (!basePlan || !action) {
+        setFeedback({ severity: 'error', title: '无法执行选项', message: '这个选项缺少可执行计划，请重新描述一次。' });
+        return;
+      }
+      const nextPlan: LocalActionPlan = {
+        ...basePlan,
         ...(choice.plan.plan || {}),
-        action: choice.plan.action || choice.plan.plan?.action || pending.route.plan.action,
+        action,
       };
       const nextRoute: AppCommandRoute = {
-        ...pending.route,
+        mode: 'local_action',
         action: nextPlan.action,
         plan: nextPlan,
+        riskLevel: pending.route.riskLevel,
         requiresConfirmation: false,
       };
       setLoading(true);
@@ -175,11 +184,6 @@ export default function HomeCommandLauncher() {
     <SurfaceCard
       sx={{
         borderColor: 'divider',
-        transition: transition(['border-color', 'box-shadow'], motion.durations.base, motion.gentleSpring),
-        '&:focus-within': {
-          borderColor: 'primary.main',
-          boxShadow: (theme) => theme.palette.mode === 'light' ? '0 18px 42px rgba(15,23,42,0.08)' : '0 18px 42px rgba(0,0,0,0.34)',
-        },
       }}
     >
       <Box sx={{ display: 'grid', gap: 1.25 }}>

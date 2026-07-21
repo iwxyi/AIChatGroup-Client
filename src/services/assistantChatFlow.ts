@@ -221,6 +221,7 @@ async function persistAssistantArtifactsFromReply(params: {
   chatId: string;
   userMessage: Message;
   messages: Message[];
+  selectedArtifactId?: string | null;
   timestamp?: number;
   upsertMessage: (message: Message) => void;
   updateChat: (id: string, patch: Partial<GroupChat>) => Promise<void>;
@@ -262,12 +263,15 @@ async function persistAssistantArtifactsFromReply(params: {
       })),
     },
     localWorkspaceFileRegistry,
-    interactionFocus: selectedLocalWorkspaceFilePaths.length ? {
-      selectedLocalWorkspaceFiles: selectedLocalWorkspaceFilePaths.map((path) => ({
-        directoryId: defaultLocalWorkspaceDirectory?.id || '',
-        path,
-      })),
-    } : undefined,
+    interactionFocus: {
+      ...(params.selectedArtifactId ? { selectedArtifactId: params.selectedArtifactId } : {}),
+      ...(selectedLocalWorkspaceFilePaths.length ? {
+        selectedLocalWorkspaceFiles: selectedLocalWorkspaceFilePaths.map((path) => ({
+          directoryId: defaultLocalWorkspaceDirectory?.id || '',
+          path,
+        })),
+      } : {}),
+    },
     signal: params.signal,
   });
   const selectedLocalFilePaths = (selectedLocalWorkspaceFilePaths.length
@@ -686,6 +690,7 @@ export async function runAssistantChatReplyFlow(params: {
   chat: GroupChat;
   chatId: string;
   currentMessages: Message[];
+  selectedArtifactId?: string | null;
   timestamp?: number;
   upsertMessage: (message: Message) => void;
   updateChat: (id: string, patch: Partial<GroupChat>) => Promise<void>;
@@ -745,6 +750,7 @@ export async function runAssistantChatReplyFlow(params: {
         chatId: params.chatId,
         userMessage,
         messages: params.currentMessages,
+        selectedArtifactId: params.selectedArtifactId,
         timestamp: params.timestamp,
         upsertMessage: params.upsertMessage,
         updateChat: params.updateChat,

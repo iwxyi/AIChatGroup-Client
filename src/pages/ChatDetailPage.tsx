@@ -1816,6 +1816,7 @@ export default function ChatDetailPage() {
               chatId: id,
               chat: nextChat,
               currentMessages: activeMessagesAfterRevision,
+              selectedArtifactId: selectedAssistantArtifactId,
               timestamp: createdRevision.timestamp + 1,
               upsertMessage: upsertMessageStable,
               updateChat,
@@ -1851,7 +1852,7 @@ export default function ChatDetailPage() {
       }
       if (chat.type !== 'direct' && chat.type !== 'assistant') startConversationLoopIfNeeded(nextChat, { immediate: true });
     });
-  }, [addAnchoredMessage, aiProfiles, api, appendEventMessage, appendEventMessageStable, appendEventMessagesStable, appendLocalInterceptionHint, applyChatRuntimeDelta, cancelActiveConversationLoop, characters, chat, chats, commitPersistedManualRuntime, currentChatAllMessages, enqueueManualInput, getNextMessageTimestamp, id, recordSpeak, setSnackbar, showErrorToast, startConversationLoopIfNeeded, updateCharacter, updateCharacters, updateChat, upsertMessageStable]);
+  }, [addAnchoredMessage, aiProfiles, api, appendEventMessage, appendEventMessageStable, appendEventMessagesStable, appendLocalInterceptionHint, applyChatRuntimeDelta, cancelActiveConversationLoop, characters, chat, chats, commitPersistedManualRuntime, currentChatAllMessages, enqueueManualInput, getNextMessageTimestamp, id, recordSpeak, selectedAssistantArtifactId, setSnackbar, showErrorToast, startConversationLoopIfNeeded, updateCharacter, updateCharacters, updateChat, upsertMessageStable]);
 
   const handleSwitchMessageRevision = useCallback(async (sourceMessage: Message, direction: -1 | 1) => {
     if (!chat || !id || !isMessageBranchingEnabled(chat)) return;
@@ -2079,6 +2080,7 @@ export default function ChatDetailPage() {
               chatId: id,
               chat,
               currentMessages: recentMessagesWithUser,
+              selectedArtifactId: selectedAssistantArtifactId,
               timestamp: userMessage.timestamp + 1,
               upsertMessage: upsertMessageStable,
               updateChat,
@@ -2105,7 +2107,40 @@ export default function ChatDetailPage() {
       }
       startConversationLoopIfNeeded(chat);
     });
-  }, [addMessageStable, aiProfiles, api, appendEventMessage, appendEventMessageStable, appendEventMessagesStable, appendLocalInterceptionHint, applyChatRuntimeDelta, characters, chat, chats, commitPersistedManualRuntime, currentChatMessages, currentUser?.nickname, enqueueManualInput, getNextMessageTimestamp, id, recordSpeak, showErrorToast, startConversationLoopIfNeeded, updateCharacter, updateCharacters, updateChat, upsertMessageStable]);
+  }, [addMessageStable, aiProfiles, api, appendEventMessage, appendEventMessageStable, appendEventMessagesStable, appendLocalInterceptionHint, applyChatRuntimeDelta, characters, chat, chats, commitPersistedManualRuntime, currentChatMessages, currentUser?.nickname, enqueueManualInput, getNextMessageTimestamp, id, recordSpeak, selectedAssistantArtifactId, showErrorToast, startConversationLoopIfNeeded, updateCharacter, updateCharacters, updateChat, upsertMessageStable]);
+
+  const handlePendingAppCommandChoice = useCallback(async (choiceId: string) => {
+    if (!chat || !id || chat.type !== 'assistant') return;
+    directReplyAbortRef.current?.abort();
+    await enqueueManualInput(async () => {
+      try {
+        const { runPendingAssistantAppCommandChoice } = await import('../features/assistantAppTools/assistantAppToolBridge');
+        const result = await runPendingAssistantAppCommandChoice({
+          chatId: id,
+          choiceId,
+          apiConfig: api,
+          aiProfiles,
+        });
+        const assistantMessage = await addMessageStable({
+          chatId: id,
+          type: 'ai',
+          senderId: 'assistant',
+          senderName: '助手',
+          content: result.content,
+          emotion: 0,
+          timestamp: getNextMessageTimestamp(),
+          metadata: {
+            format: 'markdown',
+            assistant: { mode: 'general' },
+          },
+        });
+        void updateChat(id, { lastMessageAt: assistantMessage.timestamp, latestMessage: assistantMessage });
+      } catch (error) {
+        console.error('[assistant-app-command:choice-error]', error);
+        showErrorToast(error instanceof Error ? error.message : String(error));
+      }
+    });
+  }, [addMessageStable, aiProfiles, api, chat, enqueueManualInput, getNextMessageTimestamp, id, showErrorToast, updateChat]);
 
   useEffect(() => {
     if (!chat || !id || chat.type !== 'assistant') return;
@@ -3095,7 +3130,7 @@ export default function ChatDetailPage() {
                 {(() => {
                   const choices = buildPendingAppCommandChoices(pendingAppCommand);
                   const presentation = resolvePendingChoicePresentation(pendingAppCommand);
-                  const sendChoice = (choiceId: string) => handleMemberSpeakSend(`[app-choice:${choiceId}]`);
+                  const sendChoice = (choiceId: string) => handlePendingAppCommandChoice(choiceId);
                   if (presentation === 'select') {
                     return (
                       <TextField
@@ -3215,6 +3250,7 @@ export default function ChatDetailPage() {
                   <AssistantAgentPanel
                     chat={chat}
                     selectedArtifactId={selectedAssistantArtifactId}
+                    onSelectedArtifactChange={setSelectedAssistantArtifactId}
                     onAgentEnabledChange={agentEntitled ? (enabled) => {
                       writeAssistantAgentDefaultEnabled(enabled);
                       const aiSearchAvailable = authMode === 'cloud' && currentUser?.aiSearchEntitled === true;

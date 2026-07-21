@@ -39,6 +39,7 @@ import type { LocalWorkspaceFileEntry } from '../../services/localWorkspaceServi
 interface AssistantAgentPanelProps {
   chat: GroupChat;
   selectedArtifactId?: string | null;
+  onSelectedArtifactChange?: (artifactId: string | null) => void;
   onAgentEnabledChange?: (enabled: boolean) => void;
 }
 
@@ -213,10 +214,12 @@ function ThumbnailFade() {
   );
 }
 
+const EMPTY_SELECTED_LOCAL_WORKSPACE_FILE_PATHS: string[] = [];
+
 function AssistantLocalWorkspaceFiles({ chatId }: { chatId: string }) {
   const directories = useLocalWorkspaceStore((state) => state.directories);
   const defaultDirectoryId = useLocalWorkspaceStore((state) => state.defaultDirectoryId);
-  const selectedFilePaths = useLocalWorkspaceStore((state) => state.selectedFilePathsByChatId[chatId] || []);
+  const selectedFilePaths = useLocalWorkspaceStore((state) => state.selectedFilePathsByChatId[chatId] || EMPTY_SELECTED_LOCAL_WORKSPACE_FILE_PATHS);
   const listDefaultDirectoryFiles = useLocalWorkspaceStore((state) => state.listDefaultDirectoryFiles);
   const toggleSelectedFilePath = useLocalWorkspaceStore((state) => state.toggleSelectedFilePath);
   const clearSelectedFilePaths = useLocalWorkspaceStore((state) => state.clearSelectedFilePaths);
@@ -446,7 +449,15 @@ function ArtifactPreview({ item, version, expanded = false, fullscreen = false, 
   );
 }
 
-function AssistantArtifactList({ chatId, selectedArtifactId }: { chatId: string; selectedArtifactId?: string | null }) {
+function AssistantArtifactList({
+  chatId,
+  selectedArtifactId,
+  onSelectedArtifactChange,
+}: {
+  chatId: string;
+  selectedArtifactId?: string | null;
+  onSelectedArtifactChange?: (artifactId: string | null) => void;
+}) {
   const artifactItems = useAssistantArtifactStore((state) => state.items);
   const [viewMode, setViewMode] = useState<ArtifactViewMode>('list');
   const [sortMode, setSortMode] = useState<ArtifactSortMode>('manual');
@@ -485,6 +496,9 @@ function AssistantArtifactList({ chatId, selectedArtifactId }: { chatId: string;
   useEffect(() => {
     if (selectedId && !artifacts.some((item) => item.id === selectedId)) setSelectedId(null);
   }, [artifacts, selectedId]);
+  useEffect(() => {
+    onSelectedArtifactChange?.(selected?.id || null);
+  }, [onSelectedArtifactChange, selected?.id]);
 
   const fullscreenItem = useMemo(() => (
     artifacts.find((item) => item.id === fullscreenId) || null
@@ -985,7 +999,12 @@ function AssistantArtifactList({ chatId, selectedArtifactId }: { chatId: string;
   );
 }
 
-export default function AssistantAgentPanel({ chat, selectedArtifactId = null, onAgentEnabledChange }: AssistantAgentPanelProps) {
+export default function AssistantAgentPanel({
+  chat,
+  selectedArtifactId = null,
+  onSelectedArtifactChange,
+  onAgentEnabledChange,
+}: AssistantAgentPanelProps) {
   const capabilities = chat.modeState.assistantCapabilities || {};
   const agentEnabled = Boolean(capabilities.agent);
 
@@ -1020,7 +1039,11 @@ export default function AssistantAgentPanel({ chat, selectedArtifactId = null, o
           {agentEnabled ? (
             <>
               <AssistantLocalWorkspaceFiles chatId={chat.id} />
-              <AssistantArtifactList chatId={chat.id} selectedArtifactId={selectedArtifactId} />
+              <AssistantArtifactList
+                chatId={chat.id}
+                selectedArtifactId={selectedArtifactId}
+                onSelectedArtifactChange={onSelectedArtifactChange}
+              />
             </>
           ) : (
             <Box sx={{ minHeight: 160, display: 'grid', placeItems: 'center', px: 2, textAlign: 'center', color: 'text.secondary' }}>
