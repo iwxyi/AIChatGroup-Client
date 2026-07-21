@@ -24,6 +24,7 @@ import { useAuthStore } from '../../stores/useAuthStore';
 import { motion, transition } from '../../styles/motion';
 import { isImageAvatar } from '../../utils/avatar';
 import AnimatedNavIcon, { type AnimatedNavIconKind } from './AnimatedNavIcon';
+import { buildSettingsPath } from '../../routes/settingsRoute';
 
 interface SidebarProps {
   collapsed: boolean;
@@ -43,7 +44,7 @@ const navSections: NavItem[][] = [
     { path: '/letters', iconKind: 'letters', labelKey: 'nav.letters' },
   ],
   [
-    { path: '/ai-models', iconKind: 'models', labelKey: 'nav.models' },
+    { path: buildSettingsPath({ tab: 'models' }), iconKind: 'models', labelKey: 'nav.models' },
     { path: '/ai-proxy', iconKind: 'proxy', labelKey: 'nav.aiProxy' },
     { path: '/market', iconKind: 'market', labelKey: 'nav.market' },
     { path: '/membership', iconKind: 'membership', labelKey: 'nav.membership' },
@@ -117,7 +118,9 @@ export default function Sidebar({ collapsed }: SidebarProps) {
     const isActive =
       item.path === '/'
         ? location.pathname === '/'
-        : location.pathname.startsWith(item.path);
+        : item.path.startsWith('/settings?tab=models')
+          ? location.pathname === '/settings' && new URLSearchParams(location.search).get('tab') === 'models'
+          : location.pathname.startsWith(item.path);
 
     const button = (
       <ListItemButton
@@ -199,7 +202,9 @@ export default function Sidebar({ collapsed }: SidebarProps) {
   };
 
   const renderUtilityItem = (item: NavItem) => {
-    const isActive = location.pathname.startsWith(item.path);
+    const isActive = item.path === '/settings'
+      ? location.pathname === '/settings' && new URLSearchParams(location.search).get('tab') !== 'models'
+      : location.pathname.startsWith(item.path);
     const button = (
       <ListItemButton
         className="PneumataNavButton"

@@ -110,8 +110,8 @@ export const AI_PROVIDER_CATALOG: AIProviderCatalogEntry[] = [
     label: '官方2（Claude/GPT）',
     family: 'SenseMurmur Claude/GPT',
     defaults: {
-      text: { baseUrl: '/api/ai', model: 'gpt-5.5' },
-      document: { baseUrl: '/api/ai', model: 'gpt-5.5' },
+      text: { baseUrl: '/api/ai', model: 'gpt-5.4-mini' },
+      document: { baseUrl: '/api/ai', model: 'gpt-5.4-mini' },
     },
     popularModels: {
       text: OFFICIAL_MOACODE_TEXT_MODELS,

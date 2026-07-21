@@ -13,6 +13,7 @@ import { ADMIN_LOGIN_EVENT } from './services/adminApi';
 import { api } from './services/api';
 import { AUTH_SESSION_EXPIRED_EVENT, type AuthSessionExpiredDetail } from './services/authSession';
 import { APP_DESCRIPTION, APP_TITLE } from './constants/brand';
+import { buildSettingsPath } from './routes/settingsRoute';
 import DevUpdatePrompt from './components/common/DevUpdatePrompt';
 import PwaUpdatePrompt from './components/common/PwaUpdatePrompt';
 import { hasGuestImportData, importGuestDataToCurrentAccount, readGuestImportSnapshot, type GuestImportSnapshot } from './services/guestDataImport';
@@ -31,7 +32,6 @@ const routePreloaders = [
   () => import('./pages/CharacterEditorPage'),
   () => import('./pages/SettingsPage'),
   () => import('./pages/RecycleBinPage'),
-  () => import('./pages/AIModelsPage'),
   () => import('./pages/AIProxyPage'),
   () => import('./pages/MembershipPage'),
   () => import('./pages/AccountPage'),
@@ -72,7 +72,6 @@ const [
   loadCharacterEditorPage,
   loadSettingsPage,
   loadRecycleBinPage,
-  loadAIModelsPage,
   loadAIProxyPage,
   loadMembershipPage,
   loadAccountPage,
@@ -112,7 +111,6 @@ const CharacterLibraryPage = lazy(loadCharacterLibraryPage);
 const CharacterEditorPage = lazy(loadCharacterEditorPage);
 const SettingsPage = lazy(loadSettingsPage);
 const RecycleBinPage = lazy(loadRecycleBinPage);
-const AIModelsPage = lazy(loadAIModelsPage);
 const AIProxyPage = lazy(loadAIProxyPage);
 const MembershipPage = lazy(loadMembershipPage);
 const AccountPage = lazy(loadAccountPage);
@@ -464,7 +462,7 @@ function RoutedApp() {
         <Route path="/calendar" element={<RouteElement><CalendarPage /></RouteElement>} />
         <Route path="/moments" element={<RouteElement><MomentsPage /></RouteElement>} />
         <Route path="/market" element={<RouteElement><MarketPage /></RouteElement>} />
-        <Route path="/ai-models" element={<RouteElement><AIModelsPage /></RouteElement>} />
+        <Route path="/ai-models" element={<Navigate to={buildSettingsPath({ tab: 'models' })} replace />} />
         <Route path="/ai-proxy" element={<RouteElement><AIProxyPage /></RouteElement>} />
         <Route path="/membership" element={<RouteElement><MembershipPage /></RouteElement>} />
         <Route path="/account" element={<RouteElement><AccountPage /></RouteElement>} />
