@@ -121,6 +121,7 @@ const CalendarPage = lazy(loadCalendarPage);
 const MomentsPage = lazy(loadMomentsPage);
 const MarketPage = lazy(loadMarketPage);
 const IntroPage = lazy(loadIntroPage);
+const IntroConceptPage = lazy(() => import('./pages/IntroPage').then((module) => ({ default: module.IntroConceptPage })));
 const LoginPage = lazy(loadLoginPage);
 const PublicSharedChatPage = lazy(loadPublicSharedChatPage);
 const AdminLayout = lazy(loadAdminLayout);
@@ -423,7 +424,7 @@ function RoutedApp() {
     <Routes>
       <Route path="/login" element={<RouteElement><LoginPage /></RouteElement>} />
       <Route path="/admin/login" element={<RouteElement><AdminLoginPage /></RouteElement>} />
-      <Route path="/intro" element={<RouteElement><IntroPage /></RouteElement>} />
+      <Route path="/intro/concept" element={<RouteElement><IntroConceptPage /></RouteElement>} />
       <Route path="/shared/:token" element={<RouteElement><PublicSharedChatPage /></RouteElement>} />
       <Route path="/shared/chats/:token" element={<RouteElement><PublicSharedChatPage /></RouteElement>} />
       <Route element={<RequireAdminAuth />}>
@@ -462,6 +463,7 @@ function RoutedApp() {
         <Route path="/calendar" element={<RouteElement><CalendarPage /></RouteElement>} />
         <Route path="/moments" element={<RouteElement><MomentsPage /></RouteElement>} />
         <Route path="/market" element={<RouteElement><MarketPage /></RouteElement>} />
+        <Route path="/intro" element={<RouteElement><IntroPage /></RouteElement>} />
         <Route path="/ai-models" element={<Navigate to={buildSettingsPath({ tab: 'models' })} replace />} />
         <Route path="/ai-proxy" element={<RouteElement><AIProxyPage /></RouteElement>} />
         <Route path="/membership" element={<RouteElement><MembershipPage /></RouteElement>} />
