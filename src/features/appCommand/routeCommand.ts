@@ -117,6 +117,22 @@ function normalizeRoute(raw: unknown, fallbackInput: string): AppCommandRoute {
   const record = raw as Record<string, unknown>;
   if (record.mode === 'assistant_agent') {
     const mode = record.preferredAgentMode;
+    const plan = normalizePlan(record);
+    const choices = normalizeChoices(record.choices);
+    if (isSupportedAppCommandAction(plan.action)) {
+      const rawRisk = record.riskLevel ?? record.risk_level;
+      const riskLevel = rawRisk === 'high' || rawRisk === 'medium' ? rawRisk : 'low';
+      return {
+        mode: 'local_action',
+        action: plan.action,
+        plan,
+        riskLevel,
+        requiresConfirmation: Boolean(record.requiresConfirmation ?? record.requires_confirmation ?? riskLevel !== 'low'),
+        confirmationText: shortText(record.confirmationText ?? record.confirmation_text, 260),
+        choices,
+        choicePresentation: record.choicePresentation === 'list' || record.choicePresentation === 'select' ? record.choicePresentation : undefined,
+      };
+    }
     return {
       mode: 'assistant_agent',
       initialMessage: shortText(record.initialMessage ?? record.initial_message, 2000) || fallbackInput,
@@ -124,14 +140,14 @@ function normalizeRoute(raw: unknown, fallbackInput: string): AppCommandRoute {
       reason: shortText(record.reason, 160),
     };
   }
-  if (record.mode === 'final_response') {
+  if (record.mode === 'final_response' && !record.action && !record.plan && !record.steps) {
     return {
       mode: 'final_response',
       title: shortText(record.title, 80) || '已完成',
       message: shortText(record.message ?? record.summary, 1000) || '已完成。',
     };
   }
-  if (record.mode === 'workflow') {
+  if (record.mode === 'workflow' || (record.mode === 'final_response' && Array.isArray(record.steps))) {
     const steps = Array.isArray(record.steps)
       ? record.steps.map(normalizeLocalActionStep).filter((step): step is NonNullable<typeof step> => Boolean(step)).slice(0, 6)
       : [];
@@ -173,7 +189,7 @@ function buildPlannerPrompt(source: AppCommandContext['source']) {
   return [
     '你是 Sense Murmur 的应用指令规划器。你只输出严格 JSON，不要 Markdown，不要解释。',
     '你负责理解用户自然语言，把请求路由成受控应用动作或助手 Agent。不要生成正文内容，不要编造资源 ID。',
-    '如果请求可由站内工具直接完成，输出 local_action；如果需要连续执行多个站内工具，输出 workflow。若是普通问答、生成/修改图片、生成/修改文档、代码、网页、表格、图表、文件分析、开放写作、需要多轮讨论或你不确定，输出 assistant_agent。若你收到的是已执行观察结果且任务已完成，输出 final_response。',
+    '如果请求可由站内工具直接完成，输出 local_action；如果需要连续执行多个站内工具，输出 workflow。若是普通问答、生成/修改图片、生成/修改文档、代码、网页、表格、图表、文件分析、开放写作、需要多轮讨论或你不确定，输出 assistant_agent。只有当输入明确是上一轮执行观察、结果确认或任务已完成的总结请求时，才输出 final_response；普通用户原始请求不要输出 final_response。',
     '生成或编辑产物必须输出 assistant_agent，让助手页的 artifact 机制处理；不要用 local_action 或 workflow 模拟产物创建。',
     'workflow 是动态多步执行计划，不是固定模板。可把查询、创建、修改、打开等工具按用户目标组合，最多 6 步。',
     '如果用户意图有多个合理执行方式，仍输出 local_action，但必须提供 choices。每个 choice 是一个用户可点击操作，可以带自己的 action/plan。',
@@ -187,6 +203,8 @@ function buildPlannerPrompt(source: AppCommandContext['source']) {
     '- 简单确认可返回 choices=[{"id":"confirm","label":"创建角色和群聊","kind":"confirm"},{"id":"cancel","label":"取消","kind":"cancel"}]。',
     '- 不确定用户要做什么时，返回多个 execute choices，例如“只创建角色”“只创建群聊”“创建角色+群聊”，每个 choice 带 action 和 plan。',
     '- 角色检索不要编造 ID，只输出名称、分组、自然语言查询；执行器会在本地角色库匹配。',
+    '- 对“和 X 聊天”“打开和 X 的聊天”“进入之前聊到某主题的聊天”这类明确会话意图，优先使用 open_existing_chat；如果是新单聊意图可用 create_direct_chat。不要用 read_character_info 代替聊天跳转。',
+    '- 同名或多候选角色需要 choices；每个 choice 的 label 必须带分组或摘要差异，choice.plan 里也要带 characterQuery、characterName、characters[].group 等可用于本地消歧的信息。',
     '- 对“秦始皇的性格怎么样”“A 和 B 谁更擅长做菜”这类请求，优先使用 read_character_info 或 compare_characters，不要退回 assistant_agent。',
     '- 对“把某分组下角色都改成...”“把喜羊羊相关的角色都移动到喜羊羊分组中”“把小明调外向一点”这类请求，输出 update_characters，并设置 riskLevel=high、requiresConfirmation=true。',
     '- sourceGroup 表示源分组筛选；targetGroup 表示写入目标分组。不要把“移动到 X 分组”里的 X 放到 sourceGroup。',
