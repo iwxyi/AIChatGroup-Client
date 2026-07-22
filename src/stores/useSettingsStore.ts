@@ -37,6 +37,7 @@ interface SettingsStore extends AppSettings {
   setDeveloperUI: (prefs: Partial<DeveloperUIPrefs>) => void;
   setMemoryDeveloperView: (enabled: boolean) => void;
   loadSettings: () => Promise<void>;
+  refreshDeveloperEntitlement: () => Promise<void>;
   updateApi: (config: Partial<APIConfig>) => void;
   updateAIProfile: (id: string, config: Partial<AIModelProfile>) => void;
   addAIProfile: () => void;
@@ -70,6 +71,7 @@ type RemoteSettingsPayload = Partial<AppSettings> & {
 };
 
 let syncTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingSettingsSyncData: Record<string, unknown> | null = null;
 let savedStateTimer: ReturnType<typeof setTimeout> | null = null;
 let usageStatsSyncTimer: ReturnType<typeof setTimeout> | null = null;
 const SETTINGS_ACCOUNT_SCOPE: SyncChangeScope = 'settings.account';
@@ -117,14 +119,18 @@ function clearSavedStateTimer() {
 
 function syncToServer(data: Record<string, unknown>, set: SettingsSet) {
   if (syncTimer) clearTimeout(syncTimer);
+  pendingSettingsSyncData = data;
   clearSavedStateTimer();
   if (useAuthStore.getState().authMode === 'local' || !isCloudSyncEnabled()) {
+    pendingSettingsSyncData = null;
     set((state) => ({ ...state, syncStatus: 'idle', syncError: null }));
     return;
   }
   set((state) => ({ ...state, syncStatus: 'saving', syncError: null }));
   syncTimer = setTimeout(() => {
-    api.updateSettings(data)
+    const payload = pendingSettingsSyncData || data;
+    pendingSettingsSyncData = null;
+    api.updateSettings(payload)
       .then(() => {
         set((state) => ({ ...state, syncStatus: 'saved', syncError: null, lastSyncedAt: Date.now() }));
         savedStateTimer = setTimeout(() => {
@@ -141,6 +147,43 @@ function syncToServer(data: Record<string, unknown>, set: SettingsSet) {
         set((state) => ({ ...state, syncStatus: 'error', syncError: err instanceof Error ? err.message : String(err) }));
       });
   }, 500);
+}
+
+function syncToServerNow(data: Record<string, unknown>, set: SettingsSet) {
+  const pendingData = pendingSettingsSyncData ? { ...pendingSettingsSyncData } : null;
+  if ('developerMode' in data || 'developerUI' in data || 'memoryUI' in data) {
+    delete pendingData?.developerMode;
+    delete pendingData?.developerUI;
+    delete pendingData?.memoryUI;
+  }
+  const payload = pendingData ? { ...pendingData, ...data } : data;
+  if (syncTimer) {
+    clearTimeout(syncTimer);
+    syncTimer = null;
+  }
+  pendingSettingsSyncData = null;
+  clearSavedStateTimer();
+  if (useAuthStore.getState().authMode === 'local' || !isCloudSyncEnabled()) {
+    set((state) => ({ ...state, syncStatus: 'idle', syncError: null }));
+    return;
+  }
+  set((state) => ({ ...state, syncStatus: 'saving', syncError: null }));
+  api.updateSettings(payload)
+    .then(() => {
+      set((state) => ({ ...state, syncStatus: 'saved', syncError: null, lastSyncedAt: Date.now() }));
+      savedStateTimer = setTimeout(() => {
+        set((state) => state.syncStatus === 'saved' ? { ...state, syncStatus: 'idle' } : state);
+        savedStateTimer = null;
+      }, 1800);
+    })
+    .catch((err) => {
+      reportRecoverableError({
+        location: 'cloud-sync:settings-save-now',
+        error: err,
+        userMessage: buildApiErrorUserMessage(err, '设置同步'),
+      });
+      set((state) => ({ ...state, syncStatus: 'error', syncError: err instanceof Error ? err.message : String(err) }));
+    });
 }
 
 function syncUsageStatsToServer(usageStats: UsageStats, set: SettingsSet) {
@@ -229,8 +272,10 @@ export function buildSettingsPayload(state: AppSettings) {
 function syncState(state: Partial<AppSettings> & { api?: APIConfig; aiProfiles?: AIModelProfile[]; memoryUI?: { showDeveloperMemory?: boolean }; developerModeEntitled?: boolean }): Partial<AppSettings> & { developerModeEntitled: boolean } {
   const aiProfiles = normalizeAIProfiles(state.aiProfiles, state.api);
   const legacyShowMemoryDebug = Boolean(state.memoryUI?.showDeveloperMemory);
+  const hasDeveloperModeEntitlementSignal = state.developerModeEntitled !== undefined;
   const developerModeEntitled = state.developerModeEntitled === true;
-  const developerUI = developerModeEntitled
+  const developerModeAllowed = !hasDeveloperModeEntitlementSignal || developerModeEntitled;
+  const developerUI = developerModeAllowed
     ? {
         ...DEFAULT_DEVELOPER_UI_PREFS,
         ...(state.developerUI || {}),
@@ -243,7 +288,7 @@ function syncState(state: Partial<AppSettings> & { api?: APIConfig; aiProfiles?:
     themePreset: normalizeThemePreset(state.themePreset),
     aiProfiles,
     api: buildApiFromProfiles(aiProfiles),
-    developerMode: developerModeEntitled && Boolean(state.developerMode),
+    developerMode: developerModeAllowed && Boolean(state.developerMode),
     avatarGeneration: {
       ...DEFAULT_AVATAR_GENERATION_SETTINGS,
       ...(state.avatarGeneration || {}),
@@ -274,7 +319,7 @@ function syncState(state: Partial<AppSettings> & { api?: APIConfig; aiProfiles?:
     },
     developerUI,
     memoryUI: {
-      showDeveloperMemory: developerModeEntitled && (state.developerUI?.showMemoryDebug ?? legacyShowMemoryDebug),
+      showDeveloperMemory: developerModeAllowed && (state.developerUI?.showMemoryDebug ?? legacyShowMemoryDebug),
     },
     chatDraftDefaults: {
       ...DEFAULT_CHAT_DRAFT_DEFAULTS,
@@ -447,6 +492,44 @@ export const useSettingsStore = create<SettingsStore>()(
         }
       },
 
+      refreshDeveloperEntitlement: async () => {
+        if (useAuthStore.getState().authMode === 'local') return;
+        try {
+          const remote = await api.getSettings();
+          if (remote.developerModeEntitled === undefined) {
+            set((state) => ({ ...state, syncError: null }));
+            return;
+          }
+          set((state) => {
+            const developerModeEntitled = remote.developerModeEntitled === true;
+            if (state.syncStatus === 'saving') {
+              return developerModeEntitled
+                ? { ...state, developerModeEntitled: true, syncError: null }
+                : {
+                    ...state,
+                    developerModeEntitled: false,
+                    developerMode: false,
+                    memoryUI: { showDeveloperMemory: false },
+                    syncError: null,
+                  };
+            }
+            return {
+              ...state,
+              developerModeEntitled,
+              developerMode: developerModeEntitled && Boolean(state.developerMode),
+              memoryUI: { showDeveloperMemory: developerModeEntitled && Boolean(state.developerUI.showMemoryDebug) },
+              syncError: null,
+            };
+          });
+        } catch (error) {
+          reportRecoverableError({
+            location: 'settings:developer-entitlement-refresh',
+            error,
+            userMessage: buildApiErrorUserMessage(error, '开发者权限刷新'),
+          });
+        }
+      },
+
       updateApi: (config) => {
         set((state) => {
           const nextApi = { ...state.api, ...config };
@@ -517,8 +600,18 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setDeveloperMode: (developerMode) => {
         set((state) => {
-          const next = { ...(syncState({ ...state, developerMode: state.developerModeEntitled && developerMode }) as SettingsStore), lastSyncedAt: Date.now() };
-          syncToServer(buildSettingsPayload(next), set);
+          const authState = useAuthStore.getState();
+          const developerModeDenied = authState.authMode === 'cloud' && authState.user?.developerModeEntitled === false;
+          const developerModeAvailable = !developerModeDenied && (state.developerMode || state.developerModeEntitled || authState.user?.developerModeEntitled === true);
+          const nextDeveloperMode = developerModeAvailable && developerMode;
+          const next = {
+            ...state,
+            developerModeEntitled: state.developerModeEntitled || authState.user?.developerModeEntitled === true,
+            developerMode: nextDeveloperMode,
+            memoryUI: { showDeveloperMemory: nextDeveloperMode && Boolean(state.developerUI.showMemoryDebug) },
+            lastSyncedAt: Date.now(),
+          };
+          syncToServerNow({ developerMode: nextDeveloperMode }, set);
           return next;
         });
       },
@@ -619,29 +712,39 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setDeveloperUI: (prefs) => {
         set((state) => {
-          const developerUI = state.developerModeEntitled ? { ...DEFAULT_DEVELOPER_UI_PREFS, ...state.developerUI, ...prefs } : DISABLED_DEVELOPER_UI_PREFS;
+          const authState = useAuthStore.getState();
+          const developerModeDenied = authState.authMode === 'cloud' && authState.user?.developerModeEntitled === false;
+          const developerModeAvailable = !developerModeDenied && (state.developerMode || state.developerModeEntitled || authState.user?.developerModeEntitled === true);
+          const developerModeEntitled = state.developerModeEntitled || authState.user?.developerModeEntitled === true;
+          const developerUI = developerModeAvailable ? { ...DEFAULT_DEVELOPER_UI_PREFS, ...state.developerUI, ...prefs } : DISABLED_DEVELOPER_UI_PREFS;
           setHumanAppraisalRuntimeConfig({ enabled: developerUI.enableHumanAppraisal });
           const next = {
             ...state,
+            developerModeEntitled,
             developerUI,
             memoryUI: { showDeveloperMemory: developerUI.showMemoryDebug },
             lastSyncedAt: Date.now(),
           };
-          syncToServer(buildSettingsPayload(next), set);
+          syncToServerNow({ developerUI: next.developerUI, memoryUI: next.memoryUI }, set);
           return next;
         });
       },
 
       setMemoryDeveloperView: (enabled) => {
         set((state) => {
-          const developerUI = state.developerModeEntitled ? { ...DEFAULT_DEVELOPER_UI_PREFS, ...state.developerUI, showMemoryDebug: enabled } : DISABLED_DEVELOPER_UI_PREFS;
+          const authState = useAuthStore.getState();
+          const developerModeDenied = authState.authMode === 'cloud' && authState.user?.developerModeEntitled === false;
+          const developerModeAvailable = !developerModeDenied && (state.developerMode || state.developerModeEntitled || authState.user?.developerModeEntitled === true);
+          const developerModeEntitled = state.developerModeEntitled || authState.user?.developerModeEntitled === true;
+          const developerUI = developerModeAvailable ? { ...DEFAULT_DEVELOPER_UI_PREFS, ...state.developerUI, showMemoryDebug: enabled } : DISABLED_DEVELOPER_UI_PREFS;
           const next = {
             ...state,
+            developerModeEntitled,
             developerUI,
-            memoryUI: { showDeveloperMemory: state.developerModeEntitled && enabled },
+            memoryUI: { showDeveloperMemory: developerModeAvailable && enabled },
             lastSyncedAt: Date.now(),
           };
-          syncToServer(buildSettingsPayload(next), set);
+          syncToServerNow({ developerUI: next.developerUI, memoryUI: next.memoryUI }, set);
           return next;
         });
       },
@@ -826,10 +929,20 @@ export const useSettingsStore = create<SettingsStore>()(
         chatAppearance: state.chatAppearance,
         usageStats: state.usageStats,
       }),
-      merge: (persistedState, currentState) => ({
-        ...currentState,
-        ...syncState({ ...(currentState as AppSettings), ...(persistedState as Partial<AppSettings>) }),
-      }),
+      merge: (persistedState, currentState) => {
+        const {
+          developerModeEntitled: _currentDeveloperModeEntitled,
+          ...currentSettings
+        } = currentState as SettingsStore;
+        const {
+          developerModeEntitled: _persistedDeveloperModeEntitled,
+          ...persistedSettings
+        } = (persistedState || {}) as Partial<SettingsStore>;
+        return {
+          ...currentState,
+          ...syncState({ ...(currentSettings as AppSettings), ...(persistedSettings as Partial<AppSettings>) }),
+        };
+      },
     }
   )
 );

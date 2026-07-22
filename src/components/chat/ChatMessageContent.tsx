@@ -82,6 +82,18 @@ function parseAttachmentRatio(attachment: Pick<MessageAttachment, 'width' | 'hei
   return 4 / 3;
 }
 
+function buildAttachmentQueueProgress(message: Message, attachment: MessageAttachment) {
+  const attachments = (message.metadata?.attachments || []).filter((item) => item.kind === attachment.kind && item.status !== 'deleted');
+  const index = attachments.findIndex((item) => item.id === attachment.id);
+  if (index < 0) return '';
+  const total = attachments.length;
+  const position = index + 1;
+  const frontCount = attachments.slice(0, index).filter((item) => item.status === 'queued' || item.status === 'generating').length;
+  if (attachment.status === 'queued') return `排队 ${position}/${total}，前面还有 ${frontCount} 张`;
+  if (attachment.status === 'generating') return `队列 ${position}/${total}`;
+  return '';
+}
+
 function getAttachmentMaxWidth(ratio: number) {
   if (ratio < 0.82) return 300;
   if (ratio < 1.2) return 360;
@@ -320,7 +332,7 @@ export function MessageContent({ message, onRetryMedia, onOpenImage, onOpenDiagr
   const usedAttachmentIds = new Set<string>();
   const renderAttachment = (attachment: MessageAttachment, captionOverride?: string) => {
     if (attachment.kind === 'image') {
-      const canRetryAttachment = attachment.status === 'failed' || (attachment.status === 'ready' && !attachment.url);
+      const canRetryAttachment = attachment.status === 'failed' || attachment.status === 'queued' || attachment.status === 'generating' || (attachment.status === 'ready' && !attachment.url);
       if (attachment.status === 'ready' && attachment.url) {
         return (
           <MessageImageAttachment
@@ -339,12 +351,17 @@ export function MessageContent({ message, onRetryMedia, onOpenImage, onOpenDiagr
               <Box>
                 <Chip size="small" label={getAttachmentStatusLabel(attachment)} color={statusChipColor(attachment.status)} variant="outlined" sx={{ height: 22 }} />
               </Box>
+              {buildAttachmentQueueProgress(message, attachment) ? (
+                <Typography variant="caption" color="text.secondary">
+                  {buildAttachmentQueueProgress(message, attachment)}
+                </Typography>
+              ) : null}
               {isAttachmentProcessing(attachment.status) ? <LinearProgress /> : null}
               <Typography variant="caption" sx={{ color: attachment.status === 'failed' ? 'error.main' : 'text.secondary', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                 {getAttachmentStatusDetail(attachment)}
               </Typography>
               {canRetryAttachment && onRetryMedia ? (
-                <Button size="small" variant="outlined" color="error" onClick={() => void onRetryMedia?.(message, attachment.id)}>
+                <Button size="small" variant="outlined" color={attachment.status === 'failed' ? 'error' : 'primary'} onClick={() => void onRetryMedia?.(message, attachment.id)}>
                   重试
                 </Button>
               ) : null}

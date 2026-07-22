@@ -20,6 +20,7 @@ export interface AuthUserResponse {
   aiProxyEntitled?: boolean;
   agentEntitled?: boolean;
   aiSearchEntitled?: boolean;
+  developerModeEntitled?: boolean;
   retentionLimits?: Record<string, { storage: number; recall: number }>;
 }
 
@@ -93,6 +94,7 @@ export interface VipEntitlementInfo {
   aiProxyEnabled: boolean;
   agentEnabled: boolean;
   aiSearchEnabled: boolean;
+  developerModeEnabled: boolean;
   retentionLimits?: Record<string, { storage: number; recall: number }>;
 }
 

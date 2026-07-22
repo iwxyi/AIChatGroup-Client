@@ -57,6 +57,7 @@ export type GenerateResponseOptions = {
 };
 
 const DEFAULT_MAX_TEXT_INPUT_CHARS = 600_000;
+const DEFAULT_IMAGE_REQUEST_TIMEOUT_MS = 4 * 60 * 1000;
 const INLINE_IMAGE_DATA_URL_PATTERN = /data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/=]{1024,}/i;
 
 function isLegacyOfficialProvider(provider: APIConfig['provider']) {
@@ -153,6 +154,37 @@ function guessAudioMimeType(format?: string) {
 
 function createObjectUrl(blob: Blob) {
   return URL.createObjectURL(blob);
+}
+
+function withTimeoutSignal(signal: AbortSignal | undefined, timeoutMs: number, timeoutReason: string) {
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    return {
+      signal,
+      cleanup: () => undefined,
+    };
+  }
+
+  const controller = new AbortController();
+  let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+  let externalAbortHandler: (() => void) | null = null;
+
+  if (signal?.aborted) {
+    controller.abort(signal.reason || new DOMException('Aborted', 'AbortError'));
+  } else {
+    externalAbortHandler = () => controller.abort(signal?.reason || new DOMException('Aborted', 'AbortError'));
+    signal?.addEventListener('abort', externalAbortHandler, { once: true });
+    timeoutHandle = setTimeout(() => {
+      controller.abort(new Error(timeoutReason));
+    }, timeoutMs);
+  }
+
+  return {
+    signal: controller.signal,
+    cleanup: () => {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+      if (externalAbortHandler && signal) signal.removeEventListener('abort', externalAbortHandler);
+    },
+  };
 }
 
 function splitSystemMessages(messages: ChatMessage[], systemPrompt: string) {
@@ -979,6 +1011,7 @@ export async function listAvailableModels(config: APIConfig): Promise<AvailableM
 async function generateOpenAICompatibleImage(config: APIConfig, options: ImageGenerationOptions): Promise<GeneratedImage[]> {
   const officialProxy = usesOfficialProxy(config);
   const provider = officialProxy ? resolveOfficialBackendProvider(config.provider) : undefined;
+  const timed = withTimeoutSignal(options.signal, DEFAULT_IMAGE_REQUEST_TIMEOUT_MS, '图片生成超时，请稍后重试。');
   if (options.referenceImages?.length) {
     const formData = new FormData();
     formData.append('model', config.model);
@@ -994,19 +1027,75 @@ async function generateOpenAICompatibleImage(config: APIConfig, options: ImageGe
       formData.append('image[]', blob, `reference-${index + 1}.${getBlobExtension(reference.mimeType || blob.type || 'image/png')}`);
     }
 
-    const response = await fetch(buildOpenAICompatibleImageEditUrl(config.baseUrl), {
+    try {
+      const response = await fetch(buildOpenAICompatibleImageEditUrl(config.baseUrl), {
+        method: 'POST',
+        headers: officialProxy ? getAuthHeaders() : { Authorization: `Bearer ${config.apiKey}` },
+        signal: timed.signal,
+        body: formData,
+      });
+      if (officialProxy && response.status === 401) {
+        dispatchAuthSessionExpired({ status: response.status, path: buildOpenAICompatibleImageEditUrl(config.baseUrl) });
+      }
+
+      const result = await parseJsonResponse<{
+        data?: Array<{ b64_json?: string; revised_prompt?: string; url?: string }>;
+      }>(response, 'Image edit request failed');
+
+      const images: GeneratedImage[] = [];
+      for (const item of result.data || []) {
+        if (item.b64_json) {
+          images.push({
+            mimeType: 'image/png',
+            dataUrl: encodeDataUrl('image/png', item.b64_json),
+            revisedPrompt: item.revised_prompt,
+            url: item.url,
+          });
+          continue;
+        }
+
+        if (item.url) {
+          images.push({
+            mimeType: 'image/png',
+            dataUrl: item.url,
+            revisedPrompt: item.revised_prompt,
+            url: item.url,
+          });
+        }
+      }
+      return images;
+    } finally {
+      timed.cleanup();
+    }
+  }
+
+  try {
+    const response = await fetch(buildOpenAICompatibleImageUrl(config.baseUrl), {
       method: 'POST',
-      headers: officialProxy ? getAuthHeaders() : { Authorization: `Bearer ${config.apiKey}` },
-      signal: options.signal,
-      body: formData,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(officialProxy ? getAuthHeaders() : { Authorization: `Bearer ${config.apiKey}` }),
+      },
+      signal: timed.signal,
+      body: JSON.stringify({
+        provider,
+        model: config.model,
+        prompt: options.prompt,
+        n: options.count || 1,
+        size: options.size || '1024x1024',
+        response_format: 'b64_json',
+        negative_prompt: options.negativePrompt || undefined,
+        seed: options.seed ?? undefined,
+        metadata: officialProxy && options.aiUsage ? { aiUsage: options.aiUsage } : undefined,
+      }),
     });
     if (officialProxy && response.status === 401) {
-      dispatchAuthSessionExpired({ status: response.status, path: buildOpenAICompatibleImageEditUrl(config.baseUrl) });
+      dispatchAuthSessionExpired({ status: response.status, path: buildOpenAICompatibleImageUrl(config.baseUrl) });
     }
 
     const result = await parseJsonResponse<{
       data?: Array<{ b64_json?: string; revised_prompt?: string; url?: string }>;
-    }>(response, 'Image edit request failed');
+    }>(response, 'Image generation request failed');
 
     const images: GeneratedImage[] = [];
     for (const item of result.data || []) {
@@ -1030,57 +1119,9 @@ async function generateOpenAICompatibleImage(config: APIConfig, options: ImageGe
       }
     }
     return images;
+  } finally {
+    timed.cleanup();
   }
-
-  const response = await fetch(buildOpenAICompatibleImageUrl(config.baseUrl), {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(officialProxy ? getAuthHeaders() : { Authorization: `Bearer ${config.apiKey}` }),
-    },
-    signal: options.signal,
-    body: JSON.stringify({
-      provider,
-      model: config.model,
-      prompt: options.prompt,
-      n: options.count || 1,
-      size: options.size || '1024x1024',
-      response_format: 'b64_json',
-      negative_prompt: options.negativePrompt || undefined,
-      seed: options.seed ?? undefined,
-      metadata: officialProxy && options.aiUsage ? { aiUsage: options.aiUsage } : undefined,
-    }),
-  });
-  if (officialProxy && response.status === 401) {
-    dispatchAuthSessionExpired({ status: response.status, path: buildOpenAICompatibleImageUrl(config.baseUrl) });
-  }
-
-  const result = await parseJsonResponse<{
-    data?: Array<{ b64_json?: string; revised_prompt?: string; url?: string }>;
-  }>(response, 'Image generation request failed');
-
-  const images: GeneratedImage[] = [];
-  for (const item of result.data || []) {
-    if (item.b64_json) {
-      images.push({
-        mimeType: 'image/png',
-        dataUrl: encodeDataUrl('image/png', item.b64_json),
-        revisedPrompt: item.revised_prompt,
-        url: item.url,
-      });
-      continue;
-    }
-
-    if (item.url) {
-      images.push({
-        mimeType: 'image/png',
-        dataUrl: item.url,
-        revisedPrompt: item.revised_prompt,
-        url: item.url,
-      });
-    }
-  }
-  return images;
 }
 
 async function generateGeminiImage(config: APIConfig, options: ImageGenerationOptions): Promise<GeneratedImage[]> {
@@ -1096,47 +1137,52 @@ async function generateGeminiImage(config: APIConfig, options: ImageGenerationOp
   }
 
   const officialProxy = usesOfficialProxy(config);
-  const response = await fetch(officialProxy
-    ? buildOfficialGeminiGenerateContentUrl(config.baseUrl || '/api/ai', config.model)
-    : `${buildGeminiUrl(config.baseUrl, config.model, false)}?key=${encodeURIComponent(config.apiKey)}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(officialProxy ? getAuthHeaders() : {}),
-    },
-    signal: options.signal,
-    body: JSON.stringify({
-      ...(officialProxy ? { provider: resolveOfficialBackendProvider(config.provider), model: config.model } : {}),
-      ...(officialProxy && options.aiUsage ? { metadata: { aiUsage: options.aiUsage } } : {}),
-      contents: [{ role: 'user', parts }],
-      generationConfig: {
-        responseModalities: ['IMAGE'],
-        imageConfig: imageSizeToGeminiConfig(options.size, options.aspectRatio, options.imageSize),
+  const timed = withTimeoutSignal(options.signal, DEFAULT_IMAGE_REQUEST_TIMEOUT_MS, '图片生成超时，请稍后重试。');
+  try {
+    const response = await fetch(officialProxy
+      ? buildOfficialGeminiGenerateContentUrl(config.baseUrl || '/api/ai', config.model)
+      : `${buildGeminiUrl(config.baseUrl, config.model, false)}?key=${encodeURIComponent(config.apiKey)}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(officialProxy ? getAuthHeaders() : {}),
       },
-    }),
-  });
-  if (officialProxy && response.status === 401) {
-    dispatchAuthSessionExpired({ status: response.status, path: buildOfficialGeminiGenerateContentUrl(config.baseUrl || '/api/ai', config.model) });
-  }
+      signal: timed.signal,
+      body: JSON.stringify({
+        ...(officialProxy ? { provider: resolveOfficialBackendProvider(config.provider), model: config.model } : {}),
+        ...(officialProxy && options.aiUsage ? { metadata: { aiUsage: options.aiUsage } } : {}),
+        contents: [{ role: 'user', parts }],
+        generationConfig: {
+          responseModalities: ['IMAGE'],
+          imageConfig: imageSizeToGeminiConfig(options.size, options.aspectRatio, options.imageSize),
+        },
+      }),
+    });
+    if (officialProxy && response.status === 401) {
+      dispatchAuthSessionExpired({ status: response.status, path: buildOfficialGeminiGenerateContentUrl(config.baseUrl || '/api/ai', config.model) });
+    }
 
-  const result = await parseJsonResponse<{
-    candidates?: Array<{ content?: { parts?: Array<{ inlineData?: { mimeType?: string; data?: string }; inline_data?: { mime_type?: string; data?: string } }> } }>;
-  }>(response, 'Gemini image generation request failed');
+    const result = await parseJsonResponse<{
+      candidates?: Array<{ content?: { parts?: Array<{ inlineData?: { mimeType?: string; data?: string }; inline_data?: { mime_type?: string; data?: string } }> } }>;
+    }>(response, 'Gemini image generation request failed');
 
-  const images: GeneratedImage[] = [];
-  for (const candidate of result.candidates || []) {
-    for (const part of candidate.content?.parts || []) {
-      const mimeType = part.inlineData?.mimeType || part.inline_data?.mime_type;
-      const data = part.inlineData?.data || part.inline_data?.data;
-      if (mimeType && data) {
-        images.push({
-          mimeType,
-          dataUrl: encodeDataUrl(mimeType, data),
-        });
+    const images: GeneratedImage[] = [];
+    for (const candidate of result.candidates || []) {
+      for (const part of candidate.content?.parts || []) {
+        const mimeType = part.inlineData?.mimeType || part.inline_data?.mime_type;
+        const data = part.inlineData?.data || part.inline_data?.data;
+        if (mimeType && data) {
+          images.push({
+            mimeType,
+            dataUrl: encodeDataUrl(mimeType, data),
+          });
+        }
       }
     }
+    return images;
+  } finally {
+    timed.cleanup();
   }
-  return images;
 }
 
 export async function generateImage(config: APIConfig, options: ImageGenerationOptions): Promise<GeneratedImage[]> {

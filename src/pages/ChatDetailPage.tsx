@@ -65,6 +65,7 @@ import { projectMergedChatMessages } from '../services/currentChatMessages';
 import { resolveSessionFamilyKey } from '../services/sessionEngineKeys';
 import { isAssistantArtifactCloudSyncEnabled, setAssistantArtifactCloudSyncEnabled } from '../services/assistantArtifactCloudSyncPreference';
 import { writeAssistantAgentDefaultEnabled } from '../services/assistantAgentPreference';
+import { getPendingAppCommand, subscribePendingAppCommand, type PendingAppCommand } from '../features/appCommand/pendingCommandStore';
 
 const ChatSidebarPanel = lazy(() => import('../components/chat/ChatSidebarPanel'));
 const AssistantAgentPanel = lazy(() => import('../components/chat/AssistantAgentPanel'));
@@ -84,6 +85,11 @@ type PendingStoryChoiceVisual = {
   sourceMessageId: string;
   selectedValue: string;
   options: NarrativeStoryChoiceOption[];
+};
+type HomeCommandAssistantLocationState = {
+  homeCommandInitialMessage?: string;
+  homeCommandStartAgent?: boolean;
+  homeCommandPreferredMode?: 'chat' | 'image' | 'research' | 'tool';
 };
 
 function getMessageListElementScrollTimestamp(element: HTMLElement) {
@@ -817,6 +823,41 @@ function buildVisibleMessageIdSignature(messages: Message[]) {
   return messages.map((message) => message.id).join('|');
 }
 
+function getPendingAppCommandActionLabel(pending: PendingAppCommand) {
+  const primaryChoice = pending.choices?.find((choice) => choice.kind === 'confirm' || choice.kind === 'execute');
+  if (primaryChoice) return primaryChoice.label;
+  if (pending.route.mode !== 'local_action') return '继续处理';
+  const plan = pending.route.plan;
+  if (plan.action === 'create_group_chat') return plan.groupName ? `创建「${plan.groupName}」` : '创建群聊';
+  if (plan.action === 'create_direct_chat') return plan.characterName ? `和${plan.characterName}聊天` : '创建单聊';
+  if (plan.action === 'create_character' || plan.action === 'create_characters') {
+    const count = plan.characters?.length || (plan.characterName ? 1 : 0);
+    return count > 1 ? `创建 ${count} 个角色` : '创建角色';
+  }
+  if (plan.action === 'set_ai_model_key') return '写入模型秘钥';
+  if (plan.action === 'update_theme') return plan.theme === 'dark' ? '切换夜间模式' : '切换主题';
+  if (plan.action === 'open_existing_chat') return '打开最佳匹配';
+  return plan.title || '执行操作';
+}
+
+function buildPendingAppCommandChoices(pending: PendingAppCommand) {
+  const routeChoices = pending.choices?.length ? pending.choices : [];
+  const hasCancel = routeChoices.some((choice) => choice.kind === 'cancel');
+  const choices = routeChoices.length
+    ? routeChoices
+    : [{ id: 'confirm', label: getPendingAppCommandActionLabel(pending), kind: 'confirm' as const }];
+  return hasCancel ? choices : [...choices, { id: 'cancel', label: '取消本次操作', kind: 'cancel' as const }];
+}
+
+function resolvePendingChoicePresentation(pending: PendingAppCommand) {
+  if (pending.route.mode === 'local_action' && pending.route.choicePresentation) return pending.route.choicePresentation;
+  const choices = buildPendingAppCommandChoices(pending);
+  const longest = Math.max(...choices.map((choice) => choice.label.length + (choice.description?.length || 0)), 0);
+  if (choices.length > 5) return 'select';
+  if (longest > 18 || choices.length > 3) return 'list';
+  return 'chips';
+}
+
 export default function ChatDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -890,6 +931,7 @@ export default function ChatDetailPage() {
   const [chatPageSettingsOpen, setChatPageSettingsOpen] = useState(false);
   const [uiHydrated, setUiHydrated] = useState(() => useUIStore.persist.hasHydrated());
   const [selectedAssistantArtifactId, setSelectedAssistantArtifactId] = useState<string | null>(null);
+  const [pendingAppCommand, setPendingAppCommand] = useState<PendingAppCommand | null>(null);
 
   const loopTokenRef = useRef<string | null>(null);
   const isRunningRef = useRef(false);
@@ -898,6 +940,7 @@ export default function ChatDetailPage() {
   const pendingStoryChoiceRef = useRef<string | null>(null);
   const pendingStoryChoiceVisualTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isStoryReaderAtTailRef = useRef(true);
+  const consumedHomeCommandRef = useRef<string | null>(null);
   const lastReadingPositionPersistRef = useRef<{ chatId: string; key: string; at: number } | null>(null);
   const openedChatWindowRef = useRef<{ chatId: string; requestKey: string; openedAt: number; restored: boolean } | null>(null);
   const storyEntryReadingPositionRef = useRef<{ chatId: string; key: string; position: MessageListScrollPosition } | null>(null);
@@ -1079,6 +1122,15 @@ export default function ChatDetailPage() {
   );
   const isStoryRoom = chat?.sessionKind?.scenarioId === 'story-reader';
   const isAssistantChat = chat?.type === 'assistant';
+  useEffect(() => {
+    if (!id || !isAssistantChat) {
+      setPendingAppCommand(null);
+      return undefined;
+    }
+    const syncPending = () => setPendingAppCommand(getPendingAppCommand(`assistant:${id}`));
+    syncPending();
+    return subscribePendingAppCommand(syncPending);
+  }, [id, isAssistantChat]);
   const agentEntitled = authMode === 'cloud' && currentUser?.agentEntitled === true;
   useEffect(() => {
     if (!chat || !isAssistantChat || agentEntitled) return;
@@ -1764,6 +1816,7 @@ export default function ChatDetailPage() {
               chatId: id,
               chat: nextChat,
               currentMessages: activeMessagesAfterRevision,
+              selectedArtifactId: selectedAssistantArtifactId,
               timestamp: createdRevision.timestamp + 1,
               upsertMessage: upsertMessageStable,
               updateChat,
@@ -1799,7 +1852,7 @@ export default function ChatDetailPage() {
       }
       if (chat.type !== 'direct' && chat.type !== 'assistant') startConversationLoopIfNeeded(nextChat, { immediate: true });
     });
-  }, [addAnchoredMessage, aiProfiles, api, appendEventMessage, appendEventMessageStable, appendEventMessagesStable, appendLocalInterceptionHint, applyChatRuntimeDelta, cancelActiveConversationLoop, characters, chat, chats, commitPersistedManualRuntime, currentChatAllMessages, enqueueManualInput, getNextMessageTimestamp, id, recordSpeak, setSnackbar, showErrorToast, startConversationLoopIfNeeded, updateCharacter, updateCharacters, updateChat, upsertMessageStable]);
+  }, [addAnchoredMessage, aiProfiles, api, appendEventMessage, appendEventMessageStable, appendEventMessagesStable, appendLocalInterceptionHint, applyChatRuntimeDelta, cancelActiveConversationLoop, characters, chat, chats, commitPersistedManualRuntime, currentChatAllMessages, enqueueManualInput, getNextMessageTimestamp, id, recordSpeak, selectedAssistantArtifactId, setSnackbar, showErrorToast, startConversationLoopIfNeeded, updateCharacter, updateCharacters, updateChat, upsertMessageStable]);
 
   const handleSwitchMessageRevision = useCallback(async (sourceMessage: Message, direction: -1 | 1) => {
     if (!chat || !id || !isMessageBranchingEnabled(chat)) return;
@@ -2027,6 +2080,7 @@ export default function ChatDetailPage() {
               chatId: id,
               chat,
               currentMessages: recentMessagesWithUser,
+              selectedArtifactId: selectedAssistantArtifactId,
               timestamp: userMessage.timestamp + 1,
               upsertMessage: upsertMessageStable,
               updateChat,
@@ -2053,7 +2107,67 @@ export default function ChatDetailPage() {
       }
       startConversationLoopIfNeeded(chat);
     });
-  }, [addMessageStable, aiProfiles, api, appendEventMessage, appendEventMessageStable, appendEventMessagesStable, appendLocalInterceptionHint, applyChatRuntimeDelta, characters, chat, chats, commitPersistedManualRuntime, currentChatMessages, currentUser?.nickname, enqueueManualInput, getNextMessageTimestamp, id, recordSpeak, showErrorToast, startConversationLoopIfNeeded, updateCharacter, updateCharacters, updateChat, upsertMessageStable]);
+  }, [addMessageStable, aiProfiles, api, appendEventMessage, appendEventMessageStable, appendEventMessagesStable, appendLocalInterceptionHint, applyChatRuntimeDelta, characters, chat, chats, commitPersistedManualRuntime, currentChatMessages, currentUser?.nickname, enqueueManualInput, getNextMessageTimestamp, id, recordSpeak, selectedAssistantArtifactId, showErrorToast, startConversationLoopIfNeeded, updateCharacter, updateCharacters, updateChat, upsertMessageStable]);
+
+  const handlePendingAppCommandChoice = useCallback(async (choiceId: string) => {
+    if (!chat || !id || chat.type !== 'assistant') return;
+    directReplyAbortRef.current?.abort();
+    await enqueueManualInput(async () => {
+      try {
+        const { runPendingAssistantAppCommandChoice } = await import('../features/assistantAppTools/assistantAppToolBridge');
+        const result = await runPendingAssistantAppCommandChoice({
+          chatId: id,
+          choiceId,
+          apiConfig: api,
+          aiProfiles,
+        });
+        const assistantMessage = await addMessageStable({
+          chatId: id,
+          type: 'ai',
+          senderId: 'assistant',
+          senderName: '助手',
+          content: result.content,
+          emotion: 0,
+          timestamp: getNextMessageTimestamp(),
+          metadata: {
+            format: 'markdown',
+            assistant: { mode: 'general' },
+          },
+        });
+        void updateChat(id, { lastMessageAt: assistantMessage.timestamp, latestMessage: assistantMessage });
+      } catch (error) {
+        console.error('[assistant-app-command:choice-error]', error);
+        showErrorToast(error instanceof Error ? error.message : String(error));
+      }
+    });
+  }, [addMessageStable, aiProfiles, api, chat, enqueueManualInput, getNextMessageTimestamp, id, showErrorToast, updateChat]);
+
+  useEffect(() => {
+    if (!chat || !id || chat.type !== 'assistant') return;
+    const state = location.state as HomeCommandAssistantLocationState | null;
+    const initialMessage = state?.homeCommandInitialMessage?.trim();
+    if (!initialMessage) return;
+    const consumeKey = `${id}:${initialMessage}`;
+    if (consumedHomeCommandRef.current === consumeKey) return;
+    consumedHomeCommandRef.current = consumeKey;
+    navigate({ pathname: location.pathname, search: location.search, hash: location.hash }, { replace: true, state: null });
+    if (state?.homeCommandStartAgent && agentEntitled) {
+      writeAssistantAgentDefaultEnabled(true);
+      void updateChat(id, {
+        modeState: {
+          ...chat.modeState,
+          assistantCapabilities: {
+            ...chat.modeState.assistantCapabilities,
+            agent: true,
+            artifacts: true,
+            webSearch: true,
+            updatedAt: Date.now(),
+          },
+        },
+      });
+    }
+    void handleMemberSpeakSend(initialMessage);
+  }, [agentEntitled, chat, handleMemberSpeakSend, id, location.hash, location.pathname, location.search, location.state, navigate, updateChat]);
 
   const handleGuideSend = useCallback(async (content: string, attachments: MessageAttachment[] = []) => {
     if (!chat || !id) return;
@@ -2990,6 +3104,89 @@ export default function ChatDetailPage() {
               {storyBranchSuggestionContent}
             </Box>
           ) : null}
+          {pendingAppCommand ? (
+            <Box
+              sx={{
+                pointerEvents: 'auto',
+                px: { xs: 1.5, sm: 2 },
+                pb: 0.75,
+              }}
+            >
+              <Box
+                sx={{
+                  display: 'grid',
+                  gap: 0.75,
+                  p: 1,
+                  borderRadius: 1.5,
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.92)' : 'rgba(15,23,42,0.92)',
+                  boxShadow: (theme) => theme.palette.mode === 'light' ? '0 12px 30px rgba(15,23,42,0.08)' : '0 14px 34px rgba(0,0,0,0.28)',
+                }}
+              >
+                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>
+                  等待选择
+                </Typography>
+                {(() => {
+                  const choices = buildPendingAppCommandChoices(pendingAppCommand);
+                  const presentation = resolvePendingChoicePresentation(pendingAppCommand);
+                  const sendChoice = (choiceId: string) => handlePendingAppCommandChoice(choiceId);
+                  if (presentation === 'select') {
+                    return (
+                      <TextField
+                        select
+                        size="small"
+                        value=""
+                        onChange={(event) => {
+                          if (event.target.value) void sendChoice(event.target.value);
+                        }}
+                        label="选择操作"
+                      >
+                        {choices.map((choice) => (
+                          <MenuItem key={choice.id} value={choice.id}>{choice.label}</MenuItem>
+                        ))}
+                      </TextField>
+                    );
+                  }
+                  if (presentation === 'list') {
+                    return (
+                      <Box sx={{ display: 'grid', gap: 0.6 }}>
+                        {choices.map((choice) => (
+                          <Button
+                            key={choice.id}
+                            size="small"
+                            variant={choice.kind === 'cancel' ? 'text' : 'outlined'}
+                            color={choice.kind === 'cancel' ? 'inherit' : 'primary'}
+                            onClick={() => void sendChoice(choice.id)}
+                            sx={{ justifyContent: 'flex-start', textAlign: 'left', minHeight: 34 }}
+                          >
+                            <Box sx={{ minWidth: 0 }}>
+                              <Typography variant="body2" sx={{ fontWeight: 700 }}>{choice.label}</Typography>
+                              {choice.description ? <Typography variant="caption" color="text.secondary">{choice.description}</Typography> : null}
+                            </Box>
+                          </Button>
+                        ))}
+                      </Box>
+                    );
+                  }
+                  return (
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
+                      {choices.map((choice) => (
+                        <Chip
+                          key={choice.id}
+                          label={choice.label}
+                          color={choice.kind === 'cancel' ? 'default' : 'primary'}
+                          variant={choice.kind === 'cancel' ? 'outlined' : 'filled'}
+                          onClick={() => void sendChoice(choice.id)}
+                          sx={{ maxWidth: '100%' }}
+                        />
+                      ))}
+                    </Box>
+                  );
+                })()}
+              </Box>
+            </Box>
+          ) : null}
           <SessionComposerHost
             surfaces={effectiveComposerSurfaces}
             speakAsCharacterName={effectiveSpeakAsChar?.name}
@@ -3053,6 +3250,7 @@ export default function ChatDetailPage() {
                   <AssistantAgentPanel
                     chat={chat}
                     selectedArtifactId={selectedAssistantArtifactId}
+                    onSelectedArtifactChange={setSelectedAssistantArtifactId}
                     onAgentEnabledChange={agentEntitled ? (enabled) => {
                       writeAssistantAgentDefaultEnabled(enabled);
                       const aiSearchAvailable = authMode === 'cloud' && currentUser?.aiSearchEntitled === true;

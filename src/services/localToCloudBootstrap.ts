@@ -57,6 +57,7 @@ export interface BootstrapReconcilePlan {
   characterNameConflicts: Array<{ localId: string; localName: string; remoteId: string; remoteName: string }>;
   chatsToCreate: GroupChat[];
   chatsAlreadyRemote: GroupChat[];
+  chatsToPatchRuntime: GroupChat[];
   pendingCharacterCreates: BootstrapPendingEntityOperation[];
   pendingChatCreates: BootstrapPendingEntityOperation[];
   pendingMessageCreates: BootstrapPendingMessageOperation[];
@@ -150,6 +151,17 @@ function activeRemoteNameMap<T extends { id: string; name: string; deletedAt?: n
   return map;
 }
 
+function hasLocalRuntimeWorldData(chat: GroupChat) {
+  const worldState = chat.worldState as unknown;
+  return Boolean(
+    chat.runtimeEventsV2?.length
+    || chat.relationshipLedger?.length
+    || chat.runtimeTimeline?.length
+    || chat.layeredMemories?.length
+    || (worldState && typeof worldState === 'object' && Object.keys(worldState as Record<string, unknown>).length > 0),
+  );
+}
+
 export function createBootstrapReconcilePlan(
   snapshot: LocalCloudBootstrapSnapshot,
   remote: BootstrapRemoteSummary,
@@ -170,6 +182,7 @@ export function createBootstrapReconcilePlan(
     const remoteChat = remoteChatsByName.get(normalizeNameKey(chat.name));
     return Boolean(remoteChat && remoteChat.id !== chat.id);
   });
+  const chatsToCreate = localChats.filter((chat) => !chatsAlreadyRemote.some((item) => item.id === chat.id));
 
   return {
     remote,
@@ -188,8 +201,9 @@ export function createBootstrapReconcilePlan(
           : null;
       })
       .filter((item): item is { localId: string; localName: string; remoteId: string; remoteName: string } => Boolean(item)),
-    chatsToCreate: localChats.filter((chat) => !chatsAlreadyRemote.some((item) => item.id === chat.id)),
+    chatsToCreate,
     chatsAlreadyRemote,
+    chatsToPatchRuntime: chatsAlreadyRemote.filter(hasLocalRuntimeWorldData),
     pendingCharacterCreates,
     pendingChatCreates,
     pendingMessageCreates,
@@ -347,11 +361,13 @@ function mapCharacterIds(ids: string[] | undefined, characterIdMap: Map<string, 
   return (ids || []).map((id) => mapCharacterId(id, characterIdMap));
 }
 
-function mapJsonReferences<T>(value: T, characterIdMap: Map<string, string>): T {
-  if (!value || characterIdMap.size === 0) return value;
+function mapJsonReferences<T>(value: T, characterIdMap: Map<string, string>, extraIdMap: Map<string, string> = new Map()): T {
+  if (!value && value !== 0) return value;
+  const idMap = new Map([...characterIdMap, ...extraIdMap]);
+  if (idMap.size === 0) return value;
   try {
     let text = JSON.stringify(value);
-    for (const [localId, cloudId] of characterIdMap.entries()) {
+    for (const [localId, cloudId] of idMap.entries()) {
       text = text.split(localId).join(cloudId);
     }
     return JSON.parse(text) as T;
@@ -359,6 +375,59 @@ function mapJsonReferences<T>(value: T, characterIdMap: Map<string, string>): T 
     console.warn('[cloud-sync] failed to remap structured local references', { error, value });
     return value;
   }
+}
+
+function mergeRecordsById<T extends { id?: unknown; createdAt?: unknown }>(localItems: T[] | undefined, remoteItems: T[] | undefined) {
+  if (!localItems?.length) return remoteItems || [];
+  if (!remoteItems?.length) return localItems;
+  const byId = new Map<string, T>();
+  remoteItems.forEach((item, index) => {
+    const id = typeof item.id === 'string' && item.id ? item.id : `__remote_index_${index}`;
+    byId.set(id, item);
+  });
+  localItems.forEach((item, index) => {
+    const id = typeof item.id === 'string' && item.id ? item.id : `__local_index_${index}`;
+    byId.set(id, item);
+  });
+  return Array.from(byId.values()).sort((left, right) => Number(left.createdAt || 0) - Number(right.createdAt || 0));
+}
+
+function mergeRecordsByKey<T extends { pairKey?: unknown; updatedAt?: unknown }>(localItems: T[] | undefined, remoteItems: T[] | undefined) {
+  if (!localItems?.length) return remoteItems || [];
+  if (!remoteItems?.length) return localItems;
+  const byKey = new Map<string, T>();
+  remoteItems.forEach((item, index) => {
+    const key = typeof item.pairKey === 'string' && item.pairKey ? item.pairKey : `__remote_index_${index}`;
+    byKey.set(key, item);
+  });
+  localItems.forEach((item, index) => {
+    const key = typeof item.pairKey === 'string' && item.pairKey ? item.pairKey : `__local_index_${index}`;
+    byKey.set(key, item);
+  });
+  return Array.from(byKey.values()).sort((left, right) => Number(left.updatedAt || 0) - Number(right.updatedAt || 0));
+}
+
+function mergeRuntimeWorldPatch(localChat: GroupChat, remoteChat: GroupChat, characterIdMap: Map<string, string>, chatIdMap: Map<string, string>) {
+  return {
+    runtimeEventsV2: mapJsonReferences(mergeRecordsById(localChat.runtimeEventsV2, remoteChat.runtimeEventsV2), characterIdMap, chatIdMap),
+    relationshipLedger: mapJsonReferences(mergeRecordsByKey(localChat.relationshipLedger, remoteChat.relationshipLedger), characterIdMap, chatIdMap),
+    runtimeTimeline: mapJsonReferences(mergeRecordsById(localChat.runtimeTimeline, remoteChat.runtimeTimeline), characterIdMap, chatIdMap),
+    layeredMemories: mapJsonReferences(mergeRecordsById(localChat.layeredMemories, remoteChat.layeredMemories), characterIdMap, chatIdMap),
+    worldState: {
+      ...(remoteChat.worldState || {}),
+      ...mapJsonReferences(localChat.worldState || {}, characterIdMap, chatIdMap),
+    },
+  };
+}
+
+function hasRuntimeWorldPatchData(patch: ReturnType<typeof mergeRuntimeWorldPatch>) {
+  return Boolean(
+    patch.runtimeEventsV2.length
+    || patch.relationshipLedger.length
+    || patch.runtimeTimeline.length
+    || patch.layeredMemories.length
+    || Object.keys(patch.worldState || {}).length,
+  );
 }
 
 async function uploadChats(plan: BootstrapReconcilePlan, characterIdMap: Map<string, string>) {
@@ -403,6 +472,19 @@ async function uploadChats(plan: BootstrapReconcilePlan, characterIdMap: Map<str
       directorControls: mapJsonReferences(chat.directorControls, characterIdMap),
     } as Parameters<typeof api.createChat>[0]) as unknown as GroupChat);
     chatIdMap.set(chat.id, created.id);
+  }
+
+  for (const chat of plan.chatsToPatchRuntime) {
+    const remoteId = chatIdMap.get(chat.id);
+    if (!remoteId) continue;
+    const remoteChat = normalizeConversation(await api.getChat(remoteId) as unknown as GroupChat);
+    const patch = mergeRuntimeWorldPatch(chat, remoteChat, characterIdMap, chatIdMap);
+    if (!hasRuntimeWorldPatchData(patch)) continue;
+    await api.syncChatPatch(remoteId, {
+      operationId: `bootstrap-runtime-${chat.id}-${Date.now()}`,
+      clientTimestamp: Date.now(),
+      patch,
+    });
   }
 
   return chatIdMap;

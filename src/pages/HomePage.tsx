@@ -28,7 +28,9 @@ import EmptyState from '../components/common/EmptyState';
 import NoCharactersDialog from '../components/common/NoCharactersDialog';
 import SurfaceCard from '../components/common/SurfaceCard';
 import PageSection from '../components/common/PageSection';
+import { buildSettingsPath } from '../routes/settingsRoute';
 import SectionHeader from '../components/common/SectionHeader';
+import HomeCommandLauncher from '../features/homeCommand/HomeCommandLauncher';
 import { avatarGenerationQueue, type AvatarGenerationQueueSummary } from '../services/avatarGenerationQueue';
 import type { HomeCompanionshipSnapshot } from '../services/companionshipProjection';
 import { shouldShowCompanionshipStatusHints } from '../services/companionshipStatusVisibility';
@@ -740,7 +742,7 @@ export default function HomePage() {
       value: '待设置',
       icon: <SettingsSuggestIcon />,
       color: 'primary.main',
-      onOpen: () => navigate('/ai-models'),
+      onOpen: () => navigate(buildSettingsPath({ tab: 'models', card: 'models' })),
       attention: true,
     }] : []),
     ...(developerMode ? [{
@@ -830,7 +832,7 @@ export default function HomePage() {
         value: formatAiAmount(aiPointBalance, primaryOfficialBalanceProvider.publicProvider, { compact: true }),
         icon: <AutoAwesomeIcon />,
         color: 'primary.main',
-        onOpen: () => navigate('/ai-models'),
+        onOpen: () => navigate(buildSettingsPath({ tab: 'models', card: 'models' })),
       }];
     })(),
     ...syncStatusStats,
@@ -873,6 +875,8 @@ export default function HomePage() {
             ))}
           </Box>
         </SurfaceCard>
+
+        <HomeCommandLauncher />
 
         {ongoingActivities.length ? (
           <SurfaceCard>

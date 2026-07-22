@@ -307,6 +307,19 @@ function resolveParticipantIdsAndStates(input: {
   return { participantIds, participantStates };
 }
 
+function mergeParticipantScheduleStates(
+  existing: Record<string, ParticipantScheduleState>,
+  incoming: Record<string, ParticipantScheduleState>,
+) {
+  const merged = { ...existing };
+  Object.entries(incoming).forEach(([id, state]) => {
+    const previous = merged[id];
+    if (state === 'mentioned' && previous && previous !== 'mentioned') return;
+    merged[id] = state;
+  });
+  return merged;
+}
+
 function estimateActivityDurationMinutes(title: string, activityType: string) {
   const text = `${title} ${activityType}`.toLowerCase();
   if (!text.trim()) return null;
@@ -415,7 +428,7 @@ function mergeCalendarItem(existing: WorldCalendarItem, incoming: WorldCalendarI
     ...Object.keys(existing.participantStates),
     ...Object.keys(incoming.participantStates),
   ]));
-  const participantStates = ensureParticipantStates(participantIds, { ...existing.participantStates, ...incoming.participantStates });
+  const participantStates = ensureParticipantStates(participantIds, mergeParticipantScheduleStates(existing.participantStates, incoming.participantStates));
   const existingNameById = new Map(existing.participantIds.map((id, index) => [id, existing.participantNames[index] || '成员']));
   const incomingNameById = new Map(incoming.participantIds.map((id, index) => [id, incoming.participantNames[index] || '成员']));
   const sourceRefs = [...existing.sourceRefs];

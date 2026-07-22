@@ -145,6 +145,51 @@ describe('assistantAgentOrchestrator validation', () => {
     expect(JSON.stringify(registry)).not.toContain('data:image');
   });
 
+  it('expands terse image media prompts before dispatching image generation', async () => {
+    generateResponseMock.mockResolvedValue(JSON.stringify({
+      assistantMessage: '下面是三张图。',
+      patches: [],
+      mediaTasks: [{
+        kind: 'image',
+        slotId: 'image-1',
+        userCaption: '番茄炒蛋',
+        prompt: '番茄炒蛋',
+        altText: '番茄炒蛋',
+      }],
+    }));
+    const plan: AssistantAgentChangePlan = {
+      intent: 'create',
+      scope: { targetMode: 'unknown', artifactIds: [] },
+      operations: [{ kind: 'create', instruction: '生成图片' }],
+      requiresConfirmation: false,
+      confidence: 0.95,
+    };
+    const userMessage: Message = {
+      id: 'message-image',
+      chatId: 'chat-a',
+      type: 'user',
+      senderId: 'user',
+      senderName: '用户',
+      content: '帮我生成番茄炒蛋',
+      emotion: 0,
+      timestamp: 1,
+      isDeleted: false,
+    };
+
+    const patchSet = await writeAssistantAgentPatchSet({
+      api: { provider: 'openai', apiKey: 'k', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4.1' },
+      chatId: 'chat-a',
+      messages: [],
+      userMessage,
+      plan,
+      existingArtifacts: [],
+    });
+
+    expect(patchSet.mediaTasks?.[0]?.prompt).toContain('premium food photography');
+    expect(patchSet.mediaTasks?.[0]?.prompt).toContain('番茄炒蛋');
+    expect(patchSet.mediaTasks?.[0]?.prompt).not.toBe('番茄炒蛋');
+  });
+
   it('rejects update patches outside the planned artifact scope', () => {
     const plan: AssistantAgentChangePlan = {
       intent: 'update',

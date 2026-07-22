@@ -385,7 +385,7 @@ export function normalizeAIProfiles(aiProfiles?: AIModelProfile[], api?: APIConf
       }];
 
   const seenDefaultTypes = new Set<AIModelType>();
-  const normalized = sourceProfiles.map((profile, index) => {
+  const normalized: AIModelProfile[] = sourceProfiles.map((profile, index) => {
     const type = profile.type || 'text';
     const isDefault = Boolean(profile.isDefault) && !seenDefaultTypes.has(type);
     if (isDefault) seenDefaultTypes.add(type);
@@ -400,6 +400,10 @@ export function normalizeAIProfiles(aiProfiles?: AIModelProfile[], api?: APIConf
       inputCapabilities: type === 'text' ? resolveAIModelInputCapabilities(profile) : undefined,
     };
   });
+
+  if (!normalized.some((profile) => profile.type === 'image')) {
+    normalized.push({ ...DEFAULT_IMAGE_AI_PROFILE });
+  }
 
   for (const type of ['text', 'image', 'audio', 'document'] as AIModelType[]) {
     const items = normalized.filter((profile) => profile.type === type);
@@ -888,10 +892,10 @@ export const DEFAULT_CHAT_APPEARANCE_SETTINGS: ChatAppearanceSettings = {
 export type AppSettingsWithMemory = AppSettings & { memoryUI: { showDeveloperMemory?: boolean } };
 
 export const DEFAULT_API_CONFIG: APIConfig = {
-  provider: 'official-moacode',
+  provider: 'official-deepseek',
   apiKey: '',
   baseUrl: '/api/ai',
-  model: 'gpt-5.5',
+  model: 'deepseek-chat',
 };
 
 export const DEFAULT_IMAGE_CAPABILITIES: AIModelImageCapabilities = {
@@ -915,10 +919,10 @@ export const DEFAULT_IMAGE_AI_PROFILE: AIModelProfile = {
   name: '官方图片',
   type: 'image',
   isDefault: true,
-  provider: 'official-moacode',
+  provider: 'official-nanobanana',
   apiKey: '',
   baseUrl: '/api/ai',
-  model: 'gpt-image-2',
+  model: 'gemini-3-pro-image-preview',
   imageCapabilities: DEFAULT_IMAGE_CAPABILITIES,
 };
 

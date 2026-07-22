@@ -34,7 +34,7 @@ import DeleteOutlineOutlinedIcon from '@mui/icons-material/DeleteOutlineOutlined
 import StarIcon from '@mui/icons-material/Star';
 import StarBorderIcon from '@mui/icons-material/StarBorder';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { ApiError, api } from '../services/api';
 import { useAuthStore } from '../stores/useAuthStore';
@@ -48,6 +48,7 @@ import PageSection from '../components/common/PageSection';
 import SectionHeader from '../components/common/SectionHeader';
 import StatChipRow from '../components/common/StatChipRow';
 import AppSnackbar from '../components/common/AppSnackbar';
+import FloatingSegmentedTabs, { buildFloatingTabContainerSx } from '../components/common/FloatingSegmentedTabs';
 import { PAPER_SURFACE_VARIANTS, type PaperSurfaceVariant } from '../types/artifactAppearance';
 import type { AppSettingsWithMemory } from '../types/settings';
 import type { CompanionshipRitualKind } from '../types/settings';
@@ -58,6 +59,8 @@ import { buildBubblePreview, resolveCharacterBubbleStyle } from '../utils/bubble
 import { isImageAvatar } from '../utils/avatar';
 import { APP_THEME_PRESETS, POPULAR_THEME_PRESET_COUNT, resolveThemePreset, type AppThemePreset } from '../theme';
 import { getWebDirectoryPickerSupport } from '../services/localWorkspaceService';
+import { AIModelsPanel } from './AIModelsPage';
+import { SETTINGS_TAB_KEYS, buildSettingsPath, getSettingsTabForCard, resolveSettingsTab, type SettingsTabKey } from '../routes/settingsRoute';
 
 function buildPageSx() {
   return { p: { xs: 2.5, sm: 3, md: 3.5 }, pt: { xs: 1, sm: 1, md: 3 }, pb: { xs: 'calc(env(safe-area-inset-bottom, 0px) + 96px)', sm: 3, md: 3.5 }, width: '100%', maxWidth: 960, mx: 'auto' };
@@ -1626,6 +1629,7 @@ function BackupTreeSection({
 export default function SettingsPage() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
+  const location = useLocation();
   const settings = useSettingsStore();
   const compactBubbleMode = settings.compactBubbleMode;
   const compactPrivateBubbleMode = settings.compactPrivateBubbleMode;
@@ -1636,6 +1640,9 @@ export default function SettingsPage() {
   const setDefaultLocalWorkspaceDirectory = useLocalWorkspaceStore((state) => state.setDefaultDirectory);
   const user = useAuthStore((s) => s.user);
   const authMode = useAuthStore((s) => s.authMode);
+  const developerModeDenied = authMode === 'cloud' && user?.developerModeEntitled === false;
+  const developerModeAvailable = !developerModeDenied && (settings.developerMode || settings.developerModeEntitled || user?.developerModeEntitled === true);
+  const refreshDeveloperEntitlement = settings.refreshDeveloperEntitlement;
   const [userBubblePickerOpen, setUserBubblePickerOpen] = useState(false);
   const [clearConfirm, setClearConfirm] = useState(false);
   const [backupDialogOpen, setBackupDialogOpen] = useState(false);
@@ -1651,11 +1658,13 @@ export default function SettingsPage() {
   const [expandedRestoreKeys, setExpandedRestoreKeys] = useState<BackupSectionKey[]>(DEFAULT_EXPANDED_KEYS);
   const [showAllThemePresets, setShowAllThemePresets] = useState(false);
   const [localWorkspaceBusy, setLocalWorkspaceBusy] = useState(false);
+  const [developerEntitlementRefreshRequested, setDeveloperEntitlementRefreshRequested] = useState(false);
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
     open: false,
     message: '',
     severity: 'success',
   });
+  const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTabKey>(() => resolveSettingsTab(new URLSearchParams(window.location.search).get('tab')));
   const userBubbleStyle = useMemo(
     () => resolveCharacterBubbleStyle({
       bubbleStyle: settings.userBubbleStyle,
@@ -1689,10 +1698,45 @@ export default function SettingsPage() {
     setDefaultLocalWorkspaceDirectory(selectedLocalWorkspaceDirectoryId === id ? null : id);
   };
 
+  const updateSettingsLocation = (tab: SettingsTabKey, card?: string | null) => {
+    navigate(buildSettingsPath({ tab, card: card || undefined }), { replace: true });
+  };
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const card = params.get('card') || location.hash.replace(/^#/, '');
+    const nextTab = getSettingsTabForCard(card) ?? resolveSettingsTab(params.get('tab'));
+    if (card && params.get('tab') !== nextTab) {
+      navigate(buildSettingsPath({ tab: nextTab, card }), { replace: true });
+      return;
+    }
+    setActiveSettingsTab(nextTab);
+  }, [location.hash, location.search, navigate]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const card = params.get('card') || location.hash.replace(/^#/, '');
+    if (!card) return;
+    const timeout = window.setTimeout(() => {
+      document.getElementById(`settings-card-${card}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    }, 80);
+    return () => window.clearTimeout(timeout);
+  }, [activeSettingsTab, location.hash, location.search]);
+
   useEffect(() => {
     if (!localWorkspaceDirectories.length) return;
     void useLocalWorkspaceStore.getState().refreshDirectoryStatuses().catch(() => undefined);
   }, [localWorkspaceDirectories.length]);
+
+  useEffect(() => {
+    setDeveloperEntitlementRefreshRequested(false);
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (authMode !== 'cloud' || developerEntitlementRefreshRequested) return;
+    setDeveloperEntitlementRefreshRequested(true);
+    void refreshDeveloperEntitlement();
+  }, [authMode, developerEntitlementRefreshRequested, refreshDeveloperEntitlement]);
 
   const handleAddLocalWorkspaceDirectory = async () => {
     setLocalWorkspaceBusy(true);
@@ -1937,15 +1981,27 @@ export default function SettingsPage() {
     window.setTimeout(() => window.location.reload(), 800);
   };
 
-  const developerToolsSection = settings.developerModeEntitled && settings.developerMode ? (
-    <SurfaceCard contentSx={buildCardBodySx()}>
+  const developerToolsSection = (
+    <SurfaceCard id="settings-card-advanced" contentSx={buildCardBodySx()}>
       <Box sx={buildDeveloperBodySx()}>
         <SectionHeader
-          title={i18n.language.startsWith('zh') ? '开发者工具' : 'Developer Tools'}
+          title={i18n.language.startsWith('zh') ? '开发者模式' : 'Developer mode'}
           subtitle={i18n.language.startsWith('zh')
             ? '这些开关用于排查运行逻辑，会显示事件、证据、分数和调试提示。普通使用可以保持关闭。'
             : 'These switches expose events, evidence, metrics, and debug hints for runtime inspection. Leave them off for everyday use.'}
         />
+        <FormControlLabel
+          sx={{ m: 0 }}
+          control={<Switch checked={!developerModeDenied && settings.developerMode} disabled={!developerModeAvailable} onChange={(e) => settings.setDeveloperMode(e.target.checked)} />}
+          label={i18n.language.startsWith('zh') ? '开发者模式' : 'Developer mode'}
+        />
+        {!developerModeAvailable ? (
+          <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
+            {i18n.language.startsWith('zh') ? '当前尚未确认开发者权限，因此无法开启。' : 'Developer access has not been confirmed for the current account.'}
+          </Typography>
+        ) : null}
+        {developerModeAvailable && settings.developerMode ? (
+          <>
         <StatChipRow items={buildDeveloperChips(i18n.language)} />
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'auto minmax(0, 1fr)' }, gap: 1.25, alignItems: 'center', p: 1.25, borderRadius: 2, border: '1px solid', borderColor: 'divider', bgcolor: 'background.default' }}>
           <Button startIcon={<SyncIcon />} size="small" variant="outlined" onClick={handleBrandStorageMigration} sx={{ justifySelf: 'start', width: 'fit-content', px: 1.25, whiteSpace: 'nowrap' }}>
@@ -1997,14 +2053,36 @@ export default function SettingsPage() {
             </Box>
           </Box>
         </Box>
+          </>
+        ) : null}
       </Box>
     </SurfaceCard>
-  ) : null;
+  );
 
   return (
     <Box sx={buildPageSx()}>
       <PageSection spacing={2.25}>
-        <SurfaceCard contentSx={buildCardBodySx()}>
+        <Box sx={{ ...buildFloatingTabContainerSx(), order: -100, mb: 0.5 }}>
+          <FloatingSegmentedTabs
+            value={activeSettingsTab}
+            onChange={(value) => {
+              if (SETTINGS_TAB_KEYS.includes(value)) {
+                setActiveSettingsTab(value);
+                updateSettingsLocation(value);
+              }
+            }}
+            items={[
+              { value: 'general', label: i18n.language.startsWith('zh') ? '通用' : 'General' },
+              { value: 'models', label: i18n.language.startsWith('zh') ? '模型' : 'Models' },
+              { value: 'chat', label: i18n.language.startsWith('zh') ? '聊天' : 'Chat' },
+              { value: 'plugins', label: i18n.language.startsWith('zh') ? '插件' : 'Plugins' },
+            ]}
+          />
+        </Box>
+
+        {activeSettingsTab === 'general' ? (
+          <>
+        <SurfaceCard id="settings-card-account" sx={{ order: -30 }} contentSx={buildCardBodySx()}>
           <Box sx={buildTopRowSx()}>
             <Box>
               <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>{i18n.language.startsWith('zh') ? '账号' : 'Account'}</Typography>
@@ -2028,16 +2106,7 @@ export default function SettingsPage() {
           </Box>
         </SurfaceCard>
 
-        <SurfaceCard contentSx={buildCardBodySx()}>
-          <Box sx={buildTopRowSx()}>
-            <Box>
-              <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>{i18n.language.startsWith('zh') ? 'AI模型' : 'AI Models'}</Typography>
-            </Box>
-            <Button variant="outlined" onClick={() => navigate('/ai-models')}>{i18n.language.startsWith('zh') ? '管理' : 'Manage'}</Button>
-          </Box>
-        </SurfaceCard>
-
-        <SurfaceCard contentSx={buildCardBodySx()}>
+        <SurfaceCard id="settings-card-local-workspace" sx={{ order: -10 }} contentSx={buildCardBodySx()}>
           <Box sx={buildSectionBodySx()}>
             <SectionHeader
               title={i18n.language.startsWith('zh') ? '本地工作区' : 'Local workspace'}
@@ -2143,7 +2212,7 @@ export default function SettingsPage() {
           </Box>
         </SurfaceCard>
 
-        <SurfaceCard contentSx={buildCardBodySx()}>
+        <SurfaceCard id="settings-card-appearance" sx={{ order: -20 }} contentSx={buildCardBodySx()}>
           <Box sx={buildSectionBodySx()}>
             <SectionHeader title={t('settings.appearance')} />
             <Box>
@@ -2350,7 +2419,19 @@ export default function SettingsPage() {
           </Box>
         </SurfaceCard>
 
-        <SurfaceCard contentSx={buildCardBodySx()}>
+          </>
+        ) : null}
+
+        {activeSettingsTab === 'models' ? (
+          <Box id="settings-card-models">
+            <AIModelsPanel embedded />
+          </Box>
+        ) : null}
+
+        {activeSettingsTab === 'chat' ? (
+          <>
+
+        <SurfaceCard id="settings-card-ai-generation" contentSx={buildCardBodySx()}>
           <Box sx={buildSectionBodySx()}>
             <SectionHeader title={i18n.language.startsWith('zh') ? 'AI生成' : 'AI Generation'} subtitle={i18n.language.startsWith('zh') ? '控制头像、朋友圈与日记等自动生成能力' : 'Control avatar, moments, and diary generation behaviors'} />
             <Box sx={{ display: 'grid', gap: 1 }}>
@@ -2358,16 +2439,11 @@ export default function SettingsPage() {
               <FormControlLabel control={<Switch checked={settings.avatarGeneration.preferNonPhotorealAvatar} onChange={(e) => settings.setAvatarGeneration({ preferNonPhotorealAvatar: e.target.checked })} />} label={i18n.language.startsWith('zh') ? '非写实头像' : 'Non-photoreal avatars'} />
               <FormControlLabel control={<Switch checked={settings.aiGeneration.enableMoments} onChange={(e) => settings.setAIGeneration({ enableMoments: e.target.checked })} />} label={i18n.language.startsWith('zh') ? '启用朋友圈自动生成' : 'Enable moments auto-generation'} />
               <FormControlLabel control={<Switch checked={settings.aiGeneration.enableDiaries} onChange={(e) => settings.setAIGeneration({ enableDiaries: e.target.checked })} />} label={i18n.language.startsWith('zh') ? '启用日记自动生成' : 'Enable diary auto-generation'} />
-              {settings.developerModeEntitled ? (
-                <FormControlLabel control={<Switch checked={settings.developerMode} onChange={(e) => settings.setDeveloperMode(e.target.checked)} />} label={i18n.language.startsWith('zh') ? '开发者模式' : 'Developer mode'} />
-              ) : null}
             </Box>
           </Box>
         </SurfaceCard>
 
-        {developerToolsSection}
-
-        <SurfaceCard contentSx={buildCardBodySx()}>
+        <SurfaceCard id="settings-card-companionship" contentSx={buildCardBodySx()}>
           <Box sx={buildSectionBodySx()}>
             <SectionHeader title={i18n.language.startsWith('zh') ? '陪伴' : 'Companionship'} subtitle={i18n.language.startsWith('zh') ? '控制主动陪伴、关系仪式、互动适配和免打扰' : 'Control proactive care, rituals, adaptation, and quiet hours'} />
             <Box sx={{ display: 'grid', gap: 1 }}>
@@ -2468,7 +2544,7 @@ export default function SettingsPage() {
           </Box>
         </SurfaceCard>
 
-        <SurfaceCard contentSx={buildCardBodySx()}>
+        <SurfaceCard id="settings-card-chat-defaults" contentSx={buildCardBodySx()}>
           <Box sx={buildSectionBodySx()}>
             <SectionHeader title={i18n.language.startsWith('zh') ? '群聊默认行为' : 'Chat defaults'} />
             <Box>
@@ -2481,8 +2557,29 @@ export default function SettingsPage() {
             </Box>
           </Box>
         </SurfaceCard>
+          </>
+        ) : null}
 
-        <SurfaceCard contentSx={buildCardBodySx()}>
+        {activeSettingsTab === 'plugins' ? (
+          <SurfaceCard id="settings-card-plugins" contentSx={buildCardBodySx()}>
+            <Box sx={buildSectionBodySx()}>
+              <SectionHeader
+                title={i18n.language.startsWith('zh') ? '插件' : 'Plugins'}
+                subtitle={i18n.language.startsWith('zh')
+                  ? '插件能力还在设计中。后续可在这里管理插件、权限和作用范围。'
+                  : 'Plugin support is still being designed. Installed plugins, permissions, and scopes will be managed here.'}
+              />
+              <Alert severity="info" variant="outlined">
+                {i18n.language.startsWith('zh') ? '暂无插件。' : 'No plugins yet.'}
+              </Alert>
+            </Box>
+          </SurfaceCard>
+        ) : null}
+
+        {activeSettingsTab === 'general' ? (
+          <>
+
+        <SurfaceCard id="settings-card-data" contentSx={buildCardBodySx()}>
           <Box sx={buildSectionBodySx()}>
             <SectionHeader title={t('settings.dataManagement')} />
             <StatChipRow items={buildDataChips(i18n.language)} />
@@ -2495,7 +2592,9 @@ export default function SettingsPage() {
           </Box>
         </SurfaceCard>
 
-        <SurfaceCard contentSx={buildCardBodySx()}>
+        {developerToolsSection}
+
+        <SurfaceCard id="settings-card-about" contentSx={buildCardBodySx()}>
           <SectionHeader title={t('settings.about')} dense />
           <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.75 }}>Sense Murmur</Typography>
           <Chip size="small" label="v1.0.0" variant="outlined" onClick={() => navigate('/intro')} sx={{ cursor: 'pointer' }} />
@@ -2514,6 +2613,8 @@ export default function SettingsPage() {
         >
           {i18n.language.startsWith('zh') ? '退出登录' : 'Log out'}
         </Button>
+          </>
+        ) : null}
       </PageSection>
 
       <ConfirmDialog

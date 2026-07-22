@@ -4429,6 +4429,26 @@ interface PendingMessageOperation {
 
 type MessageLoadOptions = { append?: boolean; before?: number; after?: number; aroundTimestamp?: number; limit?: number; resetWindow?: boolean };
 
+type CloudMessageFetchStrategy =
+  | { kind: 'window-snapshot'; reason: 'initial_or_revalidate' }
+  | { kind: 'paged-history'; reason: 'append' | 'around_timestamp' | 'reset_window' | 'compacted_narrative' };
+
+function selectCloudMessageFetchStrategy(options: MessageLoadOptions | undefined, currentWindow: CachedMessageWindow | undefined): CloudMessageFetchStrategy {
+  if (options?.append || options?.before !== undefined || options?.after !== undefined) {
+    return { kind: 'paged-history', reason: 'append' };
+  }
+  if (options?.aroundTimestamp !== undefined) {
+    return { kind: 'paged-history', reason: 'around_timestamp' };
+  }
+  if (options?.resetWindow) {
+    return { kind: 'paged-history', reason: 'reset_window' };
+  }
+  if (hasCompactedNarrativeWindow(currentWindow)) {
+    return { kind: 'paged-history', reason: 'compacted_narrative' };
+  }
+  return { kind: 'window-snapshot', reason: 'initial_or_revalidate' };
+}
+
 function buildMessageFetchOptions(options: {
   limit: number;
   before?: number;
@@ -4840,10 +4860,10 @@ function shouldRevalidateMessageWindow(lastSyncedAt: number | undefined, revalid
 
 const messageWindowScope = (chatId: string): SyncChangeScope => `messages.window:${chatId}`;
 
-async function probeMessageWindowChanges(chatId: string) {
+async function probeMessageWindowChanges(chatId: string, options: { forceSnapshot?: boolean } = {}) {
   const scope = messageWindowScope(chatId);
   const scopeState = messageSyncScopes.getState(scope);
-  const since = scopeState.cursor ?? scopeState.revision ?? null;
+  const since = options.forceSnapshot ? null : scopeState.cursor ?? scopeState.revision ?? null;
   try {
     return await api.getSyncChanges({ scope, since });
   } catch {
@@ -4909,6 +4929,13 @@ function upsertPendingCreateOperation(queue: PendingMessageOperation[], message:
       : operation);
   }
   return [...queue, createPendingMessageOperation(message)];
+}
+
+function hasPendingCreateOperation(queue: PendingMessageOperation[], message: Message) {
+  const clientKey = message.clientKey || message.id;
+  return queue.some((operation) => operation.kind === 'create' && (
+    operation.localMessageId === message.id || operation.payload?.clientKey === clientKey
+  ));
 }
 
 function hasPendingChatCreate(chatId: string) {
@@ -5206,10 +5233,10 @@ export const useMessageStore = create<MessageStore>()(
           await uploadGuestMessagesToCloud();
           const currentWindowBeforeFetch = get().messageWindowsByChatId[chatId];
           const isAroundWindow = options?.aroundTimestamp !== undefined;
-          const isResetWindow = Boolean(options?.resetWindow);
           const limit = getRequestedWindowLimit(options?.limit ?? DEFAULT_MESSAGE_WINDOW_LIMIT);
-          const shouldRefreshCompactedNarrative = hasCompactedNarrativeWindow(currentWindowBeforeFetch);
-          const canProbeWindow = !shouldRefreshCompactedNarrative && !isAppend && !options?.before && !options?.after && !isAroundWindow && !isResetWindow && Boolean(currentWindowBeforeFetch?.messages?.length);
+          const fetchStrategy = selectCloudMessageFetchStrategy(options, currentWindowBeforeFetch);
+          const canUseWindowSnapshot = fetchStrategy.kind === 'window-snapshot';
+          const canProbeWindow = canUseWindowSnapshot && Boolean(currentWindowBeforeFetch?.messages?.length);
           if (canProbeWindow && messageSyncScopes.isFresh(messageWindowScope(chatId))) {
             const activeMessages = activeMessageWindow(currentWindowBeforeFetch?.messages || [], limit);
             set(() => ({
@@ -5223,8 +5250,9 @@ export const useMessageStore = create<MessageStore>()(
             }));
             return;
           }
-          const changeProbe = canProbeWindow ? await probeMessageWindowChanges(chatId) : null;
-          if (changeProbe?.status === 'not_modified') {
+          const shouldForceWindowSnapshot = canUseWindowSnapshot && !currentWindowBeforeFetch?.messages?.length;
+          const changeProbe = canUseWindowSnapshot ? await probeMessageWindowChanges(chatId, { forceSnapshot: shouldForceWindowSnapshot }) : null;
+          if (changeProbe?.status === 'not_modified' && currentWindowBeforeFetch?.messages?.length) {
             const activeMessages = activeMessageWindow(currentWindowBeforeFetch?.messages || [], limit);
             messageSyncScopes.markChecked(messageWindowScope(chatId), {
               cursor: changeProbe.cursor,
@@ -5254,6 +5282,9 @@ export const useMessageStore = create<MessageStore>()(
           logMessageWindowDebug('load-fetched', {
             chatId,
             options: options || {},
+            fetchStrategy: fetchStrategy.kind,
+            fetchStrategyReason: fetchStrategy.reason,
+            forcedWindowSnapshot: shouldForceWindowSnapshot,
             probeStatus: changeProbe?.status || null,
             fetchedFromChanges: Boolean(fetchedFromChanges),
             fetchedMessages: fetched.length,
@@ -5307,7 +5338,7 @@ export const useMessageStore = create<MessageStore>()(
                 remoteNewerExhausted,
                 activeLimit: isAppend
                   ? Math.max(nextVisibleCount, limit)
-                  : isAroundWindow || isResetWindow
+                  : isAroundWindow || options?.resetWindow
                     ? Math.max(nextVisibleCount, limit)
                     : Math.max(currentWindow?.activeLimit || 0, limit),
               },
@@ -5385,9 +5416,13 @@ export const useMessageStore = create<MessageStore>()(
           const currentWindow = state.messageWindowsByChatId[message.chatId];
           const current = currentWindow?.messages || [];
           const nextActiveMessages = trimActiveMessages(mergeMessages(state.messages, [message]));
+          const pendingOperations = state.pendingOperations.length > 0 && hasPendingCreateOperation(state.pendingOperations, message)
+            ? upsertPendingCreateOperation(state.pendingOperations, message)
+            : state.pendingOperations;
           if (message.isStreaming) {
             return {
               messages: state.activeChatId === message.chatId ? nextActiveMessages : state.messages,
+              pendingOperations,
             };
           }
           const nextChatMessages = trimMessages(mergeMessages(current, [message]));
@@ -5402,6 +5437,7 @@ export const useMessageStore = create<MessageStore>()(
           });
           return {
             messages: state.activeChatId === message.chatId ? nextActiveMessages : state.messages,
+            pendingOperations,
             messageWindowsByChatId: trimCache({
               ...state.messageWindowsByChatId,
               [message.chatId]: {

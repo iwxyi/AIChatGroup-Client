@@ -85,6 +85,18 @@ function buildStatusDetail(attachment: MessageAttachment, kindLabel: string) {
   return `${kindLabel}正在处理。`;
 }
 
+function buildQueueProgress(message: Message, attachment: MessageAttachment) {
+  const attachments = (message.metadata?.attachments || []).filter((item) => item.kind === attachment.kind && item.status !== 'deleted');
+  const index = attachments.findIndex((item) => item.id === attachment.id);
+  if (index < 0) return '';
+  const total = attachments.length;
+  const position = index + 1;
+  const frontCount = attachments.slice(0, index).filter((item) => item.status === 'queued' || item.status === 'generating').length;
+  if (attachment.status === 'queued') return `队列 ${position}/${total}，前面还有 ${frontCount} 张`;
+  if (attachment.status === 'generating') return `队列 ${position}/${total}`;
+  return '';
+}
+
 function buildAttachmentItem(message: Message, attachment: MessageAttachment, members: DisplayTextMember[]): ProjectedMediaGenerationItem {
   const kindLabel = formatKind(attachment.kind);
   const statusLabel = formatStatus(attachment.status);
@@ -93,11 +105,13 @@ function buildAttachmentItem(message: Message, attachment: MessageAttachment, me
   const summary = clip(altText || content || `${kindLabel}附件`);
   const decisionChip = buildDecisionChip(message, attachment);
   const guidanceChip = buildGuidanceChip(message);
+  const queueChip = buildQueueProgress(message, attachment);
   const detailText = clean(buildStatusDetail(attachment, kindLabel), members);
   const size = typeof attachment.sizeBytes === 'number' && attachment.sizeBytes > 0 ? `${Math.round(attachment.sizeBytes / 1024)}KB` : '';
   const chips = [
     statusLabel,
     kindLabel,
+    queueChip,
     guidanceChip,
     decisionChip,
     size,

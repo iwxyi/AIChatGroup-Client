@@ -231,6 +231,175 @@ describe('worldRuntimeProjection', () => {
     expect(items[0]?.participantStates).toEqual({ b: 'going', c: 'maybe', a: 'mentioned' });
   });
 
+  it('merges a realistic multi-turn outing flow from candidate, confirmation, reschedule, withdrawal, and rejoin hints', () => {
+    const chats = [buildChat('chat-1', '群聊一', [
+      {
+        id: 'evt-a-propose',
+        conversationId: 'chat-1',
+        kind: 'event_candidate',
+        createdAt: 100,
+        actorIds: ['a'],
+        targetIds: ['b', 'c'],
+        summary: 'A 提议周五去茶馆',
+        visibility: 'derived_public',
+        payload: {
+          eventKind: 'social_outing',
+          title: '茶馆小聚',
+          activityType: '茶馆',
+          timeHint: '周五 20:00',
+          locationHint: '后巷蓝布门帘茶馆',
+          participantIds: ['a', 'b', 'c'],
+          targetIds: ['b', 'c'],
+          participantStates: { a: 'interested', b: 'invited', c: 'invited' },
+          dedupeKey: 'outing-tea-flow',
+        },
+      },
+      {
+        id: 'evt-b-confirm',
+        conversationId: 'chat-1',
+        kind: 'artifact',
+        createdAt: 110,
+        actorIds: ['b'],
+        targetIds: ['a', 'c'],
+        summary: 'B 确认要去',
+        visibility: 'derived_public',
+        payload: {
+          eventKind: 'social_outing',
+          title: '茶馆小聚',
+          activityType: '茶馆',
+          timeHint: '周五 20:00',
+          locationHint: '后巷蓝布门帘茶馆',
+          participantIds: ['b'],
+          targetIds: ['a', 'c'],
+          participantStates: { b: 'going' },
+          dedupeKey: 'outing-tea-flow',
+        },
+      },
+      {
+        id: 'evt-c-reschedule',
+        conversationId: 'chat-1',
+        kind: 'event_candidate',
+        createdAt: 120,
+        actorIds: ['c'],
+        targetIds: ['a', 'b'],
+        summary: 'C 提议改时间',
+        visibility: 'derived_public',
+        payload: {
+          eventKind: 'social_outing',
+          title: '茶馆小聚',
+          activityType: '茶馆',
+          timeHint: '周五 21:00',
+          participantIds: ['c'],
+          participantStates: { c: 'maybe' },
+          dedupeKey: 'outing-tea-flow',
+        },
+      },
+      {
+        id: 'evt-a-place',
+        conversationId: 'chat-1',
+        kind: 'event_candidate',
+        createdAt: 130,
+        actorIds: ['a'],
+        targetIds: ['b', 'c'],
+        summary: 'A 确认改时间并调整地点',
+        visibility: 'derived_public',
+        payload: {
+          eventKind: 'social_outing',
+          title: '茶馆小聚',
+          activityType: '茶馆',
+          timeHint: '周五 21:00',
+          locationHint: '河边二楼包间',
+          participantIds: ['a'],
+          participantStates: { a: 'going' },
+          dedupeKey: 'outing-tea-flow',
+        },
+      },
+      {
+        id: 'evt-b-decline',
+        conversationId: 'chat-1',
+        kind: 'event_candidate',
+        createdAt: 140,
+        actorIds: ['b'],
+        targetIds: [],
+        summary: 'B 不去了',
+        visibility: 'derived_public',
+        payload: {
+          eventKind: 'social_outing',
+          title: '茶馆小聚',
+          participantIds: ['b'],
+          participantStates: { b: 'declined' },
+          dedupeKey: 'outing-tea-flow',
+        },
+      },
+      {
+        id: 'evt-c-withdraw',
+        conversationId: 'chat-1',
+        kind: 'event_candidate',
+        createdAt: 150,
+        actorIds: ['c'],
+        targetIds: [],
+        summary: 'C 也不去了',
+        visibility: 'derived_public',
+        payload: {
+          eventKind: 'social_outing',
+          title: '茶馆小聚',
+          participantIds: ['c'],
+          participantStates: { c: 'withdrawn' },
+          dedupeKey: 'outing-tea-flow',
+        },
+      },
+      {
+        id: 'evt-d-going',
+        conversationId: 'chat-1',
+        kind: 'event_candidate',
+        createdAt: 160,
+        actorIds: ['d'],
+        targetIds: ['a'],
+        summary: 'D 要去',
+        visibility: 'derived_public',
+        payload: {
+          eventKind: 'social_outing',
+          title: '茶馆小聚',
+          participantIds: ['d'],
+          participantStates: { d: 'going' },
+          dedupeKey: 'outing-tea-flow',
+        },
+      },
+      {
+        id: 'evt-b-rejoin',
+        conversationId: 'chat-1',
+        kind: 'event_candidate',
+        createdAt: 170,
+        actorIds: ['b'],
+        targetIds: ['a', 'd'],
+        summary: 'B 又想去了',
+        visibility: 'derived_public',
+        payload: {
+          eventKind: 'social_outing',
+          title: '茶馆小聚',
+          participantIds: ['b'],
+          participantStates: { b: 'going' },
+          dedupeKey: 'outing-tea-flow',
+        },
+      },
+    ])];
+    const items = projectWorldCalendarItems(chats, [character('a', 'A'), character('b', 'B'), character('c', 'C'), character('d', 'D')]);
+
+    expect(items).toHaveLength(1);
+    expect(items[0]?.status).toBe('confirmed');
+    expect(items[0]?.title).toBe('茶馆小聚');
+    expect(items[0]?.timeHint).toBe('周五 21:00');
+    expect(items[0]?.locationHint).toBe('河边二楼包间');
+    expect(items[0]?.participantIds).toEqual(['a', 'b', 'c', 'd']);
+    expect(items[0]?.participantNames).toEqual(['A', 'B', 'C', 'D']);
+    expect(items[0]?.participantStates).toEqual({
+      a: 'going',
+      b: 'going',
+      c: 'withdrawn',
+      d: 'going',
+    });
+  });
+
   it('derives participant ids from participantStates when patch only provides states', () => {
     const chats = [buildChat('chat-1', '群聊一', [
       {

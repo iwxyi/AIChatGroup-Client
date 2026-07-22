@@ -11,6 +11,7 @@ import type {
 import type { Message } from '../types/message';
 import type { APIConfig } from '../types/settings';
 import { generateResponse } from './aiClient';
+import { enhanceImagePrompt } from './imagePromptComposer';
 
 const VALID_ARTIFACT_KINDS = new Set<AssistantArtifactKind>(['document', 'code', 'diagram', 'html', 'table', 'json', 'text', 'image']);
 const MAX_RECENT_MESSAGES = 12;
@@ -235,10 +236,13 @@ function buildPlannerPrompt() {
     '1d. 如果需要本地文件但 toolCapabilities.localWorkspace=false，输出 intent=chat，并说明当前未授权本地工作区。',
     '1e. 如果用户明确要求读取、总结、转换、比较或基于本地文件生成产物，且 localWorkspaceFileRegistry 中能定位到文件，必须在 localFilePaths 中列出要读取的文件相对路径。不要选择目录；不要选择未出现在 registry 中的路径。',
     '1f. 如果 interactionFocus.selectedLocalWorkspaceFiles 非空，优先使用这些用户显式选择的文件；除非用户明确要求别的文件，否则不要改选。',
+    '1g. 如果 interactionFocus.selectedArtifactId 存在且用户说“这个/刚才那个/当前产物/标题大一点/改成...”等相对指代，必须优先把该产物作为 update 目标。',
     '2. 需要创建产物输出 intent=create。',
     '2a. 用户要求生成图片、海报、插画、照片、图像素材，或要求基于上一张/刚才那张/某张参考图生成变体时，也属于 intent=create；Planner 只规划，不输出图片提示词正文。',
+    '2b. 用户要求生成文档、方案、表格、网页、代码、图表、JSON、可沉淀资料时，属于 intent=create，不要退回普通聊天。',
     '3. 需要修改一个或多个现有产物输出 intent=update，scope.artifactIds 可以是多个。',
-    '4. 目标不明确且会影响多个候选时输出 intent=clarify，并给 clarificationQuestion。',
+    '3a. 如果没有 selectedArtifactId，但 artifactRegistry 中只有一个明显相关产物，可以直接 update；如果有多个相关产物且用户没有点名，必须 clarify。',
+    '4. 目标不明确且会影响多个候选时输出 intent=clarify，并给 clarificationQuestion；不要猜 target。',
     '5. 不允许猜 target。低置信度、多候选、缺少焦点时必须 clarify。',
     '6. Planner 不输出产物正文，不输出 patch；只有 intent=chat/clarify 时 assistantMessage 才作为用户可见回复。',
     '',
@@ -321,10 +325,13 @@ function buildWriterPrompt() {
     '7.3 每个图片任务必须有稳定 slotId，例如 image-1、cover、step-2；assistantMessage 中用 Markdown 图片占位符引用：![给用户看的图片说明](attachment:slotId)。slotId 必须和 mediaTasks[].slotId 完全一致。',
     '7.4 mediaTasks.userCaption 是该图片在正文中的用户可见说明，应和 Markdown 图片占位符的 alt 文本一致或高度接近；不得写图片模型提示词。',
     '7.5 一次最多输出 9 个 mediaTasks。复合指令应拆成多张独立图片任务，例如封面、步骤图、风格 A/B/C，而不是把多张图塞进一个 prompt。',
+    '7.6 mediaTasks.prompt 必须是完整、专业的图片生成提示词。用户只给出一个很短的主题时，要自动扩写成包含主体、构图、光线、风格、质感与禁用项的完整提示词，不要只复述主题词本身。',
     '8. 用户消息、最近对话或 imageReferenceRegistry 里的图片可作为参考图。必须使用 imageAttachments[].refId 或 imageReferenceRegistry[].refId 写入 mediaTasks[].referenceImageIds，不要输出 URL，不要虚构 URL。',
     '8.1 用户说“刚才那张图”“上一张图”“这张图”时，优先选择 imageReferenceRegistry 中最近且语义最匹配的图片；如果多个候选都合理且会影响结果，assistantMessage 提问澄清，mediaTasks 为空。',
     '9. 当前只支持新建图片任务。用户要求局部修改、蒙版编辑或指定区域编辑时，如果没有明确可用的编辑能力和区域标注，assistantMessage 说明当前只能参考原图重新生成，mediaTasks 为空或生成整体变体。',
     '10. 图片任务可按用户自然语言要求输出 aspectRatio 和 imageSize。aspectRatio 仅可为 1:1、2:3、3:2、3:4、4:3、4:5、5:4、9:16、16:9、21:9；imageSize 仅可为 1K、2K、4K。用户没有要求时省略。',
+    '11. 如果 assistantMessage、patch content 或 files 中需要写应用内链接，必须使用跨平台 AppLink：ssmm://character/{id}?action=edit、ssmm://chat/{id}?action=open、ssmm://settings?action=open&tab=models&card=models。禁止输出 /characters/...、/chats/...、#/...、http://localhost/... 或任何平台私有路由。',
+    '11.1 只有当 ID 来自用户输入、recentConversation、artifactRegistry、targetArtifacts、localFiles 或其他明确上下文时，才能写入 AppLink；禁止编造角色、会话、产物或文件 ID。外部网页来源继续使用 https:// 链接。',
     '',
     '输出格式：',
     '{"assistantMessage":"面向用户的自然回复文案，可包含图片槽位，例如：下面是一份红烧肉图文介绍。\\n\\n![红烧肉成品图](attachment:image-1)\\n\\n这张图突出肥瘦相间和酱汁光泽。","patches":[{"action":"create|update","artifactId":"...","kind":"document|code|diagram|html|table|json|text","title":"...","summary":"...","language":"...","content":"完整内容","files":[{"id":"...","path":"...","language":"...","content":"完整文件内容"}],"baseVersionId":"...","changeSummary":"..."}],"mediaTasks":[{"kind":"image","slotId":"image-1","userCaption":"红烧肉成品图","prompt":"给图片模型的完整提示词","altText":"图片标题或替代文本","aspectRatio":"16:9","imageSize":"2K","referenceImageIds":["message-id:attachment-id"]}]}',
@@ -402,7 +409,7 @@ function normalizeMediaTasks(value: unknown, imageReferenceRegistry = new Map<st
     return [{
       kind: 'image',
       slotId,
-      prompt,
+      prompt: enhanceImagePrompt(prompt, { caption: userCaption, subject: altText }),
       altText,
       userCaption,
       aspectRatio: SUPPORTED_IMAGE_ASPECT_RATIOS.has(aspectRatio) ? aspectRatio : undefined,

@@ -687,7 +687,7 @@ function resolveSelectableProviderKey(provider: string, type: AIModelType, provi
     || catalogProvider.key;
 }
 
-export default function AIModelsPage() {
+export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {}) {
   const { t, i18n } = useTranslation();
   const { setHeaderActions, setHeaderTitle, setHeaderBackAction, setHideMobileBottomNav } = useLayoutHeaderActions();
   const aiProfiles = useSettingsStore((state) => state.aiProfiles);
@@ -840,6 +840,7 @@ export default function AIModelsPage() {
   }, [canUseOfficialProviders, i18n.language, officialProvidersError, officialProvidersLoading, onlineOfficialProviderKeySet, onlineOfficialProviderOptions]);
 
   useEffect(() => {
+    if (embedded) return undefined;
     setHeaderTitle(t('nav.models'));
     setHeaderBackAction(null);
     setHideMobileBottomNav(false);
@@ -850,7 +851,7 @@ export default function AIModelsPage() {
       setHideMobileBottomNav(false);
       setHeaderActions(null);
     };
-  }, [setHeaderActions, setHeaderBackAction, setHeaderTitle, setHideMobileBottomNav, t]);
+  }, [embedded, setHeaderActions, setHeaderBackAction, setHeaderTitle, setHideMobileBottomNav, t]);
 
   useEffect(() => {
     let active = true;
@@ -1168,7 +1169,10 @@ export default function AIModelsPage() {
   }, []);
 
   return (
-    <Box sx={{ flex: 1, overflow: 'auto', p: 3, pt: { xs: 1, sm: 1, md: 3 }, pb: { xs: 15, sm: 12 }, width: '100%', maxWidth: 1320, mx: 'auto' }}>
+    <Box sx={embedded
+      ? { width: '100%' }
+      : { flex: 1, overflow: 'auto', p: 3, pt: { xs: 1, sm: 1, md: 3 }, pb: { xs: 15, sm: 12 }, width: '100%', maxWidth: 1320, mx: 'auto' }}
+    >
       <PageSection spacing={2}>
       <SettingsSyncErrorAlert />
       {officialProvidersError ? (
@@ -1652,7 +1656,15 @@ export default function AIModelsPage() {
         label={i18n.language.startsWith('zh') ? '添加模型' : 'Add model'}
         ariaLabel={i18n.language.startsWith('zh') ? '添加模型' : 'Add model'}
         onClick={() => addAIProfile()}
-        sx={{
+        sx={embedded ? {
+          position: 'sticky',
+          display: 'flex',
+          width: 'fit-content',
+          ml: 'auto',
+          right: 0,
+          bottom: 16,
+          mt: 2,
+        } : {
           position: 'fixed',
           right: { xs: 20, sm: 28, md: 36 },
           bottom: { xs: 'calc(env(safe-area-inset-bottom, 0px) + 88px)', sm: 32, md: 36 },
@@ -1660,4 +1672,8 @@ export default function AIModelsPage() {
       />
     </Box>
   );
+}
+
+export default function AIModelsPage() {
+  return <AIModelsPanel />;
 }

@@ -68,7 +68,8 @@ export default function AppLayout() {
   })));
   const shouldShowMenuButton = isMobile || isTablet;
   const currentRoute = getRouteMeta(location.pathname);
-  const currentTitle = t(currentRoute.titleKey);
+  const settingsTab = location.pathname === '/settings' ? new URLSearchParams(location.search).get('tab') : null;
+  const currentTitle = t(settingsTab === 'models' ? 'nav.models' : currentRoute.titleKey);
   const [headerActions, setHeaderActions] = React.useState<ReactNode>(null);
   const [headerTitle, setHeaderTitle] = React.useState<ReactNode | null>(null);
   const [headerBackAction, setHeaderBackAction] = React.useState<(() => void) | null>(null);

@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ComponentProps, type ReactNode } from 'react';
+import { useTheme } from '@mui/material/styles';
 import { Box, Button, Chip, Stack, Typography } from '@mui/material';
 import PsychologyIcon from '@mui/icons-material/Psychology';
 import HubIcon from '@mui/icons-material/Hub';
@@ -8,7 +9,14 @@ import ForumIcon from '@mui/icons-material/Forum';
 import TimelineIcon from '@mui/icons-material/Timeline';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
+import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
+import ExtensionIcon from '@mui/icons-material/Extension';
+import KeyIcon from '@mui/icons-material/Key';
+import PersonAddAlt1Icon from '@mui/icons-material/PersonAddAlt1';
+import ForumOutlinedIcon from '@mui/icons-material/ForumOutlined';
 import { useNavigate } from 'react-router-dom';
+import { motion, reducedMotionDescendantSx } from '../styles/motion';
+import { useLayoutHeaderActions } from '../components/layout/AppLayoutContext';
 
 const accent = '#E5C07B';
 const blue = '#E5C07B';
@@ -537,7 +545,6 @@ function RuntimeSystemGlyph({ mode }: { mode: (typeof runtimeSystemNodes)[number
   const [innerActiveIndex, setInnerActiveIndex] = useState(0);
 
   useEffect(() => {
-    setInnerActiveIndex(0);
     if (cycleCount === 0) return;
     const timer = window.setInterval(() => {
       setInnerActiveIndex((current) => (current + 1) % cycleCount);
@@ -1181,16 +1188,22 @@ function HeroVisual() {
   const detailAreaMinHeight = displayedNode ? { xs: 124, sm: 120 } : { xs: 124, sm: 120 };
 
   useEffect(() => {
-    if (activeIndex === displayedIndex) {
-      setTextVisible(true);
-      return;
-    }
-    setTextVisible(false);
+    let transitionTimer: number | undefined;
     const timer = window.setTimeout(() => {
-      setDisplayedIndex(activeIndex);
-      window.requestAnimationFrame(() => setTextVisible(true));
-    }, 130);
-    return () => window.clearTimeout(timer);
+      if (activeIndex === displayedIndex) {
+        setTextVisible(true);
+        return;
+      }
+      setTextVisible(false);
+      transitionTimer = window.setTimeout(() => {
+        setDisplayedIndex(activeIndex);
+        window.requestAnimationFrame(() => setTextVisible(true));
+      }, 130);
+    }, 0);
+    return () => {
+      window.clearTimeout(timer);
+      if (transitionTimer !== undefined) window.clearTimeout(transitionTimer);
+    };
   }, [activeIndex, displayedIndex]);
 
   const activateNode = (index: number) => {
@@ -1549,7 +1562,773 @@ function AnimatedHeroTitle() {
   );
 }
 
-export default function IntroPage() {
+const monoStack = "\"Roboto Mono\", \"SFMono-Regular\", ui-monospace, Menlo, Consolas, monospace";
+
+const editorialBg = 'var(--intro-bg)';
+const editorialInk = 'var(--intro-ink)';
+const editorialMuted = 'var(--intro-muted)';
+const editorialAmber = 'var(--intro-amber)';
+const editorialAmberDeep = 'var(--intro-amber-deep)';
+const editorialSurface = 'var(--intro-surface)';
+const editorialCharcoal = 'var(--intro-charcoal)';
+const editorialLine = 'var(--intro-line)';
+const editorialStageBg = 'var(--intro-stage-bg)';
+const editorialCardBg = 'var(--intro-card-bg)';
+const editorialCardInk = 'var(--intro-card-ink)';
+const editorialCardMuted = 'var(--intro-card-muted)';
+const editorialCardLine = 'var(--intro-card-line)';
+const editorialStageHalo = 'var(--intro-stage-halo)';
+const editorialFocusBg = 'var(--intro-focus-bg)';
+const editorialFocusInk = 'var(--intro-focus-ink)';
+const editorialFocusMuted = 'var(--intro-focus-muted)';
+const editorialLiftShadow = 'var(--intro-lift-shadow)';
+const editorialSerif = '"Noto Serif SC", "Source Han Serif SC", Georgia, serif';
+
+const editorialFeatures = [
+  {
+    key: 'group',
+    label: '多角色群聊',
+    title: '群聊先有来回。',
+    text: '把多个 AI 角色放进同一个话题里。有人接话，有人拆台，有人旁观，也有人把话题拉回来，群聊因此有了真正的来回。',
+    icon: <ForumOutlinedIcon />,
+  },
+  {
+    key: 'profile',
+    label: '角色多维设定',
+    title: '角色从细节开始成形。',
+    text: '外观、性格、说话方式、擅长领域、关系备注和模型设置共同作用。你先定下方向，后续每一次互动都会补上新的质感。',
+    icon: <PsychologyIcon />,
+  },
+  {
+    key: 'memory',
+    label: '长期记忆和关系',
+    title: '记忆把相处接下去。',
+    text: '重要经历、用户偏好、共同约定和关系印象会沉淀下来。之后再开口，角色会带着背景、态度和熟悉感回来。',
+    icon: <MemoryIcon />,
+  },
+  {
+    key: 'companion',
+    label: '亲密陪伴',
+    title: '陪伴落在日常里。',
+    text: '专属称呼、共同话语、日常问候、纪念日和低频主动关心，会跟随角色进入单聊和群聊。时间久了，关系会长出自己的纹路。',
+    icon: <HubIcon />,
+  },
+] as const;
+
+const editorialUtilities = [
+  ['Agent 工作流', '聊天里出现明确任务时，Agent 可以继续推进。文档、代码、图表或网页小工具，都能从对话变成可保存的结果。', <ExtensionIcon />],
+  ['AI 中转站', '模型、Key、额度和 API 转发集中管理。不同模型进入同一套体验，配置和调用都更清楚。', <KeyIcon />],
+  ['朋友圈与活动日历', '动态、活动、纪念日和约定轻轻留痕。它们承接群聊之外的日常，让角色世界更容易回看。', <CalendarMonthIcon />],
+] as const;
+
+const editorialRuntimePillars = [
+  {
+    icon: <TimelineIcon />,
+    label: '每轮对话判断',
+    title: '谁该开口，由场面决定。',
+    text: '每一轮都会综合话题、上下文、关系和用户指向，判断谁来回应、谁来补充、谁暂时旁观。',
+  },
+  {
+    icon: <PsychologyIcon />,
+    label: '角色状态组合',
+    title: '设定给轮廓，互动添细部。',
+    text: '性格、语气、关系备注、近期事件和模型参数会一起影响角色此刻说什么、怎么说。',
+  },
+  {
+    icon: <MemoryIcon />,
+    label: '重要记忆整理',
+    title: '重要经历会被整理好。',
+    text: '重要经历会被整理成下次能用的背景，把用户偏好、共同约定和关系变化带回对话。',
+  },
+  {
+    icon: <VisibilityIcon />,
+    label: '不同场景区分',
+    title: '公开与私下，各有边界。',
+    text: '公开群聊、用户单聊、角色私下互动和系统事件会按场景使用，信息不会粗暴挤进同一个聊天框。',
+  },
+] as const;
+
+const editorialRuntimeFlow = [
+  ['01', '听懂意图', '识别用户是在提问、抛话题、点名某个角色，还是需要有人主动接住情绪。'],
+  ['02', '选出该说话的人', '从多个角色中挑出此刻最合适的人，也允许有人沉默、旁观或稍后再接。'],
+  ['03', '调出相关经历', '调用与当前场面相关的经历、偏好、约定和关系痕迹，让回复带着上下文抵达。'],
+  ['04', '说成角色自己的话', '把角色状态、语气边界和场面压力合成一条贴近当前角色的回复。'],
+] as const;
+
+const editorialRuntimeOutcomes = [
+  ['发言节奏', '谁先接、谁补刀、谁旁观'],
+  ['关系连续', '一次维护，会影响之后的语气'],
+  ['场景边界', '群聊、单聊、AI 私聊各有范围'],
+] as const;
+
+const editorialMessages = [
+  { name: '阿晚', tone: '温柔但敏感', text: '我记得你上次说过，不喜欢把事情拖到很晚。今天要不要早点收一下？', x: 5, y: 22, color: '#E8A35C' },
+  { name: '老李', tone: '稳重吐槽役', text: '先别急着下结论。让她把话说完，我们再拆。', x: 42, y: 8, color: '#C96F25' },
+  { name: '涩涩', tone: '嘴硬但护短', text: '我没想替他说话，只是你们这次都太快开火了。', x: 30, y: 56, color: '#9F6A3D' },
+];
+
+function EditorialPill({ children, active = false }: { children: ReactNode; active?: boolean }) {
+  return (
+    <Box
+      sx={{
+        px: 1.25,
+        py: 0.65,
+        borderRadius: 999,
+        border: '1px solid',
+        borderColor: active ? 'rgba(201,111,37,0.42)' : editorialLine,
+        bgcolor: active ? 'rgba(201,111,37,0.10)' : editorialCardBg,
+        color: active ? editorialAmberDeep : editorialMuted,
+        fontFamily: monoStack,
+        fontSize: 12,
+        fontWeight: 760,
+        letterSpacing: 0.4,
+      }}
+    >
+      {children}
+    </Box>
+  );
+}
+
+function EditorialSurface({ children, sx = {}, ...props }: { children: ReactNode; sx?: object } & Omit<ComponentProps<typeof Box>, 'children' | 'sx'>) {
+  return (
+    <Box
+      {...props}
+      sx={{
+        border: `1px solid ${editorialLine}`,
+        bgcolor: editorialSurface,
+        borderRadius: { xs: 2.5, md: 3 },
+        boxShadow: editorialLiftShadow,
+        transition: `transform ${motion.durations.base}ms ${motion.crispOut}, box-shadow ${motion.durations.base}ms ${motion.crispOut}, border-color ${motion.durations.base}ms ease`,
+        '&:hover': {
+          transform: 'translateY(-5px)',
+          borderColor: 'rgba(201,111,37,0.30)',
+          boxShadow: editorialLiftShadow,
+        },
+        '&:active': {
+          transform: 'translateY(-1px)',
+          boxShadow: editorialLiftShadow,
+        },
+        ...sx,
+      }}
+    >
+      {children}
+    </Box>
+  );
+}
+
+function EditorialRoomStage({
+  activeKey,
+  onActive,
+  onInteractionChange,
+}: {
+  activeKey: (typeof editorialFeatures)[number]['key'];
+  onActive: (key: (typeof editorialFeatures)[number]['key']) => void;
+  onInteractionChange?: (active: boolean) => void;
+}) {
+  const active = editorialFeatures.find((item) => item.key === activeKey) ?? editorialFeatures[0];
+  const activeIndex = editorialFeatures.findIndex((item) => item.key === activeKey);
+
+  return (
+    <EditorialSurface
+      onMouseEnter={() => onInteractionChange?.(true)}
+      onMouseLeave={() => onInteractionChange?.(false)}
+      sx={{
+        minHeight: { xs: 400, sm: 500, md: 560 },
+        p: { xs: 1.4, sm: 2 },
+        position: 'relative',
+        overflow: 'hidden',
+        bgcolor: editorialStageBg,
+      }}
+    >
+      <Box
+        aria-hidden
+        sx={{
+          position: 'absolute',
+          inset: 0,
+          backgroundImage: [
+            `radial-gradient(circle at 32% 26%, ${editorialStageHalo}, transparent 180px)`,
+            'radial-gradient(circle at 78% 72%, rgba(217,183,141,0.20), transparent 220px)',
+          ].join(', '),
+        }}
+      />
+      <Box sx={{ position: 'relative', zIndex: 1, height: '100%', minHeight: { xs: 372, sm: 460, md: 520 }, display: 'grid', gridTemplateRows: 'auto 1fr auto', gap: 1.2 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1, alignItems: 'center' }}>
+          <EditorialPill active>群聊预览</EditorialPill>
+          <Box sx={{ display: 'flex', gap: 0.65 }}>
+            {editorialFeatures.map((item) => (
+              <Box
+                key={item.key}
+                component="button"
+                type="button"
+                aria-label={item.label}
+                onMouseEnter={() => onActive(item.key)}
+                onClick={() => onActive(item.key)}
+                sx={{
+                  width: 10,
+                  height: 10,
+                  borderRadius: '50%',
+                  border: 'none',
+                  cursor: 'pointer',
+                  bgcolor: activeKey === item.key ? editorialAmber : 'rgba(33,26,22,0.18)',
+                  transform: activeKey === item.key ? 'scale(1.28)' : 'scale(1)',
+                  transition: 'transform 180ms ease, background-color 180ms ease',
+                }}
+              />
+            ))}
+          </Box>
+        </Box>
+
+        <Box sx={{ position: 'relative', minHeight: { xs: 214, sm: 292, md: 318 } }}>
+          <Box
+            aria-hidden
+            sx={{
+              position: 'absolute',
+              left: '50%',
+              top: { xs: 104, sm: 138, md: 150 },
+              width: { xs: 208, sm: 286, md: 330 },
+              height: { xs: 124, sm: 168, md: 188 },
+              transform: 'translate(-50%, -50%)',
+              opacity: 0.55,
+              '&::before, &::after': {
+                content: '""',
+                position: 'absolute',
+                inset: 0,
+                borderRadius: '50%',
+                border: `1px solid ${editorialCardLine}`,
+              },
+              '&::after': {
+                inset: { xs: 34, sm: 42 },
+                borderStyle: 'dashed',
+                animation: 'editorialOrbit 18s linear infinite',
+              },
+            }}
+          />
+          <Box
+            sx={{
+              position: 'absolute',
+              left: '50%',
+              top: { xs: 104, sm: 140, md: 150 },
+              width: { xs: 96, sm: 140, md: 154 },
+              height: { xs: 96, sm: 140, md: 154 },
+              transform: 'translate(-50%, -50%)',
+              borderRadius: '50%',
+              border: `1px solid ${editorialCardLine}`,
+              animation: 'editorialBreath 5.6s ease-in-out infinite',
+            }}
+          />
+          <Box
+            sx={{
+              position: 'absolute',
+              left: '50%',
+              top: { xs: 104, sm: 140, md: 150 },
+              transform: 'translate(-50%, -50%)',
+              width: { xs: 88, sm: 110 },
+              p: { xs: 0.95, sm: 1.15 },
+              borderRadius: 999,
+              textAlign: 'center',
+              bgcolor: editorialFocusBg,
+              color: editorialFocusInk,
+              border: `1px solid ${editorialCardLine}`,
+              boxShadow: editorialLiftShadow,
+              animation: `editorialRise 620ms ${motion.crispOut} 260ms both`,
+              zIndex: 5,
+            }}
+          >
+            <Typography sx={{ fontFamily: monoStack, fontSize: 10.5, fontWeight: 850, color: editorialAmber }}>TOPIC</Typography>
+            <Typography sx={{ mt: 0.25, fontWeight: 850, fontSize: { xs: 11.5, sm: 12.5 }, lineHeight: 1.24 }}>今天要不要早点收一下？</Typography>
+          </Box>
+          {editorialMessages.map((item, index) => (
+            <Box
+              key={item.name}
+              sx={{
+                position: 'absolute',
+                left: { xs: index === 0 ? '5%' : index === 1 ? '43%' : '18%', sm: `${item.x}%` },
+                top: { xs: index === 0 ? '28%' : index === 1 ? '5%' : '60%', sm: `${item.y}%` },
+                width: { xs: index === 1 ? 172 : 190, sm: 270 },
+                p: { xs: 1.15, sm: 1.45 },
+                zIndex: index === 0 ? 4 : index === 1 ? 2 : 3,
+                borderRadius: 3,
+                bgcolor: editorialCardBg,
+                color: editorialCardInk,
+                border: `1px solid ${editorialCardLine}`,
+                boxShadow: editorialLiftShadow,
+                animation: `editorialCardIn 720ms ${motion.crispOut} both, editorialFloat 5.8s ease-in-out infinite`,
+                animationDelay: `${index * 160}ms`,
+                transform: `rotate(${index === 1 ? 1.2 : index === 2 ? -1.4 : -0.8}deg)`,
+                transition: `translate ${motion.durations.base}ms ${motion.crispOut}, box-shadow ${motion.durations.base}ms ${motion.crispOut}, border-color ${motion.durations.base}ms ease`,
+                '&:hover': {
+                  translate: '0 -6px',
+                  borderColor: 'rgba(201,111,37,0.36)',
+                },
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Box sx={{ width: 30, height: 30, borderRadius: '50%', bgcolor: item.color, display: 'grid', placeItems: 'center', color: '#FFF9F0', fontFamily: editorialSerif, fontWeight: 900 }}>{item.name.slice(0, 1)}</Box>
+                <Box>
+                  <Typography sx={{ color: editorialCardInk, fontWeight: 850, fontSize: { xs: 13, sm: 14 } }}>{item.name}</Typography>
+                  <Typography sx={{ color: editorialCardMuted, fontSize: 11.5, display: { xs: 'none', sm: 'block' } }}>{item.tone}</Typography>
+                </Box>
+              </Box>
+              <Typography sx={{ mt: { xs: 0.75, sm: 1 }, color: editorialCardInk, lineHeight: 1.58, fontSize: { xs: 12.5, sm: 13.5 } }}>{item.text}</Typography>
+            </Box>
+          ))}
+        </Box>
+
+        <Box sx={{ position: 'relative', minHeight: { xs: 128, sm: 142 }, overflow: 'hidden', borderRadius: 2.5, bgcolor: editorialFocusBg, color: editorialFocusInk, border: `1px solid ${editorialCardLine}` }}>
+          {editorialFeatures.map((item, index) => {
+            const offset = index - activeIndex;
+            const selected = item.key === active.key;
+            return (
+              <Box
+                key={item.key}
+                sx={{
+                  position: 'absolute',
+                  inset: 0,
+                  p: { xs: 1.35, sm: 1.5 },
+                  opacity: selected ? 1 : 0,
+                  transform: `translateX(${offset * 38}px) scale(${selected ? 1 : 0.98})`,
+                  pointerEvents: selected ? 'auto' : 'none',
+                  transition: `opacity 360ms ${motion.softOut}, transform 420ms ${motion.crispOut}`,
+                }}
+              >
+                <Typography sx={{ color: editorialAmber, fontFamily: monoStack, fontSize: 12, fontWeight: 850, letterSpacing: 0.7 }}>{item.label}</Typography>
+                <Typography sx={{ mt: 0.6, fontFamily: editorialSerif, fontWeight: 900, fontSize: { xs: 23, sm: 27 }, lineHeight: 1.05 }}>{item.title}</Typography>
+                <Typography sx={{ mt: 0.75, color: editorialFocusMuted, lineHeight: 1.6, fontSize: { xs: 13.2, sm: 13.8 } }}>{item.text}</Typography>
+              </Box>
+            );
+          })}
+        </Box>
+      </Box>
+    </EditorialSurface>
+  );
+}
+
+function EditorialRuntimeSection() {
+  return (
+    <Box sx={{ py: { xs: 4.5, md: 5.5 } }}>
+      <Reveal>
+        <Box
+          sx={{
+            position: 'relative',
+            overflow: 'hidden',
+            borderRadius: { xs: 2.5, md: 3 },
+            bgcolor: editorialCharcoal,
+            color: '#FFF4E4',
+            border: `1px solid ${editorialCardLine}`,
+            boxShadow: editorialLiftShadow,
+          }}
+        >
+          <Box
+            aria-hidden
+            sx={{
+              position: 'absolute',
+              inset: 0,
+              backgroundImage: [
+                'linear-gradient(90deg, rgba(255,244,228,0.055) 1px, transparent 1px)',
+                'linear-gradient(0deg, rgba(255,244,228,0.045) 1px, transparent 1px)',
+                'radial-gradient(circle at 14% 18%, rgba(201,111,37,0.28), transparent 260px)',
+              ].join(', '),
+              backgroundSize: '64px 64px, 64px 64px, auto',
+              opacity: 0.86,
+            }}
+          />
+          <Box
+            aria-hidden
+            sx={{
+              position: 'absolute',
+              left: 0,
+              right: 0,
+              top: 0,
+              height: 2,
+              background: 'linear-gradient(90deg, transparent, rgba(233,163,90,0.9), transparent)',
+              animation: 'editorialScanline 4.8s ease-in-out infinite',
+            }}
+          />
+
+          <Box sx={{ position: 'relative', zIndex: 1, p: { xs: 1.8, sm: 2.4, md: 3 }, display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '0.74fr 1.26fr' }, gap: { xs: 2.6, lg: 3.5 }, alignItems: 'start' }}>
+            <Box>
+              <Typography sx={{ color: '#E9A35A', fontFamily: monoStack, fontWeight: 850, fontSize: 12, letterSpacing: 1.1 }}>RUNTIME FOUNDATION</Typography>
+              <Typography component="h2" sx={{ mt: 1.15, fontFamily: editorialSerif, fontWeight: 900, fontSize: { xs: 30, md: 42 }, lineHeight: 1.05, letterSpacing: 0 }}>
+                每一句像自然发生，背后都经过选择。
+              </Typography>
+              <Typography sx={{ mt: 1.35, color: 'rgba(255,244,228,0.70)', lineHeight: 1.74, fontSize: { xs: 14.5, md: 15.5 } }}>
+                多角色群聊要处理的远不止轮流发言。系统会读懂意图、选择角色、带入记忆、维持关系一致性，再把这一切藏进一句自然的话里。
+              </Typography>
+              <Box sx={{ mt: 1.9, display: 'grid', gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', sm: 'repeat(4, minmax(0, 1fr))', lg: 'repeat(2, minmax(0, 1fr))' }, gap: 0.85 }}>
+                {[
+                  ['发言选择', '谁该开口'],
+                  ['记忆回带', '不从零来'],
+                  ['关系后效', '态度会变'],
+                  ['场景分流', '边界清楚'],
+                ].map(([top, bottom]) => (
+                  <Box key={top} sx={{ border: '1px solid rgba(255,244,228,0.14)', borderRadius: 1.8, p: 1.05, bgcolor: 'rgba(255,244,228,0.055)', transition: `transform ${motion.durations.base}ms ${motion.crispOut}, border-color ${motion.durations.base}ms ease`, '&:hover': { transform: 'translateY(-3px)', borderColor: 'rgba(233,163,90,0.44)' }, '&:active': { transform: 'translateY(-1px)' } }}>
+                    <Typography sx={{ color: '#E9A35A', fontFamily: monoStack, fontSize: 11, fontWeight: 850 }}>{top}</Typography>
+                    <Typography sx={{ mt: 0.25, fontFamily: editorialSerif, fontSize: { xs: 21, md: 24 }, fontWeight: 900, lineHeight: 1 }}>{bottom}</Typography>
+                  </Box>
+                ))}
+              </Box>
+            </Box>
+
+            <Box sx={{ display: 'grid', gap: 0.85 }}>
+              {editorialRuntimeFlow.map(([step, title, text], index) => (
+                <Box
+                  key={step}
+                  sx={{
+                    position: 'relative',
+                    display: 'grid',
+                    gridTemplateColumns: { xs: '38px minmax(0, 1fr)', sm: '48px minmax(0, 1fr)' },
+                    gap: { xs: 1, sm: 1.25 },
+                    alignItems: 'start',
+                    p: { xs: 1.15, sm: 1.3 },
+                    borderRadius: 2,
+                    border: '1px solid rgba(255,244,228,0.14)',
+                    bgcolor: index === 1 ? 'rgba(233,163,90,0.12)' : 'rgba(255,244,228,0.058)',
+                    overflow: 'hidden',
+                    animation: `editorialFlowIn 620ms ${motion.crispOut} ${index * 80}ms both`,
+                    transition: `transform ${motion.durations.base}ms ${motion.crispOut}, background-color ${motion.durations.base}ms ease, border-color ${motion.durations.base}ms ease`,
+                    '&:hover': {
+                      transform: 'translateX(5px)',
+                      borderColor: 'rgba(233,163,90,0.45)',
+                      bgcolor: 'rgba(233,163,90,0.14)',
+                    },
+                    '&:active': {
+                      transform: 'translateX(3px)',
+                    },
+                    '&::after': {
+                      content: '""',
+                      position: 'absolute',
+                      left: { xs: 21, sm: 29 },
+                      top: 'calc(100% - 4px)',
+                      width: 1,
+                      height: index === editorialRuntimeFlow.length - 1 ? 0 : 18,
+                      bgcolor: 'rgba(233,163,90,0.42)',
+                    },
+                  }}
+                >
+                  <Box sx={{ width: { xs: 34, sm: 42 }, height: { xs: 34, sm: 42 }, borderRadius: '50%', display: 'grid', placeItems: 'center', border: '1px solid rgba(233,163,90,0.42)', color: '#E9A35A', fontFamily: monoStack, fontWeight: 900, fontSize: 11.5, bgcolor: 'rgba(12,10,9,0.68)' }}>
+                    {step}
+                  </Box>
+                  <Box>
+                    <Typography sx={{ fontFamily: editorialSerif, fontWeight: 900, fontSize: { xs: 21, sm: 24 }, lineHeight: 1.05 }}>{title}</Typography>
+                    <Typography sx={{ mt: 0.5, color: 'rgba(255,244,228,0.66)', lineHeight: 1.58, fontSize: 13.5 }}>{text}</Typography>
+                  </Box>
+                </Box>
+              ))}
+            </Box>
+          </Box>
+
+          <Box
+            sx={{
+              position: 'relative',
+              zIndex: 1,
+              mx: { xs: 1.8, sm: 2.4, md: 3 },
+              mb: { xs: 1.8, md: 2.4 },
+              p: { xs: 1.1, sm: 1.2 },
+              display: 'grid',
+              gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' },
+              gap: 1,
+              borderRadius: 2.6,
+              border: '1px solid rgba(233,163,90,0.28)',
+              bgcolor: 'rgba(233,163,90,0.10)',
+              boxShadow: 'inset 0 1px 0 rgba(255,244,228,0.08)',
+            }}
+          >
+            {editorialRuntimeOutcomes.map(([before, after], index) => (
+              <Box
+                key={before}
+                sx={{
+                  position: 'relative',
+                  minHeight: { xs: 78, sm: 88 },
+                  p: { xs: 1.05, sm: 1.15 },
+                  borderRadius: 1.8,
+                  bgcolor: index === 1 ? 'rgba(255,244,228,0.105)' : 'rgba(12,10,9,0.28)',
+                  border: '1px solid rgba(255,244,228,0.12)',
+                  overflow: 'hidden',
+                  transition: `transform ${motion.durations.base}ms ${motion.crispOut}, border-color ${motion.durations.base}ms ease, background-color ${motion.durations.base}ms ease`,
+                  '&:hover': {
+                    transform: 'translateY(-4px)',
+                    borderColor: 'rgba(233,163,90,0.44)',
+                    bgcolor: 'rgba(255,244,228,0.12)',
+                  },
+                  '&:active': {
+                    transform: 'translateY(-1px)',
+                  },
+                  '&::before': {
+                    content: '""',
+                    position: 'absolute',
+                    left: 14,
+                    top: 13,
+                    width: 7,
+                    height: 7,
+                    borderRadius: '50%',
+                    bgcolor: '#E9A35A',
+                    boxShadow: '0 0 0 5px rgba(233,163,90,0.14)',
+                  },
+                }}
+              >
+                <Typography sx={{ pl: 2, color: 'rgba(255,244,228,0.52)', fontSize: 13.5, lineHeight: 1.45 }}>{before}</Typography>
+                <Typography sx={{ mt: 0.65, color: '#FFF4E4', fontFamily: editorialSerif, fontWeight: 900, fontSize: { xs: 20, sm: 22 }, lineHeight: 1.1 }}>
+                  {after}
+                </Typography>
+              </Box>
+            ))}
+          </Box>
+
+          <Box sx={{ position: 'relative', zIndex: 1, px: { xs: 1.8, sm: 2.4, md: 3 }, pb: { xs: 1.8, sm: 2.4, md: 3 }, display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(4, minmax(0, 1fr))' }, gap: 0.9 }}>
+            {editorialRuntimePillars.map((item) => (
+              <Box key={item.label} sx={{ minHeight: { xs: 'auto', md: 158 }, p: 1.35, borderRadius: 2, border: '1px solid rgba(255,244,228,0.12)', bgcolor: 'rgba(12,10,9,0.42)', transition: `transform ${motion.durations.base}ms ${motion.crispOut}, border-color ${motion.durations.base}ms ease`, '&:hover': { transform: 'translateY(-4px)', borderColor: 'rgba(233,163,90,0.38)' }, '&:active': { transform: 'translateY(-1px)' } }}>
+                <Box sx={{ color: '#E9A35A', '& svg': { fontSize: 25 } }}>{item.icon}</Box>
+                <Typography sx={{ mt: 1, color: 'rgba(255,244,228,0.46)', fontFamily: monoStack, fontSize: 10.5, fontWeight: 850, textTransform: 'uppercase', lineHeight: 1.2 }}>{item.label}</Typography>
+                <Typography sx={{ mt: 0.65, fontFamily: editorialSerif, fontSize: 20, fontWeight: 900, lineHeight: 1.1 }}>{item.title}</Typography>
+                <Typography sx={{ mt: 0.65, color: 'rgba(255,244,228,0.62)', lineHeight: 1.56, fontSize: 13 }}>{item.text}</Typography>
+              </Box>
+            ))}
+          </Box>
+        </Box>
+      </Reveal>
+    </Box>
+  );
+}
+
+function EditorialIntroPage() {
+  const navigate = useNavigate();
+  const theme = useTheme();
+  const { setHideMobileBottomNav } = useLayoutHeaderActions();
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const [activeKey, setActiveKey] = useState<(typeof editorialFeatures)[number]['key']>('group');
+  const [previewPaused, setPreviewPaused] = useState(false);
+
+  useEffect(() => {
+    setHideMobileBottomNav(true);
+    return () => setHideMobileBottomNav(false);
+  }, [setHideMobileBottomNav]);
+
+  useEffect(() => {
+    if (previewPaused) return undefined;
+    const timer = window.setInterval(() => {
+      setActiveKey((current) => {
+        const index = editorialFeatures.findIndex((item) => item.key === current);
+        return editorialFeatures[(index + 1) % editorialFeatures.length].key;
+      });
+    }, 3600);
+    return () => window.clearInterval(timer);
+  }, [previewPaused]);
+
+  const handleMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    rootRef.current?.style.setProperty('--mx', `${event.clientX - rect.left}px`);
+    rootRef.current?.style.setProperty('--my', `${event.clientY - rect.top}px`);
+  };
+
+  return (
+    <Box
+      ref={rootRef}
+      onMouseMove={handleMouseMove}
+      sx={{
+        '--mx': '70%',
+        '--my': '18%',
+        '--intro-bg': theme.palette.background.default,
+        '--intro-ink': theme.palette.mode === 'dark' ? '#FFF4E4' : '#2B303A',
+        '--intro-muted': theme.palette.mode === 'dark' ? 'rgba(255,244,228,0.68)' : '#687081',
+        '--intro-amber': theme.palette.primary.main,
+        '--intro-amber-deep': theme.palette.primary.dark,
+        '--intro-surface': theme.palette.mode === 'dark' ? 'rgba(32,27,23,0.86)' : theme.palette.background.paper,
+        '--intro-charcoal': theme.palette.mode === 'dark' ? '#171310' : '#27221F',
+        '--intro-line': theme.palette.divider,
+        '--intro-stage-bg': theme.palette.mode === 'dark' ? '#211A16' : '#FBF1E4',
+        '--intro-card-bg': theme.palette.mode === 'dark' ? 'rgba(40,34,29,0.96)' : 'rgba(255,249,240,0.98)',
+        '--intro-card-ink': theme.palette.mode === 'dark' ? '#FFF4E4' : '#463A31',
+        '--intro-card-muted': theme.palette.mode === 'dark' ? 'rgba(255,244,228,0.58)' : theme.palette.text.secondary,
+        '--intro-card-line': theme.palette.mode === 'dark' ? 'rgba(255,244,228,0.14)' : 'rgba(33,26,22,0.12)',
+        '--intro-stage-halo': theme.palette.mode === 'dark' ? 'rgba(201,111,37,0.28)' : 'rgba(201,111,37,0.20)',
+        '--intro-focus-bg': theme.palette.mode === 'dark' ? 'rgba(16,13,11,0.96)' : 'rgba(39,34,31,0.96)',
+        '--intro-focus-ink': '#FFF4E4',
+        '--intro-focus-muted': theme.palette.mode === 'dark' ? 'rgba(255,244,228,0.68)' : '#D8C6AE',
+        '--intro-lift-shadow': theme.palette.mode === 'dark' ? '0 24px 70px rgba(0,0,0,0.28)' : '0 24px 70px rgba(67, 47, 31, 0.13)',
+        width: '100%',
+        minHeight: '100%',
+        px: { xs: 2, sm: 2.5, lg: 4 },
+        pt: { xs: 1.5, md: 3 },
+        pb: { xs: 6, md: 8 },
+        color: editorialInk,
+        bgcolor: editorialBg,
+        fontFamily: 'Inter, "Noto Sans SC", system-ui, sans-serif',
+        position: 'relative',
+        overflow: 'hidden',
+        backgroundImage: [
+          theme.palette.mode === 'dark'
+            ? 'radial-gradient(circle at var(--mx) var(--my), rgba(201,111,37,0.22), transparent 330px)'
+            : 'radial-gradient(circle at var(--mx) var(--my), rgba(201,111,37,0.18), transparent 320px)',
+          theme.palette.mode === 'dark'
+            ? 'linear-gradient(135deg, rgba(23,19,16,0.98), rgba(43,33,27,0.92))'
+            : 'linear-gradient(135deg, rgba(255,249,240,0.92), rgba(239,220,194,0.74))',
+        ].join(', '),
+        ...reducedMotionDescendantSx,
+        '@keyframes editorialFloat': {
+          '0%, 100%': { translate: '0 0' },
+          '50%': { translate: '0 -8px' },
+        },
+        '@keyframes editorialCardIn': {
+          '0%': { opacity: 0, scale: 0.96, filter: 'saturate(0.86)' },
+          '100%': { opacity: 1, scale: 1, filter: 'saturate(1)' },
+        },
+        '@keyframes editorialRise': {
+          '0%': { opacity: 0, transform: 'translateY(18px)' },
+          '100%': { opacity: 1, transform: 'translateY(0)' },
+        },
+        '@keyframes editorialCursor': {
+          '0%, 100%': { transform: 'translate(-50%, -50%) scale(1)' },
+          '50%': { transform: 'translate(-50%, -50%) scale(1.18)' },
+        },
+        '@keyframes editorialBreath': {
+          '0%, 100%': { scale: 1, opacity: 0.48 },
+          '50%': { scale: 1.08, opacity: 0.78 },
+        },
+        '@keyframes editorialOrbit': {
+          '0%': { transform: 'rotate(0deg)' },
+          '100%': { transform: 'rotate(360deg)' },
+        },
+        '@keyframes editorialMarquee': {
+          '0%': { transform: 'translateX(0)' },
+          '100%': { transform: 'translateX(-50%)' },
+        },
+        '@keyframes editorialScanline': {
+          '0%, 100%': { transform: 'translateX(-34%)', opacity: 0.18 },
+          '50%': { transform: 'translateX(34%)', opacity: 0.72 },
+        },
+        '@keyframes editorialFlowIn': {
+          '0%': { opacity: 0, transform: 'translateX(-18px)', filter: 'saturate(0.82)' },
+          '100%': { opacity: 1, transform: 'translateX(0)', filter: 'saturate(1)' },
+        },
+        '&::before': {
+          content: '""',
+          position: 'absolute',
+          left: 'var(--mx)',
+          top: 'var(--my)',
+          width: 112,
+          height: 112,
+          borderRadius: '50%',
+          border: '1px solid rgba(201,111,37,0.18)',
+          pointerEvents: 'none',
+          opacity: 0.56,
+          animation: 'editorialCursor 3.2s ease-in-out infinite',
+          zIndex: 0,
+        },
+      }}
+    >
+      <Box sx={{ width: 'min(1180px, 100%)', mx: 'auto', position: 'relative', zIndex: 1 }}>
+        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '0.92fr 1.08fr' }, gap: { xs: 3.2, lg: 5 }, alignItems: 'center', minHeight: { lg: 'calc(100dvh - 136px)' }, pb: { xs: 4, md: 5.5 } }}>
+          <Box sx={{ animation: `editorialRise 760ms ${motion.crispOut} both` }}>
+            <Box sx={{ pt: { xs: 1, md: 2 } }}>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75, mb: 3, animation: `editorialRise 680ms ${motion.crispOut} both` }}>
+                {['多角色群聊', '记忆有回声', '关系会变深', '陪伴有余温', '任务能落地'].map((item) => (
+                  <EditorialPill key={item}>{item}</EditorialPill>
+                ))}
+              </Box>
+              <Typography component="h1" sx={{ m: 0, maxWidth: 680, color: editorialInk, fontFamily: editorialSerif, fontWeight: 900, lineHeight: { xs: 1.08, md: 1.03 }, fontSize: { xs: 32, sm: 46, md: 60 }, letterSpacing: 0, animation: `editorialRise 760ms ${motion.crispOut} 80ms both` }}>
+                让角色同处一场对话
+                让关系自然发生
+              </Typography>
+              <Typography sx={{ mt: { xs: 1.55, md: 1.9 }, maxWidth: 640, color: editorialMuted, lineHeight: 1.72, fontSize: { xs: 14.5, md: 16 } , animation: `editorialRise 760ms ${motion.crispOut} 150ms both` }}>
+                生息以多角色群聊为核心。你创建角色，让他们围绕同一个话题相处：有人接话，有人拆台，有人沉默；旧事会被记起，关系会改变语气，下一次开口不再从零开始。
+              </Typography>
+              <Stack direction="row" spacing={1.2} sx={{ mt: { xs: 2.1, md: 2.7 }, flexWrap: 'wrap', gap: 1.2, animation: `editorialRise 760ms ${motion.crispOut} 220ms both` }}>
+                <Button variant="contained" startIcon={<ForumOutlinedIcon />} onClick={() => navigate('/chats/create')} sx={{ borderRadius: 999, bgcolor: editorialAmber, color: '#FFF9F0', fontWeight: 850, px: 2.4, py: 1.15, boxShadow: '0 18px 38px rgba(143,70,24,0.22)', '&:hover': { bgcolor: editorialAmberDeep, transform: 'translateY(-3px)', boxShadow: '0 24px 46px rgba(143,70,24,0.28)' }, '&:active': { transform: 'translateY(-1px)' } }}>
+                  开始群聊
+                </Button>
+                <Button variant="outlined" startIcon={<PersonAddAlt1Icon />} onClick={() => navigate('/characters/create')} sx={{ borderRadius: 999, color: editorialInk, borderColor: 'rgba(33,26,22,0.20)', fontWeight: 850, px: 2.4, py: 1.15, '&:hover': { borderColor: editorialAmber, bgcolor: 'rgba(201,111,37,0.08)', transform: 'translateY(-3px)' }, '&:active': { transform: 'translateY(-1px)' } }}>
+                  创建角色
+                </Button>
+              </Stack>
+            </Box>
+          </Box>
+          <Box sx={{ animation: `editorialRise 820ms ${motion.crispOut} 120ms both` }}>
+            <EditorialRoomStage activeKey={activeKey} onActive={setActiveKey} onInteractionChange={setPreviewPaused} />
+          </Box>
+        </Box>
+
+        <Box sx={{ mx: { xs: -2, sm: -2.5, lg: -4 }, overflow: 'hidden', bgcolor: editorialCharcoal, color: '#FFF4E4' }}>
+          <Box sx={{ display: 'flex', width: 'max-content', py: { xs: 0.95, md: 1.15 }, animation: 'editorialMarquee 26s linear infinite' }}>
+            {Array.from({ length: 2 }).map((_, group) => (
+              <Box key={group} sx={{ display: 'flex', alignItems: 'center' }}>
+                {['多角色群聊', '角色设定', '长期记忆', '关系变化', '亲密陪伴'].map((item) => (
+                  <Typography key={`${group}-${item}`} sx={{ mx: { xs: 1.8, md: 3.4 }, color: item === '多角色群聊' ? '#E9A35A' : '#FFF4E4', fontFamily: editorialSerif, fontWeight: 850, fontSize: { xs: 25, md: 36 }, whiteSpace: 'nowrap' }}>
+                    {item}
+                  </Typography>
+                ))}
+              </Box>
+            ))}
+          </Box>
+        </Box>
+
+        <Box sx={{ py: { xs: 4.5, md: 5.5 } }}>
+          <Reveal>
+            <Typography sx={{ color: editorialAmberDeep, fontFamily: monoStack, fontWeight: 850, fontSize: 12, letterSpacing: 1.1 }}>CORE EXPERIENCE</Typography>
+            <Typography component="h2" sx={{ mt: 1, color: editorialInk, fontFamily: editorialSerif, fontWeight: 900, fontSize: { xs: 31, md: 48 }, lineHeight: 1.04 }}>
+              先被群聊吸引，再被关系留住。
+            </Typography>
+          </Reveal>
+          <Box sx={{ mt: 2.1, display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' }, gap: 1.2 }}>
+            {editorialFeatures.map((item, index) => (
+              <Reveal key={item.key} delay={index * 55}>
+                <EditorialSurface sx={{ p: { xs: 1.75, md: 2 }, minHeight: { xs: 'auto', md: 178 }, bgcolor: editorialSurface }}>
+                  <Box sx={{ color: editorialAmber, '& svg': { fontSize: 26 } }}>{item.icon}</Box>
+                  <Typography sx={{ mt: 1.1, color: editorialInk, fontFamily: editorialSerif, fontWeight: 900, fontSize: { xs: 25, md: 29 }, lineHeight: 1.08 }}>{item.title}</Typography>
+                  <Typography sx={{ mt: 0.85, color: editorialMuted, lineHeight: 1.66, fontSize: { xs: 14.2, md: 14.8 } }}>{item.text}</Typography>
+                </EditorialSurface>
+              </Reveal>
+            ))}
+          </Box>
+        </Box>
+
+        <EditorialRuntimeSection />
+
+        <Box sx={{ py: { xs: 4.5, md: 5.5 }, display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '0.72fr 1.28fr' }, gap: { xs: 2.2, md: 3.2 }, alignItems: 'start' }}>
+          <Reveal>
+            <Box>
+              <EditorialPill>工具层</EditorialPill>
+              <Typography component="h2" sx={{ mt: 1.6, color: editorialInk, fontFamily: editorialSerif, fontWeight: 900, fontSize: { xs: 31, md: 46 }, lineHeight: 1.04 }}>
+                群聊之外，世界照样运转。
+              </Typography>
+              <Typography sx={{ mt: 1.3, color: editorialMuted, lineHeight: 1.7, fontSize: { xs: 14.8, md: 15.8 } }}>
+                Agent、AI 中转站、朋友圈和活动日历构成群聊之外的延展层。任务结果、模型配置和日常痕迹都会回到同一个角色世界里，让陪伴能延展，也能被管理。
+              </Typography>
+            </Box>
+          </Reveal>
+          <Box sx={{ display: 'grid', gap: 1.2 }}>
+            {editorialUtilities.map(([title, text, icon], index) => (
+              <Reveal key={title} delay={index * 65}>
+                <EditorialSurface sx={{ p: 1.45, display: 'grid', gridTemplateColumns: '36px minmax(0, 1fr)', gap: 1.2, alignItems: 'start', bgcolor: index === 0 ? '#27221F' : editorialSurface, color: index === 0 ? '#FFF4E4' : editorialInk }}>
+                  <Box sx={{ color: index === 0 ? '#E9A35A' : editorialAmber, display: 'grid', '& svg': { fontSize: 25 } }}>{icon}</Box>
+                  <Box>
+                    <Typography sx={{ fontFamily: editorialSerif, fontWeight: 900, fontSize: { xs: 24, md: 25 }, lineHeight: 1.06 }}>{title}</Typography>
+                    <Typography sx={{ mt: 0.6, color: index === 0 ? '#D8C6AE' : editorialMuted, lineHeight: 1.58, fontSize: 14.2 }}>{text}</Typography>
+                  </Box>
+                </EditorialSurface>
+              </Reveal>
+            ))}
+          </Box>
+        </Box>
+
+        <Reveal>
+          <Box sx={{ py: { xs: 4.5, md: 5.5 }, display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr auto' }, gap: 2, alignItems: 'center', borderTop: `1px solid ${editorialLine}` }}>
+            <Box>
+              <Typography sx={{ color: editorialInk, fontFamily: editorialSerif, fontWeight: 900, fontSize: { xs: 30, md: 44 }, lineHeight: 1.04 }}>先开一个群聊。</Typography>
+              <Typography sx={{ mt: 0.9, color: editorialMuted, lineHeight: 1.66 }}>创建几个角色，给他们一个话题。谁会先开口，谁会记得旧事，谁会因为你改变语气，都会在对话里显形。</Typography>
+            </Box>
+            <Button variant="contained" endIcon={<ArrowForwardIcon />} onClick={() => navigate('/chats/create')} sx={{ justifySelf: { xs: 'start', md: 'end' }, borderRadius: 999, bgcolor: editorialAmber, color: '#FFF9F0', fontWeight: 850, px: 2.4, py: 1.15, boxShadow: '0 18px 38px rgba(143,70,24,0.22)', '&:hover': { bgcolor: editorialAmberDeep, transform: 'translateY(-3px)', boxShadow: '0 24px 46px rgba(143,70,24,0.28)' }, '&:active': { transform: 'translateY(-1px)' } }}>
+              开始群聊
+            </Button>
+          </Box>
+        </Reveal>
+      </Box>
+    </Box>
+  );
+}
+
+export default EditorialIntroPage;
+
+export function IntroConceptPage() {
   const navigate = useNavigate();
   const rootRef = useRef<HTMLDivElement | null>(null);
 
