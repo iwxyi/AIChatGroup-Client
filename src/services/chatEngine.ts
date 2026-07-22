@@ -49,6 +49,7 @@ import { enrichRuntimeBundleWithHumanAppraisal } from './humanAppraisal';
 import { normalizeStoryChoiceSuggestions } from './storyChoices';
 import type { StoryContinuationState } from './narrativeRuntime';
 import { sanitizeUserFacingText } from './displayTextSanitizer';
+import { enhanceImagePrompt } from './imagePromptComposer';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { api, ApiError, type AiSearchResultItem } from './api';
 
@@ -2084,7 +2085,7 @@ function buildForcedImagePrompt(params: {
     'Style: believable chat image or character-made illustration as implied by the request; concrete composition, clear subject, natural lighting, no UI screenshot, no watermark, no unreadable text overlays.',
   ].filter(Boolean).join('\n');
   return {
-    prompt,
+    prompt: enhanceImagePrompt(prompt, { subject: subjectText, caption: `${params.speaker.name}发来的${subjectText}图片` }),
     altText: `${params.speaker.name}发来的${subjectText}图片`,
     referenceCharacterIds,
   };
@@ -2239,7 +2240,7 @@ function buildMessageMetadata(params: {
       kind: 'image',
       status: 'queued',
       altText: decision.image.altText,
-      promptText: decision.image.prompt,
+      promptText: enhanceImagePrompt(decision.image.prompt, { subject: decision.image.altText, caption: decision.image.altText }),
       aspectRatio: decision.image.aspectRatio,
       imageSize: decision.image.imageSize,
       referenceCharacterIds: decision.image.referenceCharacterIds?.filter(Boolean),

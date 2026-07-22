@@ -207,6 +207,7 @@ function buildPlannerPrompt(source: AppCommandContext['source']) {
     '- 同名或多候选角色需要 choices；每个 choice 的 label 必须带分组或摘要差异，choice.plan 里也要带 characterQuery、characterName、characters[].group 等可用于本地消歧的信息。',
     '- 对“秦始皇的性格怎么样”“A 和 B 谁更擅长做菜”这类请求，优先使用 read_character_info 或 compare_characters，不要退回 assistant_agent。',
     '- 对“把某分组下角色都改成...”“把喜羊羊相关的角色都移动到喜羊羊分组中”“把小明调外向一点”这类请求，输出 update_characters，并设置 riskLevel=high、requiresConfirmation=true。',
+    '- 需要跳转页面时，routePath 优先使用跨平台 AppLink，例如 ssmm://settings?action=open&tab=models&card=models、ssmm://characters?action=open、ssmm://chats?action=open；不要输出 hash 路由或平台私有路径。',
     '- sourceGroup 表示源分组筛选；targetGroup 表示写入目标分组。不要把“移动到 X 分组”里的 X 放到 sourceGroup。',
     '- “相关的角色”“包含某关键词的角色”应放到 characterQuery，而不是 sourceGroup。',
     '- choice 的 label 是用户可见按钮文字，短而明确；description 可说明影响。',

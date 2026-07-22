@@ -89,6 +89,16 @@ function buildQueuedImageMessage(patch: Partial<Message> = {}): Message {
   };
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 describe('processRichMessageMedia', () => {
   const localStorageMock = (() => {
     const values = new Map<string, string>();
@@ -125,6 +135,24 @@ describe('processRichMessageMedia', () => {
     expect(upserts[1]?.metadata?.attachments?.[0]?.status).toBe('failed');
     expect(upserts[1]?.metadata?.attachments?.[0]?.error).toBe('图片模型未配置');
     expect(upserts[1]?.metadata?.generation?.status).toBe('failed');
+  });
+
+  it('turns aborted image generations into a user-facing timeout failure', async () => {
+    vi.mocked(generateImageWithAdapter).mockRejectedValueOnce(new DOMException('Aborted', 'AbortError'));
+    const upserts: Message[] = [];
+
+    await processRichMessageMedia({
+      message: buildQueuedImageMessage(),
+      character,
+      aiProfiles: [imageProfile],
+      upsertMessage: (message) => upserts.push(message),
+    });
+
+    expect(upserts.at(-1)?.metadata?.attachments?.[0]).toMatchObject({
+      status: 'failed',
+      error: '图片生成超时，请稍后重试。',
+    });
+    expect(upserts.at(-1)?.metadata?.generation?.status).toBe('failed');
   });
 
   it('marks the message-level generation state as ready after a generated image is attached', async () => {
@@ -337,5 +365,85 @@ describe('processRichMessageMedia', () => {
       url: 'data:image/png;base64,retry',
     });
     expect(upserts.at(-1)?.metadata?.generation?.status).toBe('ready');
+  });
+
+  it('allows retrying a stuck generating media attachment', async () => {
+    vi.mocked(generateImageWithAdapter).mockResolvedValue([{
+      dataUrl: 'data:image/png;base64,recovered',
+      mimeType: 'image/png',
+    }]);
+    const stuckMessage = buildQueuedImageMessage({
+      metadata: {
+        attachments: [{
+          id: 'image-1',
+          kind: 'image',
+          status: 'generating',
+          promptText: '番茄炒蛋',
+          altText: '番茄炒蛋',
+          generationJobId: 'old-job',
+          createdAt: 123,
+          updatedAt: 124,
+        }],
+        generation: { status: 'generating', updatedAt: 124 },
+      },
+    });
+    const upserts: Message[] = [];
+
+    await retryRichMessageMedia({
+      message: stuckMessage,
+      attachmentId: 'image-1',
+      character,
+      aiProfiles: [imageProfile],
+      upsertMessage: (message) => upserts.push(message),
+    });
+
+    expect(upserts[0]?.metadata?.attachments?.[0]).toMatchObject({
+      status: 'queued',
+      error: undefined,
+      url: undefined,
+    });
+    expect(upserts[0]?.metadata?.attachments?.[0]?.generationJobId).not.toBe('old-job');
+    expect(upserts.at(-1)?.metadata?.attachments?.[0]).toMatchObject({
+      status: 'ready',
+      url: 'data:image/png;base64,recovered',
+    });
+  });
+
+  it('ignores stale image results after a retry starts a newer generation job', async () => {
+    const first = deferred<Array<{ dataUrl: string; mimeType: string }>>();
+    const second = deferred<Array<{ dataUrl: string; mimeType: string }>>();
+    vi.mocked(generateImageWithAdapter)
+      .mockImplementationOnce(() => first.promise)
+      .mockImplementationOnce(() => second.promise);
+    const upserts: Message[] = [];
+
+    const firstRun = processRichMessageMedia({
+      message: buildQueuedImageMessage(),
+      character,
+      aiProfiles: [imageProfile],
+      upsertMessage: (message) => upserts.push(message),
+    });
+
+    const generatingMessage = upserts.at(-1);
+    expect(generatingMessage?.metadata?.attachments?.[0]?.status).toBe('generating');
+
+    const retryRun = retryRichMessageMedia({
+      message: generatingMessage as Message,
+      attachmentId: 'image-1',
+      character,
+      aiProfiles: [imageProfile],
+      upsertMessage: (message) => upserts.push(message),
+    });
+
+    second.resolve([{ dataUrl: 'data:image/png;base64,new', mimeType: 'image/png' }]);
+    await retryRun;
+    first.resolve([{ dataUrl: 'data:image/png;base64,stale', mimeType: 'image/png' }]);
+    await firstRun;
+
+    expect(upserts.at(-1)?.metadata?.attachments?.[0]).toMatchObject({
+      status: 'ready',
+      url: 'data:image/png;base64,new',
+    });
+    expect(upserts.some((message) => message.metadata?.attachments?.[0]?.url === 'data:image/png;base64,stale')).toBe(false);
   });
 });

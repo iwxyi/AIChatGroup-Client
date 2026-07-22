@@ -4,6 +4,8 @@ import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import SendIcon from '@mui/icons-material/Send';
 import { useNavigate } from 'react-router-dom';
 import SurfaceCard from '../../components/common/SurfaceCard';
+import AppSnackbar from '../../components/common/AppSnackbar';
+import { useAppLinkHandler } from '../../hooks/useAppLinkHandler';
 import type { AppCommandCandidate, AppCommandChoice, AppCommandRoute, LocalActionPlan } from '../appCommand/commandTypes';
 import { HOME_COMMAND_PLACEHOLDERS } from './placeholders';
 
@@ -49,6 +51,7 @@ function resolveChoicePresentation(choices: AppCommandChoice[]) {
 
 export default function HomeCommandLauncher() {
   const navigate = useNavigate();
+  const appLink = useAppLinkHandler();
   const [input, setInput] = useState('');
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -134,7 +137,7 @@ export default function HomeCommandLauncher() {
       return;
     }
     if (choice.url && !choice.plan) {
-      navigate(choice.url);
+      if (!appLink.openAppHref(choice.url)) navigate(choice.url);
       setPending(null);
       setInput('');
       return;
@@ -269,6 +272,13 @@ export default function HomeCommandLauncher() {
             </Alert>
           ) : null}
         </Collapse>
+        <AppSnackbar
+          open={appLink.feedback.open}
+          message={appLink.feedback.message}
+          severity="warning"
+          action={appLink.feedback.action}
+          onClose={appLink.closeFeedback}
+        />
       </Box>
     </SurfaceCard>
   );

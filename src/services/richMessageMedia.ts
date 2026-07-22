@@ -1,5 +1,5 @@
 import type { AICharacter } from '../types/character';
-import type { Message, MessageAttachment, MessageMetadata } from '../types/message';
+import type { Message, MessageAttachment, MessageAttachmentKind, MessageMetadata } from '../types/message';
 import { isAIProfileUsable, type AIModelProfile } from '../types/settings';
 import { api } from './api';
 import { generateImageWithAdapter, synthesizeSpeechWithAdapter } from './aiGenerationAdapter';
@@ -33,6 +33,34 @@ async function ensureDataUrl(value: string) {
   const response = await fetch(value);
   const blob = await response.blob();
   return blobToDataUrl(blob);
+}
+
+function createGenerationJobId() {
+  return `media-gen-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function isAbortError(error: unknown) {
+  return error instanceof DOMException
+    ? error.name === 'AbortError'
+    : error instanceof Error && (error.name === 'AbortError' || /aborted/i.test(error.message));
+}
+
+type GenerativeAttachmentKind = Extract<MessageAttachmentKind, 'image' | 'audio'>;
+
+function toMediaGenerationErrorText(error: unknown, kind: GenerativeAttachmentKind) {
+  if (isAbortError(error)) {
+    if (kind === 'audio') return '语音生成超时，请稍后重试。';
+    return '图片生成超时，请稍后重试。';
+  }
+  if (error instanceof Error) return error.message;
+  if (kind === 'audio') return String(error || '语音生成失败');
+  return String(error || '图片生成失败');
+}
+
+const activeGenerationJobIds = new Map<string, string>();
+
+function generationTaskKey(message: Message, attachmentId: string) {
+  return `${message.id}:${attachmentId}`;
 }
 
 export function isLocalOnlyMediaMode() {
@@ -109,7 +137,14 @@ export async function processRichMessageMedia(params: {
 
   for (const attachment of attachments) {
     if (attachment.status !== 'queued') continue;
-    const generatingMetadata = updateAttachment(params.message.metadata, attachment.id, { status: 'generating' });
+    if (attachment.kind !== 'image' && attachment.kind !== 'audio') continue;
+    const generationJobId = attachment.generationJobId || createGenerationJobId();
+    const taskKey = generationTaskKey(params.message, attachment.id);
+    activeGenerationJobIds.set(taskKey, generationJobId);
+    const generatingMetadata = updateAttachment(params.message.metadata, attachment.id, {
+      status: 'generating',
+      generationJobId,
+    });
     let currentMessage: Message = { ...params.message, metadata: generatingMetadata };
     params.upsertMessage(currentMessage);
     if (!isLocalOnlyMediaMode()) void api.updateMessageMetadata(currentMessage.serverId || currentMessage.id, generatingMetadata).catch(() => undefined);
@@ -144,6 +179,7 @@ export async function processRichMessageMedia(params: {
         });
         const first = images[0];
         if (!first?.dataUrl) throw new Error('图片生成失败');
+        if (activeGenerationJobIds.get(taskKey) !== generationJobId) continue;
         const dataUrl = await ensureDataUrl(first.dataUrl);
         const asset = isLocalOnlyMediaMode()
           ? { id: undefined, url: dataUrl, mimeType: first.mimeType, sizeBytes: dataUrl.length, checksum: undefined }
@@ -161,6 +197,7 @@ export async function processRichMessageMedia(params: {
           mimeType: asset.mimeType,
           sizeBytes: asset.sizeBytes,
           checksum: asset.checksum,
+          generationJobId,
         });
         currentMessage = { ...currentMessage, metadata: readyMetadata };
         params.upsertMessage(currentMessage);
@@ -183,6 +220,7 @@ export async function processRichMessageMedia(params: {
           voice,
           format: 'mp3',
         });
+        if (activeGenerationJobIds.get(taskKey) !== generationJobId) continue;
         const dataUrl = await blobToDataUrl(audio.blob);
         const asset = isLocalOnlyMediaMode()
           ? { id: undefined, url: dataUrl, mimeType: audio.mimeType, sizeBytes: dataUrl.length, checksum: undefined }
@@ -199,12 +237,14 @@ export async function processRichMessageMedia(params: {
           url: asset.url || dataUrl,
           mimeType: asset.mimeType,
           sizeBytes: asset.sizeBytes,
+          generationJobId,
         });
         currentMessage = { ...currentMessage, metadata: readyMetadata };
         params.upsertMessage(currentMessage);
         if (!isLocalOnlyMediaMode()) void api.updateMessageMetadata(currentMessage.serverId || currentMessage.id, readyMetadata).catch(() => undefined);
       }
     } catch (error) {
+      if (activeGenerationJobIds.get(taskKey) !== generationJobId) continue;
       reportRecoverableError({
         location: 'rich-message-media.process',
         error,
@@ -218,11 +258,16 @@ export async function processRichMessageMedia(params: {
       });
       const failedMetadata = updateAttachment(currentMessage.metadata, attachment.id, {
         status: 'failed',
-        error: error instanceof Error ? error.message : String(error),
+        error: toMediaGenerationErrorText(error, attachment.kind),
+        generationJobId,
       });
       currentMessage = { ...currentMessage, metadata: failedMetadata };
       params.upsertMessage(currentMessage);
       if (!isLocalOnlyMediaMode()) void api.updateMessageMetadata(currentMessage.serverId || currentMessage.id, failedMetadata).catch(() => undefined);
+    } finally {
+      if (activeGenerationJobIds.get(taskKey) === generationJobId) {
+        activeGenerationJobIds.delete(taskKey);
+      }
     }
   }
 }
@@ -237,7 +282,9 @@ export async function retryRichMessageMedia(params: {
 }) {
   const attachments = params.message.metadata?.attachments || [];
   const target = attachments.find((attachment) => attachment.id === params.attachmentId);
-  if (!target || (target.status !== 'failed' && !(target.status === 'ready' && !target.url))) return;
+  if (!target || (target.status !== 'failed' && target.status !== 'queued' && target.status !== 'generating' && !(target.status === 'ready' && !target.url))) return;
+  const generationJobId = createGenerationJobId();
+  activeGenerationJobIds.set(generationTaskKey(params.message, params.attachmentId), generationJobId);
   const retryMetadata = updateAttachment(params.message.metadata, params.attachmentId, {
     status: 'queued',
     error: undefined,
@@ -245,6 +292,7 @@ export async function retryRichMessageMedia(params: {
     url: undefined,
     sizeBytes: undefined,
     checksum: undefined,
+    generationJobId,
   });
   const retryMessage = { ...params.message, metadata: retryMetadata };
   params.upsertMessage(retryMessage);

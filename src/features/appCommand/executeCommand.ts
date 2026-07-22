@@ -14,6 +14,7 @@ import { formatAiBalanceAmount } from '../../utils/aiPoints';
 import type { AppCommandCandidate, AppCommandChoice, AppCommandContext, AppCommandExecutionResult, AppCommandRoute, LocalActionPlan, PlannedCharacter } from './commandTypes';
 import { savePendingAppCommand } from './pendingCommandStore';
 import { resolveSecretRef } from './secretRedaction';
+import { parseAppLink, resolveAppLinkToWebPath, serializeAppLink } from '../../services/appLink';
 
 function clean(value?: string | null) {
   return typeof value === 'string' ? value.trim() : '';
@@ -78,12 +79,21 @@ async function ensureCharacters(planCharacters: PlannedCharacter[], context: App
   return [...found, ...created];
 }
 
-function chatUrl(chatId: string, tab: number) {
+function chatWebPath(chatId: string, tab: number) {
   return `/chats/${encodeURIComponent(chatId)}?fromTab=${tab}`;
 }
 
+function chatAppLink(chatId: string, tab: number) {
+  return serializeAppLink({ target: 'chat', id: chatId, action: 'open', params: { fromTab: String(tab) } });
+}
+
 function markdownChatLink(label: string, chatId: string, tab: number) {
-  return `[${label}](${chatUrl(chatId, tab)})`;
+  return `[${label}](${chatAppLink(chatId, tab)})`;
+}
+
+function resolveCommandUrlForWeb(url: string) {
+  const link = parseAppLink(url);
+  return link ? resolveAppLinkToWebPath(link) || url : url;
 }
 
 function candidateChoices(candidates: AppCommandCandidate[]): AppCommandChoice[] {
@@ -119,12 +129,12 @@ function scoreText(text: string, query: string) {
   return target.split(/\s+/).filter((part) => part && source.includes(part)).length;
 }
 
-function characterUrl(characterId: string) {
-  return `/characters/${encodeURIComponent(characterId)}/edit`;
+function characterAppLink(characterId: string) {
+  return serializeAppLink({ target: 'character', id: characterId, action: 'edit' });
 }
 
 function markdownCharacterLink(label: string, characterId: string) {
-  return `[${label}](${characterUrl(characterId)})`;
+  return `[${label}](${characterAppLink(characterId)})`;
 }
 
 function characterSearchText(character: AICharacter) {
@@ -188,7 +198,7 @@ function characterCandidates(characters: AICharacter[]): AppCommandCandidate[] {
     id: character.id,
     label: character.name,
     description: [character.group || '未分组', character.expertise?.slice(0, 3).join('、')].filter(Boolean).join(' · '),
-    url: characterUrl(character.id),
+    url: characterAppLink(character.id),
     kind: 'character',
   }));
 }
@@ -286,7 +296,7 @@ async function openExistingChat(plan: LocalActionPlan, context: AppCommandContex
       id: chat.id,
       label: chat.name,
       description: [chat.type === 'group' ? '群聊' : chat.type === 'direct' ? '单聊' : '助手', chat.topic].filter(Boolean).join(' · '),
-      url: chatUrl(chat.id, tab),
+      url: chatAppLink(chat.id, tab),
       score,
       kind: chat.type,
     };
@@ -313,7 +323,7 @@ async function openExistingChat(plan: LocalActionPlan, context: AppCommandContex
     };
   }
   const tab = best.type === 'assistant' ? 3 : best.type === 'direct' ? 1 : 0;
-  const url = chatUrl(best.id, tab);
+  const url = chatWebPath(best.id, tab);
   context.navigate?.(url);
   return {
     status: 'success',
@@ -333,8 +343,9 @@ async function executeChoice(plan: LocalActionPlan, choice: AppCommandChoice, co
     return executeAppCommandRoute(contextToRoute(plan), context, secrets);
   }
   if (choice.url && !choice.plan) {
-    context.navigate?.(choice.url);
-    return { status: 'success', title: '已打开', message: '已打开对应页面。', navigateTo: choice.url };
+    const webPath = resolveCommandUrlForWeb(choice.url);
+    context.navigate?.(webPath);
+    return { status: 'success', title: '已打开', message: '已打开对应页面。', navigateTo: webPath };
   }
   const nextPlan = choice.plan?.plan
     ? { ...plan, ...choice.plan.plan, action: choice.plan.action || plan.action }
@@ -377,7 +388,7 @@ async function createDirectChat(plan: LocalActionPlan, context: AppCommandContex
   const [character] = await ensureCharacters([{ name, group: plan.characters?.[0]?.group || null, roleHint: plan.summary }], context);
   const existing = useChatStore.getState().chats.find((chat) => chat.type === 'direct' && chat.memberIds.includes(character.id));
   const chat = existing || await useChatStore.getState().addChat(buildDirectChatDraft(character.id, character.name));
-  const url = chatUrl(chat.id, 1);
+  const url = chatWebPath(chat.id, 1);
   context.navigate?.(url);
   return {
     status: 'success',
@@ -422,7 +433,7 @@ async function createGroupChat(plan: LocalActionPlan, context: AppCommandContext
     allowEventInjection: true,
     allowForcedReply: true,
   }));
-  const url = chatUrl(chat.id, 0);
+  const url = chatWebPath(chat.id, 0);
   context.navigate?.(url);
   return {
     status: 'success',
@@ -441,7 +452,7 @@ async function createCharacters(plan: LocalActionPlan, context: AppCommandContex
     status: 'success',
     title: '已创建角色',
     message: `已准备 ${characters.length} 个角色。`,
-    markdown: `已准备角色：${characters.map((item) => item.name).join('、')}。可以在[角色库](/characters)查看。`,
+    markdown: `已准备角色：${characters.map((item) => item.name).join('、')}。可以在[角色库](${serializeAppLink({ target: 'characters', action: 'open' })})查看。`,
     navigateTo: '/characters',
   };
 }
@@ -696,6 +707,7 @@ const LOCAL_ACTION_HANDLERS: Record<LocalActionPlan['action'], LocalActionHandle
   set_ai_model_key: (plan, _context, secrets) => setAiModelKey(plan, secrets),
   navigate: (plan, context) => {
     if (!plan.routePath) return { status: 'info', title: '缺少页面', message: '没有找到要打开的页面。' };
+    const webPath = resolveCommandUrlForWeb(plan.routePath);
     if (context.source === 'assistant') {
       return {
         status: 'needs_confirmation',
@@ -705,8 +717,8 @@ const LOCAL_ACTION_HANDLERS: Record<LocalActionPlan['action'], LocalActionHandle
         choicePresentation: 'chips',
       };
     }
-    context.navigate?.(plan.routePath);
-    return { status: 'success', title: '已打开页面', message: '已为你打开对应页面。', navigateTo: plan.routePath };
+    context.navigate?.(webPath);
+    return { status: 'success', title: '已打开页面', message: '已为你打开对应页面。', navigateTo: webPath };
   },
 };
 

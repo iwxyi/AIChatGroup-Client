@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { shouldUseRichMarkdown } from './MarkdownText';
+import { transformMarkdownUrl } from './RichMarkdownText';
 
 describe('MarkdownText markdown detection', () => {
   it('keeps common chat prose on the plain text path', () => {
@@ -13,5 +14,13 @@ describe('MarkdownText markdown detection', () => {
     expect(shouldUseRichMarkdown('[链接](https://example.com)')).toBe(true);
     expect(shouldUseRichMarkdown('```ts\nconst x = 1;\n```')).toBe(true);
     expect(shouldUseRichMarkdown('| A | B |\n| - | - |')).toBe(true);
+  });
+
+  it('keeps app links available while blocking unsafe protocols', () => {
+    expect(transformMarkdownUrl('ssmm://character/local-character-1?action=edit')).toBe('ssmm://character/local-character-1?action=edit');
+    expect(transformMarkdownUrl('/characters/local-character-1/edit')).toBe('/characters/local-character-1/edit');
+    expect(transformMarkdownUrl('https://example.com')).toBe('https://example.com');
+    expect(transformMarkdownUrl('javascript:alert(1)')).toBe('');
+    expect(transformMarkdownUrl('data:text/html,<script>alert(1)</script>')).toBe('');
   });
 });

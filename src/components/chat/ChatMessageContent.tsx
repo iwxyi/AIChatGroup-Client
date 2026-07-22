@@ -320,7 +320,7 @@ export function MessageContent({ message, onRetryMedia, onOpenImage, onOpenDiagr
   const usedAttachmentIds = new Set<string>();
   const renderAttachment = (attachment: MessageAttachment, captionOverride?: string) => {
     if (attachment.kind === 'image') {
-      const canRetryAttachment = attachment.status === 'failed' || (attachment.status === 'ready' && !attachment.url);
+      const canRetryAttachment = attachment.status === 'failed' || attachment.status === 'queued' || attachment.status === 'generating' || (attachment.status === 'ready' && !attachment.url);
       if (attachment.status === 'ready' && attachment.url) {
         return (
           <MessageImageAttachment
@@ -344,7 +344,7 @@ export function MessageContent({ message, onRetryMedia, onOpenImage, onOpenDiagr
                 {getAttachmentStatusDetail(attachment)}
               </Typography>
               {canRetryAttachment && onRetryMedia ? (
-                <Button size="small" variant="outlined" color="error" onClick={() => void onRetryMedia?.(message, attachment.id)}>
+                <Button size="small" variant="outlined" color={attachment.status === 'failed' ? 'error' : 'primary'} onClick={() => void onRetryMedia?.(message, attachment.id)}>
                   重试
                 </Button>
               ) : null}

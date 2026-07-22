@@ -1,4 +1,5 @@
 import type { APIConfig, AIModelProfile } from '../../types/settings';
+import { normalizeInternalAppHref } from '../../services/appLink';
 import { executeAppCommandRoute } from '../appCommand/executeCommand';
 import type { AppCommandChoice, AppCommandExecutionResult, AppCommandRoute, LocalActionPlan } from '../appCommand/commandTypes';
 import { clearPendingAppCommand, getPendingAppCommand, isCancellationText, isConfirmationText } from '../appCommand/pendingCommandStore';
@@ -18,7 +19,7 @@ function formatResult(result: AppCommandExecutionResult) {
 function formatOpenTarget(label: string, url?: string) {
   const cleanLabel = label.trim();
   const visibleLabel = cleanLabel && !/^https?:\/\//i.test(cleanLabel) && !cleanLabel.startsWith('/') ? cleanLabel : '打开页面';
-  return url ? `[${visibleLabel}](${url})` : visibleLabel;
+  return url ? `[${visibleLabel}](${normalizeInternalAppHref(url)})` : visibleLabel;
 }
 
 function parseCandidateIndex(input: string) {
