@@ -1616,9 +1616,43 @@ const editorialFeatures = [
 ] as const;
 
 const editorialUtilities = [
-  ['Agent 工作流', '需要整理内容、写文档、生成代码或制作图表时，Agent 可以把聊天里的需求推进成可保存、可修改的产物。', <ExtensionIcon />],
-  ['AI 中转站', '统一配置模型供应商、Key、额度和 API 转发，把不同模型接入同一套使用体验。', <KeyIcon />],
-  ['朋友圈与日历', '动态、活动和约定作为轻量补充，让角色互动留下可查看的日常痕迹。', <CalendarMonthIcon />],
+  ['Agent 工作流', '把聊天里的需求推进为可保存、可修改的产物。角色负责陪伴，Agent 负责把任务落到结果。', <ExtensionIcon />],
+  ['AI 中转站', '统一接入模型、Key、额度和 API 转发，让不同模型进入同一套可管理的使用边界。', <KeyIcon />],
+  ['朋友圈与日历', '动态、活动和约定作为轻量补充，让角色互动留下可回看的日常痕迹。', <CalendarMonthIcon />],
+] as const;
+
+const editorialRuntimePillars = [
+  {
+    icon: <TimelineIcon />,
+    label: 'Conversation orchestration',
+    title: '先判断场面，再决定谁开口。',
+    text: '每一轮群聊都会综合当前话题、最近上下文、角色关系和用户意图，选择该接话、沉默、补充还是转圜的人。',
+  },
+  {
+    icon: <PsychologyIcon />,
+    label: 'Character state',
+    title: '角色表现来自多层状态。',
+    text: '人设不是固定模板。性格、语气、关系备注、近期事件和模型参数会共同影响角色此刻说什么、怎么说。',
+  },
+  {
+    icon: <MemoryIcon />,
+    label: 'Memory ledger',
+    title: '长期记忆不是聊天记录堆叠。',
+    text: '系统会把重要经历沉淀成可回流的背景，把用户偏好、共同约定和关系变化带回下一次对话。',
+  },
+  {
+    icon: <VisibilityIcon />,
+    label: 'Perspective boundary',
+    title: '不同内容有不同视角。',
+    text: '公开群聊、单聊、角色之间的私密信息与运行事件会按场景裁剪，避免所有信息挤进同一个聊天框。',
+  },
+] as const;
+
+const editorialRuntimeFlow = [
+  ['01', '意图识别', '读懂用户这句话是在提问、推进关系、抛话题，还是需要角色主动接住。'],
+  ['02', '角色调度', '从多个角色中挑出此刻最该在场的人，同时允许沉默和错峰回应。'],
+  ['03', '记忆回流', '调用与当前场面相关的经历、偏好、约定和关系痕迹。'],
+  ['04', '表达成形', '把角色状态、语气边界和场面压力合成一条像它自己的回复。'],
 ] as const;
 
 const editorialMessages = [
@@ -1863,6 +1897,136 @@ function EditorialRoomStage({
   );
 }
 
+function EditorialRuntimeSection() {
+  return (
+    <Box sx={{ py: { xs: 5, md: 7 } }}>
+      <Reveal>
+        <Box
+          sx={{
+            position: 'relative',
+            overflow: 'hidden',
+            borderRadius: { xs: 3, md: 4 },
+            bgcolor: editorialCharcoal,
+            color: '#FFF4E4',
+            border: `1px solid ${editorialCardLine}`,
+            boxShadow: editorialLiftShadow,
+          }}
+        >
+          <Box
+            aria-hidden
+            sx={{
+              position: 'absolute',
+              inset: 0,
+              backgroundImage: [
+                'linear-gradient(90deg, rgba(255,244,228,0.055) 1px, transparent 1px)',
+                'linear-gradient(0deg, rgba(255,244,228,0.045) 1px, transparent 1px)',
+                'radial-gradient(circle at 14% 18%, rgba(201,111,37,0.28), transparent 260px)',
+              ].join(', '),
+              backgroundSize: '64px 64px, 64px 64px, auto',
+              opacity: 0.86,
+            }}
+          />
+          <Box
+            aria-hidden
+            sx={{
+              position: 'absolute',
+              left: 0,
+              right: 0,
+              top: 0,
+              height: 2,
+              background: 'linear-gradient(90deg, transparent, rgba(233,163,90,0.9), transparent)',
+              animation: 'editorialScanline 4.8s ease-in-out infinite',
+            }}
+          />
+
+          <Box sx={{ position: 'relative', zIndex: 1, p: { xs: 2.2, sm: 3, md: 4 }, display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '0.78fr 1.22fr' }, gap: { xs: 3.5, lg: 5 }, alignItems: 'start' }}>
+            <Box>
+              <Typography sx={{ color: '#E9A35A', fontFamily: monoStack, fontWeight: 850, fontSize: 12, letterSpacing: 1.1 }}>RUNTIME FOUNDATION</Typography>
+              <Typography component="h2" sx={{ mt: 1.4, fontFamily: editorialSerif, fontWeight: 900, fontSize: { xs: 34, md: 50 }, lineHeight: 1.04, letterSpacing: 0 }}>
+                它看起来像聊天，底下是一条运行链路。
+              </Typography>
+              <Typography sx={{ mt: 1.55, color: 'rgba(255,244,228,0.70)', lineHeight: 1.82, fontSize: { xs: 15.5, md: 16.5 } }}>
+                多角色群聊不是把几个模型轮流叫出来回答。系统需要判断场面、调度角色、回收记忆、维护关系，再让每一句话以自然的方式出现。
+              </Typography>
+              <Box sx={{ mt: 2.4, display: 'grid', gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', sm: 'repeat(4, minmax(0, 1fr))', lg: 'repeat(2, minmax(0, 1fr))' }, gap: 1 }}>
+                {[
+                  ['多角色', '调度'],
+                  ['长期记忆', '回流'],
+                  ['关系账本', '更新'],
+                  ['视角边界', '裁剪'],
+                ].map(([top, bottom]) => (
+                  <Box key={top} sx={{ border: '1px solid rgba(255,244,228,0.14)', borderRadius: 2.2, p: 1.3, bgcolor: 'rgba(255,244,228,0.055)', transition: `transform ${motion.durations.base}ms ${motion.crispOut}, border-color ${motion.durations.base}ms ease`, '&:hover': { transform: 'translateY(-4px)', borderColor: 'rgba(233,163,90,0.44)' }, '&:active': { transform: 'translateY(-1px)' } }}>
+                    <Typography sx={{ color: '#E9A35A', fontFamily: monoStack, fontSize: 11, fontWeight: 850 }}>{top}</Typography>
+                    <Typography sx={{ mt: 0.3, fontFamily: editorialSerif, fontSize: { xs: 24, md: 28 }, fontWeight: 900, lineHeight: 1 }}>{bottom}</Typography>
+                  </Box>
+                ))}
+              </Box>
+            </Box>
+
+            <Box sx={{ display: 'grid', gap: 1.2 }}>
+              {editorialRuntimeFlow.map(([step, title, text], index) => (
+                <Box
+                  key={step}
+                  sx={{
+                    position: 'relative',
+                    display: 'grid',
+                    gridTemplateColumns: { xs: '42px minmax(0, 1fr)', sm: '58px minmax(0, 1fr)' },
+                    gap: { xs: 1.2, sm: 1.5 },
+                    alignItems: 'start',
+                    p: { xs: 1.45, sm: 1.7 },
+                    borderRadius: 2.4,
+                    border: '1px solid rgba(255,244,228,0.14)',
+                    bgcolor: index === 1 ? 'rgba(233,163,90,0.12)' : 'rgba(255,244,228,0.058)',
+                    overflow: 'hidden',
+                    animation: `editorialFlowIn 620ms ${motion.crispOut} ${index * 80}ms both`,
+                    transition: `transform ${motion.durations.base}ms ${motion.crispOut}, background-color ${motion.durations.base}ms ease, border-color ${motion.durations.base}ms ease`,
+                    '&:hover': {
+                      transform: 'translateX(8px)',
+                      borderColor: 'rgba(233,163,90,0.45)',
+                      bgcolor: 'rgba(233,163,90,0.14)',
+                    },
+                    '&:active': {
+                      transform: 'translateX(3px)',
+                    },
+                    '&::after': {
+                      content: '""',
+                      position: 'absolute',
+                      left: { xs: 21, sm: 29 },
+                      top: 'calc(100% - 4px)',
+                      width: 1,
+                      height: index === editorialRuntimeFlow.length - 1 ? 0 : 18,
+                      bgcolor: 'rgba(233,163,90,0.42)',
+                    },
+                  }}
+                >
+                  <Box sx={{ width: { xs: 38, sm: 48 }, height: { xs: 38, sm: 48 }, borderRadius: '50%', display: 'grid', placeItems: 'center', border: '1px solid rgba(233,163,90,0.42)', color: '#E9A35A', fontFamily: monoStack, fontWeight: 900, fontSize: 12, bgcolor: 'rgba(12,10,9,0.68)' }}>
+                    {step}
+                  </Box>
+                  <Box>
+                    <Typography sx={{ fontFamily: editorialSerif, fontWeight: 900, fontSize: { xs: 24, sm: 28 }, lineHeight: 1.05 }}>{title}</Typography>
+                    <Typography sx={{ mt: 0.65, color: 'rgba(255,244,228,0.66)', lineHeight: 1.68, fontSize: 14.5 }}>{text}</Typography>
+                  </Box>
+                </Box>
+              ))}
+            </Box>
+          </Box>
+
+          <Box sx={{ position: 'relative', zIndex: 1, px: { xs: 2.2, sm: 3, md: 4 }, pb: { xs: 2.2, sm: 3, md: 4 }, display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(4, minmax(0, 1fr))' }, gap: 1.1 }}>
+            {editorialRuntimePillars.map((item) => (
+              <Box key={item.label} sx={{ minHeight: 190, p: 1.65, borderRadius: 2.4, border: '1px solid rgba(255,244,228,0.12)', bgcolor: 'rgba(12,10,9,0.42)', transition: `transform ${motion.durations.base}ms ${motion.crispOut}, border-color ${motion.durations.base}ms ease`, '&:hover': { transform: 'translateY(-5px)', borderColor: 'rgba(233,163,90,0.38)' }, '&:active': { transform: 'translateY(-1px)' } }}>
+                <Box sx={{ color: '#E9A35A', '& svg': { fontSize: 25 } }}>{item.icon}</Box>
+                <Typography sx={{ mt: 1, color: 'rgba(255,244,228,0.46)', fontFamily: monoStack, fontSize: 10.5, fontWeight: 850, textTransform: 'uppercase', lineHeight: 1.2 }}>{item.label}</Typography>
+                <Typography sx={{ mt: 0.75, fontFamily: editorialSerif, fontSize: 23, fontWeight: 900, lineHeight: 1.08 }}>{item.title}</Typography>
+                <Typography sx={{ mt: 0.75, color: 'rgba(255,244,228,0.62)', lineHeight: 1.62, fontSize: 13.5 }}>{item.text}</Typography>
+              </Box>
+            ))}
+          </Box>
+        </Box>
+      </Reveal>
+    </Box>
+  );
+}
+
 function EditorialIntroPage() {
   const navigate = useNavigate();
   const theme = useTheme();
@@ -1965,6 +2129,14 @@ function EditorialIntroPage() {
           '0%': { transform: 'translateX(0)' },
           '100%': { transform: 'translateX(-50%)' },
         },
+        '@keyframes editorialScanline': {
+          '0%, 100%': { transform: 'translateX(-34%)', opacity: 0.18 },
+          '50%': { transform: 'translateX(34%)', opacity: 0.72 },
+        },
+        '@keyframes editorialFlowIn': {
+          '0%': { opacity: 0, transform: 'translateX(-18px)', filter: 'saturate(0.82)' },
+          '100%': { opacity: 1, transform: 'translateX(0)', filter: 'saturate(1)' },
+        },
         '&::before': {
           content: '""',
           position: 'absolute',
@@ -1994,7 +2166,7 @@ function EditorialIntroPage() {
                 一间房里，不止一个声音。
               </Typography>
               <Typography sx={{ mt: { xs: 1.7, md: 2.2 }, maxWidth: 660, color: editorialMuted, lineHeight: 1.78, fontSize: { xs: 15, md: 16.5 } , animation: `editorialRise 760ms ${motion.crispOut} 150ms both` }}>
-                你创建角色，把他们放进同一个话题。有人接话，有人拆台，有人把气氛拉回来。聊得越久，记忆、关系和只属于你的陪伴细节，越会慢慢浮现。
+                你创建角色，把他们放进同一个话题。系统在每一轮判断谁该开口、谁该沉默、哪些旧事该被想起；于是有人接话，有人拆台，有人把气氛拉回来。
               </Typography>
               <Stack direction="row" spacing={1.2} sx={{ mt: { xs: 2.4, md: 3.2 }, flexWrap: 'wrap', gap: 1.2, animation: `editorialRise 760ms ${motion.crispOut} 220ms both` }}>
                 <Button variant="contained" startIcon={<ForumOutlinedIcon />} onClick={() => navigate('/chats/create')} sx={{ borderRadius: 999, bgcolor: editorialAmber, color: '#FFF9F0', fontWeight: 850, px: 2.4, py: 1.15, boxShadow: '0 18px 38px rgba(143,70,24,0.22)', '&:hover': { bgcolor: editorialAmberDeep, transform: 'translateY(-3px)', boxShadow: '0 24px 46px rgba(143,70,24,0.28)' }, '&:active': { transform: 'translateY(-1px)' } }}>
@@ -2045,15 +2217,17 @@ function EditorialIntroPage() {
           </Box>
         </Box>
 
+        <EditorialRuntimeSection />
+
         <Box sx={{ py: { xs: 5, md: 7 }, display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '0.75fr 1.25fr' }, gap: { xs: 2.5, md: 4 }, alignItems: 'start' }}>
           <Reveal>
             <Box>
               <EditorialPill>工具层</EditorialPill>
               <Typography component="h2" sx={{ mt: 2, color: editorialInk, fontFamily: editorialSerif, fontWeight: 900, fontSize: { xs: 38, md: 58 }, lineHeight: 1.02 }}>
-                需要更多时，再打开工具层。
+                主线之外，是受治理的扩展能力。
               </Typography>
               <Typography sx={{ mt: 1.6, color: editorialMuted, lineHeight: 1.78, fontSize: 16.5 }}>
-                Agent、AI 中转站、朋友圈和日历都不是主角。它们补足任务、模型和日常痕迹，让多角色群聊有更多可延展的用法。
+                Agent、AI 中转站、朋友圈和日历都不抢走群聊的主线。它们把任务、模型和日常痕迹纳入同一个产品体系，让陪伴可以延展，也可以被管理。
               </Typography>
             </Box>
           </Reveal>
