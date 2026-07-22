@@ -2975,6 +2975,72 @@ describe('openChatEngine.onMessageCommitted', () => {
     expect(events.some((event) => event.kind === 'event_candidate' && (event.payload as { sourceText?: string }).sourceText?.includes('吃火锅'))).toBe(true);
   });
 
+  it('delays hinted post moment when the same response creates a social outing candidate', async () => {
+    vi.setSystemTime(new Date('2026-06-01T14:00:00+08:00'));
+    const chat = buildChat();
+    const characters = [buildCharacter('a', '甲'), buildCharacter('b', '乙')];
+    const result = await openChatEngine.onMessageCommitted({
+      conversation: chat,
+      characters,
+      message: {
+        type: 'ai',
+        senderId: 'a',
+        content: '那就今晚一起去吃火锅庆祝一下，顺便拍张合照，晚点发条动态。',
+        interactionHint: {
+          kind: 'support',
+          actorId: 'a',
+          targetId: 'b',
+          intensity: 3,
+          tone: 'warm',
+          evidenceText: '那就今晚一起去吃火锅庆祝一下，顺便拍张合照，晚点发条动态。',
+          confidence: 0.9,
+        },
+        socialEventHints: [{
+          eventKind: 'social_outing',
+          participantIds: ['a', 'b'],
+          targetIds: ['b'],
+          reasonType: 'celebration',
+          confidence: 0.91,
+          urgency: 'soon',
+          seedIntent: '约定今晚一起去吃火锅庆祝。',
+          visibilityPlan: 'public',
+          expectedArtifacts: ['outing_summary'],
+          title: '火锅庆祝',
+          activityType: '聚餐',
+          dedupeKey: 'outing-with-moment-1',
+        }, {
+          eventKind: 'post_moment',
+          participantIds: ['a'],
+          targetIds: ['b'],
+          reasonType: 'celebration',
+          confidence: 0.89,
+          urgency: 'soon',
+          seedIntent: '想把今晚聚餐的开心气氛发成动态。',
+          visibilityPlan: 'public',
+          expectedArtifacts: ['moment_text'],
+          title: '朋友圈动态',
+          activityType: '记录聚会',
+          dedupeKey: 'moment-after-outing-1',
+        }],
+      } as OpenChatCommittedMessageForTest,
+      previousAiMessage: null,
+      recentMessages: [],
+      apiConfig: buildApiConfig(),
+    });
+
+    const events = readRuntimeEvents(result);
+    expect(events.some((event) => event.kind === 'event_candidate' && (event.payload as { eventKind?: string }).eventKind === 'social_outing')).toBe(true);
+    expect(events.some((event) => event.kind === 'event_candidate' && (event.payload as { eventKind?: string }).eventKind === 'post_moment')).toBe(false);
+    expect(events.some((event) => event.kind === 'artifact' && (event.payload as { artifactType?: string }).artifactType === 'moment_text')).toBe(false);
+    const suppression = events.find((event) => event.kind === 'action_resolution'
+      && (event.payload as { eventType?: string; candidateEventKind?: string; reasonType?: string }).eventType === 'event_candidate_suppressed'
+      && (event.payload as { candidateEventKind?: string }).candidateEventKind === 'post_moment');
+    expect(suppression?.payload).toMatchObject({
+      reasonType: 'world_attention_moment_delay_window',
+      nextSuggestedAt: expect.any(Number),
+    });
+  });
+
   it('adds social outing candidate/events for outing-style room messages', async () => {
     const chat = buildChat();
     const characters = [buildCharacter('a', '甲'), buildCharacter('b', '乙')];
@@ -3051,6 +3117,135 @@ describe('openChatEngine.onMessageCommitted', () => {
     const outing = readRuntimeEvents(result).find((event) => event.kind === 'event_candidate' && (event.payload as { eventKind?: string }).eventKind === 'social_outing');
     expect((outing?.payload as { participantIds?: string[] }).participantIds).toEqual(['a', 'b']);
     expect((outing?.payload as { targetIds?: string[] }).targetIds).toEqual(['b']);
+  });
+
+  it('creates social outing candidate when model-authored activity hint omits confidence', async () => {
+    const chat = buildChat();
+    const characters = [buildCharacter('a', '甲'), buildCharacter('b', '乙')];
+    const result = await openChatEngine.onMessageCommitted({
+      conversation: chat,
+      characters,
+      message: {
+        type: 'ai',
+        senderId: 'a',
+        content: '今晚九点半去后巷那家茶馆，我把地址发群里。',
+        socialEventHints: [{
+          eventKind: 'social_outing',
+          participantIds: ['a', 'b'],
+          targetIds: ['b'],
+          reasonType: 'chat_activity_invite',
+          urgency: 'soon',
+          seedIntent: '聊天里已经安排了具体时间地点的茶馆活动。',
+          visibilityPlan: 'public',
+          title: '茶馆小聚',
+          activityType: '茶馆',
+          timeHint: '今晚九点半',
+          locationHint: '后巷茶馆',
+        }],
+      } as Parameters<typeof openChatEngine.onMessageCommitted>[0]['message'],
+      previousAiMessage: null,
+      recentMessages: [],
+    });
+
+    const outing = readRuntimeEvents(result).find((event) => event.kind === 'event_candidate' && (event.payload as { eventKind?: string }).eventKind === 'social_outing');
+    expect(outing).toBeTruthy();
+    expect((outing?.payload as { confidence?: number }).confidence).toBeGreaterThanOrEqual(0.8);
+  });
+
+  it('records diagnostic when model-authored social outing hint confidence is too low', async () => {
+    const chat = buildChat();
+    const characters = [buildCharacter('a', '甲'), buildCharacter('b', '乙')];
+    const result = await openChatEngine.onMessageCommitted({
+      conversation: chat,
+      characters,
+      message: {
+        type: 'ai',
+        senderId: 'a',
+        content: '改天有空再约。',
+        socialEventHints: [{
+          eventKind: 'social_outing',
+          participantIds: ['a', 'b'],
+          confidence: 0.51,
+          urgency: 'defer',
+          seedIntent: '只是模糊地说以后再约。',
+          visibilityPlan: 'public',
+          title: '改天再约',
+        }],
+      } as Parameters<typeof openChatEngine.onMessageCommitted>[0]['message'],
+      previousAiMessage: null,
+      recentMessages: [],
+    });
+
+    const events = readRuntimeEvents(result);
+    expect(events.some((event) => event.kind === 'event_candidate' && (event.payload as { eventKind?: string }).eventKind === 'social_outing')).toBe(false);
+    const diagnostic = events.find((event) => event.kind === 'action_resolution' && (event.payload as { eventType?: string; reasonType?: string }).eventType === 'structured_social_event_hint_rejected');
+    expect(diagnostic?.payload).toMatchObject({
+      candidateEventKind: 'social_outing',
+      reasonType: 'low_confidence',
+      threshold: 0.72,
+    });
+  });
+
+  it('accepts single-participant updates for an existing model-authored social outing', async () => {
+    const chat = buildChat({
+      runtimeEventsV2: [{
+        id: 'evt-existing-outing',
+        conversationId: 'chat-1',
+        kind: 'event_candidate',
+        createdAt: Date.now() - 1_000,
+        actorIds: ['a'],
+        targetIds: ['b'],
+        summary: '甲发起茶馆活动',
+        visibility: 'derived_public',
+        payload: {
+          eventKind: 'social_outing',
+          initiatorId: 'a',
+          participantIds: ['a', 'b'],
+          targetIds: ['b'],
+          reasonType: 'chat_activity_invite',
+          confidence: 0.86,
+          urgency: 'soon',
+          seedIntent: '茶馆小聚',
+          visibilityPlan: 'public',
+          expectedArtifacts: ['outing_summary'],
+          title: '茶馆小聚',
+          activityType: '茶馆',
+          dedupeKey: 'outing-tea-house',
+          participantStates: { a: 'interested', b: 'invited' },
+        } satisfies SocialEventCandidatePayload,
+      }],
+    });
+    const characters = [buildCharacter('a', '甲'), buildCharacter('b', '乙')];
+    const result = await openChatEngine.onMessageCommitted({
+      conversation: chat,
+      characters,
+      message: {
+        type: 'ai',
+        senderId: 'b',
+        content: '我临时有事，这次茶馆我先不去了。',
+        socialEventHints: [{
+          eventKind: 'social_outing',
+          participantIds: ['b'],
+          reasonType: 'chat_activity_followup',
+          confidence: 0.9,
+          urgency: 'soon',
+          seedIntent: '乙明确退出同一个茶馆活动。',
+          visibilityPlan: 'public',
+          expectedArtifacts: ['outing_summary'],
+          title: '茶馆小聚',
+          activityType: '茶馆',
+          dedupeKey: 'outing-tea-house',
+          participantStates: { b: 'declined' },
+        }],
+      } as Parameters<typeof openChatEngine.onMessageCommitted>[0]['message'],
+      previousAiMessage: null,
+      recentMessages: [],
+    });
+
+    const outing = readRuntimeEvents(result).find((event) => event.kind === 'event_candidate' && (event.payload as { eventKind?: string; dedupeKey?: string }).eventKind === 'social_outing' && (event.payload as { dedupeKey?: string }).dedupeKey === 'outing-tea-house');
+    expect(outing).toBeTruthy();
+    expect((outing?.payload as SocialEventCandidatePayload).participantStates).toMatchObject({ b: 'declined' });
+    expect((outing?.payload as SocialEventCandidatePayload).participantIds).toEqual(['b']);
   });
 
   it('rejects social outing hints whose participants are not valid member ids', async () => {
@@ -3223,6 +3418,51 @@ describe('openChatEngine.onMessageCommitted', () => {
     const events = readRuntimeEvents(result);
     expect(events.some((event) => event.kind === 'event_candidate' && (event.payload as { eventKind?: string }).eventKind === 'post_moment')).toBe(true);
     expect(events.some((event) => event.kind === 'artifact' && (event.payload as { artifactType?: string }).artifactType === 'moment_text')).toBe(true);
+    expect(generateResponseMock).not.toHaveBeenCalled();
+  });
+
+  it('does not publish hinted post moment immediately during quiet hours', async () => {
+    vi.setSystemTime(new Date('2026-06-01T23:45:00+08:00'));
+    const chat = buildChat();
+    const characters = [buildCharacter('a', '甲'), buildCharacter('b', '乙')];
+    const result = await openChatEngine.onMessageCommitted({
+      conversation: chat,
+      characters,
+      message: {
+        type: 'ai',
+        senderId: 'a',
+        content: '刚才那一幕我想发条动态记一下。',
+        interactionHint: null,
+        socialEventHints: [{
+          eventKind: 'post_moment',
+          participantIds: ['a'],
+          targetIds: ['b'],
+          reasonType: 'celebration',
+          confidence: 0.91,
+          urgency: 'soon',
+          seedIntent: '想把刚才的开心时刻发成动态。',
+          visibilityPlan: 'public',
+          expectedArtifacts: ['moment_text'],
+          title: '朋友圈动态',
+          activityType: '记录聚会',
+          dedupeKey: 'moment-main-hint-quiet-hours',
+        }],
+      } as OpenChatCommittedMessageForTest,
+      previousAiMessage: null,
+      recentMessages: [],
+      apiConfig: buildApiConfig(),
+    });
+
+    const events = readRuntimeEvents(result);
+    expect(events.some((event) => event.kind === 'event_candidate' && (event.payload as { eventKind?: string }).eventKind === 'post_moment')).toBe(false);
+    expect(events.some((event) => event.kind === 'artifact' && (event.payload as { artifactType?: string }).artifactType === 'moment_text')).toBe(false);
+    const suppression = events.find((event) => event.kind === 'action_resolution'
+      && (event.payload as { eventType?: string; candidateEventKind?: string; reasonType?: string }).eventType === 'event_candidate_suppressed'
+      && (event.payload as { candidateEventKind?: string }).candidateEventKind === 'post_moment');
+    expect(suppression?.payload).toMatchObject({
+      reasonType: 'world_attention_moment_quiet_hours',
+      nextSuggestedAt: expect.any(Number),
+    });
     expect(generateResponseMock).not.toHaveBeenCalled();
   });
 

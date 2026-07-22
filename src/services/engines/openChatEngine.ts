@@ -22,6 +22,7 @@ import { getGuidanceTargetActorIds, parseUserGuidanceIntent } from '../userGuida
 import { orchestrateWorldDecision } from '../worldDecisionOrchestrator';
 import { buildMomentPostText } from '../momentTextBuilder';
 import { isCharacterFeatureEnabled } from '../characterGenerationPolicy';
+import { isPostMomentDelaySourceEventKind, resolvePostMomentPublishGuard } from '../postMomentPublishPolicy';
 
 const MAX_OPEN_CHAT_RUNTIME_EVENTS = 120;
 
@@ -1021,30 +1022,39 @@ function buildSocialOutingCandidateFromHint(params: {
   message: Pick<Message, 'content' | 'senderId'> & { socialEventHints?: SocialEventHintEnvelope[] | null };
 }): RuntimeEventV2 | null {
   const hint = normalizeSocialEventHints(params.message.socialEventHints).find((item) => item.eventKind === 'social_outing');
-  if (!hint || (hint.confidence || 0) < 0.8) return null;
+  if (!hint) return null;
+  const confidence = hint.confidence ?? 0.84;
+  if (confidence < 0.72) return null;
   const memberIds = new Set(params.conversation.memberIds);
+  const existingOuting = findExistingSocialOutingPayload(params.conversation, hint.dedupeKey);
+  const validStateParticipantIds = Object.keys(hint.participantStates || {}).filter((id) => memberIds.has(id));
   const validParticipantIds = (hint.participantIds || []).filter((id) => memberIds.has(id));
   const validTargetIds = (hint.targetIds || []).filter((id) => memberIds.has(id));
   const participantIds = Array.from(new Set([
     ...validParticipantIds,
+    ...validStateParticipantIds,
     ...(memberIds.has(params.message.senderId) ? [params.message.senderId] : []),
     ...validTargetIds,
   ]));
   const counterpartIds = participantIds.filter((id) => id !== params.message.senderId);
-  if (!counterpartIds.length) return null;
+  const isExistingActivityUpdate = Boolean(existingOuting);
+  if (!counterpartIds.length && !isExistingActivityUpdate) return null;
   const participantStates = Object.fromEntries(
     participantIds.map((id) => [
       id,
       hint.participantStates?.[id] || (id === params.message.senderId ? 'interested' : 'invited'),
     ]),
   ) as SocialEventCandidatePayload['participantStates'];
+  const fallbackTargetIds = isExistingActivityUpdate
+    ? (existingOuting?.targetIds || existingOuting?.participantIds || []).filter((id) => memberIds.has(id) && id !== params.message.senderId)
+    : counterpartIds;
   const payload: SocialEventCandidatePayload = {
     eventKind: 'social_outing',
     initiatorId: params.message.senderId,
     participantIds,
-    targetIds: validTargetIds.length ? validTargetIds : counterpartIds,
+    targetIds: validTargetIds.length ? validTargetIds : fallbackTargetIds,
     reasonType: hint.reasonType || 'celebration',
-    confidence: Math.max(0.8, hint.confidence || 0),
+    confidence: Math.max(0.72, confidence),
     urgency: hint.urgency || 'soon',
     seedIntent: hint.seedIntent || '想把刚才群里的热络气氛延续成一次线下活动。',
     visibilityPlan: hint.visibilityPlan || 'public',
@@ -1068,12 +1078,41 @@ function buildSocialOutingCandidateFromHint(params: {
   });
 }
 
+function findExistingSocialOutingPayload(conversation: GroupChat, dedupeKey: string | null | undefined) {
+  if (!dedupeKey) return null;
+  const matched = [...(conversation.runtimeEventsV2 || [])].reverse().find((event) => {
+    if (event.kind !== 'event_candidate' && event.kind !== 'artifact') return false;
+    const payload = event.payload as Partial<SocialEventCandidatePayload>;
+    return payload.eventKind === 'social_outing' && payload.dedupeKey === dedupeKey;
+  });
+  return matched ? matched.payload as Partial<SocialEventCandidatePayload> : null;
+}
+
 function buildRejectedSocialOutingHintDiagnostic(params: {
   conversation: GroupChat;
   message: Pick<Message, 'content' | 'senderId'> & { socialEventHints?: SocialEventHintEnvelope[] | null };
 }): RuntimeEventV2 | null {
   const hint = normalizeSocialEventHints(params.message.socialEventHints).find((item) => item.eventKind === 'social_outing');
-  if (!hint || (hint.confidence || 0) < 0.8) return null;
+  if (!hint) return null;
+  if ((hint.confidence ?? 0.84) < 0.72) {
+    return createRuntimeEventV2({
+      conversationId: params.conversation.id,
+      kind: 'action_resolution',
+      summary: '活动结构化字段已拒绝：置信度过低',
+      actorIds: [params.message.senderId],
+      targetIds: [],
+      visibility: 'moderator_only',
+      payload: {
+        eventType: 'structured_social_event_hint_rejected',
+        candidateEventKind: 'social_outing',
+        reasonType: 'low_confidence',
+        reasonLabel: 'social_outing 置信度低于活动候选阈值',
+        confidence: hint.confidence ?? null,
+        threshold: 0.72,
+        source: 'model_structured_output',
+      },
+    });
+  }
   if (buildSocialOutingCandidateFromHint(params)) return null;
   const memberIds = new Set(params.conversation.memberIds);
   const rawParticipantIds = hint.participantIds || [];
@@ -1236,6 +1275,9 @@ function mergeCandidatesWithinBatch(events: RuntimeEventV2[]) {
 
 type CandidateSuppressionReason =
   | 'restraint_policy'
+  | 'world_attention_moment_quiet_hours'
+  | 'world_attention_moment_spam_window'
+  | 'world_attention_moment_delay_window'
   | 'dedupe_backflow_post_moment'
   | 'dedupe_backflow_social_outing'
   | 'dedupe_backflow_status_update'
@@ -1253,6 +1295,9 @@ type CandidateSuppressionRecord = {
   preferredConfidence?: number;
   preferredCandidateId?: string;
   suppressedCandidateId?: string;
+  hitEventId?: string;
+  hitWindow?: string;
+  nextSuggestedAt?: number;
 };
 
 function dedupeSemanticCandidates(chat: GroupChat, candidates: RuntimeEventV2[]) {
@@ -1375,6 +1420,9 @@ function findRecentOutingBackflowEventId(chat: GroupChat, payload: SocialEventCa
 
 function candidateSuppressionReasonLabel(reason: CandidateSuppressionReason) {
   if (reason === 'restraint_policy') return '触发关注克制策略（冷却/夜间/关系边界）';
+  if (reason === 'world_attention_moment_quiet_hours') return '夜间发圈抑制';
+  if (reason === 'world_attention_moment_spam_window') return '发圈冷却中';
+  if (reason === 'world_attention_moment_delay_window') return '发圈延迟窗口';
   if (reason === 'dedupe_backflow_post_moment') return '动态候选已被近期同簇产物覆盖';
   if (reason === 'dedupe_backflow_social_outing') return '活动候选已被近期同簇产物覆盖';
   if (reason === 'dedupe_backflow_status_update') return '状态候选已被近期同簇产物覆盖';
@@ -1429,14 +1477,39 @@ function hasPendingCandidateSuppression(
   });
 }
 
-function resolveCandidateSuppressionReason(chat: GroupChat, event: RuntimeEventV2): CandidateSuppressionReason | null {
+function resolveCandidateSuppression(chat: GroupChat, event: RuntimeEventV2, characters: AICharacter[], batchCandidates: RuntimeEventV2[]): Omit<CandidateSuppressionRecord, 'event'> | null {
   const payload = event.payload as SocialEventCandidatePayload;
-  if (!passesAttentionRestraintPolicy(chat, payload, event.createdAt)) return 'restraint_policy';
-  if (payload.eventKind === 'post_moment' && !shouldAutoBackflowMoment(chat, payload, event.createdAt)) return 'dedupe_backflow_post_moment';
-  if (payload.eventKind === 'status_update' && !shouldAutoBackflowStatusUpdate(chat, payload, event.createdAt)) return 'dedupe_backflow_status_update';
-  if (payload.eventKind === 'check_in' && !shouldAutoBackflowCheckIn(chat, payload, event.createdAt)) return 'dedupe_backflow_check_in';
-  if (payload.eventKind === 'react_to_moment' && !shouldAutoBackflowReactToMoment(chat, payload, event.createdAt)) return 'dedupe_backflow_react_to_moment';
-  if (payload.eventKind === 'gift_exchange' && !shouldAutoBackflowGiftExchange(chat, payload, event.createdAt)) return 'dedupe_backflow_gift_exchange';
+  if (payload.eventKind === 'post_moment') {
+    if (!shouldAutoBackflowMoment(chat, payload, event.createdAt)) return { reason: 'dedupe_backflow_post_moment' };
+    const actor = characters.find((item) => item.id === payload.initiatorId) || null;
+    const additionalSocialEventCreatedAts = batchCandidates
+      .filter((candidate) => candidate.id !== event.id)
+      .filter((candidate) => {
+        const candidatePayload = candidate.payload as SocialEventCandidatePayload;
+        return candidatePayload.initiatorId === payload.initiatorId
+          && isPostMomentDelaySourceEventKind(candidatePayload.eventKind);
+      })
+      .map((candidate) => candidate.createdAt);
+    const publishGuard = resolvePostMomentPublishGuard({
+      chat,
+      payload,
+      actor,
+      now: event.createdAt,
+      additionalSocialEventCreatedAts,
+    });
+    if (!publishGuard.allow) {
+      return {
+        reason: publishGuard.reasonType,
+        detail: publishGuard.reasonDetail,
+        nextSuggestedAt: publishGuard.nextSuggestedAt,
+      };
+    }
+  }
+  if (!passesAttentionRestraintPolicy(chat, payload, event.createdAt)) return { reason: 'restraint_policy' };
+  if (payload.eventKind === 'status_update' && !shouldAutoBackflowStatusUpdate(chat, payload, event.createdAt)) return { reason: 'dedupe_backflow_status_update' };
+  if (payload.eventKind === 'check_in' && !shouldAutoBackflowCheckIn(chat, payload, event.createdAt)) return { reason: 'dedupe_backflow_check_in' };
+  if (payload.eventKind === 'react_to_moment' && !shouldAutoBackflowReactToMoment(chat, payload, event.createdAt)) return { reason: 'dedupe_backflow_react_to_moment' };
+  if (payload.eventKind === 'gift_exchange' && !shouldAutoBackflowGiftExchange(chat, payload, event.createdAt)) return { reason: 'dedupe_backflow_gift_exchange' };
   return null;
 }
 
@@ -1482,7 +1555,7 @@ function buildCandidateSuppressionEvent(chat: GroupChat, event: RuntimeEventV2, 
   });
 }
 
-function dedupeAgainstRecentRuntime(chat: GroupChat, candidates: RuntimeEventV2[]) {
+function dedupeAgainstRecentRuntime(chat: GroupChat, candidates: RuntimeEventV2[], characters: AICharacter[]) {
   const deduped = dedupeSocialEventCandidates(chat, candidates);
   const kept: RuntimeEventV2[] = [];
   const suppressed: RuntimeEventV2[] = [];
@@ -1496,12 +1569,13 @@ function dedupeAgainstRecentRuntime(chat: GroupChat, candidates: RuntimeEventV2[
     }));
   });
   deduped.candidates.forEach((event) => {
-    const reason = resolveCandidateSuppressionReason(chat, event);
-    if (!reason) {
+    const suppression = resolveCandidateSuppression(chat, event, characters, deduped.candidates);
+    if (!suppression) {
       kept.push(event);
       return;
     }
     const payload = event.payload as SocialEventCandidatePayload;
+    const reason = suppression.reason;
     const restraintFailure = reason === 'restraint_policy'
       ? resolveAttentionRestraintFailureDetail(chat, payload, event.createdAt)
       : undefined;
@@ -1524,10 +1598,10 @@ function dedupeAgainstRecentRuntime(chat: GroupChat, candidates: RuntimeEventV2[
       ? findRecentGiftExchangeBackflowEventId(chat, payload, event.createdAt)
       : null;
     suppressed.push(buildCandidateSuppressionEvent(chat, event, reason, {
-      detail: restraintFailure?.detail,
-      hitEventId: restraintFailure?.hitEventId,
-      hitWindow: restraintFailure?.hitWindow,
-      nextSuggestedAt: inferNextSuggestedAtFromSuppression(chat, event, restraintFailure?.hitEventId, restraintFailure?.hitWindow),
+      detail: suppression.detail || restraintFailure?.detail,
+      hitEventId: suppression.hitEventId || restraintFailure?.hitEventId,
+      hitWindow: suppression.hitWindow || restraintFailure?.hitWindow,
+      nextSuggestedAt: suppression.nextSuggestedAt || inferNextSuggestedAtFromSuppression(chat, event, restraintFailure?.hitEventId, restraintFailure?.hitWindow),
       ...(reactBackflowHitEventId ? {
         detail: `动态回应候选已被近期产物覆盖（hit=${reactBackflowHitEventId})`,
         hitEventId: reactBackflowHitEventId,
@@ -1631,7 +1705,6 @@ function buildSocialEventCandidates(params: {
   structuredRoomState: GroupChat['worldState']['structuredRoomState'];
   message: Pick<Message, 'content' | 'senderId'> & { socialEventHints?: SocialEventHintEnvelope[] | null };
 }) {
-  void params.characters;
   void params.interaction;
   void params.relationshipLedger;
   void params.structuredRoomState;
@@ -1642,7 +1715,7 @@ function buildSocialEventCandidates(params: {
     buildStatusUpdateCandidateFromHint(params),
     buildGiftExchangeCandidateFromHint(params),
     buildConflictExpressionCandidateFromHint(params),
-  ].filter(Boolean) as RuntimeEventV2[]);
+  ].filter(Boolean) as RuntimeEventV2[], params.characters);
   return {
     candidates: selection.candidates,
     suppressedEvents: [
@@ -1692,11 +1765,24 @@ function buildMomentArtifactEvents(params: {
 }): RuntimeEventV2[] {
   return params.socialEventCandidates
     .filter((event) => (event.payload as SocialEventCandidatePayload).eventKind === 'post_moment')
-    .map((event) => {
+    .flatMap((event) => {
       const payload = event.payload as SocialEventCandidatePayload;
-      const actorName = params.characters.find((item) => item.id === payload.initiatorId)?.name || payload.initiatorId;
+      const actor = params.characters.find((item) => item.id === payload.initiatorId) || null;
+      const actorName = actor?.name || payload.initiatorId;
+      const publishGuard = resolvePostMomentPublishGuard({
+        chat: params.conversation,
+        payload,
+        actor,
+        now: event.createdAt,
+      });
+      if (!publishGuard.allow) {
+        return [buildCandidateSuppressionEvent(params.conversation, event, publishGuard.reasonType, {
+          detail: publishGuard.reasonDetail,
+          nextSuggestedAt: publishGuard.nextSuggestedAt,
+        })];
+      }
       const text = buildMomentPostText(actorName, payload);
-      return createRuntimeEventV2({
+      return [createRuntimeEventV2({
         conversationId: params.conversation.id,
         kind: 'artifact',
         summary: text,
@@ -1714,7 +1800,7 @@ function buildMomentArtifactEvents(params: {
           activityType: payload.activityType,
           targetIds: payload.targetIds,
         },
-      });
+      })];
     });
 }
 
