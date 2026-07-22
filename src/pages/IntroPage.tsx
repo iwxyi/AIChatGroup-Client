@@ -1655,6 +1655,12 @@ const editorialRuntimeFlow = [
   ['04', '表达成形', '把角色状态、语气边界和场面压力合成一条像它自己的回复。'],
 ] as const;
 
+const editorialRuntimeOutcomes = [
+  ['不是更长的回答', '而是更像群聊的回应'],
+  ['不是每次重启关系', '而是带着旧事继续聊'],
+  ['不是所有人抢着说话', '而是有人接住，也有人沉默'],
+] as const;
+
 const editorialMessages = [
   { name: '阿晚', tone: '温柔但敏感', text: '我记得你上次说过，不喜欢把事情拖到很晚。今天要不要早点收一下？', x: 5, y: 22, color: '#E8A35C' },
   { name: '老李', tone: '稳重吐槽役', text: '先别急着下结论。让她把话说完，我们再拆。', x: 42, y: 8, color: '#C96F25' },
@@ -2009,6 +2015,63 @@ function EditorialRuntimeSection() {
                 </Box>
               ))}
             </Box>
+          </Box>
+
+          <Box
+            sx={{
+              position: 'relative',
+              zIndex: 1,
+              mx: { xs: 2.2, sm: 3, md: 4 },
+              mb: { xs: 2.2, md: 3 },
+              p: { xs: 1.35, sm: 1.55 },
+              display: 'grid',
+              gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' },
+              gap: 1,
+              borderRadius: 2.6,
+              border: '1px solid rgba(233,163,90,0.28)',
+              bgcolor: 'rgba(233,163,90,0.10)',
+              boxShadow: 'inset 0 1px 0 rgba(255,244,228,0.08)',
+            }}
+          >
+            {editorialRuntimeOutcomes.map(([before, after], index) => (
+              <Box
+                key={before}
+                sx={{
+                  position: 'relative',
+                  minHeight: { xs: 96, sm: 112 },
+                  p: { xs: 1.25, sm: 1.45 },
+                  borderRadius: 2.2,
+                  bgcolor: index === 1 ? 'rgba(255,244,228,0.105)' : 'rgba(12,10,9,0.28)',
+                  border: '1px solid rgba(255,244,228,0.12)',
+                  overflow: 'hidden',
+                  transition: `transform ${motion.durations.base}ms ${motion.crispOut}, border-color ${motion.durations.base}ms ease, background-color ${motion.durations.base}ms ease`,
+                  '&:hover': {
+                    transform: 'translateY(-4px)',
+                    borderColor: 'rgba(233,163,90,0.44)',
+                    bgcolor: 'rgba(255,244,228,0.12)',
+                  },
+                  '&:active': {
+                    transform: 'translateY(-1px)',
+                  },
+                  '&::before': {
+                    content: '""',
+                    position: 'absolute',
+                    left: 14,
+                    top: 13,
+                    width: 7,
+                    height: 7,
+                    borderRadius: '50%',
+                    bgcolor: '#E9A35A',
+                    boxShadow: '0 0 0 5px rgba(233,163,90,0.14)',
+                  },
+                }}
+              >
+                <Typography sx={{ pl: 2, color: 'rgba(255,244,228,0.52)', fontSize: 13.5, lineHeight: 1.45 }}>{before}</Typography>
+                <Typography sx={{ mt: 0.9, color: '#FFF4E4', fontFamily: editorialSerif, fontWeight: 900, fontSize: { xs: 23, sm: 26 }, lineHeight: 1.08 }}>
+                  {after}
+                </Typography>
+              </Box>
+            ))}
           </Box>
 
           <Box sx={{ position: 'relative', zIndex: 1, px: { xs: 2.2, sm: 3, md: 4 }, pb: { xs: 2.2, sm: 3, md: 4 }, display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(4, minmax(0, 1fr))' }, gap: 1.1 }}>
