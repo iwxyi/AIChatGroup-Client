@@ -82,6 +82,18 @@ function parseAttachmentRatio(attachment: Pick<MessageAttachment, 'width' | 'hei
   return 4 / 3;
 }
 
+function buildAttachmentQueueProgress(message: Message, attachment: MessageAttachment) {
+  const attachments = (message.metadata?.attachments || []).filter((item) => item.kind === attachment.kind && item.status !== 'deleted');
+  const index = attachments.findIndex((item) => item.id === attachment.id);
+  if (index < 0) return '';
+  const total = attachments.length;
+  const position = index + 1;
+  const frontCount = attachments.slice(0, index).filter((item) => item.status === 'queued' || item.status === 'generating').length;
+  if (attachment.status === 'queued') return `排队 ${position}/${total}，前面还有 ${frontCount} 张`;
+  if (attachment.status === 'generating') return `队列 ${position}/${total}`;
+  return '';
+}
+
 function getAttachmentMaxWidth(ratio: number) {
   if (ratio < 0.82) return 300;
   if (ratio < 1.2) return 360;
@@ -339,6 +351,11 @@ export function MessageContent({ message, onRetryMedia, onOpenImage, onOpenDiagr
               <Box>
                 <Chip size="small" label={getAttachmentStatusLabel(attachment)} color={statusChipColor(attachment.status)} variant="outlined" sx={{ height: 22 }} />
               </Box>
+              {buildAttachmentQueueProgress(message, attachment) ? (
+                <Typography variant="caption" color="text.secondary">
+                  {buildAttachmentQueueProgress(message, attachment)}
+                </Typography>
+              ) : null}
               {isAttachmentProcessing(attachment.status) ? <LinearProgress /> : null}
               <Typography variant="caption" sx={{ color: attachment.status === 'failed' ? 'error.main' : 'text.secondary', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                 {getAttachmentStatusDetail(attachment)}

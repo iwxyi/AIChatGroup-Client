@@ -571,6 +571,9 @@ function buildChatListSignature(chats: GroupChat[]) {
       chat.latestMessage?.content || '',
       chat.runtimeDetailLoaded ? 1 : 0,
       chat.worldRuntimeLoaded ? 1 : 0,
+      JSON.stringify(chat.sessionKind || {}),
+      JSON.stringify(chat.modeState || {}),
+      JSON.stringify(chat.modeStateSummary || {}),
       chat.runtimeEventsV2?.at(-1)?.id || '',
       chat.runtimeEventsV2?.length || 0,
       chat.relationshipLedger?.length || 0,
@@ -1770,6 +1773,7 @@ export const __chatRuntimePersistenceForTests = {
   mergeChatRecord,
   mergeChats,
   mergeWorldRuntimeRecord,
+  buildChatListSignature,
   buildPersistedChatState,
   limits: {
     layeredMemories: DEFAULT_BASIC_RETENTION_LIMITS.chatLayeredMemories.storage,

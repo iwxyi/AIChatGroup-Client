@@ -313,6 +313,27 @@ describe('chat runtime persistence', () => {
     expect(merged.fieldVersions?.messageBranchState).toBe(4000);
   });
 
+  it('treats assistant agent capability changes as chat list changes', async () => {
+    const { __chatRuntimePersistenceForTests } = await import('./useChatStore');
+    const { buildChatListSignature } = __chatRuntimePersistenceForTests;
+    const disabled = chat({
+      type: 'assistant',
+      modeState: {
+        ...DEFAULT_OPEN_CHAT_MODE_STATE,
+        assistantCapabilities: { agent: false, artifacts: false, webSearch: false },
+      },
+    });
+    const enabled = chat({
+      ...disabled,
+      modeState: {
+        ...disabled.modeState,
+        assistantCapabilities: { agent: true, artifacts: true, webSearch: true },
+      },
+    });
+
+    expect(buildChatListSignature([disabled])).not.toBe(buildChatListSignature([enabled]));
+  });
+
   it('stamps message branch state field version when a local chat patch is queued', async () => {
     const { useChatStore } = await import('./useChatStore');
     const base = chat({ fieldVersions: {}, messageBranchState: null });

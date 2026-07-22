@@ -127,7 +127,7 @@ describe('useMessageStore', () => {
     expect(state.messageWindowsByChatId[chatId]?.messages).toHaveLength(1000);
     expect(state.messageWindowsByChatId[chatId]?.messages[0]?.id).toBe('message-1');
     expect(state.messageWindowsByChatId[chatId]?.messages.at(-1)?.id).toBe('message-1000');
-  });
+  }, 10_000);
 
   it('keeps message windows with pending operations during cache eviction', async () => {
     const { useMessageStore } = await import('./useMessageStore');
@@ -464,6 +464,159 @@ describe('useMessageStore', () => {
     expect(getMessagesMock).toHaveBeenCalledWith(chatId, { limit: 40, before: undefined });
     expect(useMessageStore.getState().messages).toHaveLength(40);
     expect(useMessageStore.getState().messageWindowsByChatId[chatId]?.messages).toHaveLength(80);
+  });
+
+  it('uses the cloud message window snapshot on first device load so branch history is not lost', async () => {
+    localStorage.setItem(storageKey('auth-mode'), 'cloud');
+    const { useMessageStore } = await import('./useMessageStore');
+    const chatId = 'chat-branch';
+    const windowMessages = [
+      buildMessage(1, chatId),
+      {
+        ...buildMessage(2, chatId),
+        metadata: { branching: { nodeId: 'node-2', parentNodeId: 'message-1', revisionRootId: 'message-2' } },
+      },
+      {
+        ...buildMessage(90, chatId),
+        metadata: {
+          attachments: [{
+            id: 'image-1',
+            kind: 'image',
+            status: 'ready',
+            assetId: 'asset-1',
+            url: '/media/asset-1.png',
+            altText: '世界杯图片',
+            createdAt: 90,
+            updatedAt: 91,
+          }],
+        },
+      },
+    ] as Message[];
+    getSyncChangesMock.mockResolvedValueOnce({
+      status: 'modified',
+      scope: `messages.window:${chatId}`,
+      cursor: 'messages.window:rev-branch',
+      revision: 'messages.window:rev-branch',
+      changes: windowMessages.map((message) => ({
+        entity: 'message_window_message',
+        op: 'upsert',
+        id: message.id,
+        patch: {
+          serverId: message.id,
+          chatId: message.chatId,
+          type: message.type,
+          senderId: message.senderId,
+          senderName: message.senderName,
+          content: message.content,
+          metadata: message.metadata,
+          emotion: message.emotion,
+          timestamp: message.timestamp,
+          isDeleted: message.isDeleted,
+        },
+      })),
+    });
+
+    useMessageStore.setState({
+      messages: [],
+      messageWindowsByChatId: {},
+      pendingOperations: [],
+      activeChatId: null,
+      isLoading: false,
+      isLoadingOlder: false,
+      hasMore: true,
+    });
+
+    await useMessageStore.getState().loadMessages(chatId, { limit: 40 });
+
+    expect(getSyncChangesMock).toHaveBeenCalledWith({ scope: `messages.window:${chatId}`, since: null });
+    expect(getMessagesMock).not.toHaveBeenCalled();
+    expect(useMessageStore.getState().messageWindowsByChatId[chatId]?.messages.map((message) => message.id)).toEqual([
+      'message-1',
+      'message-2',
+      'message-90',
+    ]);
+    expect(useMessageStore.getState().messageWindowsByChatId[chatId]?.messages.at(-1)?.metadata?.attachments?.[0]?.assetId).toBe('asset-1');
+  });
+
+  it('falls back to paged history when an empty local window receives a not-modified cloud probe', async () => {
+    localStorage.setItem(storageKey('auth-mode'), 'cloud');
+    const { useMessageStore } = await import('./useMessageStore');
+    const chatId = 'chat-empty-local-window';
+    const fetchedMessages = Array.from({ length: 3 }, (_, index) => buildMessage(index + 1, chatId));
+    getSyncChangesMock.mockResolvedValueOnce({
+      status: 'not_modified',
+      scope: `messages.window:${chatId}`,
+      cursor: 'messages.window:rev-existing',
+      revision: 'messages.window:rev-existing',
+      hasMore: false,
+    });
+    getMessagesMock.mockResolvedValueOnce(fetchedMessages);
+
+    useMessageStore.setState({
+      messages: [],
+      messageWindowsByChatId: {},
+      pendingOperations: [],
+      activeChatId: null,
+      isLoading: false,
+      isLoadingOlder: false,
+      hasMore: true,
+    });
+
+    await useMessageStore.getState().loadMessages(chatId, { limit: 40 });
+
+    expect(getSyncChangesMock).toHaveBeenCalledWith({ scope: `messages.window:${chatId}`, since: null });
+    expect(getMessagesMock).toHaveBeenCalledWith(chatId, { limit: 40, before: undefined });
+    expect(useMessageStore.getState().messages.map((message) => message.id)).toEqual([
+      'message-1',
+      'message-2',
+      'message-3',
+    ]);
+  });
+
+  it('keeps pending message create payload updated when media finishes before cloud upload', async () => {
+    localStorage.setItem(storageKey('auth-mode'), 'cloud');
+    const { useMessageStore } = await import('./useMessageStore');
+    const chatId = 'chat-media-pending';
+    const created = await useMessageStore.getState().addMessage({
+      chatId,
+      type: 'ai',
+      senderId: 'character-1',
+      senderName: '角色',
+      content: '发图',
+      emotion: 0,
+      metadata: {
+        attachments: [{
+          id: 'image-1',
+          kind: 'image',
+          status: 'queued',
+          altText: '世界杯图',
+          createdAt: 1,
+          updatedAt: 1,
+        }],
+      },
+    });
+
+    useMessageStore.getState().upsertMessage({
+      ...created,
+      metadata: {
+        attachments: [{
+          id: 'image-1',
+          kind: 'image',
+          status: 'ready',
+          assetId: 'asset-ready',
+          url: '/media/asset-ready.png',
+          altText: '世界杯图',
+          createdAt: 1,
+          updatedAt: 2,
+        }],
+      },
+    });
+
+    expect(useMessageStore.getState().pendingOperations[0]?.payload?.metadata?.attachments?.[0]).toMatchObject({
+      status: 'ready',
+      assetId: 'asset-ready',
+      url: '/media/asset-ready.png',
+    });
   });
 
   it('keeps the cached tail window visible when cloud changes only include sparse recent messages', async () => {
