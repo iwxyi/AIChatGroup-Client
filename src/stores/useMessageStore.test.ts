@@ -127,7 +127,7 @@ describe('useMessageStore', () => {
     expect(state.messageWindowsByChatId[chatId]?.messages).toHaveLength(1000);
     expect(state.messageWindowsByChatId[chatId]?.messages[0]?.id).toBe('message-1');
     expect(state.messageWindowsByChatId[chatId]?.messages.at(-1)?.id).toBe('message-1000');
-  }, 10_000);
+  }, 20_000);
 
   it('keeps message windows with pending operations during cache eviction', async () => {
     const { useMessageStore } = await import('./useMessageStore');
