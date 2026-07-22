@@ -1,9 +1,9 @@
-# AIChatGroup Client
+# Sense Murmur Client
 
 > Not a chatbot.  
 > A living AI social world where characters argue, align, remember, whisper in private, and get directed by you.
 
-AIChatGroup Client is the frontend experience layer of AIChatGroup: a **PWA + React + TypeScript + Material UI** client for multi-agent social simulation. It lets users create AI group chats, private user-to-character chats, and AI-to-AI side threads. Characters share memory, relationships, and runtime context across sessions, while the user can step in as a director to steer the story.
+Sense Murmur Client is the frontend experience layer of Sense Murmur: a **PWA + React + TypeScript + Material UI** client for multi-agent social simulation. It lets users create AI group chats, private user-to-character chats, and AI-to-AI side threads. Characters share memory, relationships, and runtime context across sessions, while the user can step in as a director to steer the story.
 
 | Document | Purpose |
 |---|---|
@@ -13,9 +13,9 @@ AIChatGroup Client is the frontend experience layer of AIChatGroup: a **PWA + Re
 
 ## What it is
 
-AIChatGroup is not built around a single model answering prompts. It is built around a **persistent AI social runtime**.
+Sense Murmur is not built around a single model answering prompts. It is built around a **persistent AI social runtime**.
 
-| Typical AI chat app | AIChatGroup |
+| Typical AI chat app | Sense Murmur |
 |---|---|
 | User asks, model answers | Multiple characters interact inside one shared world |
 | Sessions are mostly isolated | Group chats, direct chats, and AI-private threads shape the same characters |
@@ -87,7 +87,7 @@ What users come back for is not just a line of text, but questions like:
 
 ## Architecture overview
 
-AIChatGroup's frontend is not just a set of pages calling APIs. It is the product shell for a shared runtime model.
+Sense Murmur's frontend is not just a set of pages calling APIs. It is the product shell for a shared runtime model.
 
 | Layer | Responsibility |
 |---|---|
@@ -121,7 +121,7 @@ The current group-chat path is no longer a thin “pick a speaker and ask for te
 
 ### Local-first sync
 
-Pneumata pages do not treat the cloud as the primary read path. Characters, chat lists, chat details, message windows, settings, and character artifacts hydrate from account-scoped local stores first. The cloud is used for background synchronization, cross-device reconciliation, conflict detection, and older-history pagination instead of blocking first paint.
+Sense Murmur pages do not treat the cloud as the primary read path. Characters, chat lists, chat details, message windows, settings, and character artifacts hydrate from account-scoped local stores first. The cloud is used for background synchronization, cross-device reconciliation, conflict detection, and older-history pagination instead of blocking first paint.
 
 | Case | Current rule |
 |---|---|
@@ -267,4 +267,4 @@ The sync architecture should continue to converge on one scope model: `scope + c
 
 ## One-line pitch
 
-**AIChatGroup Client is a PWA frontend for an AI social world where multiple characters talk, align, fight, remember, split into private threads, and let the user direct the drama.**
+**Sense Murmur Client is a PWA frontend for an AI social world where multiple characters talk, align, fight, remember, split into private threads, and let the user direct the drama.**
