@@ -1624,34 +1624,34 @@ const editorialUtilities = [
 const editorialRuntimePillars = [
   {
     icon: <TimelineIcon />,
-    label: 'Conversation orchestration',
+    label: '每轮对话判断',
     title: '先判断场面，再决定谁开口。',
     text: '每一轮群聊都会综合当前话题、最近上下文、角色关系和用户意图，选择该接话、沉默、补充还是转圜的人。',
   },
   {
     icon: <PsychologyIcon />,
-    label: 'Character state',
-    title: '角色表现来自多层状态。',
+    label: '角色状态组合',
+    title: '角色表现不只看一句人设。',
     text: '人设不是固定模板。性格、语气、关系备注、近期事件和模型参数会共同影响角色此刻说什么、怎么说。',
   },
   {
     icon: <MemoryIcon />,
-    label: 'Memory ledger',
+    label: '重要记忆整理',
     title: '长期记忆不是聊天记录堆叠。',
-    text: '系统会把重要经历沉淀成可回流的背景，把用户偏好、共同约定和关系变化带回下一次对话。',
+    text: '系统会把重要经历整理成下次能用的背景，把用户偏好、共同约定和关系变化带回下一次对话。',
   },
   {
     icon: <VisibilityIcon />,
-    label: 'Perspective boundary',
-    title: '不同内容有不同视角。',
-    text: '公开群聊、单聊、角色之间的私密信息与运行事件会按场景裁剪，避免所有信息挤进同一个聊天框。',
+    label: '不同场景区分',
+    title: '群聊、单聊和角色私下互动会分开处理。',
+    text: '公开群聊、单聊、角色之间的私密信息和系统事件会按场景使用，避免所有信息都挤进同一个聊天框。',
   },
 ] as const;
 
 const editorialRuntimeFlow = [
   ['01', '意图识别', '读懂用户这句话是在提问、推进关系、抛话题，还是需要角色主动接住。'],
-  ['02', '角色调度', '从多个角色中挑出此刻最该在场的人，同时允许沉默和错峰回应。'],
-  ['03', '记忆回流', '调用与当前场面相关的经历、偏好、约定和关系痕迹。'],
+  ['02', '选择回应角色', '从多个角色中挑出此刻最该在场的人，同时允许沉默和错峰回应。'],
+  ['03', '带入相关记忆', '调用与当前场面相关的经历、偏好、约定和关系痕迹。'],
   ['04', '表达成形', '把角色状态、语气边界和场面压力合成一条像它自己的回复。'],
 ] as const;
 
@@ -1943,17 +1943,17 @@ function EditorialRuntimeSection() {
             <Box>
               <Typography sx={{ color: '#E9A35A', fontFamily: monoStack, fontWeight: 850, fontSize: 12, letterSpacing: 1.1 }}>RUNTIME FOUNDATION</Typography>
               <Typography component="h2" sx={{ mt: 1.4, fontFamily: editorialSerif, fontWeight: 900, fontSize: { xs: 34, md: 50 }, lineHeight: 1.04, letterSpacing: 0 }}>
-                它看起来像聊天，底下是一条运行链路。
+                它看起来像聊天，背后有一套判断流程。
               </Typography>
               <Typography sx={{ mt: 1.55, color: 'rgba(255,244,228,0.70)', lineHeight: 1.82, fontSize: { xs: 15.5, md: 16.5 } }}>
-                多角色群聊不是把几个模型轮流叫出来回答。系统需要判断场面、调度角色、回收记忆、维护关系，再让每一句话以自然的方式出现。
+                多角色群聊不是把几个模型轮流叫出来回答。系统需要判断场面、选择角色、带入记忆、维护关系，再让每一句话以自然的方式出现。
               </Typography>
               <Box sx={{ mt: 2.4, display: 'grid', gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', sm: 'repeat(4, minmax(0, 1fr))', lg: 'repeat(2, minmax(0, 1fr))' }, gap: 1 }}>
                 {[
-                  ['多角色', '调度'],
-                  ['长期记忆', '回流'],
-                  ['关系账本', '更新'],
-                  ['视角边界', '裁剪'],
+                  ['谁来回应', '自动判断'],
+                  ['重要记忆', '带回对话'],
+                  ['关系变化', '留下痕迹'],
+                  ['不同场景', '分开处理'],
                 ].map(([top, bottom]) => (
                   <Box key={top} sx={{ border: '1px solid rgba(255,244,228,0.14)', borderRadius: 2.2, p: 1.3, bgcolor: 'rgba(255,244,228,0.055)', transition: `transform ${motion.durations.base}ms ${motion.crispOut}, border-color ${motion.durations.base}ms ease`, '&:hover': { transform: 'translateY(-4px)', borderColor: 'rgba(233,163,90,0.44)' }, '&:active': { transform: 'translateY(-1px)' } }}>
                     <Typography sx={{ color: '#E9A35A', fontFamily: monoStack, fontSize: 11, fontWeight: 850 }}>{top}</Typography>
