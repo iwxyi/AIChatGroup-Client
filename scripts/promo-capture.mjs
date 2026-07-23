@@ -465,24 +465,25 @@ const promoCards = [
     decorChips: ['记得你', '旧约定', '关系 +1', '今晚也在'],
     layout: 'cover',
     proof: [
-      ['角色关系', '不是一次性回答，而是每次相处都会留下变化。'],
-      ['长期记忆', '约定、偏好、边界会进入下一轮对话。'],
-      ['多人房间', '不同角色用不同方式接话、拆解、缓和气氛。'],
+      ['关系会变', '每次相处都会留下痕迹。'],
+      ['记忆会回', '约定和偏好下次还在。'],
+      ['多人接话', '安慰、拆解、吐槽都有人。'],
     ],
   },
   {
     id: '02-chat',
-    shot: '../screenshots/shot-chat-list.png',
+    shot: null,
     kicker: '下班后不想听大道理',
-    title: '有人接住情绪，有人帮你拆开问题',
+    title: '有人接住情绪，帮你拆开问题',
     subtitle: '群聊、单聊、故事房都能留下关系痕迹，不再只是一次性对话。',
     chips: ['安慰', '吐槽', '建议', '站在你这边'],
     decorChips: ['有人接话', '低能量日', '朋友在场', '不讲大道理'],
     layout: 'rooms',
+    spotlight: '不是一个 AI 在答，是一群角色在接话。',
     proof: [
-      ['群聊', '适合吐槽、情绪复盘、多人站队。'],
-      ['单聊', '适合睡前十分钟和低负担陪伴。'],
-      ['故事房', '适合脑洞、分支和旧关系入场。'],
+      ['群聊', '吐槽、复盘、有人站队。'],
+      ['单聊', '睡前十分钟低负担陪伴。'],
+      ['故事房', '脑洞和旧关系继续入场。'],
     ],
   },
   {
@@ -495,9 +496,9 @@ const promoCards = [
     decorChips: ['小事存档', '边界被记住', '偏好沉淀', '下次还算'],
     layout: 'memory',
     proof: [
-      ['会影响语气', '她知道哪些提醒方式对你更有效。'],
-      ['会召回约定', '下一次聊天不必重讲背景。'],
-      ['可被整理', '重要记忆可以查看和手动补充。'],
+      ['影响语气', '她知道你吃哪种提醒。'],
+      ['召回约定', '下次不必重讲背景。'],
+      ['可以整理', '重要记忆能查看补充。'],
     ],
   },
   {
@@ -510,24 +511,24 @@ const promoCards = [
     decorChips: ['性格漂移', '语气成形', '软肋浮现', '不是模板'],
     layout: 'character',
     proof: [
-      ['性格参数', '不是只靠一句人设，而是有可调的行为倾向。'],
-      ['关系记录', '角色会根据相处历史改变反应。'],
-      ['说话风格', '口头禅、边界和软肋会慢慢固定下来。'],
+      ['性格参数', '不是只靠一句人设。'],
+      ['关系记录', '相处历史会改变反应。'],
+      ['说话风格', '口头禅和边界会固定。'],
     ],
   },
   {
     id: '05-room',
     shot: '../screenshots/shot-story.png',
     kicker: '不只陪聊，也能一起玩故事',
-    title: '日常、脑洞、故事分支，都能留在同一段关系里',
+    title: '日常和故事，都留在同一段关系里',
     subtitle: '今天是夜聊，明天也可以把同一群角色带进新的故事房。',
     chips: ['故事房', '脑洞续写', '旧关系入场'],
     decorChips: ['分支选择', '线索回收', '旧关系入场', '一起推进'],
     layout: 'story',
     proof: [
-      ['选择会留下后果', '分支不只是按钮，会影响线索和信任。'],
-      ['旧关系可入场', '日常陪伴里的角色能进入新故事。'],
-      ['世界会延续', '线索、风险和章节点能被带回后续。'],
+      ['选择有后果', '分支会影响线索和信任。'],
+      ['旧人能入场', '陪伴角色进入新故事。'],
+      ['世界会延续', '线索和风险会被带回。'],
     ],
   },
   {
@@ -539,10 +540,11 @@ const promoCards = [
     chips: ['长期陪伴', '角色群像', '故事感聊天'],
     decorChips: ['慢慢熟悉', '长期陪伴', '角色群像', '打开房间'],
     layout: 'audience',
+    spotlight: '不用先懂 AI，先找一个愿意陪你的人。',
     proof: [
-      ['普通用户', '不用学术语，只要知道角色会记得你。'],
-      ['角色玩家', '可以养成属于你的角色关系。'],
-      ['创作者', '把脑洞、分支和关系放进同一个世界。'],
+      ['普通用户', '不用学术语，也能被记住。'],
+      ['角色玩家', '养成属于你的角色关系。'],
+      ['创作者', '把脑洞和分支放进世界。'],
     ],
   },
 ];
@@ -674,6 +676,10 @@ function renderProofPanel(card) {
   `;
 }
 
+function renderSpotlight(card) {
+  return card.spotlight ? `<section class="spotlight-panel">${card.spotlight}</section>` : '';
+}
+
 function createCardHtml() {
   const cards = promoCards.map((card, index) => `
     <article class="card" id="${card.id}">
@@ -713,6 +719,7 @@ function createCardHtml() {
           </div>
         ` : ''}
       </div>
+      ${renderSpotlight(card)}
       <div class="chips">${card.chips.map((chip) => `<span>${chip}</span>`).join('')}</div>
       ${renderProofPanel(card)}
       <div class="footer">
@@ -741,7 +748,7 @@ function createCardHtml() {
       radial-gradient(circle at 92% 74%, rgba(255, 184, 77, .34), transparent 34%),
       linear-gradient(152deg, #FFF7EF 0%, #FFE9DE 42%, #F7D2DF 70%, #E8D9FF 100%);
     display: none;
-    padding: 58px 72px 54px;
+    padding: 44px 62px 46px;
   }
   .card.active { display: block; }
   .noise {
@@ -826,18 +833,18 @@ function createCardHtml() {
   .s6 { right: 160px; bottom: 312px; width: 7px; height: 7px; background: #4B243F; }
   .s7 { left: 920px; top: 92px; width: 6px; height: 6px; background: #FFB84D; }
   .s8 { left: 44px; top: 1102px; width: 6px; height: 6px; background: #4B243F; }
-  .brand-row, .copy, .content, .chips, .proof-panel, .footer { position: relative; z-index: 1; }
-  .brand-row { display: flex; align-items: baseline; gap: 16px; margin-bottom: 24px; }
-  .brand { font-size: 34px; font-weight: 900; letter-spacing: 0; }
-  .brand-sub { color: #C5524B; font-size: 22px; font-weight: 800; }
-  .kicker { margin: 0 0 18px; color: #C5524B; font-size: 28px; font-weight: 900; }
-  h1 { margin: 0; max-width: 940px; font-size: 62px; line-height: 1.08; letter-spacing: 0; font-weight: 950; }
-  .subtitle { margin: 20px 0 24px; max-width: 900px; color: rgba(52,29,49,.74); font-size: 28px; line-height: 1.4; font-weight: 700; }
-  .content { display: grid; gap: 24px; }
+  .brand-row, .copy, .content, .spotlight-panel, .chips, .proof-panel, .footer { position: relative; z-index: 1; }
+  .brand-row { display: flex; align-items: baseline; gap: 16px; margin-bottom: 18px; }
+  .brand { font-size: 32px; font-weight: 900; letter-spacing: 0; }
+  .brand-sub { color: #C5524B; font-size: 21px; font-weight: 800; }
+  .kicker { margin: 0 0 14px; color: #C5524B; font-size: 32px; font-weight: 900; }
+  h1 { margin: 0; max-width: 956px; font-size: 74px; line-height: 1.02; letter-spacing: 0; font-weight: 950; }
+  .subtitle { margin: 18px 0 22px; max-width: 940px; color: rgba(52,29,49,.76); font-size: 34px; line-height: 1.28; font-weight: 800; }
+  .content { display: grid; gap: 18px; }
   .content.cover, .content.rooms, .content.audience { grid-template-columns: 1fr; }
-  .content.memory, .content.character, .content.story { grid-template-columns: 405px 1fr; align-items: stretch; gap: 22px; }
-  .info-modules { display: grid; gap: 18px; min-width: 0; }
-  .compare, .flow, .cover-dashboard, .room-grid, .mini-table, .scene-strip, .memory-list, .stats-row, .trait-panel, .profile-grid, .voice-card, .branch-board, .clue-row, .audience-list, .audience-matrix, .closing-line, .proof-panel {
+  .content.memory, .content.character, .content.story { grid-template-columns: 390px 1fr; align-items: stretch; gap: 18px; }
+  .info-modules { display: grid; gap: 14px; min-width: 0; }
+  .compare, .flow, .cover-dashboard, .room-grid, .mini-table, .scene-strip, .memory-list, .stats-row, .trait-panel, .profile-grid, .voice-card, .branch-board, .clue-row, .audience-list, .audience-matrix, .closing-line, .spotlight-panel, .proof-panel {
     border: 1px solid rgba(197,82,75,.18);
     border-radius: 22px;
     background: rgba(255,255,255,.55);
@@ -845,19 +852,19 @@ function createCardHtml() {
     backdrop-filter: blur(14px);
   }
   .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; padding: 16px; }
-  .compare div { min-height: 126px; border-radius: 16px; padding: 18px; background: rgba(255,247,239,.66); }
+  .compare div { min-height: 136px; border-radius: 16px; padding: 18px; background: rgba(255,247,239,.66); }
   .compare div:last-child { background: linear-gradient(135deg, rgba(255,126,108,.16), rgba(255,255,255,.7)); }
-  .compare span, .profile-grid span, .branch span, .mini-table span { color: #C5524B; font-size: 20px; font-weight: 900; }
-  .compare b { display: block; margin: 8px 0 8px; font-size: 32px; line-height: 1.1; }
-  .compare p, .room-grid p, .memory-list p, .audience-list p, .branch p { margin: 0; color: rgba(52,29,49,.66); font-size: 20px; line-height: 1.35; font-weight: 700; }
+  .compare span, .profile-grid span, .branch span, .mini-table span { color: #C5524B; font-size: 25px; font-weight: 900; }
+  .compare b { display: block; margin: 8px 0 8px; font-size: 38px; line-height: 1.06; }
+  .compare p, .room-grid p, .memory-list p, .audience-list p, .branch p { margin: 0; color: rgba(52,29,49,.68); font-size: 26px; line-height: 1.25; font-weight: 800; }
   .flow { display: grid; grid-template-columns: auto 1fr auto 1fr auto 1fr auto; align-items: center; gap: 12px; padding: 18px 20px; }
-  .flow span { font-size: 22px; font-weight: 900; color: #4B243F; white-space: nowrap; }
+  .flow span { font-size: 28px; font-weight: 900; color: #4B243F; white-space: nowrap; }
   .flow i { height: 3px; border-radius: 999px; background: linear-gradient(90deg, #FF7A66, rgba(75,36,63,.14)); }
-  .cover-dashboard { display: grid; grid-template-columns: 1fr 308px; gap: 18px; padding: 18px; }
+  .cover-dashboard { display: grid; grid-template-columns: 1fr 288px; gap: 16px; padding: 16px; }
   .dialogue-preview { display: grid; gap: 12px; }
   .dialogue-line {
     display: grid;
-    grid-template-columns: 78px 1fr;
+    grid-template-columns: 86px 1fr;
     gap: 12px;
     align-items: start;
     border-radius: 18px;
@@ -865,50 +872,65 @@ function createCardHtml() {
     background: rgba(255,255,255,.7);
     border: 1px solid rgba(75,36,63,.08);
   }
-  .dialogue-line strong { color: #C5524B; font-size: 22px; line-height: 1.28; }
-  .dialogue-line p { margin: 0; color: #341D31; font-size: 24px; line-height: 1.34; font-weight: 850; }
+  .dialogue-line strong { color: #C5524B; font-size: 28px; line-height: 1.22; }
+  .dialogue-line p { margin: 0; color: #341D31; font-size: 29px; line-height: 1.24; font-weight: 850; }
   .user-line { background: linear-gradient(135deg, rgba(255,122,102,.18), rgba(255,255,255,.74)); }
   .signal-stack { display: grid; grid-template-columns: 1fr; overflow: hidden; border-radius: 18px; border: 1px solid rgba(197,82,75,.14); background: rgba(255,247,239,.62); }
   .signal-stack .metric { border-right: 0; border-bottom: 1px solid rgba(197,82,75,.12); }
   .signal-stack .metric:last-child { border-bottom: 0; }
   .room-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; padding: 16px; }
   .room-grid div, .audience-list div { border-radius: 16px; background: rgba(255,255,255,.62); padding: 18px; }
-  .room-grid b, .memory-list b, .audience-list b, .branch b { display: block; margin-bottom: 8px; font-size: 28px; line-height: 1.1; }
+  .room-grid b, .memory-list b, .audience-list b, .branch b { display: block; margin-bottom: 8px; font-size: 36px; line-height: 1.06; }
   .mini-table { display: grid; grid-template-columns: repeat(3, 1fr); overflow: hidden; }
   .mini-table div { padding: 18px; border-right: 1px solid rgba(197,82,75,.14); }
   .mini-table div:last-child { border-right: 0; }
-  .mini-table b { display: block; margin-top: 6px; font-size: 28px; }
+  .mini-table b { display: block; margin-top: 6px; font-size: 34px; }
   .scene-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; overflow: hidden; background: rgba(197,82,75,.14); }
-  .scene-strip div { min-height: 86px; padding: 16px 14px; background: rgba(255,255,255,.62); }
-  .scene-strip b { display: block; margin-bottom: 6px; color: #C5524B; font-size: 22px; }
-  .scene-strip span { color: #4B243F; font-size: 20px; font-weight: 900; }
+  .scene-strip div { min-height: 96px; padding: 16px 14px; background: rgba(255,255,255,.62); }
+  .scene-strip b { display: block; margin-bottom: 6px; color: #C5524B; font-size: 26px; }
+  .scene-strip span { color: #4B243F; font-size: 25px; line-height: 1.1; font-weight: 900; }
   .memory-list, .audience-list { display: grid; gap: 12px; padding: 16px; }
   .memory-list div { padding: 16px 18px; border-radius: 16px; background: rgba(255,255,255,.62); }
   .stats-row { display: grid; grid-template-columns: repeat(3, 1fr); overflow: hidden; }
   .metric { padding: 16px 14px; border-right: 1px solid rgba(197,82,75,.14); text-align: center; }
   .metric:last-child { border-right: 0; }
-  .metric b { display: block; font-size: 44px; line-height: 1; color: #C5524B; }
-  .metric span { display: block; margin-top: 8px; font-size: 18px; font-weight: 900; }
-  .metric em { display: block; margin-top: 4px; color: rgba(52,29,49,.52); font-size: 15px; font-style: normal; font-weight: 800; }
+  .metric b { display: block; font-size: 52px; line-height: 1; color: #C5524B; }
+  .metric span { display: block; margin-top: 8px; font-size: 24px; font-weight: 900; }
+  .metric em { display: block; margin-top: 4px; color: rgba(52,29,49,.56); font-size: 20px; font-style: normal; font-weight: 800; }
   .trait-panel { padding: 18px; }
-  .bar-list { display: grid; gap: 16px; }
-  .bar-head { display: flex; justify-content: space-between; color: #341D31; font-size: 20px; font-weight: 900; }
-  .bar-track { height: 12px; margin-top: 9px; border-radius: 999px; background: rgba(75,36,63,.12); overflow: hidden; }
+  .bar-list { display: grid; gap: 18px; }
+  .bar-head { display: flex; justify-content: space-between; color: #341D31; font-size: 26px; font-weight: 900; }
+  .bar-track { height: 16px; margin-top: 10px; border-radius: 999px; background: rgba(75,36,63,.12); overflow: hidden; }
   .bar-track i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #FF7A66, #696BFF); }
   .profile-grid { display: grid; grid-template-columns: 1fr; gap: 12px; padding: 16px; }
   .profile-grid div { padding: 15px 16px; border-radius: 16px; background: rgba(255,255,255,.62); }
-  .profile-grid b { display: block; margin-top: 7px; font-size: 22px; line-height: 1.25; }
-  .voice-card { padding: 18px 20px; color: #4B243F; font-size: 22px; line-height: 1.35; font-weight: 900; }
+  .profile-grid b { display: block; margin-top: 7px; font-size: 29px; line-height: 1.18; }
+  .voice-card { padding: 20px 22px; color: #4B243F; font-size: 29px; line-height: 1.24; font-weight: 900; }
   .branch-board { display: grid; gap: 14px; padding: 16px; }
   .branch { padding: 18px; border-radius: 16px; background: rgba(255,255,255,.64); border: 1px solid rgba(197,82,75,.12); }
   .branch.locked { opacity: .72; }
   .clue-row { display: flex; flex-wrap: wrap; gap: 10px; padding: 16px; }
-  .clue-row span { min-height: 44px; display: inline-flex; align-items: center; padding: 0 15px; border-radius: 999px; background: rgba(255,126,108,.12); color: #4B243F; font-size: 18px; font-weight: 900; }
+  .clue-row span { min-height: 54px; display: inline-flex; align-items: center; padding: 0 18px; border-radius: 999px; background: rgba(255,126,108,.12); color: #4B243F; font-size: 24px; font-weight: 900; }
   .audience-matrix { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1px; overflow: hidden; background: rgba(197,82,75,.14); }
-  .audience-matrix div { min-height: 94px; padding: 18px; background: rgba(255,255,255,.62); }
-  .audience-matrix span { display: block; margin-bottom: 6px; color: #C5524B; font-size: 20px; font-weight: 900; }
-  .audience-matrix b { display: block; color: #341D31; font-size: 23px; line-height: 1.28; }
-  .closing-line { padding: 22px 24px; color: #4B243F; font-size: 28px; line-height: 1.25; font-weight: 950; }
+  .audience-matrix div { min-height: 118px; padding: 22px; background: rgba(255,255,255,.62); }
+  .audience-matrix span { display: block; margin-bottom: 8px; color: #C5524B; font-size: 27px; font-weight: 900; }
+  .audience-matrix b { display: block; color: #341D31; font-size: 32px; line-height: 1.18; }
+  .closing-line { padding: 26px 28px; color: #4B243F; font-size: 36px; line-height: 1.2; font-weight: 950; }
+  .spotlight-panel {
+    position: absolute;
+    left: 62px;
+    right: 62px;
+    bottom: 416px;
+    min-height: 154px;
+    display: flex;
+    align-items: center;
+    padding: 28px 34px;
+    color: #341D31;
+    font-size: 42px;
+    line-height: 1.16;
+    font-weight: 950;
+    background: linear-gradient(135deg, rgba(255,255,255,.72), rgba(255,122,102,.18));
+  }
   .phone {
     width: 100%;
     height: 720px;
@@ -920,55 +942,68 @@ function createCardHtml() {
     box-shadow: 0 44px 110px rgba(96,45,71,.24), 0 0 0 1px rgba(255,255,255,.7), 0 0 70px rgba(255,122,102,.22);
     transform: rotate(-1.5deg);
   }
-  .content.rooms .phone, .content.audience .phone { width: 780px; height: 540px; }
+  .content.rooms .phone, .content.audience .phone { width: 790px; height: 480px; }
   .hero-phone { width: 790px; height: 656px; transform: rotate(1.2deg); }
   .phone img { width: 100%; height: 100%; object-fit: cover; object-position: top center; display: block; }
   #04-character .phone img { object-position: center 8%; }
   #05-room .phone img { object-position: center 6%; }
-  .chips { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 26px; }
+  .chips {
+    position: absolute;
+    left: 62px;
+    right: 62px;
+    bottom: 318px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin-top: 0;
+  }
   .chips span {
     display: inline-flex;
     align-items: center;
-    min-height: 56px;
-    padding: 0 24px;
+    min-height: 66px;
+    padding: 0 28px;
     border: 1px solid rgba(197,82,75,.24);
     border-radius: 999px;
     color: #4B243F;
     background: linear-gradient(135deg, rgba(255,255,255,.74), rgba(255,126,108,.18));
-    font-size: 24px;
-    font-weight: 800;
+    font-size: 31px;
+    font-weight: 900;
   }
   .proof-panel {
+    position: absolute;
+    left: 62px;
+    right: 62px;
+    bottom: 102px;
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 1px;
-    margin-top: 24px;
+    margin-top: 0;
     overflow: hidden;
     background: rgba(197,82,75,.14);
   }
   .proof-panel div {
-    min-height: 126px;
-    padding: 18px;
+    min-height: 188px;
+    padding: 22px;
     background: rgba(255,255,255,.58);
   }
   .proof-panel b {
     display: block;
-    margin-bottom: 8px;
+    margin-bottom: 10px;
     color: #C5524B;
-    font-size: 22px;
-    line-height: 1.18;
+    font-size: 30px;
+    line-height: 1.12;
   }
   .proof-panel p {
     margin: 0;
     color: rgba(52,29,49,.72);
-    font-size: 19px;
-    line-height: 1.34;
+    font-size: 27px;
+    line-height: 1.22;
     font-weight: 800;
   }
   .footer {
     position: absolute;
-    left: 72px;
-    right: 72px;
+    left: 62px;
+    right: 62px;
     bottom: 46px;
     display: flex;
     justify-content: space-between;
@@ -976,11 +1011,16 @@ function createCardHtml() {
     font-size: 22px;
     font-weight: 700;
   }
-  #01-cover h1 { max-width: 900px; font-size: 60px; }
-  #06-cta h1 { font-size: 66px; max-width: 850px; }
-  #03-memory .phone, #04-character .phone, #05-room .phone { height: 760px; }
+  #01-cover h1 { max-width: 950px; font-size: 76px; }
+  #06-cta h1 { font-size: 76px; max-width: 910px; }
+  #02-chat .phone { width: 760px; height: 350px; }
+  #03-memory .phone, #04-character .phone, #05-room .phone { height: 750px; }
+  #03-memory .chips, #04-character .chips, #05-room .chips { bottom: 314px; }
+  #02-chat .info-modules, #06-cta .info-modules { min-height: 820px; align-content: space-between; }
   #06-cta .audience-list { grid-template-columns: 1fr; }
-  #06-cta .proof-panel { margin-top: 28px; }
+  #06-cta .audience-list div { min-height: 128px; }
+  #06-cta .closing-line { min-height: 104px; display: flex; align-items: center; }
+  #06-cta .proof-panel { margin-top: 0; }
   #01-cover .content, #02-chat .content, #06-cta .content { gap: 18px; }
 </style>
 </head>
