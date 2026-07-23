@@ -465,9 +465,9 @@ const promoCards = [
     decorChips: ['记得你', '旧约定', '关系 +1', '今晚也在'],
     layout: 'cover',
     proof: [
-      ['关系会变', '每次相处都会留下痕迹。'],
-      ['记忆会回', '约定和偏好下次还在。'],
-      ['多人接话', '安慰、拆解、吐槽都有人。'],
+      ['多人聊天', '群聊里每个角色都能发言，也会互相接话。'],
+      ['关系记忆', '约定、偏好和相处痕迹会带到下一次对话。'],
+      ['连续陪伴', '今天聊到的事，之后还可以继续。'],
     ],
   },
   {
@@ -481,9 +481,9 @@ const promoCards = [
     layout: 'rooms',
     spotlight: '不是一个 AI 在答，是一群角色在接话。',
     proof: [
-      ['群聊', '吐槽、复盘、有人站队。'],
-      ['单聊', '睡前十分钟低负担陪伴。'],
-      ['故事房', '脑洞和旧关系继续入场。'],
+      ['多种房间', '群聊、单聊、故事房，按当下的需要进入。'],
+      ['角色接话', '不同角色会安慰、拆解或调节气氛。'],
+      ['关系延续', '每个房间都能留下可继续的上下文。'],
     ],
   },
   {
@@ -496,9 +496,9 @@ const promoCards = [
     decorChips: ['小事存档', '边界被记住', '偏好沉淀', '下次还算'],
     layout: 'memory',
     proof: [
-      ['影响语气', '她知道你吃哪种提醒。'],
-      ['召回约定', '下次不必重讲背景。'],
-      ['可以整理', '重要记忆能查看补充。'],
+      ['记忆沉淀', '小事、边界和约定会整理成可回看的记忆。'],
+      ['影响回应', '记忆会改变角色下一次的语气和选择。'],
+      ['手动整理', '重要内容可以查看、补充和调整。'],
     ],
   },
   {
@@ -511,9 +511,9 @@ const promoCards = [
     decorChips: ['性格漂移', '语气成形', '软肋浮现', '不是模板'],
     layout: 'character',
     proof: [
-      ['性格参数', '不是只靠一句人设。'],
-      ['关系记录', '相处历史会改变反应。'],
-      ['说话风格', '口头禅和边界会固定。'],
+      ['人格参数', '开放性、共情力等性格维度可以看见。'],
+      ['说话风格', '口头禅、句式和边界会形成稳定风格。'],
+      ['关系变化', '相处历史会让角色逐渐变成你的版本。'],
     ],
   },
   {
@@ -526,9 +526,9 @@ const promoCards = [
     decorChips: ['分支选择', '线索回收', '旧关系入场', '一起推进'],
     layout: 'story',
     proof: [
-      ['选择有后果', '分支会影响线索和信任。'],
-      ['旧人能入场', '陪伴角色进入新故事。'],
-      ['世界会延续', '线索和风险会被带回。'],
+      ['分支选择', '每个选择都会影响线索、风险和信任。'],
+      ['故事状态', '地点、目标和线索会留在当前故事里。'],
+      ['旧关系入场', '已经熟悉的角色可以进入新的剧情。'],
     ],
   },
   {
@@ -542,9 +542,9 @@ const promoCards = [
     layout: 'audience',
     spotlight: '不用先懂 AI，先找一个愿意陪你的人。',
     proof: [
-      ['普通用户', '不用学术语，也能被记住。'],
-      ['角色玩家', '养成属于你的角色关系。'],
-      ['创作者', '把脑洞和分支放进世界。'],
+      ['角色库', '先挑一个角色，再从一句话开始熟悉。'],
+      ['聊天房间', '不需要理解模型，直接选择群聊或单聊。'],
+      ['长期陪伴', '对话、记忆和故事都能继续往下走。'],
     ],
   },
 ];
@@ -650,7 +650,17 @@ function renderInfoModules(card) {
 }
 
 function renderProofPanel(card) {
-  return '';
+  if (!card.proof?.length) return '';
+  return `
+    <section class="proof-panel" aria-label="功能介绍">
+      ${card.proof.map(([label, text]) => `
+        <div class="proof-row">
+          <b>${label}</b>
+          <p>${text}</p>
+        </div>
+      `).join('')}
+    </section>
+  `;
 }
 
 function renderSpotlight(card) {
@@ -927,8 +937,8 @@ function createCardHtml() {
     background: linear-gradient(135deg, rgba(255,255,255,.72), rgba(255,122,102,.18));
   }
   .phone {
-    width: 100%;
-    height: 720px;
+    width: 760px;
+    height: 760px;
     margin: 0 auto;
     border: 12px solid rgba(255,255,255,.92);
     border-radius: 46px;
@@ -937,13 +947,12 @@ function createCardHtml() {
     box-shadow: 0 44px 110px rgba(96,45,71,.24), 0 0 0 1px rgba(255,255,255,.7), 0 0 70px rgba(255,122,102,.22);
     transform: rotate(-1.5deg);
   }
-  .content.rooms .phone, .content.audience .phone { width: 760px; height: 1080px; }
-  .content.cover .phone { width: 760px; height: 960px; }
-  .hero-phone { width: 760px; height: 960px; transform: rotate(1.1deg); }
+  .hero-phone { transform: rotate(1.1deg); }
   .phone img { width: 100%; height: 100%; object-fit: cover; object-position: top center; display: block; }
-  #02-chat .phone img, #06-cta .phone img { transform: scale(1.18); transform-origin: top center; }
-  #04-character .phone img { object-position: center 8%; }
-  #05-room .phone img { object-position: center 6%; }
+  #02-chat .phone img, #06-cta .phone img { object-position: center top; }
+  #03-memory .phone img { object-position: center 18%; }
+  #04-character .phone img { object-position: center 12%; }
+  #05-room .phone img { object-position: center 10%; }
   .chips {
     display: flex;
     flex-wrap: wrap;
@@ -965,28 +974,35 @@ function createCardHtml() {
   .proof-panel {
     display: grid;
     grid-template-columns: 1fr;
-    gap: 0;
-    margin-top: 22px;
+    gap: 1px;
+    margin-top: 18px;
     overflow: hidden;
     background: rgba(197,82,75,.14);
   }
-  .proof-panel div {
-    min-height: 208px;
-    padding: 28px 30px;
+  .proof-row {
+    min-height: 106px;
+    display: grid;
+    grid-template-columns: 180px 1fr;
+    align-items: center;
+    gap: 22px;
+    padding: 16px 24px;
     background: rgba(255,255,255,.58);
   }
-  .proof-panel b {
-    display: block;
-    margin-bottom: 12px;
+  .proof-row b {
+    display: inline-flex;
+    align-items: center;
+    min-height: 42px;
+    padding-left: 14px;
+    border-left: 6px solid #C5524B;
     color: #C5524B;
-    font-size: 38px;
+    font-size: 30px;
     line-height: 1.12;
   }
-  .proof-panel p {
+  .proof-row p {
     margin: 0;
-    color: rgba(52,29,49,.72);
-    font-size: 31px;
-    line-height: 1.28;
+    color: #341D31;
+    font-size: 27px;
+    line-height: 1.24;
     font-weight: 800;
   }
   .footer {
@@ -1005,11 +1021,8 @@ function createCardHtml() {
   #01-cover .content { gap: 0; }
   #01-cover .phone { order: -1; }
   #01-cover .info-modules { grid-template-columns: 1fr; gap: 12px; }
-  #01-cover .proof-panel div { min-height: 198px; }
   #06-cta h1 { font-size: 76px; max-width: 910px; }
-  #02-chat .phone { width: 760px; height: 1080px; }
   #02-chat .subtitle { margin-bottom: 14px; }
-  #03-memory .phone, #04-character .phone, #05-room .phone, #06-cta .phone { width: 760px; height: 1080px; }
   #02-chat .info-modules, #06-cta .info-modules { align-content: start; }
   #06-cta .audience-list { grid-template-columns: 1fr; }
   #06-cta .audience-list div { min-height: 96px; }
