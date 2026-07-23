@@ -568,20 +568,10 @@ function renderInfoModules(card) {
       <section class="flow">
         <span>说出今天</span><i></i><span>角色接住</span><i></i><span>形成记忆</span><i></i><span>下次带回</span>
       </section>
-      <section class="compare">
-        <div><span>普通聊天</span><b>聊完就散</b><p>再见面，又要重新说一遍自己是谁。</p></div>
-        <div><span>《生息》</span><b>关系会回来</b><p>小事、约定和相处痕迹会影响下一次。</p></div>
-      </section>
     `;
   }
   if (card.layout === 'rooms') {
     return `
-      <section class="room-grid">
-        <div><b>群聊房</b><p>多人接话、吐槽、站队</p></div>
-        <div><b>单聊</b><p>低负担陪伴和边界感</p></div>
-        <div><b>故事房</b><p>分支、线索、旧关系入场</p></div>
-        <div><b>讨论房</b><p>脑洞、计划和现实建议</p></div>
-      </section>
       <section class="role-stack">
         <div>
           <img src="../avatars/awan.png" alt="">
@@ -601,12 +591,6 @@ function renderInfoModules(card) {
           <b>涩涩负责续上</b>
           <p>用吐槽缓一口气，让房间不只剩沉重。</p>
         </div>
-      </section>
-      <section class="scene-strip">
-        <div><b>疲惫</b><span>先被接住</span></div>
-        <div><b>混乱</b><span>拆成一步</span></div>
-        <div><b>脑洞</b><span>有人续上</span></div>
-        <div><b>故事</b><span>留下线索</span></div>
       </section>
     `;
   }
@@ -672,9 +656,10 @@ function renderInfoModules(card) {
 
 function renderProofPanel(card) {
   if (!card.proof?.length) return '';
+  const [label, text] = card.proof[0];
   return `
     <section class="proof-panel">
-      ${card.proof.map(([label, text]) => `<div><b>${label}</b><p>${text}</p></div>`).join('')}
+      <div><b>${label}</b><p>${text}</p></div>
     </section>
   `;
 }
@@ -723,7 +708,7 @@ function createCardHtml() {
         ` : ''}
       </div>
       ${renderSpotlight(card)}
-      <div class="chips">${card.chips.map((chip) => `<span>${chip}</span>`).join('')}</div>
+      <div class="chips">${card.chips.slice(0, 2).map((chip) => `<span>${chip}</span>`).join('')}</div>
       ${renderProofPanel(card)}
       <div class="footer">
         <span>AI 多角色互动房间</span>
@@ -751,7 +736,7 @@ function createCardHtml() {
       radial-gradient(circle at 92% 74%, rgba(255, 184, 77, .34), transparent 34%),
       linear-gradient(152deg, #FFF7EF 0%, #FFE9DE 42%, #F7D2DF 70%, #E8D9FF 100%);
     display: none;
-    padding: 44px 62px 46px;
+    padding: 48px 62px 46px;
   }
   .card.active { display: flex; flex-direction: column; }
   .noise {
@@ -791,7 +776,7 @@ function createCardHtml() {
   }
   .memory-chip {
     position: absolute;
-    display: inline-flex;
+    display: none;
     align-items: center;
     min-height: 42px;
     padding: 0 18px;
@@ -815,7 +800,7 @@ function createCardHtml() {
     border-radius: 50%;
     background: #C5524B;
     box-shadow: 0 0 0 9px rgba(197, 82, 75, .08), 0 0 26px rgba(197, 82, 75, .28);
-    opacity: .36;
+    opacity: .18;
   }
   .spark::after {
     content: "";
@@ -830,19 +815,14 @@ function createCardHtml() {
   }
   .s1 { left: 72px; top: 154px; }
   .s2 { left: 974px; top: 324px; width: 8px; height: 8px; }
-  .s3 { left: 108px; top: 838px; width: 7px; height: 7px; }
-  .s4 { right: 80px; top: 908px; }
-  .s5 { left: 152px; bottom: 152px; width: 8px; height: 8px; background: #FFB84D; }
-  .s6 { right: 160px; bottom: 312px; width: 7px; height: 7px; background: #4B243F; }
-  .s7 { left: 920px; top: 92px; width: 6px; height: 6px; background: #FFB84D; }
-  .s8 { left: 44px; top: 1102px; width: 6px; height: 6px; background: #4B243F; }
+  .s3, .s4, .s5, .s6, .s7, .s8 { display: none; }
   .brand-row, .copy, .content, .spotlight-panel, .chips, .proof-panel, .footer { position: relative; z-index: 1; }
   .brand-row { display: flex; align-items: baseline; gap: 16px; margin-bottom: 18px; }
   .brand { font-size: 32px; font-weight: 900; letter-spacing: 0; }
   .brand-sub { color: #C5524B; font-size: 21px; font-weight: 800; }
   .kicker { margin: 0 0 14px; color: #C5524B; font-size: 32px; font-weight: 900; }
-  h1 { margin: 0; max-width: 956px; font-size: 74px; line-height: 1.02; letter-spacing: 0; font-weight: 950; }
-  .subtitle { margin: 18px 0 22px; max-width: 940px; color: rgba(52,29,49,.76); font-size: 34px; line-height: 1.28; font-weight: 800; }
+  h1 { margin: 0; max-width: 956px; font-size: 76px; line-height: 1.02; letter-spacing: 0; font-weight: 950; }
+  .subtitle { margin: 18px 0 26px; max-width: 940px; color: rgba(52,29,49,.76); font-size: 35px; line-height: 1.28; font-weight: 800; }
   .content { display: grid; gap: 16px; }
   .content.cover { grid-template-columns: 1fr; align-items: stretch; }
   .content.rooms, .content.audience { grid-template-columns: 1fr; }
@@ -861,8 +841,8 @@ function createCardHtml() {
   .compare span, .profile-grid span, .branch span, .role-stack span { color: #C5524B; font-size: 25px; font-weight: 900; }
   .compare b { display: block; margin: 6px 0 6px; font-size: 34px; line-height: 1.06; }
   .compare p, .room-grid p, .memory-list p, .audience-list p, .branch p { margin: 0; color: rgba(52,29,49,.68); font-size: 26px; line-height: 1.25; font-weight: 800; }
-  .flow { display: grid; grid-template-columns: auto 1fr auto 1fr auto 1fr auto; align-items: center; gap: 12px; padding: 16px 20px; }
-  .flow span { font-size: 28px; font-weight: 900; color: #4B243F; white-space: nowrap; }
+  .flow { display: grid; grid-template-columns: auto 1fr auto 1fr auto 1fr auto; align-items: center; gap: 12px; padding: 17px 22px; }
+  .flow span { font-size: 29px; font-weight: 900; color: #4B243F; white-space: nowrap; }
   .flow i { height: 3px; border-radius: 999px; background: linear-gradient(90deg, #FF7A66, rgba(75,36,63,.14)); }
   .cover-dashboard { display: grid; grid-template-columns: 1fr 288px; gap: 16px; padding: 16px; }
   .dialogue-preview { display: grid; gap: 12px; }
@@ -887,30 +867,30 @@ function createCardHtml() {
   .room-grid b, .memory-list b, .audience-list b, .branch b { display: block; margin-bottom: 8px; font-size: 36px; line-height: 1.06; }
   .role-stack { display: grid; gap: 1px; overflow: hidden; background: rgba(197,82,75,.14); }
   .role-stack div {
-    min-height: 128px;
+    min-height: 150px;
     display: grid;
     grid-template-columns: 66px 96px 1fr;
     grid-template-rows: auto auto;
     column-gap: 14px;
     align-items: center;
-    padding: 16px 18px;
+    padding: 18px 20px;
     background: linear-gradient(135deg, rgba(255,255,255,.72), rgba(255,122,102,.09));
   }
   .role-stack img {
     grid-row: 1 / 3;
-    width: 66px;
-    height: 66px;
+    width: 72px;
+    height: 72px;
     border-radius: 20px;
     object-fit: cover;
     box-shadow: 0 12px 26px rgba(96,45,71,.13);
   }
-  .role-stack span { font-size: 27px; }
-  .role-stack b { display: block; color: #341D31; font-size: 31px; line-height: 1.08; }
+  .role-stack span { font-size: 28px; }
+  .role-stack b { display: block; color: #341D31; font-size: 34px; line-height: 1.08; }
   .role-stack p {
     grid-column: 2 / 4;
     margin: 6px 0 0;
     color: rgba(52,29,49,.68);
-    font-size: 24px;
+    font-size: 26px;
     line-height: 1.16;
     font-weight: 800;
   }
@@ -946,13 +926,13 @@ function createCardHtml() {
   .audience-matrix b { display: block; color: #341D31; font-size: 32px; line-height: 1.18; }
   .closing-line { padding: 26px 28px; color: #4B243F; font-size: 36px; line-height: 1.2; font-weight: 950; }
   .spotlight-panel {
-    min-height: 132px;
+    min-height: 128px;
     display: flex;
     align-items: center;
     margin-top: 16px;
     padding: 24px 32px;
     color: #341D31;
-    font-size: 42px;
+    font-size: 40px;
     line-height: 1.16;
     font-weight: 950;
     background: linear-gradient(135deg, rgba(255,255,255,.72), rgba(255,122,102,.18));
@@ -978,7 +958,7 @@ function createCardHtml() {
     display: flex;
     flex-wrap: wrap;
     gap: 16px;
-    margin-top: 16px;
+    margin-top: 14px;
   }
   .chips span {
     display: inline-flex;
@@ -994,28 +974,28 @@ function createCardHtml() {
   }
   .proof-panel {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 1px;
+    grid-template-columns: 1fr;
+    gap: 0;
     margin-top: 16px;
     overflow: hidden;
     background: rgba(197,82,75,.14);
   }
   .proof-panel div {
-    min-height: 158px;
-    padding: 20px 22px;
+    min-height: 118px;
+    padding: 20px 26px;
     background: rgba(255,255,255,.58);
   }
   .proof-panel b {
     display: block;
     margin-bottom: 10px;
     color: #C5524B;
-    font-size: 30px;
+    font-size: 31px;
     line-height: 1.12;
   }
   .proof-panel p {
     margin: 0;
     color: rgba(52,29,49,.72);
-    font-size: 27px;
+    font-size: 28px;
     line-height: 1.22;
     font-weight: 800;
   }
@@ -1030,18 +1010,18 @@ function createCardHtml() {
     font-size: 22px;
     font-weight: 700;
   }
-  #01-cover h1 { max-width: 950px; font-size: 72px; }
+  #01-cover h1 { max-width: 950px; font-size: 76px; }
   #01-cover .subtitle { margin-bottom: 16px; }
   #01-cover .content { gap: 14px; }
   #01-cover .phone { order: -1; }
   #01-cover .info-modules { grid-template-columns: 1fr; gap: 12px; }
-  #01-cover .proof-panel div { min-height: 146px; }
+  #01-cover .proof-panel div { min-height: 118px; }
   #06-cta h1 { font-size: 76px; max-width: 910px; }
   #02-chat .phone { width: 760px; height: 350px; }
   #02-chat .subtitle { margin-bottom: 18px; }
-  #02-chat .proof-panel div { min-height: 148px; }
+  #02-chat .proof-panel div { min-height: 118px; }
   #03-memory .phone, #04-character .phone, #05-room .phone { height: 805px; }
-  #03-memory .proof-panel div, #04-character .proof-panel div, #05-room .proof-panel div { min-height: 176px; }
+  #03-memory .proof-panel div, #04-character .proof-panel div, #05-room .proof-panel div { min-height: 118px; }
   #02-chat .info-modules, #06-cta .info-modules { align-content: start; }
   #06-cta .audience-list { grid-template-columns: 1fr; }
   #06-cta .audience-list div { min-height: 128px; }
@@ -1086,6 +1066,37 @@ async function clickText(cdp, pattern) {
   })()`);
 }
 
+function buildAvatarInjectionExpression(avatars) {
+  const avatarMap = {
+    '阿': avatars.awan,
+    '阿晚': avatars.awan,
+    '老': avatars.laoli,
+    '老李': avatars.laoli,
+    '涩': avatars.sese,
+    '涩涩': avatars.sese,
+    '我': avatars.me,
+  };
+  return `new Promise((resolve) => {
+    const avatarMap = ${JSON.stringify(avatarMap)};
+    const applyAvatar = (element, src) => {
+      if (!element || !src) return;
+      element.textContent = '';
+      element.style.backgroundImage = 'url("' + src + '")';
+      element.style.backgroundSize = 'cover';
+      element.style.backgroundPosition = 'center';
+      element.style.backgroundColor = 'transparent';
+      element.style.opacity = '1';
+    };
+    requestAnimationFrame(() => {
+      Array.from(document.querySelectorAll('.MuiAvatar-root')).forEach((element) => {
+        const text = (element.textContent || '').trim();
+        applyAvatar(element, avatarMap[text]);
+      });
+      resolve(true);
+    });
+  })`;
+}
+
 async function main() {
   await Promise.all([
     fs.mkdir(OUT_DIR, { recursive: true }),
@@ -1116,8 +1127,9 @@ async function main() {
       metadataKeys: Object.keys(message.metadata || {}),
     })) || []))`, true);
     console.log('message diagnostics', messageDiagnostics);
-    await keepExistingOnCaptureFailure('chat detail screenshot', () => captureAppShot(cdp, '/chats/promo-chat-main', 'screenshots/shot-chat.png', '周五夜聊房', { height: 1040 }));
-    await keepExistingOnCaptureFailure('chat list screenshot', () => captureAppShot(cdp, '/chats?tab=0', 'screenshots/shot-chat-list.png', '周五夜聊房', { height: 1040 }));
+    const injectAvatars = buildAvatarInjectionExpression(avatarDataUrls);
+    await keepExistingOnCaptureFailure('chat detail screenshot', () => captureAppShot(cdp, '/chats/promo-chat-main', 'screenshots/shot-chat.png', '周五夜聊房', { height: 1040, beforeShot: injectAvatars }));
+    await keepExistingOnCaptureFailure('chat list screenshot', () => captureAppShot(cdp, '/chats?tab=0', 'screenshots/shot-chat-list.png', '周五夜聊房', { height: 1040, beforeShot: injectAvatars }));
     await keepExistingOnCaptureFailure('character list screenshot', () => captureAppShot(cdp, '/characters', 'screenshots/shot-character-list.png', '阿晚', { height: 1040 }));
     await keepExistingOnCaptureFailure('character memory screenshot', async () => {
       await setViewport(cdp, 430, 1040, 2);
