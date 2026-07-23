@@ -378,7 +378,6 @@ export default function ManualCalendarEventDialog({
     [activeCharacters, form.participantIds],
   );
   const customCharacters = useMemo(() => activeCharacters.filter((character) => !character.isPreset), [activeCharacters]);
-  const presetCharacters = useMemo(() => activeCharacters.filter((character) => character.isPreset), [activeCharacters]);
   const selectedChat = useMemo(() => activeChats.find((chat) => chat.id === form.conversationId) || null, [activeChats, form.conversationId]);
 
   const validation = useMemo(() => {
@@ -605,10 +604,10 @@ export default function ManualCalendarEventDialog({
         open={memberDialogOpen}
         onClose={() => setMemberDialogOpen(false)}
         customCharacters={customCharacters}
-        presetCharacters={presetCharacters}
+        presetCharacters={[]}
         selectedMembers={form.participantIds}
         hasCustomCharacters={customCharacters.length > 0}
-        hasPresetCharacters={presetCharacters.length > 0}
+        hasPresetCharacters={false}
         title={isZh ? '选择角色' : 'Choose characters'}
         presetLabel={isZh ? '预设' : 'Preset'}
         confirmLabel={isZh ? '完成' : 'Done'}

@@ -673,13 +673,11 @@ export default function CreateChatPage() {
   }, [selectedMembers]);
 
   const customCharacters = characters.filter((char) => !char.isPreset);
-  const presetCharacters = characters.filter((char) => char.isPreset);
   const selectedCharacters = [
     ...characters.filter((char) => selectedMembers.includes(char.id)),
     ...marketBundleCharacterPreviews.filter((char) => selectedMembers.includes(char.id) && !characters.some((item) => item.id === char.id)),
   ];
   const hasCustomCharacters = customCharacters.length > 0;
-  const hasPresetCharacters = presetCharacters.length > 0;
   const canAutofill = !editingChat && !aiAutofilling && Boolean(name.trim() || topic.trim() || selectedMembers.length);
   const agentEntitled = authMode === 'cloud' && isLoggedIn && currentUser?.agentEntitled === true;
   const availableRoomTemplates = useMemo(
@@ -1641,10 +1639,10 @@ export default function CreateChatPage() {
         open={memberDialogOpen}
         onClose={closeMemberDialog}
         customCharacters={customCharacters}
-        presetCharacters={presetCharacters}
+        presetCharacters={[]}
         selectedMembers={selectedMembers}
         hasCustomCharacters={hasCustomCharacters}
-        hasPresetCharacters={hasPresetCharacters}
+        hasPresetCharacters={false}
         title={t('chat.selectMembers')}
         presetLabel="Preset"
         confirmLabel={memberDialogConfirmLabel}

@@ -71,8 +71,6 @@
   },
   "character": {
     "library": "AI Character Library",
-    "myCharacters": "My Characters",
-    "presets": "Preset Characters",
     "create": "Create Character",
     "edit": "Edit Character",
     "name": "Character Name",

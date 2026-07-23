@@ -18,12 +18,12 @@ import CharacterGroupFilterBar from '../components/character/CharacterGroupFilte
 import ConfirmDialog from '../components/common/ConfirmDialog';
 import EmptyState from '../components/common/EmptyState';
 import ListSkeletonGrid from '../components/common/ListSkeletonGrid';
-import FloatingSegmentedTabs, { buildFloatingTabContainerSx } from '../components/common/FloatingSegmentedTabs';
+import { buildFloatingTabContainerSx } from '../components/common/FloatingSegmentedTabs';
 import AppSnackbar from '../components/common/AppSnackbar';
 import ExpandableFab from '../components/common/ExpandableFab';
 import VipLimitDialog from '../components/common/VipLimitDialog';
 import { usePaneLayout } from '../components/layout/PaneLayoutContext';
-import { canDeleteCharacterGroup, getCharacterGroupList, getCharactersInGroup, isPresetCharacterSelectable, normalizeCharacterGroup, getDuplicateCharacterBannerText, getDuplicateCharacterCount } from '../types/character';
+import { canDeleteCharacterGroup, getCharacterGroupList, getCharactersInGroup, normalizeCharacterGroup, getDuplicateCharacterBannerText, getDuplicateCharacterCount } from '../types/character';
 import { enqueueAvatarGenerationForCharacters } from '../services/avatarGeneration';
 import { generateCharacterProfile } from '../services/characterGenerator';
 import { createCharacterBubbleStyleId } from '../utils/bubbleStyle';
@@ -37,12 +37,10 @@ import { buildListGridSx } from '../styles/interaction';
 
 type CharacterSortField = 'name' | 'createdAt';
 type CharacterSortDirection = 'asc' | 'desc';
-const CHARACTER_LIBRARY_TAB_KEY = 'character-library-tab';
 const CHARACTER_LIBRARY_GROUP_KEY = 'character-library-group';
 const CHARACTER_LIBRARY_SORT_FIELD_KEY = 'character-library-sort-field';
 const CHARACTER_LIBRARY_SORT_DIRECTION_KEY = 'character-library-sort-direction';
 const CHARACTER_LIBRARY_SORT_GROUP_FIRST_KEY = 'character-library-sort-group-first';
-const isCharacterLibraryTab = (value: unknown): value is number => Number.isInteger(value) && Number(value) >= 0 && Number(value) <= 1;
 const isCharacterLibraryGroup = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0;
 const isCharacterSortField = (value: unknown): value is CharacterSortField => value === 'name' || value === 'createdAt';
 const isCharacterSortDirection = (value: unknown): value is CharacterSortDirection => value === 'asc' || value === 'desc';
@@ -109,7 +107,6 @@ export default function CharacterLibraryPage() {
     importCharacters: state.importCharacters,
     isLoading: state.isLoading,
   })));
-  const [tab, setTab] = useState(() => readPersistentUiValue(CHARACTER_LIBRARY_TAB_KEY, 0, isCharacterLibraryTab));
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [selectedGroup, setSelectedGroup] = useState<string>(() => readPersistentUiValue(CHARACTER_LIBRARY_GROUP_KEY, 'all', isCharacterLibraryGroup));
   const [selectionMode, setSelectionMode] = useState(false);
@@ -152,10 +149,6 @@ export default function CharacterLibraryPage() {
     setLoadError(null);
     void prefetchCharacters();
   }, [markCharactersWarm, prefetchCharacters]);
-
-  useEffect(() => {
-    writePersistentUiValue(CHARACTER_LIBRARY_TAB_KEY, tab);
-  }, [tab]);
 
   useEffect(() => {
     writePersistentUiValue(CHARACTER_LIBRARY_GROUP_KEY, selectedGroup);
@@ -207,7 +200,6 @@ export default function CharacterLibraryPage() {
     };
   }, [authMode, isLoggedIn]);
 
-  const presets = useMemo(() => characters.filter((c) => c.isPreset), [characters]);
   const custom = useMemo(() => characters.filter((c) => !c.isPreset), [characters]);
   const maxCharacters = membership?.vipEntitlement?.entitlement.maxCharacters ?? freeEntitlement?.maxCharacters ?? null;
   const characterLimitReached = maxCharacters != null && custom.length >= maxCharacters;
@@ -223,8 +215,8 @@ export default function CharacterLibraryPage() {
     selectedGroup === 'all' ? custom : getCharactersInGroup(custom, selectedGroup)
   ), [custom, selectedGroup]);
   const displayChars = useMemo(
-    () => sortCharactersForLibrary(tab === 0 ? filteredCustom : presets, sortField, sortDirection, sortGroupFirst),
-    [filteredCustom, presets, sortDirection, sortField, sortGroupFirst, tab]
+    () => sortCharactersForLibrary(filteredCustom, sortField, sortDirection, sortGroupFirst),
+    [filteredCustom, sortDirection, sortField, sortGroupFirst]
   );
   const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const selectedCustomCharacters = useMemo(
@@ -594,54 +586,43 @@ export default function CharacterLibraryPage() {
 
   return (
     <Box sx={{ position: 'relative', containerType: 'inline-size', p: 3, pt: { xs: 1, sm: 1, md: 3 }, pb: { xs: 'calc(env(safe-area-inset-bottom, 0px) + 82px)', sm: 12 } }}>
-      <Box sx={buildFloatingTabContainerSx()}>
-        <FloatingSegmentedTabs
-          value={tab}
-          onChange={(value) => {
-            setTab(value);
-            resetSelection();
-          }}
-          items={[
-            { value: 0, label: `${t('character.myCharacters')} (${custom.length})` },
-            { value: 1, label: `${t('character.presets')} (${presets.length})` },
-          ]}
-        />
-        {loadError ? (
-          <Alert
-            severity="error"
-            sx={{ mb: 2 }}
-            action={<Button color="inherit" size="small" onClick={() => {
-              void loadCharacters()
-                .then(() => setLoadError(null))
-                .catch((error) => setLoadError(error instanceof Error ? error.message : (i18n.language.startsWith('zh') ? '角色加载失败' : 'Failed to load characters')));
-            }}>{i18n.language.startsWith('zh') ? '重试' : 'Retry'}</Button>}
-          >
-            {loadError}
-          </Alert>
-        ) : null}
-        {tab === 0 && duplicateCharacterCount > 0 ? <Alert severity="warning" sx={{ mb: 2 }}>{duplicateCharacterBannerText}</Alert> : null}
-      </Box>
-
-      {tab === 0 ? (
-        <CharacterGroupFilterBar
-          allLabel={i18n.language.startsWith('zh') ? '全部' : 'All'}
-          allValue="all"
-          allCount={custom.length}
-          options={customGroupOptions}
-          selectedValue={selectedGroup}
-          onSelect={(value) => setSelectedGroup(value || 'all')}
-          onGroupPointerDown={(group) => {
-            if (canDeleteCharacterGroup(group)) {
-              startGroupLongPress(group);
-            }
-          }}
-          onGroupPointerUp={clearGroupPressTimer}
-          onGroupPointerLeave={clearGroupPressTimer}
-          onGroupPointerCancel={clearGroupPressTimer}
-          sx={{ mb: 2 }}
-        />
+      {loadError || duplicateCharacterCount > 0 ? (
+        <Box sx={buildFloatingTabContainerSx()}>
+          {loadError ? (
+            <Alert
+              severity="error"
+              sx={{ mb: 2 }}
+              action={<Button color="inherit" size="small" onClick={() => {
+                void loadCharacters()
+                  .then(() => setLoadError(null))
+                  .catch((error) => setLoadError(error instanceof Error ? error.message : (i18n.language.startsWith('zh') ? '角色加载失败' : 'Failed to load characters')));
+              }}>{i18n.language.startsWith('zh') ? '重试' : 'Retry'}</Button>}
+            >
+              {loadError}
+            </Alert>
+          ) : null}
+          {duplicateCharacterCount > 0 ? <Alert severity="warning" sx={{ mb: 2 }}>{duplicateCharacterBannerText}</Alert> : null}
+        </Box>
       ) : null}
-      {selectionMode && tab === 0 ? (
+
+      <CharacterGroupFilterBar
+        allLabel={i18n.language.startsWith('zh') ? '全部' : 'All'}
+        allValue="all"
+        allCount={custom.length}
+        options={customGroupOptions}
+        selectedValue={selectedGroup}
+        onSelect={(value) => setSelectedGroup(value || 'all')}
+        onGroupPointerDown={(group) => {
+          if (canDeleteCharacterGroup(group)) {
+            startGroupLongPress(group);
+          }
+        }}
+        onGroupPointerUp={clearGroupPressTimer}
+        onGroupPointerLeave={clearGroupPressTimer}
+        onGroupPointerCancel={clearGroupPressTimer}
+        sx={{ mb: 2 }}
+      />
+      {selectionMode ? (
         <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center', mb: 2 }}>
           <Typography variant="body2" color="text.secondary">{selectedIds.length} {i18n.language.startsWith('zh') ? '已选择' : 'selected'}</Typography>
           <Box sx={{ ml: 'auto', display: 'flex', gap: 1, flexWrap: 'wrap' }}>
@@ -685,13 +666,11 @@ export default function CharacterLibraryPage() {
       ) : displayChars.length === 0 ? (
         <EmptyState
           variant="plain"
-          message={tab === 0 ? t('character.empty') : t('common.noData')}
+          message={t('character.empty')}
           action={
-            tab === 0 ? (
-              <Button variant="outlined" onClick={openCreateForm}>
-                {t('character.create')}
-              </Button>
-            ) : undefined
+            <Button variant="outlined" onClick={openCreateForm}>
+              {t('character.create')}
+            </Button>
           }
         />
       ) : (
@@ -702,20 +681,19 @@ export default function CharacterLibraryPage() {
           }}
         >
           {displayChars.map((char) => {
-            const selectable = tab === 0 && isPresetCharacterSelectable(char);
             return (
               <CharacterCard
                 key={char.id}
                 character={char}
                 selected={selectedIdSet.has(char.id) || activeCharacterId === char.id}
-                selectable={selectable}
+                selectable
                 selectionMode={selectionMode}
-                onLongPress={selectable ? () => enterSelectionMode(char.id) : undefined}
-                onEdit={tab === 0 ? () => navigate(`/characters/${char.id}/edit`) : undefined}
-                onDelete={tab === 0 && selectable ? () => setDeleteId(char.id) : undefined}
-                onStartDirectChat={tab === 0 && !selectionMode ? () => void handleStartDirectChat(char.id, char.name) : undefined}
+                onLongPress={() => enterSelectionMode(char.id)}
+                onEdit={() => navigate(`/characters/${char.id}/edit`)}
+                onDelete={() => setDeleteId(char.id)}
+                onStartDirectChat={!selectionMode ? () => void handleStartDirectChat(char.id, char.name) : undefined}
                 onClick={() => {
-                  if (selectionMode && selectable) {
+                  if (selectionMode) {
                     toggleSelection(char.id);
                     return;
                   }
