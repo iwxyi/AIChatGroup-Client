@@ -61,6 +61,7 @@ const INDEXED_DB_OPEN_TIMEOUT_MS = 1200;
 const INDEXED_DB_READ_TIMEOUT_MS = 1200;
 let indexedDbOpenPromise: Promise<IDBDatabase | null> | null = null;
 let indexedDbLastOpenFailure: Error | null = null;
+let indexedDbConnection: IDBDatabase | null = null;
 
 function scheduleBufferedFlush(flush: () => void, delayMs: number) {
   const scheduler = (globalThis as typeof globalThis & {
@@ -126,6 +127,7 @@ function openIndexedDb() {
       if (settled) return;
       settled = true;
       globalThis.clearTimeout(timeoutHandle);
+      indexedDbConnection = database;
       resolve(database);
     };
     const timeoutHandle = globalThis.setTimeout(() => {
@@ -153,7 +155,24 @@ function openIndexedDb() {
   return indexedDbOpenPromise;
 }
 
-async function readIndexedDbItem(key: string) {
+function resetIndexedDbConnection() {
+  const database = indexedDbConnection;
+  indexedDbConnection = null;
+  indexedDbOpenPromise = null;
+  indexedDbLastOpenFailure = null;
+  try {
+    database?.close();
+  } catch {
+    // The connection may already be closed by the browser.
+  }
+}
+
+function shouldRetryIndexedDbRead(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /timed out|database is closed|transaction is inactive|invalidstateerror/i.test(message);
+}
+
+async function readIndexedDbItemOnce(key: string) {
   const database = await openIndexedDb();
   if (!database && indexedDbLastOpenFailure) throw indexedDbLastOpenFailure;
   if (!database) return null;
@@ -179,6 +198,21 @@ async function readIndexedDbItem(key: string) {
     request.onsuccess = () => finish(typeof request.result === 'string' ? request.result : null);
     request.onerror = () => fail(request.error || new Error('IndexedDB read failed'));
   });
+}
+
+async function readIndexedDbItem(key: string) {
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      return await readIndexedDbItemOnce(key);
+    } catch (error) {
+      lastError = error;
+      const retryable = shouldRetryIndexedDbRead(error);
+      if (retryable) resetIndexedDbConnection();
+      if (!retryable || attempt === 1) throw error;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(`IndexedDB read failed for ${key}`);
 }
 
 export async function readIndexedDbStorageEntryValue(key: string) {

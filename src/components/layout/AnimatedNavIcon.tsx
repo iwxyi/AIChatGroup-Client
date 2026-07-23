@@ -84,6 +84,10 @@ const iconSx: SystemStyleObject<Theme> = {
     '0%, 100%': { transform: 'translateY(0)' },
     '48%': { transform: 'translateY(-1.7px)' },
   },
+  '@keyframes navHomeOrbit': {
+    '0%, 100%': { transform: 'translate(0, 0) scale(1)' },
+    '50%': { transform: 'translate(0.8px, -1.2px) scale(1.06)' },
+  },
   '@keyframes navHomeDoor': {
     '0%, 100%': { transform: 'scaleX(1)' },
     '48%': { transform: 'scaleX(0.76)' },
@@ -100,9 +104,33 @@ const iconSx: SystemStyleObject<Theme> = {
     '0%, 100%': { transform: 'scale(1)' },
     '50%': { transform: 'scale(1.16)' },
   },
+  '@keyframes navRipple': {
+    '0%, 100%': { transform: 'scale(1)', opacity: 0.42 },
+    '50%': { transform: 'scale(1.18)', opacity: 0.88 },
+  },
   '@keyframes navAwning': {
     '0%, 100%': { transform: 'translateY(0)' },
     '50%': { transform: 'translateY(-1.4px)' },
+  },
+  '@keyframes navCardLift': {
+    '0%, 100%': { transform: 'translateY(0) scale(1)' },
+    '48%': { transform: 'translateY(-1.2px) scale(1.03)' },
+  },
+  '@keyframes navStackShift': {
+    '0%, 100%': { transform: 'translate(0, 0)' },
+    '50%': { transform: 'translate(1px, -1px)' },
+  },
+  '@keyframes navStackNear': {
+    '0%, 100%': { transform: 'translate(0, 0)' },
+    '50%': { transform: 'translate(1.1px, -1.2px)' },
+  },
+  '@keyframes navStackMid': {
+    '0%, 100%': { transform: 'translate(0, 0)' },
+    '50%': { transform: 'translate(-0.7px, 0.35px)' },
+  },
+  '@keyframes navStackFar': {
+    '0%, 100%': { transform: 'translate(0, 0)' },
+    '50%': { transform: 'translate(0.35px, 0.9px)' },
   },
   '@keyframes navMarketHandle': {
     '0%, 100%': { transform: 'translateY(0)' },
@@ -124,9 +152,17 @@ const iconSx: SystemStyleObject<Theme> = {
     '0%, 100%': { transform: 'scale(1)' },
     '50%': { transform: 'scale(1.13)' },
   },
+  '@keyframes navNodeShift': {
+    '0%, 100%': { transform: 'translateY(0)' },
+    '50%': { transform: 'translateY(-1.1px)' },
+  },
   '@keyframes navProxyFlow': {
     '0%, 100%': { strokeDashoffset: 10, opacity: 0.48 },
     '50%': { strokeDashoffset: 0, opacity: 1 },
+  },
+  '@keyframes navGatewayPulse': {
+    '0%, 100%': { transform: 'scale(1)', opacity: 0.62 },
+    '48%': { transform: 'scale(1.12)', opacity: 1 },
   },
   '@keyframes navPortPulse': {
     '0%, 100%': { transform: 'scale(1)', opacity: 0.62 },
@@ -143,6 +179,14 @@ const iconSx: SystemStyleObject<Theme> = {
   '@keyframes navGemPulse': {
     '0%, 100%': { transform: 'scale(1)', opacity: 0.78 },
     '45%, 68%': { transform: 'scale(1.22)', opacity: 1 },
+  },
+  '@keyframes navBadgeGlow': {
+    '0%, 100%': { transform: 'scale(1)', opacity: 0.72 },
+    '52%': { transform: 'scale(1.08)', opacity: 1 },
+  },
+  '@keyframes navBadgeSweep': {
+    '0%, 100%': { transform: 'translateX(0)', opacity: 0.56 },
+    '50%': { transform: 'translateX(1.4px)', opacity: 1 },
   },
   '@keyframes navSliderA': {
     '0%, 100%': { transform: 'translateX(0)' },
@@ -172,52 +216,91 @@ const iconSx: SystemStyleObject<Theme> = {
     '0%, 100%': { strokeDashoffset: 10, opacity: 0.5 },
     '42%, 72%': { strokeDashoffset: 0, opacity: 1 },
   },
-  '.PneumataNavButton:hover & .home-roof, &.is-active .home-roof': {
+  '.PneumataNavButton:hover & .home-roof': {
     animation: 'navHomeRoof 1.8s ease-in-out infinite',
   },
-  '.PneumataNavButton:hover & .home-door, &.is-active .home-door': {
+  '.PneumataNavButton:hover & .home-door': {
     animation: 'navHomeDoor 1.8s ease-in-out infinite',
+  },
+  '.PneumataNavButton:hover & .home-orbit': {
+    animation: 'navHomeOrbit 1.8s ease-in-out infinite',
   },
   '.PneumataNavButton:hover & .typing-a': { animation: 'navTypingDot 960ms ease-in-out infinite' },
   '.PneumataNavButton:hover & .typing-b': { animation: 'navTypingDot 960ms ease-in-out 120ms infinite' },
   '.PneumataNavButton:hover & .typing-c': { animation: 'navTypingDot 960ms ease-in-out 240ms infinite' },
-  '.PneumataNavButton:hover & .person-step, &.is-active .person-step': {
+  '.PneumataNavButton:hover & .person-step': {
     animation: 'navPersonStep 1.55s ease-in-out infinite',
   },
-  '.PneumataNavButton:hover & .focus-core, &.is-active .focus-core': {
+  '.PneumataNavButton:hover & .focus-core': {
     animation: 'navFocus 1.45s ease-in-out infinite',
   },
-  '.PneumataNavButton:hover & .awning, &.is-active .awning': {
+  '.PneumataNavButton:hover & .moment-ripple': {
+    animation: 'navRipple 1.45s ease-in-out infinite',
+  },
+  '.PneumataNavButton:hover & .awning': {
     animation: 'navAwning 1.55s ease-in-out infinite',
   },
-  '.PneumataNavButton:hover & .market-handle, &.is-active .market-handle': {
+  '.PneumataNavButton:hover & .market-card': {
+    animation: 'navCardLift 1.45s ease-in-out infinite',
+  },
+  '.PneumataNavButton:hover & .market-stack': {
+    animation: 'navStackShift 1.45s ease-in-out infinite',
+  },
+  '.PneumataNavButton:hover & .market-stack-near': {
+    animation: 'navStackNear 1.45s ease-in-out infinite',
+  },
+  '.PneumataNavButton:hover & .market-stack-mid': {
+    animation: 'navStackMid 1.55s ease-in-out infinite',
+  },
+  '.PneumataNavButton:hover & .market-stack-far': {
+    animation: 'navStackFar 1.65s ease-in-out infinite',
+  },
+  '.PneumataNavButton:hover & .market-handle': {
     animation: 'navMarketHandle 1.45s ease-in-out infinite',
   },
-  '.PneumataNavButton:hover & .mark-draw, &.is-active .mark-draw': {
+  '.PneumataNavButton:hover & .mark-draw': {
     animation: 'navMarkDraw 1.45s ease-in-out infinite',
   },
-  '.PneumataNavButton:hover & .letter-flap, &.is-active .letter-flap': {
+  '.PneumataNavButton:hover & .letter-flap': {
     animation: 'navEnvelopeOpen 1.55s ease-in-out infinite',
   },
-  '.PneumataNavButton:hover & .model-flow, &.is-active .model-flow': {
+  '.PneumataNavButton:hover & .model-flow': {
     animation: 'navModelFlow 1.35s ease-in-out infinite',
   },
-  '.PneumataNavButton:hover & .core-pulse, &.is-active .core-pulse': {
+  '.PneumataNavButton:hover & .core-pulse': {
     animation: 'navCorePulse 1.45s ease-in-out infinite',
   },
-  '.PneumataNavButton:hover & .proxy-flow, &.is-active .proxy-flow': {
+  '.PneumataNavButton:hover & .model-node-a, .PneumataNavButton:hover & .model-node-b': {
+    animation: 'navNodeShift 1.45s ease-in-out infinite',
+  },
+  '.PneumataNavButton:hover & .model-node-b': {
+    animationDelay: '120ms',
+  },
+  '.PneumataNavButton:hover & .proxy-flow': {
     animation: 'navProxyFlow 1.25s ease-in-out infinite',
   },
-  '.PneumataNavButton:hover & .port-pulse, &.is-active .port-pulse': {
+  '.PneumataNavButton:hover & .gateway-pulse': {
+    animation: 'navGatewayPulse 1.35s ease-in-out infinite',
+  },
+  '.PneumataNavButton:hover & .port-pulse': {
     animation: 'navPortPulse 1.35s ease-in-out infinite',
   },
-  '.PneumataNavButton:hover & .crown-shine, &.is-active .crown-shine': {
-    animation: 'navCrownShine 1.55s ease-in-out infinite',
+  '.PneumataNavButton:hover & .badge-glow': {
+    animation: 'navBadgeGlow 1.35s ease-in-out infinite',
   },
-  '.PneumataNavButton:hover & .crown-lift, &.is-active .crown-lift': {
+  '.PneumataNavButton:hover & .badge-sweep': {
+    animation: 'navBadgeSweep 1.35s ease-in-out infinite',
+  },
+  '.PneumataNavButton:hover & .badge-lift': {
     animation: 'navCrownLift 1.45s ease-in-out infinite',
   },
-  '.PneumataNavButton:hover & .gem-pulse, &.is-active .gem-pulse': {
+  '.PneumataNavButton:hover & .crown-shine': {
+    animation: 'navCrownShine 1.55s ease-in-out infinite',
+  },
+  '.PneumataNavButton:hover & .crown-lift': {
+    animation: 'navCrownLift 1.45s ease-in-out infinite',
+  },
+  '.PneumataNavButton:hover & .gem-pulse': {
     animation: 'navGemPulse 1.2s ease-in-out infinite',
   },
   '.PneumataNavButton:hover & .setting-track': {
@@ -232,10 +315,10 @@ const iconSx: SystemStyleObject<Theme> = {
   '.PneumataNavButton:hover & .setting-c': {
     animation: 'navSliderC 1.55s cubic-bezier(.37,0,.2,1) infinite',
   },
-  '.PneumataNavButton:hover & .intro-needle, &.is-active .intro-needle': {
+  '.PneumataNavButton:hover & .intro-needle': {
     animation: 'navNeedle 1.6s ease-in-out infinite',
   },
-  '.PneumataNavButton:hover & .intro-path, &.is-active .intro-path': {
+  '.PneumataNavButton:hover & .intro-path': {
     animation: 'navIntroPath 1.6s ease-in-out infinite',
   },
   '.PneumataNavButton:active & svg': {
@@ -270,6 +353,7 @@ function iconPaths(kind: AnimatedNavIconKind) {
           <path className="home-roof" d="M4.8 11 12 5l7.2 6" />
           <path d="M6.7 10.8v6.8c0 .8.6 1.4 1.4 1.4h7.8c.8 0 1.4-.6 1.4-1.4v-6.8" />
           <path className="accent home-door" d="M10.1 19v-4.3c0-.4.3-.7.7-.7h2.4c.4 0 .7.3.7.7V19" />
+          <circle className="accent home-orbit" cx="16.8" cy="7.8" r="0.75" />
         </>
       );
     case 'chats':
@@ -296,20 +380,28 @@ function iconPaths(kind: AnimatedNavIconKind) {
     case 'moments':
       return (
         <>
-          <path className="surface" d="M5 12s2.4-4.6 7-4.6 7 4.6 7 4.6-2.4 4.6-7 4.6S5 12 5 12Z" />
-          <path d="M5 12s2.4-4.6 7-4.6 7 4.6 7 4.6-2.4 4.6-7 4.6S5 12 5 12Z" />
-          <circle className="accent-surface focus-core" cx="12" cy="12" r="2.45" />
-          <circle className="accent focus-core" cx="12" cy="12" r="2.45" />
-          <path className="muted" d="M8.5 6.2c.9-.5 2.1-.8 3.5-.8s2.6.3 3.5.8" />
+          <path className="surface" d="M5.4 13.2c1.1-3.8 3.2-5.9 6.1-6.3 3.4-.4 5.8 1.2 7.1 4.8" />
+          <path d="M5.4 13.2c1.1-3.8 3.2-5.9 6.1-6.3 3.4-.4 5.8 1.2 7.1 4.8" />
+          <path className="muted" d="M6.7 16.1c2.4 1.7 5 2.2 7.7 1.4 1.4-.4 2.5-1.1 3.4-2.1" />
+          <circle className="accent-surface focus-core" cx="8" cy="12" r="1.55" />
+          <circle className="accent focus-core" cx="8" cy="12" r="1.55" />
+          <circle className="surface" cx="13.7" cy="7.2" r="1.25" />
+          <circle cx="13.7" cy="7.2" r="1.25" />
+          <circle className="surface" cx="17.1" cy="14.4" r="1.25" />
+          <circle cx="17.1" cy="14.4" r="1.25" />
+          <path className="accent moment-ripple" d="m13.6 15.2.4.8.9.1-.7.6.2.9-.8-.4-.8.4.2-.9-.7-.6.9-.1Z" />
         </>
       );
     case 'market':
       return (
         <>
-          <path className="surface" d="M6.4 9.5h11.2l-.8 8.3c-.1.8-.7 1.4-1.5 1.4H8.7c-.8 0-1.4-.6-1.5-1.4Z" />
-          <path d="M6.4 9.5h11.2l-.8 8.3c-.1.8-.7 1.4-1.5 1.4H8.7c-.8 0-1.4-.6-1.5-1.4Z" />
-          <path className="accent market-handle" d="M9 9.5V8.2c0-1.6 1.3-2.9 3-2.9s3 1.3 3 2.9v1.3" />
-          <path className="muted" d="M9.2 13.5h5.6" />
+          <path className="muted market-stack-far" d="m6.1 15.1 5.9 3 5.9-3" />
+          <path className="surface market-stack-mid" d="m6.1 12.1 5.9 3 5.9-3" />
+          <path className="surface market-stack-near" d="m6.1 9.2 5.9-3 5.9 3-5.9 3Z" />
+          <path className="accent market-stack-near" d="m6.1 9.2 5.9 3 5.9-3" />
+          <path className="accent market-stack-mid" d="M12 12.2v2.9" />
+          <path className="muted market-stack-far" d="M12 15.1v3" />
+          <circle className="accent market-handle" cx="12" cy="9.2" r="1.2" />
         </>
       );
     case 'calendar':
@@ -328,43 +420,45 @@ function iconPaths(kind: AnimatedNavIconKind) {
         <>
           <rect className="surface" x="4.9" y="7.1" width="14.2" height="10.6" rx="2" />
           <rect x="4.9" y="7.1" width="14.2" height="10.6" rx="2" />
-          <path className="accent letter-flap" d="M8.3 6.2h7.4" />
-          <path className="accent letter-flap" d="M5.9 8.6 12 13l6.1-4.4" />
+          <path className="accent letter-flap" d="M5.9 8.4 12 12.9l6.1-4.5" />
           <path className="muted" d="m5.9 16.7 4.2-3.3M18.1 16.7l-4.2-3.3" />
         </>
       );
     case 'models':
       return (
         <>
-          <path className="accent model-flow" d="M8.4 8.4 12 12.1l3.6-3.7M12 12.1v4.8" strokeDasharray="9" strokeDashoffset="9" />
-          <circle className="surface" cx="8.4" cy="8.4" r="2.5" />
-          <circle cx="8.4" cy="8.4" r="2.5" />
-          <circle className="surface" cx="15.6" cy="8.4" r="2.5" />
-          <circle cx="15.6" cy="8.4" r="2.5" />
+          <path className="accent model-flow" d="M8.6 8.8 12 12.1l3.4-3.3M12 12.1v4.2" strokeDasharray="9" strokeDashoffset="9" />
+          <circle className="surface model-node-a" cx="8.6" cy="8.8" r="2.35" />
+          <circle className="model-node-a" cx="8.6" cy="8.8" r="2.35" />
+          <circle className="surface model-node-b" cx="15.4" cy="8.8" r="2.35" />
+          <circle className="model-node-b" cx="15.4" cy="8.8" r="2.35" />
           <circle className="accent-surface core-pulse" cx="12" cy="16.9" r="2.55" />
           <circle className="accent core-pulse" cx="12" cy="16.9" r="2.55" />
-          <circle className="muted" cx="12" cy="12.1" r="0.9" />
+          <circle className="muted" cx="12" cy="12.1" r="0.82" />
         </>
       );
     case 'proxy':
       return (
         <>
-          <rect className="surface" x="5.2" y="6.4" width="13.6" height="11.2" rx="2.7" />
-          <rect x="5.2" y="6.4" width="13.6" height="11.2" rx="2.7" />
-          <path className="accent proxy-flow" d="M8 10.2h6.1l-1.5-1.5M16 13.8H9.9l1.5 1.5" strokeDasharray="10" strokeDashoffset="10" />
-          <circle className="accent-surface port-pulse" cx="7.7" cy="12" r="1.05" />
-          <circle className="accent port-pulse" cx="7.7" cy="12" r="1.05" />
-          <circle className="surface" cx="16.3" cy="12" r="1.05" />
-          <circle cx="16.3" cy="12" r="1.05" />
+          <rect className="surface" x="5.1" y="7.1" width="4.1" height="9.8" rx="1.9" />
+          <rect x="5.1" y="7.1" width="4.1" height="9.8" rx="1.9" />
+          <rect className="surface gateway-pulse" x="14.8" y="7.1" width="4.1" height="9.8" rx="1.9" />
+          <rect className="gateway-pulse" x="14.8" y="7.1" width="4.1" height="9.8" rx="1.9" />
+          <path className="accent proxy-flow" d="M9.8 10.2h4.4l-1.3-1.3M14.2 13.8H9.8l1.3 1.3" strokeDasharray="10" strokeDashoffset="10" />
+          <circle className="accent-surface port-pulse" cx="7.15" cy="12" r="0.9" />
+          <circle className="accent port-pulse" cx="7.15" cy="12" r="0.9" />
+          <circle className="surface" cx="16.85" cy="12" r="0.9" />
+          <circle cx="16.85" cy="12" r="0.9" />
         </>
       );
     case 'membership':
       return (
         <>
-          <path className="accent-surface crown-lift" d="M5.8 9.9 8.9 6.2l3.1 4 3.1-4 3.1 3.7-1 7H6.8Z" />
-          <path className="crown-lift" d="M5.8 9.9 8.9 6.2l3.1 4 3.1-4 3.1 3.7-1 7H6.8Z" />
-          <circle className="accent gem-pulse" cx="12" cy="12.7" r="1.15" />
-          <path className="accent crown-shine" d="M8.4 18.4h7.2" />
+          <path className="accent-surface badge-lift" d="M12 5.5 18.2 8v4.4c0 3.2-2.2 5.3-6.2 6.3-4-1-6.2-3.1-6.2-6.3V8Z" />
+          <path className="badge-lift" d="M12 5.5 18.2 8v4.4c0 3.2-2.2 5.3-6.2 6.3-4-1-6.2-3.1-6.2-6.3V8Z" />
+          <path className="muted" d="M9.2 11.2h5.6M9.9 13.7h4.2" />
+          <circle className="accent-surface badge-glow" cx="16.8" cy="7.2" r="1.25" />
+          <path className="accent badge-sweep" d="m16.8 6.5.3.6.7.1-.5.5.1.7-.6-.3-.6.3.1-.7-.5-.5.7-.1Z" />
         </>
       );
     case 'settings':

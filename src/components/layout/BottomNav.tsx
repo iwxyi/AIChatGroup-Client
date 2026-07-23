@@ -78,18 +78,44 @@ export default function BottomNav() {
         showLabels
         sx={{
           height: 54,
+          position: 'relative',
           bgcolor: 'transparent',
           borderRadius: 1.5,
+          '&::before': {
+            content: '""',
+            position: 'absolute',
+            zIndex: 0,
+            top: 2,
+            bottom: 2,
+            left: `calc(${currentIndex * 25}% + 0.5%)`,
+            width: '24%',
+            borderRadius: 1.25,
+            pointerEvents: 'none',
+            background: (theme) => theme.palette.mode === 'light'
+              ? 'rgba(255,255,255,0.72)'
+              : 'rgba(255,255,255,0.075)',
+            border: '1px solid',
+            borderColor: (theme) => theme.palette.mode === 'light'
+              ? 'rgba(15,23,42,0.055)'
+              : 'rgba(226,232,240,0.09)',
+            boxShadow: (theme) => theme.palette.mode === 'light'
+              ? '0 4px 14px rgba(15,23,42,0.06)'
+              : '0 4px 16px rgba(0,0,0,0.16)',
+            transition: 'left 260ms cubic-bezier(.2,.8,.2,1), background-color 220ms ease, box-shadow 220ms ease',
+          },
           '& .MuiBottomNavigationAction-root': {
             minWidth: 0,
             color: 'text.secondary',
+            position: 'relative',
+            zIndex: 1,
             borderRadius: 1,
             mx: 0.2,
             my: 0.25,
             py: 0.25,
-            transition: 'color 220ms ease, background-color 220ms ease',
+            backgroundColor: 'transparent',
+            transition: 'color 220ms ease, opacity 220ms ease',
             '&:hover': {
-              bgcolor: 'rgba(148,163,184,0.08)',
+              bgcolor: 'transparent',
             },
           },
           '& .Mui-selected': {

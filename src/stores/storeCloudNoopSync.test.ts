@@ -31,6 +31,7 @@ const apiMocks = vi.hoisted(() => ({
   getSettings: vi.fn(),
   getChat: vi.fn(),
   getChats: vi.fn(),
+  getMessages: vi.fn(),
   getDeletedChats: vi.fn(),
   syncChatPatch: vi.fn(),
   getCharacter: vi.fn(),
@@ -53,6 +54,7 @@ vi.mock('../services/api', async () => {
       getSettings: apiMocks.getSettings,
       getChat: apiMocks.getChat,
       getChats: apiMocks.getChats,
+      getMessages: apiMocks.getMessages,
       getDeletedChats: apiMocks.getDeletedChats,
       syncChatPatch: apiMocks.syncChatPatch,
       getCharacter: apiMocks.getCharacter,
@@ -192,6 +194,50 @@ describe('cloud no-op sync', () => {
     expect(apiMocks.getSettings).not.toHaveBeenCalled();
     expect(apiMocks.getChats).not.toHaveBeenCalled();
     expect(apiMocks.getCharacters).not.toHaveBeenCalled();
+  });
+
+  it('opens a locally cached message window when cloud sync is explicitly disabled', async () => {
+    const accountId = `local-message-user-${Date.now()}-${Math.random()}`;
+    const chatId = 'local-message-chat';
+    localStorage.setItem(storageKey('cloud-sync-enabled'), '0');
+    localStorage.setItem(storageKey('cloud-sync-user-disabled'), '1');
+    localStorage.setItem(storageKey('cloud-sync-user-disabled-version'), '2');
+    localStorage.setItem(storageKey('user'), JSON.stringify({ id: accountId }));
+    localStorage.setItem(storageKey(`messages-${accountId}`), JSON.stringify({
+      state: {
+        messageWindowsByChatId: {
+          [chatId]: {
+            messages: [{
+              id: 'local-message-1',
+              clientKey: 'local-message-1',
+              chatId,
+              type: 'user',
+              senderId: 'user',
+              senderName: '我',
+              content: '本地缓存消息',
+              metadata: {},
+              emotion: 0,
+              timestamp: 100,
+              isDeleted: false,
+            }],
+            lastSyncedAt: 100,
+            updatedAt: 100,
+            remoteExhausted: true,
+            remoteNewerExhausted: true,
+            activeLimit: 40,
+          },
+        },
+        pendingOperations: [],
+      },
+      version: 5,
+    }));
+    const { useMessageStore } = await import('./useMessageStore');
+
+    await useMessageStore.getState().openChatWindow(chatId, { limit: 40, revalidate: true });
+
+    expect(useMessageStore.getState().messages.map((message) => message.content)).toEqual(['本地缓存消息']);
+    expect(useMessageStore.getState().messageWindowsByChatId[chatId]?.messages).toHaveLength(1);
+    expect(apiMocks.getMessages).not.toHaveBeenCalled();
   });
 
   it('shows local chats and characters first when cloud sync is enabled but remote sync is pending', async () => {

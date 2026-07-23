@@ -149,13 +149,61 @@ describe('storePersistenceScope', () => {
     });
 
     const resultPromise = storage.getItem('blocked-chats');
-    await vi.advanceTimersByTimeAsync(1200);
+    await vi.advanceTimersByTimeAsync(2400);
 
     await expect(resultPromise).resolves.toBeNull();
     expect(readPersistenceHealth().latestFailure).toMatchObject({
       name: 'blocked-chats-user-1',
       reason: 'read_failed',
     });
+    warnSpy.mockRestore();
+  });
+
+  it('reopens IndexedDB and retries once after a stale connection read timeout', async () => {
+    const rawStorage = createStorageMock();
+    vi.stubGlobal('localStorage', rawStorage);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    let openCount = 0;
+    let readCount = 0;
+    const database = {
+      close: vi.fn(),
+      transaction: () => ({
+        objectStore: () => ({
+          get: () => {
+            const request = {} as IDBRequest<string>;
+            readCount += 1;
+            if (readCount > 1) {
+              queueMicrotask(() => {
+                Object.defineProperty(request, 'result', { value: JSON.stringify({ state: 'retried-value', version: 5 }) });
+                request.onsuccess?.(new Event('success'));
+              });
+            }
+            return request;
+          },
+        }),
+      }),
+    } as unknown as IDBDatabase;
+    vi.stubGlobal('indexedDB', {
+      open: vi.fn(() => {
+        openCount += 1;
+        const request = {} as IDBOpenDBRequest;
+        Object.defineProperty(request, 'result', { value: database });
+        queueMicrotask(() => request.onsuccess?.(new Event('success')));
+        return request;
+      }),
+    });
+    const storage = createScopedIndexedDbBufferedJsonStorage<string>({
+      getScopedKey: () => 'retry-messages-user-1',
+      storageName: 'retry-messages',
+    });
+
+    const resultPromise = storage.getItem('retry-messages');
+    await vi.advanceTimersByTimeAsync(1200);
+    await vi.advanceTimersByTimeAsync(0);
+
+    await expect(resultPromise).resolves.toEqual({ state: 'retried-value', version: 5 });
+    expect(openCount).toBe(2);
+    expect(database.close).toHaveBeenCalledTimes(1);
     warnSpy.mockRestore();
   });
 
