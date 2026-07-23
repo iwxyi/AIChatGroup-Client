@@ -2097,28 +2097,37 @@ function mergeGuidanceMediaDecision(params: {
   speaker: AICharacter;
   characters: AICharacter[];
   content: string;
+  mediaCapabilities?: { image: boolean; audio: boolean };
 }): MediaGenerationDecision | null | undefined {
-  if (!shouldForceGuidanceMedia(params.guidance, params.speaker) || !params.guidance) return params.decision;
+  const supportedDecision: MediaGenerationDecision | null | undefined = params.decision ? {
+    ...params.decision,
+    image: params.mediaCapabilities?.image === false ? undefined : params.decision.image,
+    audio: params.mediaCapabilities?.audio === false ? undefined : params.decision.audio,
+  } : params.decision;
+  const hasSupportedDecision = Boolean(supportedDecision?.image?.shouldGenerate || supportedDecision?.audio?.shouldGenerate);
+  if (!shouldForceGuidanceMedia(params.guidance, params.speaker) || !params.guidance || params.mediaCapabilities?.image === false) {
+    return hasSupportedDecision ? supportedDecision : undefined;
+  }
   const forced = buildForcedImagePrompt({
     guidance: params.guidance,
     speaker: params.speaker,
     characters: params.characters,
     content: params.content,
   });
-  if (!forced) return params.decision;
-  if (params.decision?.image?.shouldGenerate && params.decision.image.prompt && params.decision.image.altText) {
+  if (!forced) return hasSupportedDecision ? supportedDecision : undefined;
+  if (supportedDecision?.image?.shouldGenerate && supportedDecision.image.prompt && supportedDecision.image.altText) {
     return {
-      ...(params.decision || {}),
+      ...(supportedDecision || {}),
       image: {
-        ...params.decision.image,
-        referenceCharacterIds: params.decision.image.referenceCharacterIds?.length
-          ? params.decision.image.referenceCharacterIds
+        ...supportedDecision.image,
+        referenceCharacterIds: supportedDecision.image.referenceCharacterIds?.length
+          ? supportedDecision.image.referenceCharacterIds
           : forced.referenceCharacterIds,
       },
     };
   }
   return {
-    ...(params.decision || {}),
+    ...(supportedDecision || {}),
     image: {
       shouldGenerate: true,
       reason: '用户明确要求这个角色发送或创作图片。',
@@ -2149,7 +2158,9 @@ function resolveProfileForCharacter(character: AICharacter, profiles: AIModelPro
   const profileId = getCharacterModelProfileId(character, type);
   const matched = profileId
     ? profiles.find((profile) => profile.id === profileId && profile.type === type)
-    : getPreferredAIProfile(profiles, type);
+    : profiles.find((profile) => profile.type === type && profile.isDefault)
+      || profiles.find((profile) => profile.type === type)
+      || null;
   return isAIProfileUsable(matched) ? matched : null;
 }
 
@@ -2163,8 +2174,8 @@ function buildMediaCapabilities(character: AICharacter, profiles?: AIModelProfil
 }
 
 function resolveMediaProfiles(apiConfig: APIConfig | AIModelProfile[], profiles?: AIModelProfile[]) {
-  if (profiles?.length) return profiles;
-  return Array.isArray(apiConfig) ? apiConfig : undefined;
+  if (Array.isArray(apiConfig)) return apiConfig;
+  return profiles?.length ? profiles : undefined;
 }
 
 function stableAttachmentSeed(parts: Array<string | number | undefined>) {
@@ -3639,6 +3650,7 @@ export async function generateSpeakerMessage(params: {
     speaker: params.speaker,
     characters: effectiveMembers,
     content: generatedStoryResponse,
+    mediaCapabilities,
   });
   const forcedMediaQueued = Boolean(
     userGuidance?.mediaRequest

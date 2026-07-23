@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { Box, Button, Chip, LinearProgress, Typography, keyframes } from '@mui/material';
 import type { Message, MessageAttachment, NarrativeBlock } from '../../types/message';
 import type { AICharacter } from '../../types/character';
 import { getAttachmentStatusDetail, getAttachmentStatusLabel } from '../../services/messageAttachmentDisplay';
+import { getRichMediaQueueSnapshot, subscribeRichMediaQueue, type RichMediaQueueSnapshotEntry } from '../../services/richMessageMedia';
 import MarkdownText from '../common/MarkdownText';
 import { formatNarrativeLineText } from '../../services/narrativeLinePresentation';
 import { useSettingsStore } from '../../stores/useSettingsStore';
@@ -82,15 +83,15 @@ function parseAttachmentRatio(attachment: Pick<MessageAttachment, 'width' | 'hei
   return 4 / 3;
 }
 
-function buildAttachmentQueueProgress(message: Message, attachment: MessageAttachment) {
-  const attachments = (message.metadata?.attachments || []).filter((item) => item.kind === attachment.kind && item.status !== 'deleted');
-  const index = attachments.findIndex((item) => item.id === attachment.id);
-  if (index < 0) return '';
-  const total = attachments.length;
-  const position = index + 1;
-  const frontCount = attachments.slice(0, index).filter((item) => item.status === 'queued' || item.status === 'generating').length;
-  if (attachment.status === 'queued') return `排队 ${position}/${total}，前面还有 ${frontCount} 张`;
-  if (attachment.status === 'generating') return `队列 ${position}/${total}`;
+export function buildAttachmentQueueProgress(
+  message: Message,
+  attachment: MessageAttachment,
+  queueSnapshot: RichMediaQueueSnapshotEntry[] = [],
+) {
+  const entry = queueSnapshot.find((item) => item.messageId === message.id && item.attachmentId === attachment.id);
+  if (!entry) return '';
+  if (entry.status === 'queued') return `聊天图片队列 ${entry.position}/${entry.total}`;
+  if (entry.status === 'generating') return `聊天图片生成中 ${entry.position}/${entry.total}`;
   return '';
 }
 
@@ -296,6 +297,11 @@ export function MessageContent({ message, onRetryMedia, onOpenImage, onOpenDiagr
   onOpenDiagram?: (message: Message, diagram: { source: string; svg: string; dataUrl: string }) => void;
   compactMediaLayout?: boolean;
 }) {
+  const richMediaQueueSnapshot = useSyncExternalStore(
+    subscribeRichMediaQueue,
+    getRichMediaQueueSnapshot,
+    getRichMediaQueueSnapshot,
+  );
   const attachments = message.metadata?.attachments || [];
   const shouldHideMediaPlaceholderText = shouldHideGeneratedMediaPlaceholderText(message);
   const isAttachmentProcessing = (status: string | undefined) => status === 'queued' || status === 'generating' || status === 'placeholder';
@@ -351,9 +357,9 @@ export function MessageContent({ message, onRetryMedia, onOpenImage, onOpenDiagr
               <Box>
                 <Chip size="small" label={getAttachmentStatusLabel(attachment)} color={statusChipColor(attachment.status)} variant="outlined" sx={{ height: 22 }} />
               </Box>
-              {buildAttachmentQueueProgress(message, attachment) ? (
+              {buildAttachmentQueueProgress(message, attachment, richMediaQueueSnapshot) ? (
                 <Typography variant="caption" color="text.secondary">
-                  {buildAttachmentQueueProgress(message, attachment)}
+                  {buildAttachmentQueueProgress(message, attachment, richMediaQueueSnapshot)}
                 </Typography>
               ) : null}
               {isAttachmentProcessing(attachment.status) ? <LinearProgress /> : null}

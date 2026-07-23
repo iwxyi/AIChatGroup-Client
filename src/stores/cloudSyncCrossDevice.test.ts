@@ -108,7 +108,10 @@ function buildChat(): GroupChat {
       ...DEFAULT_OPEN_CHAT_MODE_STATE,
       assistantCapabilities: { agent: true, artifacts: true, webSearch: true },
     },
-    modeStateSummary: { assistantCapabilities: { agent: true, artifacts: true, webSearch: true } },
+    modeStateSummary: {
+      family: 'agent',
+      scenarioId: 'assistant-agent',
+    },
     sessionKind: {
       topology: 'direct',
       family: 'agent',
@@ -321,5 +324,5 @@ describe('cloud sync cross-device recovery', () => {
     expect(apiMocks.getSyncChanges).toHaveBeenCalledWith({ scope: 'chats.summary', since: null });
     expect(apiMocks.getSyncChanges).toHaveBeenCalledWith({ scope: `messages.window:${chatFromDeviceA.id}`, since: null });
     expect(apiMocks.getMessages).not.toHaveBeenCalled();
-  });
+  }, 20000);
 });

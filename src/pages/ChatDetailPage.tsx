@@ -77,6 +77,13 @@ const CHAT_MESSAGE_WINDOW_SIZE = 40;
 const STORY_CHOICE_COLLAPSE_MS = 420;
 const STORY_READING_POSITION_SAVE_MS = 700;
 
+function isRecoverableRichMediaAttachment(attachment: Pick<MessageAttachment, 'kind' | 'status'>) {
+  return (
+    (attachment.kind === 'image' || attachment.kind === 'audio')
+    && (attachment.status === 'queued' || attachment.status === 'generating')
+  );
+}
+
 type ProfilePreviewState =
   | { kind: 'character'; anchorRect: DOMRect; anchorElement: HTMLElement; character: AICharacter }
   | { kind: 'chat'; anchorRect: DOMRect; anchorElement: HTMLElement };
@@ -1049,6 +1056,35 @@ export default function ChatDetailPage() {
       ? projectActiveBranchMessages(chat, currentChatAllMessages)
       : currentChatAllMessages
   ), [chat, currentChatAllMessages]);
+  const queuedRichMediaSignature = useMemo(() => currentChatMessages
+    .flatMap((message) => (message.metadata?.attachments || [])
+      .filter(isRecoverableRichMediaAttachment)
+      .map((attachment) => `${message.id}:${attachment.id}:${attachment.updatedAt || attachment.createdAt || 0}`))
+    .join('|'), [currentChatMessages]);
+  useEffect(() => {
+    if (!queuedRichMediaSignature || !aiProfiles.length) return undefined;
+    const messagesWithQueuedMedia = currentChatMessages.filter((message) => (
+      message.metadata?.attachments?.some(isRecoverableRichMediaAttachment)
+    ));
+    if (!messagesWithQueuedMedia.length) return undefined;
+    let cancelled = false;
+    void import('../services/richMessageMedia').then(({ processRichMessageMedia }) => {
+      if (cancelled) return;
+      messagesWithQueuedMedia.forEach((message) => {
+        const speaker = characters.find((character) => character.id === message.senderId) || null;
+        void processRichMessageMedia({
+          message,
+          character: speaker,
+          characters,
+          aiProfiles,
+          upsertMessage,
+        });
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [aiProfiles, characters, currentChatMessages, queuedRichMediaSignature, upsertMessage]);
   const messageWindowDebugSignatureRef = useRef('');
   useEffect(() => {
     if (!id || typeof console === 'undefined') return;

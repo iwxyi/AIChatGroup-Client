@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AICharacter } from '../types/character';
 import type { Message } from '../types/message';
 import type { AIModelProfile } from '../types/settings';
-import { processRichMessageMedia, retryRichMessageMedia } from './richMessageMedia';
+import { getRichMediaQueueSnapshot, processRichMessageMedia, resetRichMediaQueueForTests, retryRichMessageMedia } from './richMessageMedia';
 import { generateImageWithAdapter } from './aiGenerationAdapter';
 import { api } from './api';
 
@@ -127,6 +127,7 @@ describe('processRichMessageMedia', () => {
   beforeEach(() => {
     Object.defineProperty(globalThis, 'localStorage', { value: localStorageMock, configurable: true });
     vi.clearAllMocks();
+    resetRichMediaQueueForTests();
     localStorage.clear();
     chatStoreState.chats = [];
     artifactStoreState.createImageArtifactFromAttachment.mockReset();
@@ -495,6 +496,96 @@ describe('processRichMessageMedia', () => {
     expect(upserts.at(-1)?.metadata?.attachments?.[1]).toMatchObject({
       status: 'ready',
       url: 'data:image/png;base64,second',
+    });
+  });
+
+  it('serializes media generation across different assistant messages with one global queue', async () => {
+    const first = deferred<Array<{ dataUrl: string; mimeType: string }>>();
+    const second = deferred<Array<{ dataUrl: string; mimeType: string }>>();
+    vi.mocked(generateImageWithAdapter)
+      .mockImplementationOnce(() => first.promise)
+      .mockImplementationOnce(() => second.promise);
+    const firstUpserts: Message[] = [];
+    const secondUpserts: Message[] = [];
+    const firstRun = processRichMessageMedia({
+      message: buildQueuedImageMessage({ id: 'message-first' }),
+      character,
+      aiProfiles: [imageProfile],
+      upsertMessage: (message) => firstUpserts.push(message),
+    });
+    const secondRun = processRichMessageMedia({
+      message: buildQueuedImageMessage({ id: 'message-second' }),
+      character,
+      aiProfiles: [imageProfile],
+      upsertMessage: (message) => secondUpserts.push(message),
+    });
+
+    await waitForExpectation(() => {
+      expect(firstUpserts.at(-1)?.metadata?.attachments?.[0]?.status).toBe('generating');
+      expect(secondUpserts).toHaveLength(0);
+      expect(getRichMediaQueueSnapshot()).toEqual([
+        expect.objectContaining({ messageId: 'message-first', attachmentId: 'image-1', status: 'generating', position: 1, total: 2 }),
+        expect.objectContaining({ messageId: 'message-second', attachmentId: 'image-1', status: 'queued', position: 2, total: 2 }),
+      ]);
+    });
+
+    first.resolve([{ dataUrl: 'data:image/png;base64,first-global', mimeType: 'image/png' }]);
+    await waitForExpectation(() => {
+      expect(firstUpserts.at(-1)?.metadata?.attachments?.[0]?.status).toBe('ready');
+      expect(secondUpserts.at(-1)?.metadata?.attachments?.[0]?.status).toBe('generating');
+      expect(getRichMediaQueueSnapshot()).toEqual([
+        expect.objectContaining({ messageId: 'message-second', attachmentId: 'image-1', status: 'generating', position: 1, total: 1 }),
+      ]);
+    });
+
+    second.resolve([{ dataUrl: 'data:image/png;base64,second-global', mimeType: 'image/png' }]);
+    await Promise.all([firstRun, secondRun]);
+
+    expect(secondUpserts.at(-1)?.metadata?.attachments?.[0]).toMatchObject({
+      status: 'ready',
+      url: 'data:image/png;base64,second-global',
+    });
+  });
+
+  it('recovers a stale generating attachment into the global queue', async () => {
+    vi.mocked(generateImageWithAdapter).mockResolvedValue([{
+      dataUrl: 'data:image/png;base64,recovered',
+      mimeType: 'image/png',
+    }]);
+    const staleMessage = buildQueuedImageMessage({
+      id: 'message-stale-generating',
+      metadata: {
+        attachments: [{
+          id: 'image-1',
+          kind: 'image',
+          status: 'generating',
+          generationJobId: 'stale-job',
+          promptText: '恢复中的番茄炒蛋',
+          altText: '恢复中的番茄炒蛋',
+          createdAt: 123,
+          updatedAt: 456,
+        }],
+      },
+    });
+    const upserts: Message[] = [];
+
+    const run = processRichMessageMedia({
+      message: staleMessage,
+      character,
+      aiProfiles: [imageProfile],
+      upsertMessage: (message) => upserts.push(message),
+    });
+
+    await waitForExpectation(() => {
+      expect(getRichMediaQueueSnapshot()).toEqual([
+        expect.objectContaining({ messageId: 'message-stale-generating', attachmentId: 'image-1', status: 'generating', position: 1, total: 1 }),
+      ]);
+    });
+    await run;
+
+    expect(upserts.at(-1)?.metadata?.attachments?.[0]).toMatchObject({
+      status: 'ready',
+      url: 'data:image/png;base64,recovered',
     });
   });
 });

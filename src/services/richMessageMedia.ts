@@ -63,7 +63,37 @@ function toMediaGenerationErrorText(error: unknown, kind: GenerativeAttachmentKi
 }
 
 const latestRichMediaMessageById = new Map<string, Message>();
-const activeRichMediaProcessingByMessageId = new Map<string, Promise<void>>();
+type RichMediaQueueEntryStatus = 'queued' | 'generating';
+export type RichMediaQueueSnapshotEntry = {
+  messageId: string;
+  attachmentId: string;
+  kind: GenerativeAttachmentKind;
+  status: RichMediaQueueEntryStatus;
+  position: number;
+  total: number;
+};
+
+type RichMediaQueueEntry = {
+  id: string;
+  messageId: string;
+  attachmentId: string;
+  kind: GenerativeAttachmentKind;
+  status: RichMediaQueueEntryStatus;
+  message: Message;
+  character?: AICharacter | null;
+  characters?: AICharacter[];
+  aiProfiles: AIModelProfile[];
+  upsertMessage: (message: Message) => void;
+  promise: Promise<void>;
+  resolve: () => void;
+  reject: (error: unknown) => void;
+};
+
+const pendingRichMediaQueue: RichMediaQueueEntry[] = [];
+const activeRichMediaQueueEntriesById = new Map<string, RichMediaQueueEntry>();
+const richMediaQueueListeners = new Set<() => void>();
+let runningRichMediaQueueEntry: RichMediaQueueEntry | null = null;
+let richMediaQueueSnapshotCache: RichMediaQueueSnapshotEntry[] = [];
 
 function rememberRichMediaMessage(message: Message) {
   latestRichMediaMessageById.set(message.id, message);
@@ -71,6 +101,53 @@ function rememberRichMediaMessage(message: Message) {
 
 function getLatestRichMediaMessage(messageId: string, fallback: Message) {
   return latestRichMediaMessageById.get(messageId) || fallback;
+}
+
+function richMediaQueueEntryId(messageId: string, attachmentId: string) {
+  return `${messageId}:${attachmentId}`;
+}
+
+function isRecoverableGenerativeAttachment(item: MessageAttachment): item is GenerativeAttachment {
+  return isGenerativeAttachment(item) && (item.status === 'queued' || item.status === 'generating');
+}
+
+function buildRichMediaQueueSnapshot(): RichMediaQueueSnapshotEntry[] {
+  const entries = [
+    ...(runningRichMediaQueueEntry ? [runningRichMediaQueueEntry] : []),
+    ...pendingRichMediaQueue,
+  ];
+  return entries.map((entry, index) => ({
+    messageId: entry.messageId,
+    attachmentId: entry.attachmentId,
+    kind: entry.kind,
+    status: entry.status,
+    position: index + 1,
+    total: entries.length,
+  }));
+}
+
+function publishRichMediaQueueSnapshot() {
+  richMediaQueueSnapshotCache = buildRichMediaQueueSnapshot();
+  richMediaQueueListeners.forEach((listener) => listener());
+}
+
+export function getRichMediaQueueSnapshot() {
+  return richMediaQueueSnapshotCache;
+}
+
+export function subscribeRichMediaQueue(listener: () => void) {
+  richMediaQueueListeners.add(listener);
+  return () => richMediaQueueListeners.delete(listener);
+}
+
+export function resetRichMediaQueueForTests() {
+  if (!import.meta.env?.MODE?.includes('test')) return;
+  pendingRichMediaQueue.splice(0, pendingRichMediaQueue.length);
+  activeRichMediaQueueEntriesById.clear();
+  runningRichMediaQueueEntry = null;
+  richMediaQueueSnapshotCache = [];
+  latestRichMediaMessageById.clear();
+  publishRichMediaQueueSnapshot();
 }
 
 function updateRichMediaMessage(params: {
@@ -184,166 +261,244 @@ async function attachAssistantImageArtifact(params: {
   return nextMessage;
 }
 
+async function runRichMediaQueueEntry(entry: RichMediaQueueEntry) {
+  const messageId = entry.messageId;
+  const currentMessage = getLatestRichMediaMessage(messageId, entry.message);
+  const attachment = (currentMessage.metadata?.attachments || []).find((item): item is GenerativeAttachment => (
+    item.id === entry.attachmentId && isRecoverableGenerativeAttachment(item)
+  ));
+  if (!attachment) return;
+
+  const generationJobId = attachment.generationJobId || createGenerationJobId();
+  let workingMessage: Message = updateRichMediaMessage({
+    message: currentMessage,
+    attachmentId: attachment.id,
+    patch: {
+      status: 'generating',
+      generationJobId,
+    },
+    upsertMessage: entry.upsertMessage,
+  });
+
+  try {
+    if (attachment.kind === 'image') {
+      const profile = findGenerationProfile(entry.aiProfiles, 'image', entry.character?.modelProfileIds?.image);
+      if (!profile || !attachment.promptText) throw new Error('图片模型未配置');
+      const referenceCharacters = (attachment.referenceCharacterIds || [])
+        .map((id) => entry.characters?.find((character) => character.id === id))
+        .filter(Boolean) as AICharacter[];
+      const visualCharacter = referenceCharacters[0] || entry.character || null;
+      const images = await generateImageWithAdapter({
+        profile,
+        prompt: attachment.promptText,
+        count: 1,
+        intent: 'chat-image',
+        character: referenceCharacters.length ? null : entry.character,
+        characters: referenceCharacters,
+        referenceImages: attachment.referenceImages,
+        aspectRatio: attachment.aspectRatio,
+        imageSize: attachment.imageSize,
+        allowCharacterReferenceImages: true,
+        negativePrompt: visualCharacter?.visualIdentity?.negativePrompt,
+        seed: visualCharacter?.visualIdentity?.seed,
+        aiUsage: {
+          type: 'image_generation',
+          label: '聊天图片生成',
+          scope: 'chat',
+          resourceId: workingMessage.chatId,
+        },
+      });
+      const first = images[0];
+      if (!first?.dataUrl) throw new Error('图片生成失败');
+      const latestAttachment = getLatestRichMediaMessage(messageId, workingMessage).metadata?.attachments?.find((item) => item.id === attachment.id);
+      if (latestAttachment?.generationJobId !== generationJobId) return;
+      const dataUrl = await ensureDataUrl(first.dataUrl);
+      const asset = isLocalOnlyMediaMode()
+        ? { id: undefined, url: dataUrl, mimeType: first.mimeType, sizeBytes: dataUrl.length, checksum: undefined }
+        : await api.createMediaAsset({
+            chatId: workingMessage.chatId,
+            messageId: workingMessage.serverId || workingMessage.id,
+            attachmentId: attachment.id,
+            kind: 'image',
+            dataUrl,
+          });
+      workingMessage = updateRichMediaMessage({
+        message: workingMessage,
+        attachmentId: attachment.id,
+        patch: {
+          status: 'ready',
+          assetId: asset.id,
+          url: asset.url || dataUrl,
+          mimeType: asset.mimeType,
+          sizeBytes: asset.sizeBytes,
+          checksum: asset.checksum,
+          generationJobId,
+        },
+        upsertMessage: entry.upsertMessage,
+      });
+      workingMessage = await attachAssistantImageArtifact({
+        message: workingMessage,
+        attachmentId: attachment.id,
+        upsertMessage: entry.upsertMessage,
+      });
+      rememberRichMediaMessage(workingMessage);
+      return;
+    }
+
+    const profile = findGenerationProfile(entry.aiProfiles, 'audio', entry.character?.modelProfileIds?.audio);
+    if (!profile) throw new Error('语音模型未配置');
+    const voice = entry.character?.voiceConfig?.voiceName || profile.model;
+    const audio = await synthesizeSpeechWithAdapter({
+      profile,
+      intent: 'chat-audio',
+      input: attachment.promptText || workingMessage.content,
+      voice,
+      format: 'mp3',
+    });
+    const latestAttachment = getLatestRichMediaMessage(messageId, workingMessage).metadata?.attachments?.find((item) => item.id === attachment.id);
+    if (latestAttachment?.generationJobId !== generationJobId) return;
+    const dataUrl = await blobToDataUrl(audio.blob);
+    const asset = isLocalOnlyMediaMode()
+      ? { id: undefined, url: dataUrl, mimeType: audio.mimeType, sizeBytes: dataUrl.length, checksum: undefined }
+      : await api.createMediaAsset({
+          chatId: workingMessage.chatId,
+          messageId: workingMessage.serverId || workingMessage.id,
+          attachmentId: attachment.id,
+          kind: 'audio',
+          dataUrl,
+        });
+    workingMessage = updateRichMediaMessage({
+      message: workingMessage,
+      attachmentId: attachment.id,
+      patch: {
+        status: 'ready',
+        assetId: asset.id,
+        url: asset.url || dataUrl,
+        mimeType: asset.mimeType,
+        sizeBytes: asset.sizeBytes,
+        generationJobId,
+      },
+      upsertMessage: entry.upsertMessage,
+    });
+    rememberRichMediaMessage(workingMessage);
+  } catch (error) {
+    const latestAttachment = getLatestRichMediaMessage(messageId, workingMessage).metadata?.attachments?.find((item) => item.id === attachment.id);
+    if (latestAttachment?.generationJobId !== generationJobId) return;
+    reportRecoverableError({
+      location: 'rich-message-media.process',
+      error,
+      userMessage: attachment.kind === 'image' ? '图片生成失败。' : '语音生成失败。',
+      extra: {
+        messageId: workingMessage.id,
+        attachmentId: attachment.id,
+        attachmentKind: attachment.kind,
+        senderId: workingMessage.senderId,
+      },
+    });
+    updateRichMediaMessage({
+      message: workingMessage,
+      attachmentId: attachment.id,
+      patch: {
+        status: 'failed',
+        error: toMediaGenerationErrorText(error, attachment.kind),
+        generationJobId,
+      },
+      upsertMessage: entry.upsertMessage,
+    });
+  }
+}
+
+function pumpRichMediaQueue() {
+  if (runningRichMediaQueueEntry) return;
+  const entry = pendingRichMediaQueue.shift();
+  if (!entry) {
+    publishRichMediaQueueSnapshot();
+    return;
+  }
+  runningRichMediaQueueEntry = entry;
+  entry.status = 'generating';
+  publishRichMediaQueueSnapshot();
+  void runRichMediaQueueEntry(entry)
+    .then(entry.resolve, entry.reject)
+    .finally(() => {
+      activeRichMediaQueueEntriesById.delete(entry.id);
+      runningRichMediaQueueEntry = null;
+      publishRichMediaQueueSnapshot();
+      pumpRichMediaQueue();
+    });
+}
+
+function enqueueRichMediaAttachment(params: {
+  message: Message;
+  attachment: GenerativeAttachment;
+  character?: AICharacter | null;
+  characters?: AICharacter[];
+  aiProfiles: AIModelProfile[];
+  upsertMessage: (message: Message) => void;
+  priority?: 'normal' | 'next';
+}) {
+  const id = richMediaQueueEntryId(params.message.id, params.attachment.id);
+  const existing = activeRichMediaQueueEntriesById.get(id);
+  if (existing) return existing.promise;
+
+  let resolve!: () => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<void>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  const entry: RichMediaQueueEntry = {
+    id,
+    messageId: params.message.id,
+    attachmentId: params.attachment.id,
+    kind: params.attachment.kind,
+    status: 'queued',
+    message: params.message,
+    character: params.character,
+    characters: params.characters,
+    aiProfiles: params.aiProfiles,
+    upsertMessage: params.upsertMessage,
+    promise,
+    resolve,
+    reject,
+  };
+  activeRichMediaQueueEntriesById.set(id, entry);
+  if (params.priority === 'next') {
+    pendingRichMediaQueue.unshift(entry);
+  } else {
+    pendingRichMediaQueue.push(entry);
+  }
+  publishRichMediaQueueSnapshot();
+  pumpRichMediaQueue();
+  return promise;
+}
+
 export async function processRichMessageMedia(params: {
   message: Message;
   character?: AICharacter | null;
   characters?: AICharacter[];
   aiProfiles: AIModelProfile[];
   upsertMessage: (message: Message) => void;
+  attachmentIds?: string[];
+  priority?: 'normal' | 'next';
 }) {
-  const messageId = params.message.id;
   rememberRichMediaMessage(params.message);
-  if (activeRichMediaProcessingByMessageId.has(messageId)) return activeRichMediaProcessingByMessageId.get(messageId) || Promise.resolve();
-
-  const runner = (async () => {
-    while (true) {
-      const currentMessage = getLatestRichMediaMessage(messageId, params.message);
-      const attachment = (currentMessage.metadata?.attachments || []).find((item): item is GenerativeAttachment => item.status === 'queued' && isGenerativeAttachment(item));
-      if (!attachment) break;
-
-      const generationJobId = attachment.generationJobId || createGenerationJobId();
-      let workingMessage: Message = updateRichMediaMessage({
-        message: currentMessage,
-        attachmentId: attachment.id,
-        patch: {
-          status: 'generating',
-          generationJobId,
-        },
-        upsertMessage: params.upsertMessage,
-      });
-
-      try {
-        if (attachment.kind === 'image') {
-          const profile = findGenerationProfile(params.aiProfiles, 'image', params.character?.modelProfileIds?.image);
-          if (!profile || !attachment.promptText) throw new Error('图片模型未配置');
-          const referenceCharacters = (attachment.referenceCharacterIds || [])
-            .map((id) => params.characters?.find((character) => character.id === id))
-            .filter(Boolean) as AICharacter[];
-          const visualCharacter = referenceCharacters[0] || params.character || null;
-          const images = await generateImageWithAdapter({
-            profile,
-            prompt: attachment.promptText,
-            count: 1,
-            intent: 'chat-image',
-            character: referenceCharacters.length ? null : params.character,
-            characters: referenceCharacters,
-            referenceImages: attachment.referenceImages,
-            aspectRatio: attachment.aspectRatio,
-            imageSize: attachment.imageSize,
-            allowCharacterReferenceImages: true,
-            negativePrompt: visualCharacter?.visualIdentity?.negativePrompt,
-            seed: visualCharacter?.visualIdentity?.seed,
-            aiUsage: {
-              type: 'image_generation',
-              label: '聊天图片生成',
-              scope: 'chat',
-              resourceId: workingMessage.chatId,
-            },
-          });
-          const first = images[0];
-          if (!first?.dataUrl) throw new Error('图片生成失败');
-          const latestAttachment = getLatestRichMediaMessage(messageId, workingMessage).metadata?.attachments?.find((item) => item.id === attachment.id);
-          if (latestAttachment?.generationJobId !== generationJobId) continue;
-          const dataUrl = await ensureDataUrl(first.dataUrl);
-          const asset = isLocalOnlyMediaMode()
-            ? { id: undefined, url: dataUrl, mimeType: first.mimeType, sizeBytes: dataUrl.length, checksum: undefined }
-            : await api.createMediaAsset({
-                chatId: workingMessage.chatId,
-                messageId: workingMessage.serverId || workingMessage.id,
-                attachmentId: attachment.id,
-                kind: 'image',
-                dataUrl,
-              });
-          workingMessage = updateRichMediaMessage({
-            message: workingMessage,
-            attachmentId: attachment.id,
-            patch: {
-              status: 'ready',
-              assetId: asset.id,
-              url: asset.url || dataUrl,
-              mimeType: asset.mimeType,
-              sizeBytes: asset.sizeBytes,
-              checksum: asset.checksum,
-              generationJobId,
-            },
-            upsertMessage: params.upsertMessage,
-          });
-          workingMessage = await attachAssistantImageArtifact({
-            message: workingMessage,
-            attachmentId: attachment.id,
-            upsertMessage: params.upsertMessage,
-          });
-          rememberRichMediaMessage(workingMessage);
-        } else if (attachment.kind === 'audio') {
-          const profile = findGenerationProfile(params.aiProfiles, 'audio', params.character?.modelProfileIds?.audio);
-          if (!profile) throw new Error('语音模型未配置');
-          const voice = params.character?.voiceConfig?.voiceName || profile.model;
-          const audio = await synthesizeSpeechWithAdapter({
-            profile,
-            intent: 'chat-audio',
-            input: attachment.promptText || workingMessage.content,
-            voice,
-            format: 'mp3',
-          });
-          const latestAttachment = getLatestRichMediaMessage(messageId, workingMessage).metadata?.attachments?.find((item) => item.id === attachment.id);
-          if (latestAttachment?.generationJobId !== generationJobId) continue;
-          const dataUrl = await blobToDataUrl(audio.blob);
-          const asset = isLocalOnlyMediaMode()
-            ? { id: undefined, url: dataUrl, mimeType: audio.mimeType, sizeBytes: dataUrl.length, checksum: undefined }
-            : await api.createMediaAsset({
-                chatId: workingMessage.chatId,
-                messageId: workingMessage.serverId || workingMessage.id,
-                attachmentId: attachment.id,
-                kind: 'audio',
-                dataUrl,
-              });
-          workingMessage = updateRichMediaMessage({
-            message: workingMessage,
-            attachmentId: attachment.id,
-            patch: {
-              status: 'ready',
-              assetId: asset.id,
-              url: asset.url || dataUrl,
-              mimeType: asset.mimeType,
-              sizeBytes: asset.sizeBytes,
-              generationJobId,
-            },
-            upsertMessage: params.upsertMessage,
-          });
-          rememberRichMediaMessage(workingMessage);
-        }
-      } catch (error) {
-        const latestAttachment = getLatestRichMediaMessage(messageId, workingMessage).metadata?.attachments?.find((item) => item.id === attachment.id);
-        if (latestAttachment?.generationJobId !== generationJobId) continue;
-        reportRecoverableError({
-          location: 'rich-message-media.process',
-          error,
-          userMessage: attachment.kind === 'image' ? '图片生成失败。' : '语音生成失败。',
-          extra: {
-            messageId: workingMessage.id,
-            attachmentId: attachment.id,
-            attachmentKind: attachment.kind,
-            senderId: workingMessage.senderId,
-          },
-        });
-        workingMessage = updateRichMediaMessage({
-          message: workingMessage,
-          attachmentId: attachment.id,
-          patch: {
-            status: 'failed',
-            error: toMediaGenerationErrorText(error, attachment.kind),
-            generationJobId,
-          },
-          upsertMessage: params.upsertMessage,
-        });
-      }
-    }
-  })().finally(() => {
-    activeRichMediaProcessingByMessageId.delete(messageId);
-  });
-
-  activeRichMediaProcessingByMessageId.set(messageId, runner);
-  return runner;
+  const attachmentFilter = params.attachmentIds?.length ? new Set(params.attachmentIds) : null;
+  const attachments = (params.message.metadata?.attachments || [])
+    .filter((item): item is GenerativeAttachment => (
+      isRecoverableGenerativeAttachment(item)
+      && (!attachmentFilter || attachmentFilter.has(item.id))
+    ));
+  if (!attachments.length) return;
+  await Promise.all(attachments.map((attachment) => enqueueRichMediaAttachment({
+    message: params.message,
+    attachment,
+    character: params.character,
+    characters: params.characters,
+    aiProfiles: params.aiProfiles,
+    upsertMessage: params.upsertMessage,
+    priority: params.priority,
+  })));
 }
 
 export async function retryRichMessageMedia(params: {
@@ -369,6 +524,8 @@ export async function retryRichMessageMedia(params: {
     characters: params.characters,
     aiProfiles: params.aiProfiles,
     upsertMessage: params.upsertMessage,
+    attachmentIds: [params.attachmentId],
+    priority: 'next',
   });
 }
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { getAttachmentDisplayWidth, parseInlineAttachmentPlaceholders, shouldHideGeneratedMediaPlaceholderText } from './ChatMessageContent';
+import type { Message } from '../../types/message';
+import { buildAttachmentQueueProgress, getAttachmentDisplayWidth, parseInlineAttachmentPlaceholders, shouldHideGeneratedMediaPlaceholderText } from './ChatMessageContent';
 
 describe('ChatMessageContent media layout', () => {
   it('uses a fixed intrinsic media width so fit-content bubbles can shrink', () => {
@@ -73,5 +74,41 @@ describe('ChatMessageContent media layout', () => {
     expect(parseInlineAttachmentPlaceholders('![图](attachment:%E0%A4%A../bad id)')).toEqual([
       { kind: 'attachment', slotId: 'E0A4A..badid', altText: '图' },
     ]);
+  });
+
+  it('uses the real global media queue snapshot for progress text', () => {
+    const message: Message = {
+      id: 'message-1',
+      chatId: 'chat-1',
+      type: 'ai',
+      senderId: 'assistant',
+      senderName: '助手',
+      content: '',
+      emotion: 0,
+      timestamp: 1,
+      isDeleted: false,
+      metadata: {
+        attachments: [{
+          id: 'image-1',
+          kind: 'image' as const,
+          status: 'queued' as const,
+          altText: '番茄炒蛋',
+          createdAt: 1,
+          updatedAt: 1,
+        }],
+      },
+    };
+    const attachment = message.metadata?.attachments?.[0];
+    expect(attachment).toBeDefined();
+
+    expect(buildAttachmentQueueProgress(message, attachment!)).toBe('');
+    expect(buildAttachmentQueueProgress(message, attachment!, [{
+      messageId: 'message-1',
+      attachmentId: 'image-1',
+      kind: 'image',
+      status: 'queued',
+      position: 1,
+      total: 3,
+    }])).toBe('聊天图片队列 1/3');
   });
 });
