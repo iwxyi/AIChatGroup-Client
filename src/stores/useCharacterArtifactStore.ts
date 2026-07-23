@@ -1292,6 +1292,15 @@ export const useCharacterArtifactStore = create<CharacterArtifactStore>()(
         items: state.items,
         jobs: state.jobs,
       }),
+      migrate: (persistedState): ArtifactSnapshot => {
+        const snapshot = persistedState as Partial<ArtifactSnapshot> | undefined;
+        const items = Array.isArray(snapshot?.items) ? snapshot.items : [];
+        const jobs = Array.isArray(snapshot?.jobs) ? snapshot.jobs : [];
+        return {
+          items,
+          jobs,
+        };
+      },
       skipHydration: true,
     }
   )

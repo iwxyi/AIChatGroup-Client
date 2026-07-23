@@ -100,6 +100,27 @@ async function refreshStoresAfterCloudAuth(user: User | null, options: { deferRe
   void characterStore.prefetchCharacters();
 }
 
+async function refreshRemoteStoresAfterCloudAuth(user: User | null) {
+  const settingsStore = useSettingsStore.getState();
+  const [{ useChatStore }, { useCharacterStore }] = await Promise.all([
+    import('./useChatStore'),
+    import('./useCharacterStore'),
+  ]);
+  const chatStore = useChatStore.getState();
+  const characterStore = useCharacterStore.getState();
+  if (canRefreshRemoteAfterAuth(user)) {
+    void Promise.allSettled([
+      settingsStore.refreshSettingsFromCloud(),
+      chatStore.refreshChatSummaryFromCloud(),
+      characterStore.refreshCharacterSummaryFromCloud(),
+    ]);
+    return;
+  }
+  void settingsStore.loadSettings();
+  void chatStore.prefetchChats();
+  void characterStore.prefetchCharacters();
+}
+
 async function refreshStoresAfterLocalAuthMode() {
   const { useChatStore, useCharacterStore } = await hydrateWorkspaceStoresFromCurrentScope();
   const chatStore = useChatStore.getState();
@@ -303,9 +324,10 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     try {
       const user = await api.getMe();
       setAuthUser(user);
-      applyCloudSyncEntitlement(user);
+      enableCloudSyncForLogin(user);
       set({ user, isLoggedIn: true, authMode: 'cloud' });
-      void refreshStoresAfterCloudAuth(user);
+      await refreshStoresAfterCloudAuth(user, { deferRemoteRefresh: true });
+      if (!isCloudSyncUserDisabled()) await refreshRemoteStoresAfterCloudAuth(user);
       return true;
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {

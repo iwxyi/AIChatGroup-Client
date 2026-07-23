@@ -37,9 +37,9 @@ export default function BottomNav() {
         right: 0,
         bottom: 0,
         zIndex: 1200,
-        px: 1.5,
-        pt: 1,
-        pb: 'calc(env(safe-area-inset-bottom, 0px) + 10px)',
+        px: 1.25,
+        pt: 0.5,
+        pb: 'calc(env(safe-area-inset-bottom, 0px) + 6px)',
         borderRadius: 0,
         overflow: 'hidden',
         borderTop: '1px solid',
@@ -77,15 +77,16 @@ export default function BottomNav() {
         }}
         showLabels
         sx={{
-          height: 62,
+          height: 54,
           bgcolor: 'transparent',
           borderRadius: 1.5,
           '& .MuiBottomNavigationAction-root': {
             minWidth: 0,
             color: 'text.secondary',
             borderRadius: 1,
-            mx: 0.35,
-            my: 0.55,
+            mx: 0.2,
+            my: 0.25,
+            py: 0.25,
             transition: 'color 220ms ease, background-color 220ms ease',
             '&:hover': {
               bgcolor: 'rgba(148,163,184,0.08)',
@@ -95,8 +96,15 @@ export default function BottomNav() {
             color: 'primary.main',
           },
           '& .MuiBottomNavigationAction-label': {
-            fontSize: 11,
+            fontSize: 10.5,
             fontWeight: 650,
+            lineHeight: 1.15,
+            transform: 'none',
+            transition: 'color 180ms ease, opacity 180ms ease',
+            '&.Mui-selected': {
+              fontSize: 10.5,
+              transform: 'none',
+            },
           },
         }}
       >
@@ -105,7 +113,7 @@ export default function BottomNav() {
             key={item.path}
             className="PneumataNavButton"
             label={t(item.labelKey)}
-            icon={<AnimatedNavIcon kind={item.iconKind} active={currentIndex === index} />}
+            icon={<AnimatedNavIcon kind={item.iconKind} active={currentIndex === index} size={24} />}
           />
         ))}
       </BottomNavigation>

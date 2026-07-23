@@ -8,6 +8,7 @@ import {
 
 const ENABLED_KEY = storageKey('cloud-sync-enabled');
 const USER_DISABLED_KEY = storageKey('cloud-sync-user-disabled');
+const USER_DISABLED_VERSION_KEY = storageKey('cloud-sync-user-disabled-version');
 const storage = new Map<string, string>();
 class TestCustomEvent<T = unknown> extends Event {
   detail: T;
@@ -41,6 +42,7 @@ describe('cloudSyncPreference', () => {
 
     expect(localStorage.getItem(ENABLED_KEY)).toBe('0');
     expect(localStorage.getItem(USER_DISABLED_KEY)).toBe('1');
+    expect(localStorage.getItem(USER_DISABLED_VERSION_KEY)).toBe('2');
     expect(isCloudSyncEnabled()).toBe(false);
     expect(isCloudSyncUserDisabled()).toBe(true);
   });
@@ -58,6 +60,7 @@ describe('cloudSyncPreference', () => {
 
     expect(localStorage.getItem(ENABLED_KEY)).toBe('1');
     expect(localStorage.getItem(USER_DISABLED_KEY)).toBeNull();
+    expect(localStorage.getItem(USER_DISABLED_VERSION_KEY)).toBeNull();
     expect(isCloudSyncEnabled()).toBe(true);
     expect(isCloudSyncUserDisabled()).toBe(false);
   });
@@ -70,5 +73,13 @@ describe('cloudSyncPreference', () => {
     expect(localStorage.getItem(USER_DISABLED_KEY)).toBe('1');
     expect(isCloudSyncEnabled()).toBe(false);
     expect(isCloudSyncUserDisabled()).toBe(true);
+  });
+
+  it('ignores legacy user-disabled markers without the current version stamp', () => {
+    localStorage.setItem(ENABLED_KEY, '0');
+    localStorage.setItem(USER_DISABLED_KEY, '1');
+
+    expect(isCloudSyncEnabled()).toBe(false);
+    expect(isCloudSyncUserDisabled()).toBe(false);
   });
 });

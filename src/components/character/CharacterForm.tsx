@@ -984,9 +984,7 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
     <Card variant="outlined" sx={buildEditorCardSx()}>
       <CardContent sx={{ display: 'grid', gap: 1.25 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap' }}>
-          <Tooltip title={i18n.language.startsWith('zh') ? '会随角色发言和记忆自动更新，也允许留空' : 'Auto-updates from speech and memories. You can leave it empty.'}>
-            <Typography variant="body2" sx={{ fontWeight: 600, width: 'fit-content' }}>{i18n.language.startsWith('zh') ? '核心画像' : 'Core profile'}</Typography>
-          </Tooltip>
+          <Typography variant="body2" sx={{ fontWeight: 600, width: 'fit-content' }}>{i18n.language.startsWith('zh') ? '核心画像' : 'Core profile'}</Typography>
           <Button size="small" onClick={() => setCoreProfileExpanded((prev) => !prev)} endIcon={coreProfileExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}>
             {coreProfileExpanded ? (i18n.language.startsWith('zh') ? '收起' : 'Collapse') : (i18n.language.startsWith('zh') ? '展开' : 'Expand')}
           </Button>
@@ -1730,7 +1728,7 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
             readerHeight={artifactReaderHeight}
             countUnit={i18n.language.startsWith('zh') ? '篇' : ''}
             emptyTitle={i18n.language.startsWith('zh') ? '暂无日记' : 'No diary entries yet'}
-            emptyDescription={i18n.language.startsWith('zh') ? '角色经历过足够多的关系余波、记忆沉淀和未说出口的话后，日记会在这里留下痕迹。' : 'After enough relationship residue, memory sediment, and unsent words accumulate, diary pages will appear here.'}
+            emptyDescription=""
             getMeta={(item) => item.dateKey || new Date(item.createdAt).toLocaleDateString(i18n.language.startsWith('zh') ? 'zh-CN' : 'en-US')}
             onRegenerateDebug={settings.developerMode ? handleRegenerateDiaryDebug : undefined}
           />

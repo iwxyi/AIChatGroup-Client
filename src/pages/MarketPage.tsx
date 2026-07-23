@@ -680,8 +680,6 @@ export default function MarketPage() {
   const navigate = useNavigate();
   const { setHeaderActions, setHeaderBackAction, setHeaderTitle } = useLayoutHeaderActions();
   const currentUserId = useAuthStore((state) => state.user?.id || null);
-  const isLoggedIn = useAuthStore((state) => state.isLoggedIn);
-  const authMode = useAuthStore((state) => state.authMode);
   const characters = useCharacterStore((state) => state.characters);
   const chats = useChatStore((state) => state.chats);
   const [kind, setKind] = useState<MarketItemKind | ''>('');
@@ -747,10 +745,6 @@ export default function MarketPage() {
 
   const importSelected = async () => {
     if (!detail?.payload) return;
-    if (authMode !== 'cloud' || !isLoggedIn) {
-      navigate('/login', { state: { from: { pathname: '/market' } } });
-      return;
-    }
     setImporting(true);
     setError('');
     try {

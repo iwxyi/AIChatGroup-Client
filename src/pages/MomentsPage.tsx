@@ -336,7 +336,7 @@ export default function MomentsPage() {
   }, [canGenerate, developerMode, handleGenerateMoment, isZh, setHeaderActions, setHeaderBackAction, setHeaderTitle, showMomentDebug]);
 
   return (
-    <Box sx={{ px: { xs: 1.5, sm: 2, md: 3 }, pt: { xs: 1, sm: 1.5, md: 2 }, pb: { xs: 'calc(env(safe-area-inset-bottom, 0px) + 112px)', md: 4 }, maxWidth: 920, mx: 'auto' }}>
+    <Box sx={{ px: { xs: 1.5, sm: 2, md: 3 }, pt: { xs: 1, sm: 1.5, md: 2 }, pb: { xs: 'calc(env(safe-area-inset-bottom, 0px) + 90px)', md: 4 }, maxWidth: 920, mx: 'auto' }}>
       {!moments.length ? (
         <EmptyState
           icon="📝"

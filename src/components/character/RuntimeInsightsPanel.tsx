@@ -4261,9 +4261,6 @@ function UserCompanionshipCard({
                 </span>
               </Tooltip>
             </Stack>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.65 }}>
-              只影响这个角色对你的主动频率、确认感和表达浓度，不会公开显示内部判断。
-            </Typography>
           </Box>
         ) : null}
         {signature.addressing?.forbiddenAddresses.length ? (
@@ -4855,7 +4852,7 @@ export function CharacterMemoryInspector({ character }: RuntimeInsightsPanelProp
 
   return (
     <PageSection spacing={2}>
-      <LayeredMemoryPanel title="记忆沉淀" memories={allLayeredMemories} emptyText="暂无沉淀记忆" includeRuntimeEvidence={includeRuntimeEvidence} members={memoryMembers} />
+      <LayeredMemoryPanel title="记忆沉淀" memories={allLayeredMemories} emptyText="暂无沉淀记忆" includeRuntimeEvidence={includeRuntimeEvidence} members={memoryMembers} hideFilterHints />
     </PageSection>
   );
 }

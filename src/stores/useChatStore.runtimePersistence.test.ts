@@ -297,6 +297,7 @@ describe('chat runtime persistence', () => {
     const remote = chat({
       updatedAt: 2000,
       topic: '远端旧主题',
+      runtimeDetailLoaded: true,
       fieldVersions: { topic: 500, messageBranchState: 4000 },
       messageBranchState: {
         selectedRevisionByRootId: { root: 'new-revision' },
@@ -431,6 +432,7 @@ describe('chat runtime persistence', () => {
     });
     const remote = chat({
       updatedAt: 2000,
+      runtimeDetailLoaded: true,
       fieldVersions: { messageBranchState: 4000 },
       messageBranchState: {
         selectedRevisionByRootId: { root: 'new-revision' },
@@ -611,6 +613,7 @@ describe('chat runtime persistence', () => {
     expect(persisted.chats[0].runtimeTimeline).toHaveLength(limits.runtimeTimeline);
     expect(persisted.chats[0].runtimeEventsV2).toHaveLength(limits.runtimeEventsV2);
     expect(persisted.chats[0].relationshipLedger).toHaveLength(limits.relationshipLedger);
+    expect(persisted.chats[0].runtimeDetailLoaded).toBe(true);
   });
 
   it('strips inline data url media from chat runtime persistence and cloud patches', async () => {

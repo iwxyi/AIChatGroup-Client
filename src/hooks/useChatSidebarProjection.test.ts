@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveStorySidebarTab, shouldShowSessionSidebarTab, splitSidebarActions } from './useChatSidebarProjection';
+import { resolveLightweightSidebarTab, resolveStorySidebarTab, shouldShowSessionSidebarTab, splitSidebarActions } from './useChatSidebarProjection';
 import type { GroupChat } from '../types/chat';
 
 describe('resolveStorySidebarTab', () => {
@@ -16,6 +16,33 @@ describe('resolveStorySidebarTab', () => {
     expect(resolveStorySidebarTab('world')).toBe('session');
     expect(resolveStorySidebarTab('actions')).toBe('session');
     expect(resolveStorySidebarTab('activities')).toBe('session');
+  });
+});
+
+describe('resolveLightweightSidebarTab', () => {
+  it('keeps the narrative tab selected in lightweight direct and open-chat sidebars', () => {
+    expect(resolveLightweightSidebarTab({
+      rightPanelTab: 'narrative',
+      showMemberTab: true,
+      showRuntimeTab: true,
+      showActionTab: false,
+    })).toBe('narrative');
+
+    expect(resolveLightweightSidebarTab({
+      rightPanelTab: 'narrative',
+      showMemberTab: true,
+      showRuntimeTab: true,
+      showActionTab: true,
+    })).toBe('narrative');
+  });
+
+  it('falls back to members only when the requested lightweight tab is not available', () => {
+    expect(resolveLightweightSidebarTab({
+      rightPanelTab: 'chapters',
+      showMemberTab: true,
+      showRuntimeTab: true,
+      showActionTab: false,
+    })).toBe('members');
   });
 });
 

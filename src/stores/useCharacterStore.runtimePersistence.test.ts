@@ -120,5 +120,6 @@ describe('character runtime persistence', () => {
     expect(persisted.characters[0].coreProfile).toMatchObject({ coreDesire: '被认真听见' });
     expect(persisted.characters[0].layeredMemories).toHaveLength(limits.layeredMemories);
     expect(persisted.characters[0].runtimeTimeline).toHaveLength(limits.runtimeTimeline);
+    expect(persisted.characters[0].characterDetailLoaded).toBe(true);
   });
 });

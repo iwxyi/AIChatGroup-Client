@@ -2,7 +2,7 @@ import { notifyDiagnosticToast } from './diagnostics';
 
 export const PERSISTENCE_HEALTH_EVENT = 'pneumata:persistence-health-changed';
 
-export type PersistenceFailureReason = 'quota_exceeded' | 'write_failed';
+export type PersistenceFailureReason = 'quota_exceeded' | 'write_failed' | 'read_failed';
 
 export interface PersistenceFailureSnapshot {
   id: string;
@@ -54,7 +54,9 @@ export function recordPersistenceFailure(params: {
       location: 'storage:persistence',
       message: params.reason === 'quota_exceeded'
         ? '本地存储空间不足，部分最新数据可能没有保存。请到同步详情页查看。'
-        : '本地数据保存失败，部分最新数据可能没有保存。请到同步详情页查看。',
+        : params.reason === 'read_failed'
+          ? '本地数据读取失败，已尝试继续从可用数据源打开。请到同步详情页查看。'
+          : '本地数据保存失败，部分最新数据可能没有保存。请到同步详情页查看。',
     });
   }
   emitPersistenceHealthChanged();

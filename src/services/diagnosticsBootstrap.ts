@@ -1,5 +1,6 @@
 type RuntimeMemoryMonitorModule = typeof import('./runtimeMemoryMonitor');
 type LocalPersistenceDiagnosticsModule = typeof import('./localPersistenceDiagnostics');
+type DeveloperDiagnosticsModule = typeof import('./developerDiagnostics');
 type RuntimeMemoryBootstrapApi = {
   enable: () => boolean;
   disable: () => boolean;
@@ -18,18 +19,31 @@ type RuntimeMemoryBootstrapApi = {
   diff: () => Promise<unknown>;
   watch: (options?: { intervalMs?: number; limit?: number }) => Promise<unknown>;
 };
+type DeveloperDiagnosticsBootstrapApi = {
+  enable: () => boolean;
+  disable: () => boolean;
+  isEnabled: () => boolean;
+  scopes: (value?: string | string[]) => string[];
+  latest: (count?: number) => unknown[];
+  clear: () => void;
+  export: () => unknown[];
+};
 
 const MEMORY_MONITOR_KEY = 'pneumata-runtime-memory-monitor';
 const MEMORY_MONITOR_VERBOSE_KEY = 'pneumata-runtime-memory-monitor-verbose';
 
 let runtimeMemoryMonitorPromise: Promise<RuntimeMemoryMonitorModule> | null = null;
 let persistenceDiagnosticsPromise: Promise<LocalPersistenceDiagnosticsModule> | null = null;
+let developerDiagnosticsPromise: Promise<DeveloperDiagnosticsModule> | null = null;
 let runtimeMemoryMonitorBootstrapApi: RuntimeMemoryBootstrapApi | null = null;
+let developerDiagnosticsBootstrapApi: DeveloperDiagnosticsBootstrapApi | null = null;
 
 function diagnosticsWindow() {
   return window as unknown as {
     __PNEUMATA_MEMORY_MONITOR__?: RuntimeMemoryBootstrapApi | Record<string, (...args: unknown[]) => unknown>;
     __PNEUMATA_PERSISTENCE_DIAGNOSTICS__?: Record<string, unknown>;
+    __SENSE_MURMUR_DIAGNOSTICS__?: DeveloperDiagnosticsBootstrapApi;
+    __PNEUMATA_DEVELOPER_DIAGNOSTICS__?: DeveloperDiagnosticsBootstrapApi;
   };
 }
 
@@ -57,6 +71,11 @@ function loadPersistenceDiagnostics() {
   return persistenceDiagnosticsPromise;
 }
 
+function loadDeveloperDiagnostics() {
+  developerDiagnosticsPromise ??= import('./developerDiagnostics');
+  return developerDiagnosticsPromise;
+}
+
 function readBooleanFlag(key: string) {
   if (typeof localStorage === 'undefined') return false;
   return localStorage.getItem(key) === '1';
@@ -72,29 +91,76 @@ function writeBooleanFlag(key: string, value: boolean) {
 function installDiagnosticsBootstrap() {
   if (typeof window === 'undefined') return;
   const target = diagnosticsWindow();
-  if (target.__PNEUMATA_MEMORY_MONITOR__) return;
 
-  runtimeMemoryMonitorBootstrapApi = {
-    enable: () => writeBooleanFlag(MEMORY_MONITOR_KEY, true),
-    disable: () => writeBooleanFlag(MEMORY_MONITOR_KEY, false),
-    verbose: (enabled?: boolean) => typeof enabled === 'boolean'
-      ? writeBooleanFlag(MEMORY_MONITOR_VERBOSE_KEY, enabled)
-      : readBooleanFlag(MEMORY_MONITOR_VERBOSE_KEY),
-    isEnabled: () => readBooleanFlag(MEMORY_MONITOR_KEY),
-    enableBrowserRuntimeCounters: async () => (await getRuntimeMemoryMonitorApi())?.enableBrowserRuntimeCounters?.(),
-    areBrowserRuntimeCountersEnabled: async () => (await getRuntimeMemoryMonitorApi())?.areBrowserRuntimeCountersEnabled?.(),
-    clear: async () => (await getRuntimeMemoryMonitorApi())?.clear?.(),
-    cleanup: async () => (await getRuntimeMemoryMonitorApi())?.cleanup?.(),
-    export: async () => (await getRuntimeMemoryMonitorApi())?.export?.(),
-    latest: async (count?: number) => (await getRuntimeMemoryMonitorApi())?.latest?.(count),
-    summary: async () => (await getRuntimeMemoryMonitorApi())?.summary?.(),
-    snapshot: async () => (await getRuntimeMemoryMonitorApi())?.snapshot?.(),
-    gcSnapshot: async () => (await getRuntimeMemoryMonitorApi())?.gcSnapshot?.(),
-    mark: async () => (await getRuntimeMemoryMonitorApi())?.mark?.(),
-    diff: async () => (await getRuntimeMemoryMonitorApi())?.diff?.(),
-    watch: async (options?: { intervalMs?: number; limit?: number }) => (await getRuntimeMemoryMonitorApi())?.watch?.(options),
-  };
-  target.__PNEUMATA_MEMORY_MONITOR__ = runtimeMemoryMonitorBootstrapApi;
+  if (!target.__PNEUMATA_MEMORY_MONITOR__) {
+    runtimeMemoryMonitorBootstrapApi = {
+      enable: () => writeBooleanFlag(MEMORY_MONITOR_KEY, true),
+      disable: () => writeBooleanFlag(MEMORY_MONITOR_KEY, false),
+      verbose: (enabled?: boolean) => typeof enabled === 'boolean'
+        ? writeBooleanFlag(MEMORY_MONITOR_VERBOSE_KEY, enabled)
+        : readBooleanFlag(MEMORY_MONITOR_VERBOSE_KEY),
+      isEnabled: () => readBooleanFlag(MEMORY_MONITOR_KEY),
+      enableBrowserRuntimeCounters: async () => (await getRuntimeMemoryMonitorApi())?.enableBrowserRuntimeCounters?.(),
+      areBrowserRuntimeCountersEnabled: async () => (await getRuntimeMemoryMonitorApi())?.areBrowserRuntimeCountersEnabled?.(),
+      clear: async () => (await getRuntimeMemoryMonitorApi())?.clear?.(),
+      cleanup: async () => (await getRuntimeMemoryMonitorApi())?.cleanup?.(),
+      export: async () => (await getRuntimeMemoryMonitorApi())?.export?.(),
+      latest: async (count?: number) => (await getRuntimeMemoryMonitorApi())?.latest?.(count),
+      summary: async () => (await getRuntimeMemoryMonitorApi())?.summary?.(),
+      snapshot: async () => (await getRuntimeMemoryMonitorApi())?.snapshot?.(),
+      gcSnapshot: async () => (await getRuntimeMemoryMonitorApi())?.gcSnapshot?.(),
+      mark: async () => (await getRuntimeMemoryMonitorApi())?.mark?.(),
+      diff: async () => (await getRuntimeMemoryMonitorApi())?.diff?.(),
+      watch: async (options?: { intervalMs?: number; limit?: number }) => (await getRuntimeMemoryMonitorApi())?.watch?.(options),
+    };
+    target.__PNEUMATA_MEMORY_MONITOR__ = runtimeMemoryMonitorBootstrapApi;
+  }
+
+  if (!target.__SENSE_MURMUR_DIAGNOSTICS__) {
+    developerDiagnosticsBootstrapApi = {
+      enable: () => {
+        void loadDeveloperDiagnostics().then(({ logDeveloperDiagnostic }) => {
+          logDeveloperDiagnostic('diagnostics:enabled', { scopes: localStorage.getItem('miragetea:developer-diagnostic-scopes') || '*' }, 'info', 'diagnostics');
+        });
+        return writeBooleanFlag('miragetea:developer-diagnostics-enabled', true);
+      },
+      disable: () => writeBooleanFlag('miragetea:developer-diagnostics-enabled', false),
+      isEnabled: () => readBooleanFlag('miragetea:developer-diagnostics-enabled'),
+      scopes: (value?: string | string[]) => {
+        if (value !== undefined) {
+          const scopes = Array.isArray(value) ? value : value.split(',');
+          void loadDeveloperDiagnostics().then(({ setDeveloperDiagnosticScopes }) => setDeveloperDiagnosticScopes(scopes));
+          return scopes.map((scope) => scope.trim()).filter(Boolean);
+        }
+        return (localStorage.getItem('miragetea:developer-diagnostic-scopes') || '')
+          .split(',')
+          .map((scope) => scope.trim())
+          .filter(Boolean);
+      },
+      latest: (count = 50) => {
+        try {
+          const entries = JSON.parse(localStorage.getItem('miragetea:developer-diagnostics-buffer') || '[]') as unknown[];
+          return entries.slice(-count);
+        } catch {
+          return [];
+        }
+      },
+      clear: () => {
+        void loadDeveloperDiagnostics().then(({ clearDeveloperDiagnostics }) => clearDeveloperDiagnostics());
+      },
+      export: () => {
+        try {
+          const entries = JSON.parse(localStorage.getItem('miragetea:developer-diagnostics-buffer') || '[]') as unknown[];
+          console.info('[developer-diagnostics] export', entries);
+          return entries;
+        } catch {
+          return [];
+        }
+      },
+    };
+    target.__SENSE_MURMUR_DIAGNOSTICS__ = developerDiagnosticsBootstrapApi;
+    target.__PNEUMATA_DEVELOPER_DIAGNOSTICS__ = developerDiagnosticsBootstrapApi;
+  }
 
   target.__PNEUMATA_PERSISTENCE_DIAGNOSTICS__ = target.__PNEUMATA_PERSISTENCE_DIAGNOSTICS__ || {
     snapshot: async (limit = 20) => {

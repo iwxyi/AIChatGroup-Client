@@ -208,9 +208,11 @@ export default function ArtifactCalendarReader({
       <PaperSurface variant={paperVariant} minHeight={220} contentInset={false}>
         <Box className="paper-surface-content" sx={{ maxWidth: 560 }}>
           <Typography variant="subtitle2" sx={{ fontWeight: 850 }}>{emptyTitle}</Typography>
-          <Typography className="paper-surface-muted" variant="body2" sx={{ mt: 1.1, lineHeight: 1.8 }}>
-            {emptyDescription}
-          </Typography>
+          {emptyDescription ? (
+            <Typography className="paper-surface-muted" variant="body2" sx={{ mt: 1.1, lineHeight: 1.8 }}>
+              {emptyDescription}
+            </Typography>
+          ) : null}
         </Box>
       </PaperSurface>
     );

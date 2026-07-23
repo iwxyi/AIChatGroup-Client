@@ -19,7 +19,7 @@ interface AppSnackbarProps {
 
 const bottomOffsets: Record<SnackbarOffset, { xs: string; sm: number }> = {
   none: { xs: 'calc(env(safe-area-inset-bottom, 0px) + 20px)', sm: 28 },
-  navigation: { xs: 'calc(env(safe-area-inset-bottom, 0px) + 92px)', sm: 28 },
+  navigation: { xs: 'calc(env(safe-area-inset-bottom, 0px) + 78px)', sm: 28 },
   composer: { xs: 'calc(env(safe-area-inset-bottom, 0px) + 116px)', sm: 104 },
 };
 

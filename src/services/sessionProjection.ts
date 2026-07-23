@@ -1244,7 +1244,9 @@ export function buildProjectedChatDetailState(params: {
         ? '动作'
         : activeSidebarTab === 'chapters'
           ? '章节'
-          : (runtimePanel?.title || '运行态'),
+          : activeSidebarTab === 'narrative'
+            ? '叙事流'
+            : (runtimePanel?.title || '运行态'),
     memberTabTitle: memberPanel?.title || (params.chat.type === 'group' ? '成员' : '角色'),
     runtimeTabTitle: runtimePanel?.title || '运行态',
     privatePayloadTitle: params.chat.type === 'direct' ? '单聊信息' : '私有信息',

@@ -1607,7 +1607,7 @@ export default function CreateChatPage() {
           sx={{
             position: 'fixed',
             right: { xs: 20, sm: 28, md: 36 },
-            bottom: { xs: 'calc(env(safe-area-inset-bottom, 0px) + 88px)', sm: 32, md: 36 },
+            bottom: { xs: 'calc(env(safe-area-inset-bottom, 0px) + 76px)', sm: 32, md: 36 },
           }}
         />
       </Box>

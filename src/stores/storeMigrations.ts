@@ -7,7 +7,7 @@ import { DEFAULT_CHAT_APPEARANCE_SETTINGS, DEFAULT_DEVELOPER_UI_PREFS, DEFAULT_S
 
 type VersionedPersistedState<T> = T | undefined;
 
-export const CLIENT_STORE_SCHEMA_VERSION = 3;
+export const CLIENT_STORE_SCHEMA_VERSION = 5;
 
 function clampRelationshipMetric(value: unknown, min: number, max: number) {
   const safeValue = typeof value === 'number' && Number.isFinite(value) ? value : 0;
@@ -24,16 +24,64 @@ function migrateRelationshipPreset(input: CharacterRelationshipPreset): Characte
   };
 }
 
+function hasText(value: unknown) {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function hasArrayItems(value: unknown) {
+  return Array.isArray(value) && value.length > 0;
+}
+
+function hasRecordDetail(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  return Object.values(value as Record<string, unknown>).some((item) => (
+    hasText(item)
+    || hasArrayItems(item)
+    || (item && typeof item === 'object' && !Array.isArray(item) && hasRecordDetail(item))
+  ));
+}
+
+function inferLegacyCharacterDetailLoaded(input: AICharacter) {
+  if (typeof input.characterDetailLoaded === 'boolean') return input.characterDetailLoaded;
+  return Boolean(
+    hasText(input.background)
+    || hasText(input.speakingStyle)
+    || hasArrayItems(input.relationships)
+    || hasArrayItems(input.layeredMemories)
+    || hasArrayItems(input.runtimeTimeline)
+    || hasRecordDetail(input.memory)
+    || hasRecordDetail(input.coreProfile)
+    || hasRecordDetail(input.soulState)
+    || hasRecordDetail(input.emotionalState)
+    || hasRecordDetail(input.behavior)
+    || hasRecordDetail(input.intervention)
+  );
+}
+
 function migrateCharacter(input: AICharacter): AICharacter {
   return normalizeCharacter({
     ...input,
     relationships: (input.relationships || []).map(migrateRelationshipPreset),
+    characterDetailLoaded: inferLegacyCharacterDetailLoaded(input),
   });
 }
 
 function migrateRoomCohesion(input: unknown) {
   const value = typeof input === 'number' && Number.isFinite(input) ? input : 0;
   return Math.max(-100, Math.min(100, value - 50));
+}
+
+function inferLegacyChatRuntimeDetailLoaded(input: GroupChat) {
+  if (input.runtimeDetailLoaded === false) return false;
+  return Boolean(
+    hasText(input.topicSeed)
+    || hasArrayItems(input.layeredMemories)
+    || hasArrayItems(input.runtimeTimeline)
+    || hasArrayItems(input.runtimeEventsV2)
+    || hasArrayItems(input.relationshipLedger)
+    || hasArrayItems(input.growthSnapshots)
+    || hasRecordDetail(input.runtimeSeed)
+  );
 }
 
 function migrateChat(input: GroupChat): GroupChat {
@@ -74,6 +122,7 @@ function migrateChat(input: GroupChat): GroupChat {
       ...input.worldState,
       structuredRoomState,
     },
+    runtimeDetailLoaded: inferLegacyChatRuntimeDetailLoaded(input),
   };
 }
 
@@ -205,4 +254,6 @@ export const CLIENT_STORE_MIGRATION_NOTES = {
   1: 'Normalize persisted relationships, governance, developer UI, and message payload shapes.',
   2: 'Slim relationship ledger recent events down to lightweight snapshots.',
   3: 'Shift room cohesion to a signed zero-centered scale.',
+  4: 'Preserve whether persisted character and chat records contain full detail or only summaries.',
+  5: 'Recompute chat detail flags using only fields that are not present in chat summaries.',
 } as const;

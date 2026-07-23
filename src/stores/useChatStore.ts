@@ -26,6 +26,7 @@ import {
   getPendingQueueWorkerPriority,
   isTerminalSyncError,
   latestSyncError,
+  getCloudSyncSkipDiagnostics,
   recoverInterruptedOperations,
   removePendingOperation,
   retryFailedOperations,
@@ -35,6 +36,7 @@ import {
 } from './storeSyncHelpers';
 import { DEFAULT_BASIC_RETENTION_LIMITS, getCurrentRetentionLimits, takeRecentByLimit } from '../services/retentionLimits';
 import { useLocalWorkspaceStore } from './useLocalWorkspaceStore';
+import { logDeveloperDiagnostic } from '../services/developerDiagnostics';
 
 function createLocalChatId() {
   return `local-chat-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -446,6 +448,8 @@ function buildPersistedChatState(state: PersistedChatState): PersistedChatState 
   const persisted = {
     chats: state.chats.map((chat) => normalizeConversation({
       ...compactChatRuntimeFieldsForPersistence(chat),
+      runtimeDetailLoaded: isChatRuntimeDetailLoaded(chat),
+      worldRuntimeLoaded: Boolean(chat.worldRuntimeLoaded),
     } as GroupChat)),
     currentChatId: state.currentChatId,
     lastSyncedAt: state.lastSyncedAt,
@@ -543,6 +547,41 @@ function normalizeChats(items: GroupChat[]) {
   return items.map((item) => normalizeConversation(item));
 }
 
+function hasText(value: unknown) {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function hasArrayItems(value: unknown) {
+  return Array.isArray(value) && value.length > 0;
+}
+
+function hasRecordDetail(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  return Object.values(value as Record<string, unknown>).some((item) => (
+    hasText(item)
+    || hasArrayItems(item)
+    || (item && typeof item === 'object' && !Array.isArray(item) && hasRecordDetail(item))
+  ));
+}
+
+function hasChatRuntimeDetailEvidence(chat: GroupChat | undefined) {
+  return Boolean(chat && (
+    hasText(chat.topicSeed)
+    || hasArrayItems(chat.layeredMemories)
+    || hasArrayItems(chat.runtimeTimeline)
+    || hasArrayItems(chat.runtimeEventsV2)
+    || hasArrayItems(chat.relationshipLedger)
+    || hasArrayItems(chat.growthSnapshots)
+    || hasRecordDetail(chat.runtimeSeed)
+  ));
+}
+
+function isChatRuntimeDetailLoaded(chat: GroupChat | undefined) {
+  if (!chat) return false;
+  if (chat.runtimeDetailLoaded === false) return false;
+  return hasChatRuntimeDetailEvidence(chat);
+}
+
 function sortChats(chats: GroupChat[]) {
   return [...chats].sort((a, b) => b.lastMessageAt - a.lastMessageAt);
 }
@@ -608,7 +647,66 @@ function applyLocalChatRuntimeDelta(
 }
 
 function mergeChatRecord(local: GroupChat | undefined, remote: GroupChat) {
-  if (local && remote.runtimeDetailLoaded !== false && local.updatedAt >= remote.updatedAt) {
+  const remoteHasDetail = remote.runtimeDetailLoaded === true;
+  const localHasDetail = isChatRuntimeDetailLoaded(local);
+  if (!local) {
+    return {
+      ...remote,
+      runtimeDetailLoaded: remoteHasDetail,
+    };
+  }
+  if (!remoteHasDetail) {
+    if (!localHasDetail) {
+      return {
+        ...remote,
+        type: remote.memberIds?.length ? remote.type : local.type,
+        memberIds: remote.memberIds?.length ? remote.memberIds : local.memberIds,
+        sourceChatId: remote.sourceChatId ?? local.sourceChatId,
+        sourceMemberIds: remote.sourceMemberIds?.length ? remote.sourceMemberIds : local.sourceMemberIds,
+        fieldVersions: mergeFieldVersionsForSync(local, remote),
+        messageBranchState: mergeMessageBranchStateForSync(local, remote, 'remote'),
+        runtimeDetailLoaded: false,
+      };
+    }
+    return {
+      ...local,
+      id: remote.id,
+      type: remote.memberIds?.length ? remote.type : local.type,
+      mode: remote.mode,
+      name: remote.name,
+      topic: remote.topic,
+      style: remote.style,
+      runtimeEvolutionIntensity: remote.runtimeEvolutionIntensity,
+      memberIds: remote.memberIds?.length ? remote.memberIds : local.memberIds,
+      sourceChatId: remote.sourceChatId ?? local.sourceChatId,
+      sourceMemberIds: remote.sourceMemberIds?.length ? remote.sourceMemberIds : local.sourceMemberIds,
+      memberCharacterSummaries: remote.memberCharacterSummaries?.length ? remote.memberCharacterSummaries : local.memberCharacterSummaries,
+      speed: remote.speed,
+      isActive: remote.isActive,
+      allowIntervention: remote.allowIntervention,
+      showRoleActions: remote.showRoleActions,
+      topicSeed: remote.topicSeed,
+      deletedAt: remote.deletedAt,
+      fieldVersions: mergeFieldVersionsForSync(local, remote),
+      createdAt: remote.createdAt,
+      updatedAt: remote.updatedAt,
+      lastMessageAt: remote.lastMessageAt,
+      latestMessage: remote.latestMessage,
+      messageBranchState: mergeMessageBranchStateForSync(local, remote, 'remote'),
+      runtimeDetailLoaded: true,
+    };
+  }
+  if (local.updatedAt >= remote.updatedAt) {
+    if (localHasDetail) {
+      return {
+        ...local,
+        memberCharacterSummaries: remote.memberCharacterSummaries?.length ? remote.memberCharacterSummaries : local.memberCharacterSummaries,
+        fieldVersions: mergeFieldVersionsForSync(local, remote),
+        runtimeEventsV2: mergeRuntimeEventsForSync(local.runtimeEventsV2, remote.runtimeEventsV2),
+        messageBranchState: mergeMessageBranchStateForSync(local, remote, 'local'),
+        runtimeDetailLoaded: true,
+      };
+    }
     return {
       ...remote,
       id: local.id,
@@ -639,54 +737,21 @@ function mergeChatRecord(local: GroupChat | undefined, remote: GroupChat) {
       runtimeDetailLoaded: true,
     };
   }
-  if (!local) {
-    return remote;
-  }
-  if (remote.runtimeDetailLoaded !== false || local.runtimeDetailLoaded === false) {
-    return {
-      ...remote,
-      type: remote.memberIds?.length ? remote.type : local.type,
-      memberIds: remote.memberIds?.length ? remote.memberIds : local.memberIds,
-      sourceChatId: remote.sourceChatId ?? local.sourceChatId,
-      sourceMemberIds: remote.sourceMemberIds?.length ? remote.sourceMemberIds : local.sourceMemberIds,
-      runtimeEventsV2: mergeRuntimeEventsForSync(local.runtimeEventsV2, remote.runtimeEventsV2),
-      fieldVersions: mergeFieldVersionsForSync(local, remote),
-      messageBranchState: mergeMessageBranchStateForSync(local, remote, 'remote'),
-    };
-  }
   return {
-    ...local,
-    id: remote.id,
+    ...remote,
     type: remote.memberIds?.length ? remote.type : local.type,
-    mode: remote.mode,
-    name: remote.name,
-    topic: remote.topic,
-    style: remote.style,
-    runtimeEvolutionIntensity: remote.runtimeEvolutionIntensity,
     memberIds: remote.memberIds?.length ? remote.memberIds : local.memberIds,
     sourceChatId: remote.sourceChatId ?? local.sourceChatId,
     sourceMemberIds: remote.sourceMemberIds?.length ? remote.sourceMemberIds : local.sourceMemberIds,
-    memberCharacterSummaries: remote.memberCharacterSummaries?.length ? remote.memberCharacterSummaries : local.memberCharacterSummaries,
-    speed: remote.speed,
-    isActive: remote.isActive,
-    allowIntervention: remote.allowIntervention,
-    showRoleActions: remote.showRoleActions,
-    topicSeed: remote.topicSeed,
-    deletedAt: remote.deletedAt,
-    fieldVersions: mergeFieldVersionsForSync(local, remote),
-    createdAt: remote.createdAt,
-    updatedAt: remote.updatedAt,
-    lastMessageAt: remote.lastMessageAt,
-    worldState: remote.worldState,
-    latestMessage: remote.latestMessage,
     runtimeEventsV2: mergeRuntimeEventsForSync(local.runtimeEventsV2, remote.runtimeEventsV2),
+    fieldVersions: mergeFieldVersionsForSync(local, remote),
     messageBranchState: mergeMessageBranchStateForSync(local, remote, 'remote'),
     runtimeDetailLoaded: true,
   };
 }
 
 function mergeWorldRuntimeRecord(local: GroupChat | undefined, remote: GroupChat) {
-  if (!local || local.runtimeDetailLoaded === false) return remote;
+  if (!local || !isChatRuntimeDetailLoaded(local)) return remote;
   return {
     ...local,
     worldRuntimeLoaded: true,
@@ -703,7 +768,7 @@ function mergeChats(localChats: GroupChat[], remoteChats: GroupChat[], pendingOp
 
   for (const remote of normalizeChats(remoteChats)) {
     const local = merged.get(remote.id);
-    const fillsMissingDetail = Boolean(remote.runtimeDetailLoaded && !local?.runtimeDetailLoaded);
+    const fillsMissingDetail = Boolean(remote.runtimeDetailLoaded && !isChatRuntimeDetailLoaded(local));
     const fillsMissingWorldRuntime = Boolean(remote.worldRuntimeLoaded && !local?.worldRuntimeLoaded);
     const remoteBranchStateNewer = isRemoteChatFieldNewer(local, remote, 'messageBranchState');
     if (!local || remote.updatedAt > local.updatedAt || fillsMissingDetail || fillsMissingWorldRuntime || remoteBranchStateNewer) {
@@ -740,6 +805,7 @@ function normalizeChatSummaryChange(change: Record<string, unknown>) {
     ...patch,
     id: change.id,
     latestMessage: isRecord(patch.latestMessage) ? patch.latestMessage as unknown as Message : null,
+    runtimeDetailLoaded: false,
   } as unknown as GroupChat);
   return {
     op: change.op === 'delete' ? 'delete' as const : 'upsert' as const,
@@ -804,12 +870,15 @@ function chatDetailFromChanges(changes: Array<Record<string, unknown>> | undefin
 
 async function fetchChatSnapshot() {
   const result = await api.getChats() as unknown as GroupChat[];
-  return normalizeChats(result);
+  return normalizeChats(result.map((item) => ({ ...item, runtimeDetailLoaded: false })));
 }
 
 async function fetchChatDetail(id: string) {
   const result = await api.getChat(id);
-  const detail = normalizeConversation(result as unknown as GroupChat);
+  const detail = normalizeConversation({
+    ...(result as unknown as GroupChat),
+    runtimeDetailLoaded: true,
+  });
   if (detail.memberCharacterSummaries?.length) {
     useCharacterStore.getState().hydrateCharacterSummaries(detail.memberCharacterSummaries);
   }
@@ -1134,11 +1203,25 @@ export const useChatStore = create<ChatStore>()(
         loadChats: async () => {
           await ensureChatStoreHydrated();
           set(buildWarmChatStoreState);
+          logDeveloperDiagnostic('chat-store:loadChats:start', {
+            currentChats: get().chats.length,
+            chatSummaryLoadedAt: get().chatSummaryLoadedAt,
+            ...getCloudSyncSkipDiagnostics(),
+            summaryFresh: chatSyncScopes.isFresh(CHAT_SUMMARY_SCOPE),
+          }, 'debug', 'chat-sync');
           if (shouldSkipCloudSync()) {
+            logDeveloperDiagnostic('chat-store:loadChats:skip-cloud', {
+              ...getCloudSyncSkipDiagnostics(),
+              currentChats: get().chats.length,
+            }, 'info', 'chat-sync');
             set(markChatsLoadingIdle);
             return;
           }
           if (get().chats.length > 0 && get().chatSummaryLoadedAt > 0 && chatSyncScopes.isFresh(CHAT_SUMMARY_SCOPE)) {
+            logDeveloperDiagnostic('chat-store:loadChats:skip-fresh', {
+              currentChats: get().chats.length,
+              chatSummaryLoadedAt: get().chatSummaryLoadedAt,
+            }, 'debug', 'chat-sync');
             set(markChatsLoadingIdle);
             return;
           }
@@ -1146,6 +1229,12 @@ export const useChatStore = create<ChatStore>()(
             try {
               await maybeUploadGuestChats(get);
               const changeProbe = await probeChatScopeChanges(CHAT_SUMMARY_SCOPE, { forceFull: get().chats.length === 0 || get().chatSummaryLoadedAt === 0 });
+              logDeveloperDiagnostic('chat-store:loadChats:probe', {
+                status: changeProbe?.status,
+                changes: changeProbe?.changes?.length || 0,
+                hasMore: changeProbe?.hasMore,
+                cursor: Boolean(changeProbe?.cursor),
+              }, 'debug', 'chat-sync');
               if (changeProbe?.status === 'not_modified') {
                 chatSyncScopes.markChecked(CHAT_SUMMARY_SCOPE, {
                   cursor: changeProbe.cursor,
@@ -1211,6 +1300,10 @@ export const useChatStore = create<ChatStore>()(
                 return;
               }
               const visible = await reloadVisibleChatState(get().pendingOperations);
+              logDeveloperDiagnostic('chat-store:loadChats:reload-visible', {
+                visibleChats: visible.length,
+                pendingOperations: get().pendingOperations.length,
+              }, 'debug', 'chat-sync');
               set((state) => ({
                 ...(() => {
                   const nextChats = mergeVisibleChats(state.chats, visible, state.pendingOperations);
@@ -1243,18 +1336,46 @@ export const useChatStore = create<ChatStore>()(
           }, { markCheckedOnSuccess: false });
         },
 
-        loadChat: async (id) => {
+        loadChat: async (id): Promise<GroupChat | null> => {
           if (!id) return null;
           await ensureChatStoreHydrated();
           const cached = get().chats.find((chat) => chat.id === id);
-          if (shouldSkipCloudSync()) return cached || null;
-          const scope = chatDetailScope(id);
-          if (cached && chatSyncScopes.isFresh(scope, CHAT_DETAIL_REFRESH_TTL_MS)) {
-            return cached;
+          logDeveloperDiagnostic('chat-store:loadChat:start', {
+            chatId: id,
+            hasCached: Boolean(cached),
+            cachedRuntimeDetailLoaded: cached?.runtimeDetailLoaded,
+            cachedMemberCount: cached?.memberIds?.length,
+            ...getCloudSyncSkipDiagnostics(),
+          }, 'debug', 'chat-sync');
+          if (shouldSkipCloudSync()) {
+            logDeveloperDiagnostic('chat-store:loadChat:skip-cloud', {
+              chatId: id,
+              hasCached: Boolean(cached),
+              ...getCloudSyncSkipDiagnostics(),
+            }, 'info', 'chat-sync');
+            return cached || null;
           }
-          return chatSyncScopes.run(scope, async () => {
+          const scope = chatDetailScope(id);
+          if ((isChatRuntimeDetailLoaded(cached) || cached?.id.startsWith('local-chat-')) && chatSyncScopes.isFresh(scope, CHAT_DETAIL_REFRESH_TTL_MS)) {
+            logDeveloperDiagnostic('chat-store:loadChat:skip-fresh', {
+              chatId: id,
+              cachedRuntimeDetailLoaded: cached?.runtimeDetailLoaded,
+              scopeFresh: true,
+            }, 'debug', 'chat-sync');
+            return cached ?? null;
+          }
+          const loaded = await chatSyncScopes.run<GroupChat | null>(scope, async (): Promise<GroupChat | null> => {
             try {
-              const changeProbe = cached?.runtimeDetailLoaded ? await probeChatScopeChanges(scope) : null;
+              const cachedHasDetailCursor = cached?.runtimeDetailLoaded === true;
+              const cachedHasUsableDetail = isChatRuntimeDetailLoaded(cached);
+              const changeProbe = cachedHasDetailCursor ? await probeChatScopeChanges(scope) : null;
+              logDeveloperDiagnostic('chat-store:loadChat:probe', {
+                chatId: id,
+                cachedHasDetailCursor,
+                cachedHasUsableDetail,
+                status: changeProbe?.status,
+                changes: changeProbe?.changes?.length || 0,
+              }, 'debug', 'chat-sync');
               if (changeProbe?.status === 'not_modified') {
                 chatSyncScopes.markChecked(scope, {
                   cursor: changeProbe.cursor,
@@ -1262,9 +1383,16 @@ export const useChatStore = create<ChatStore>()(
                   fresh: !changeProbe?.hasMore,
                   applied: false,
                 });
-                return cached || null;
+                if (cachedHasUsableDetail) return cached || null;
               }
               const detail = chatDetailFromChanges(changeProbe?.changes, id) || await fetchChatDetail(id);
+              logDeveloperDiagnostic('chat-store:loadChat:detail-loaded', {
+                chatId: id,
+                deleted: detail.deletedAt != null,
+                memberCount: detail.memberIds?.length,
+                runtimeDetailLoaded: detail.runtimeDetailLoaded,
+                memberCharacterSummaries: detail.memberCharacterSummaries?.length || 0,
+              }, 'debug', 'chat-sync');
               if (detail.memberCharacterSummaries?.length) {
                 useCharacterStore.getState().hydrateCharacterSummaries(detail.memberCharacterSummaries);
               }
@@ -1313,11 +1441,19 @@ export const useChatStore = create<ChatStore>()(
                   pendingEditSyncError: latestChatError(state.pendingOperations),
                 };
               });
-              return detail;
+              return get().chats.find((chat) => chat.id === id) || detail;
             } catch (error) {
               const fallback = get().chats.find((chat) => chat.id === id) || null;
               if (getErrorStatus(error) === 404 && fallback) {
                 chatSyncScopes.markChecked(scope, { applied: false });
+                if (hasChatRuntimeDetailEvidence(fallback) && fallback.runtimeDetailLoaded !== true) {
+                  set((state) => ({
+                    chats: state.chats.map((chat) => (
+                      chat.id === id ? { ...chat, runtimeDetailLoaded: true } : chat
+                    )),
+                  }));
+                  return { ...fallback, runtimeDetailLoaded: true };
+                }
                 return fallback;
               }
               chatSyncScopes.markError(scope, error);
@@ -1347,6 +1483,7 @@ export const useChatStore = create<ChatStore>()(
               return null;
             }
           }, { markCheckedOnSuccess: false });
+          return loaded ?? null;
         },
 
         loadWorldRuntime: async () => {
@@ -1402,17 +1539,35 @@ export const useChatStore = create<ChatStore>()(
 
         prefetchChats: async () => {
           if (shouldSkipCloudSync()) {
+            logDeveloperDiagnostic('chat-store:prefetchChats:local', {
+              currentChats: get().chats.length,
+            }, 'debug', 'chat-sync');
             await get().loadChats();
             return;
           }
           const state = get();
-          if (state.chats.length > 0 && state.chatSummaryLoadedAt > 0 && chatSyncScopes.isFresh(CHAT_SUMMARY_SCOPE)) return;
+          if (state.chats.length > 0 && state.chatSummaryLoadedAt > 0 && chatSyncScopes.isFresh(CHAT_SUMMARY_SCOPE)) {
+            logDeveloperDiagnostic('chat-store:prefetchChats:skip-fresh', {
+              currentChats: state.chats.length,
+              chatSummaryLoadedAt: state.chatSummaryLoadedAt,
+            }, 'debug', 'chat-sync');
+            return;
+          }
+          logDeveloperDiagnostic('chat-store:prefetchChats:schedule', {
+            currentChats: state.chats.length,
+            chatSummaryLoadedAt: state.chatSummaryLoadedAt,
+          }, 'debug', 'chat-sync');
           scheduleChatScopeRefresh(flushRequestedChatScopes, CHAT_SUMMARY_SCOPE);
         },
 
         restoreLocalChats: async () => {
           await ensureChatStoreHydrated();
           const persisted = await readPersistedChatStoreState();
+          logDeveloperDiagnostic('chat-store:restoreLocalChats:start', {
+            persistedChats: persisted?.chats?.length || 0,
+            currentChats: get().chats.length,
+            pendingOperations: persisted?.pendingOperations?.length || 0,
+          }, 'debug', 'chat-sync');
           if (!persisted?.chats?.length) return;
           set((state) => {
             const pendingOperations = state.pendingOperations.length
@@ -1456,7 +1611,7 @@ export const useChatStore = create<ChatStore>()(
         },
 
         getChat: (id) => get().chats.find((chat) => chat.id === id),
-        hasChatLoaded: (id) => Boolean(get().chats.find((chat) => chat.id === id)),
+        hasChatLoaded: (id) => isChatRuntimeDetailLoaded(get().chats.find((chat) => chat.id === id)),
         getChatsLoadedAt: () => get().lastSyncedAt,
         getSyncScopeStates: () => chatSyncScopes.listStates(),
         markChatsWarm: () => {

@@ -10,6 +10,20 @@ export default function PwaUpdatePrompt() {
   const updateSWRef = useRef<ReturnType<typeof registerSW> | null>(null);
 
   useEffect(() => {
+    if (import.meta.env.DEV) {
+      if ('serviceWorker' in navigator) {
+        void navigator.serviceWorker.getRegistrations()
+          .then((registrations) => {
+            registrations.forEach((registration) => {
+              void registration.unregister();
+            });
+          })
+          .catch((error) => {
+            console.warn('Failed to unregister service workers in dev mode:', error);
+          });
+      }
+      return;
+    }
     updateSWRef.current = registerSW({
       immediate: true,
       onNeedRefresh() {
@@ -26,7 +40,7 @@ export default function PwaUpdatePrompt() {
     void updateSWRef.current?.(true);
   };
 
-  if (UPDATE_MODE === 'auto') return null;
+  if (import.meta.env.DEV || UPDATE_MODE === 'auto') return null;
 
   return (
     <AppSnackbar

@@ -132,6 +132,21 @@ function buildLightweightProjectionData(chat: GroupChat) {
   };
 }
 
+export function resolveLightweightSidebarTab(params: {
+  rightPanelTab: string;
+  showMemberTab: boolean;
+  showRuntimeTab: boolean;
+  showActionTab: boolean;
+}) {
+  if (params.showMemberTab && params.rightPanelTab === 'members') return 'members';
+  if (params.showRuntimeTab && params.rightPanelTab === 'narrative') return 'narrative';
+  if (params.showRuntimeTab && params.rightPanelTab === 'world') return 'world';
+  if (params.showActionTab && params.rightPanelTab === 'activities') return 'actions';
+  if (params.showMemberTab) return 'members';
+  if (params.showRuntimeTab) return 'world';
+  return 'actions';
+}
+
 function buildLightweightProjectedSessionActions(chat: GroupChat, actions: SessionActionDefinition[], members: AICharacter[] = []) {
   if (chat.type !== 'group') return actions;
   const chatMemberSet = new Set(chat.memberIds);
@@ -169,13 +184,12 @@ function buildLightweightProjectedChatDetailState(params: {
   const showMemberTab = Boolean(memberPanel);
   const showRuntimeTab = Boolean(runtimePanel);
   const showActionTab = params.chat.type === 'group';
-  const activeSidebarTab = (showMemberTab && params.rightPanelTab === 'members')
-    ? 'members'
-    : (showRuntimeTab && params.rightPanelTab === 'world')
-      ? 'world'
-      : showActionTab && params.rightPanelTab === 'activities'
-        ? 'actions'
-        : showMemberTab ? 'members' : showRuntimeTab ? 'world' : 'actions';
+  const activeSidebarTab = resolveLightweightSidebarTab({
+    rightPanelTab: params.rightPanelTab,
+    showMemberTab,
+    showRuntimeTab,
+    showActionTab,
+  });
   const actionPanelActions = buildLightweightProjectedSessionActions(params.chat, [], params.members);
   const memorySummary = params.speakAsChar?.layeredMemories?.slice(-getCurrentRetentionLimits().characterLayeredMemories.recall).map((item) => item.text).join(' / ');
   return {
@@ -189,6 +203,8 @@ function buildLightweightProjectedChatDetailState(params: {
       ? (memberPanel?.title || (params.chat.type === 'group' ? '成员' : '角色'))
       : activeSidebarTab === 'actions'
         ? '动作'
+        : activeSidebarTab === 'narrative'
+          ? '叙事流'
         : (runtimePanel?.title || '运行态'),
     memberTabTitle: memberPanel?.title || (params.chat.type === 'group' ? '成员' : '角色'),
     runtimeTabTitle: runtimePanel?.title || '运行态',

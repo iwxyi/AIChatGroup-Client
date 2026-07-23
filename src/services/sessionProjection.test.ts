@@ -1535,4 +1535,29 @@ describe('sessionProjection', () => {
     expect(state.sidebarTitle).toBe('章节');
     expect(state.showActionTab).toBe(false);
   });
+
+  it('labels the narrative tab separately from runtime in projected sidebar state', () => {
+    const chat = normalizeConversation({
+      ...buildChat(),
+      id: 'group-narrative',
+      type: 'group',
+      sessionKind: { topology: 'group', family: 'conversation', scenarioId: 'open-chat', surfaceProfile: 'text' },
+    });
+    const state = buildProjectedChatDetailState({
+      chat,
+      members: [{ id: 'a', name: '喜羊羊' }] as never,
+      runtimeState: null,
+      privatePayloads: [],
+      visiblePanels: [
+        { key: 'members', title: '成员', type: 'members', tabKey: 'members' },
+        { key: 'runtime', title: '运行态', type: 'runtime', tabKey: 'world' },
+      ],
+      schemaActions: [],
+      rightPanelTab: 'narrative',
+      frameworkState: projectSessionFrameworkState(chat),
+    });
+
+    expect(state.activeSidebarTab).toBe('narrative');
+    expect(state.sidebarTitle).toBe('叙事流');
+  });
 });

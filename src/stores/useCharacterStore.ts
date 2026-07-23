@@ -286,6 +286,46 @@ function normalizeCharacters(items: AICharacter[]) {
   return items.map((item) => normalizeCharacter(item));
 }
 
+function hasText(value: unknown) {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function hasArrayItems(value: unknown) {
+  return Array.isArray(value) && value.length > 0;
+}
+
+function hasRecordDetail(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  return Object.values(value as Record<string, unknown>).some((item) => (
+    hasText(item)
+    || hasArrayItems(item)
+    || (item && typeof item === 'object' && !Array.isArray(item) && hasRecordDetail(item))
+  ));
+}
+
+function hasCharacterDetailEvidence(character: AICharacter | undefined) {
+  return Boolean(character && (
+    hasText(character.background)
+    || hasText(character.speakingStyle)
+    || hasArrayItems(character.relationships)
+    || hasArrayItems(character.layeredMemories)
+    || hasArrayItems(character.runtimeTimeline)
+    || hasRecordDetail(character.memory)
+    || hasRecordDetail(character.coreProfile)
+    || hasRecordDetail(character.soulState)
+    || hasRecordDetail(character.emotionalState)
+    || hasRecordDetail(character.behavior)
+    || hasRecordDetail(character.intervention)
+  ));
+}
+
+function isCharacterDetailLoaded(character: AICharacter | undefined) {
+  if (!character) return false;
+  if (character.characterDetailLoaded === true) return true;
+  if (character.characterDetailLoaded === false) return false;
+  return hasCharacterDetailEvidence(character);
+}
+
 function sortCharacters(characters: AICharacter[]) {
   return [...characters].sort((a, b) => a.name.localeCompare(b.name, 'zh-Hans-CN'));
 }
@@ -338,7 +378,47 @@ function assertUniqueCharacterNameBatch(characters: AICharacter[], charsData: Ar
 }
 
 function mergeCharacterRecord(local: AICharacter | undefined, remote: AICharacter) {
-  if (local && remote.characterDetailLoaded !== false && local.updatedAt >= remote.updatedAt) {
+  const remoteHasDetail = isCharacterDetailLoaded(remote);
+  const localHasDetail = isCharacterDetailLoaded(local);
+  if (!local) {
+    return {
+      ...remote,
+      characterDetailLoaded: remoteHasDetail,
+    };
+  }
+  if (!remoteHasDetail) {
+    if (!localHasDetail) {
+      return {
+        ...remote,
+        characterDetailLoaded: false,
+      };
+    }
+    return {
+      ...local,
+      id: remote.id,
+      name: remote.name,
+      avatar: remote.avatar,
+      personality: remote.personality,
+      expertise: remote.expertise,
+      group: remote.group,
+      bubbleStyleId: remote.bubbleStyleId,
+      bubbleStyle: remote.bubbleStyle || local.bubbleStyle,
+      isPreset: remote.isPreset,
+      deletedAt: remote.deletedAt,
+      fieldVersions: remote.fieldVersions,
+      createdAt: remote.createdAt,
+      updatedAt: remote.updatedAt,
+      characterDetailLoaded: true,
+    };
+  }
+  if (local.updatedAt >= remote.updatedAt) {
+    if (localHasDetail) {
+      return {
+        ...local,
+        fieldVersions: { ...(remote.fieldVersions || {}), ...(local.fieldVersions || {}) },
+        characterDetailLoaded: true,
+      };
+    }
     return {
       ...remote,
       id: local.id,
@@ -357,24 +437,8 @@ function mergeCharacterRecord(local: AICharacter | undefined, remote: AICharacte
       characterDetailLoaded: true,
     };
   }
-  if (!local || remote.characterDetailLoaded !== false || local.characterDetailLoaded === false) {
-    return remote;
-  }
   return {
-    ...local,
-    id: remote.id,
-    name: remote.name,
-    avatar: remote.avatar,
-    personality: remote.personality,
-    expertise: remote.expertise,
-    group: remote.group,
-    bubbleStyleId: remote.bubbleStyleId,
-    bubbleStyle: remote.bubbleStyle || local.bubbleStyle,
-    isPreset: remote.isPreset,
-    deletedAt: remote.deletedAt,
-    fieldVersions: remote.fieldVersions,
-    createdAt: remote.createdAt,
-    updatedAt: remote.updatedAt,
+    ...remote,
     characterDetailLoaded: true,
   };
 }
@@ -425,7 +489,7 @@ function hasNonDeletePendingCharacterOperation(pendingOperations: PendingCharact
 
 async function fetchCharacterSnapshot() {
   const result = await api.getCharacters() as unknown as AICharacter[];
-  return normalizeCharacters(result);
+  return normalizeCharacters(result.map((item) => ({ ...item, characterDetailLoaded: false })));
 }
 
 async function fetchCharacterDetail(id: string) {
@@ -515,6 +579,7 @@ function buildPersistedCharacterState(state: PersistedCharacterState): Persisted
       layeredMemories: takeRecentByLimit(character.layeredMemories, getCurrentRetentionLimits().characterLayeredMemories.storage),
       intervention: character.intervention,
       runtimeTimeline: takeRecentByLimit(character.runtimeTimeline, getCurrentRetentionLimits().characterRuntimeTimeline.storage),
+      characterDetailLoaded: isCharacterDetailLoaded(character),
       isPreset: character.isPreset,
       deletedAt: character.deletedAt ?? null,
       createdAt: character.createdAt,
@@ -788,7 +853,10 @@ function characterSummariesFromChanges(changes: Array<Record<string, unknown>> |
   const items: AICharacter[] = [];
   for (const change of changes || []) {
     if (change.entity !== 'character_summary' || typeof change.patch !== 'object' || !change.patch) continue;
-    items.push(normalizeCharacter(change.patch as unknown as AICharacter));
+    items.push(normalizeCharacter({
+      ...(change.patch as unknown as AICharacter),
+      characterDetailLoaded: false,
+    }));
   }
   return items;
 }
@@ -1040,19 +1108,19 @@ export const useCharacterStore = create<CharacterStore>()(
           }, { markCheckedOnSuccess: false });
         },
 
-        loadCharacter: async (id) => {
+        loadCharacter: async (id): Promise<AICharacter | null> => {
           if (!id || isReservedNonCharacterActorId(id)) return null;
           await ensureCharacterStoreHydrated();
           const cached = get().characters.find((character) => character.id === id);
           if (cached?.isPreset) return cached;
           if (shouldSkipCloudSync()) return cached || null;
           const scope = characterDetailScope(id);
-          if (cached && characterSyncScopes.isFresh(scope, CHARACTER_DETAIL_REFRESH_TTL_MS)) {
-            return cached;
+          if (isCharacterDetailLoaded(cached) && characterSyncScopes.isFresh(scope, CHARACTER_DETAIL_REFRESH_TTL_MS)) {
+            return cached ?? null;
           }
-          return characterSyncScopes.run(scope, async () => {
+          const loaded = await characterSyncScopes.run<AICharacter | null>(scope, async (): Promise<AICharacter | null> => {
             try {
-              const changeProbe = cached?.characterDetailLoaded ? await probeCharacterDetailChanges(scope) : null;
+              const changeProbe = isCharacterDetailLoaded(cached) ? await probeCharacterDetailChanges(scope) : null;
               if (changeProbe?.status === 'not_modified') {
                 characterSyncScopes.markChecked(scope, {
                   cursor: changeProbe.cursor,
@@ -1105,11 +1173,19 @@ export const useCharacterStore = create<CharacterStore>()(
                   pendingEditSyncError: latestCharacterError(state.pendingOperations),
                 };
               });
-              return detail;
+              return get().characters.find((character) => character.id === id) || detail;
             } catch (error) {
               const fallback = get().characters.find((character) => character.id === id) || null;
               if (getErrorStatus(error) === 404 && fallback) {
                 characterSyncScopes.markChecked(scope, { applied: false });
+                if (hasCharacterDetailEvidence(fallback) && fallback.characterDetailLoaded !== true) {
+                  set((state) => ({
+                    characters: state.characters.map((character) => (
+                      character.id === id ? { ...character, characterDetailLoaded: true } : character
+                    )),
+                  }));
+                  return { ...fallback, characterDetailLoaded: true };
+                }
                 return fallback;
               }
               characterSyncScopes.markError(scope, error);
@@ -1139,6 +1215,7 @@ export const useCharacterStore = create<CharacterStore>()(
               return null;
             }
           }, { markCheckedOnSuccess: false });
+          return loaded ?? null;
         },
 
         prefetchCharacters: async () => {
@@ -1491,7 +1568,7 @@ export const useCharacterStore = create<CharacterStore>()(
         },
 
         getCharacter: (id) => get().characters.find((c) => c.id === id),
-        hasCharacterLoaded: (id) => Boolean(get().characters.find((c) => c.id === id)),
+        hasCharacterLoaded: (id) => isCharacterDetailLoaded(get().characters.find((c) => c.id === id)),
         getCharactersLoadedAt: () => get().lastSyncedAt,
         getSyncScopeStates: () => characterSyncScopes.listStates(),
         markCharactersWarm: () => {
@@ -1577,6 +1654,7 @@ export const useCharacterStore = create<CharacterStore>()(
 export const __characterRuntimePersistenceForTests = {
   compactCharacterPatchForCloud,
   buildPersistedCharacterState,
+  isCharacterDetailLoaded,
   limits: {
     layeredMemories: DEFAULT_BASIC_RETENTION_LIMITS.characterLayeredMemories.storage,
     runtimeTimeline: DEFAULT_BASIC_RETENTION_LIMITS.characterRuntimeTimeline.storage,

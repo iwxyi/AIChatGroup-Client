@@ -63,7 +63,7 @@ import { AIModelsPanel } from './AIModelsPage';
 import { SETTINGS_TAB_KEYS, buildSettingsPath, getSettingsTabForCard, resolveSettingsTab, type SettingsTabKey } from '../routes/settingsRoute';
 
 function buildPageSx() {
-  return { p: { xs: 2.5, sm: 3, md: 3.5 }, pt: { xs: 1, sm: 1, md: 3 }, pb: { xs: 'calc(env(safe-area-inset-bottom, 0px) + 96px)', sm: 3, md: 3.5 }, width: '100%', maxWidth: 960, mx: 'auto' };
+  return { p: { xs: 2.5, sm: 3, md: 3.5 }, pt: { xs: 1, sm: 1, md: 3 }, pb: { xs: 'calc(env(safe-area-inset-bottom, 0px) + 82px)', sm: 3, md: 3.5 }, width: '100%', maxWidth: 960, mx: 'auto' };
 }
 
 function buildToggleGroupSx() {

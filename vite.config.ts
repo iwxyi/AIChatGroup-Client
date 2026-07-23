@@ -1,12 +1,21 @@
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import type { Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
-const allowedHosts = process.env.VITE_ALLOWED_HOSTS
-  ? process.env.VITE_ALLOWED_HOSTS.split(',').map((host) => host.trim()).filter(Boolean)
-  : true
-const appUpdateMode = process.env.VITE_APP_UPDATE_MODE === 'prompt' ? 'prompt' : 'auto'
+function loadClientEnv(mode: string) {
+  return loadEnv(mode, process.cwd(), '')
+}
+
+function resolveAllowedHosts(env: Record<string, string>) {
+  return env.VITE_ALLOWED_HOSTS
+    ? env.VITE_ALLOWED_HOSTS.split(',').map((host) => host.trim()).filter(Boolean)
+    : true
+}
+
+function resolveAppUpdateMode(env: Record<string, string>) {
+  return env.VITE_APP_UPDATE_MODE === 'prompt' ? 'prompt' : 'auto'
+}
 
 function manualDevUpdatePlugin(): Plugin {
   let updateVersion = Date.now()
@@ -105,150 +114,156 @@ function setForwardedHeaders(proxyRequest: { setHeader(name: string, value: stri
   if (portMatch?.[1]) proxyRequest.setHeader('x-forwarded-port', portMatch[1]);
 }
 
-export default defineConfig({
-  server: {
-    host: '0.0.0.0',
-    port: 5173,
-    cors: false,
-    hmr: appUpdateMode === 'auto',
-    allowedHosts,
-    proxy: {
-      '/api': {
-        target: 'http://localhost:5170',
-        changeOrigin: true,
-        configure(proxy) {
-          proxy.on('proxyReq', (proxyRequest, request) => {
-            setForwardedHeaders(proxyRequest, request)
-          })
-          proxy.on('proxyRes', (proxyRes) => {
-            proxyRes.headers['x-pneumata-vite-proxy'] = 'Pneumata-Client:5173';
-          })
+export default defineConfig(({ mode }) => {
+  const env = loadClientEnv(mode)
+  const appUpdateMode = resolveAppUpdateMode(env)
+  const allowedHosts = resolveAllowedHosts(env)
+
+  return {
+    server: {
+      host: '0.0.0.0',
+      port: 5173,
+      cors: false,
+      hmr: appUpdateMode === 'auto',
+      allowedHosts,
+      proxy: {
+        '/api': {
+          target: 'http://localhost:5170',
+          changeOrigin: true,
+          configure(proxy) {
+            proxy.on('proxyReq', (proxyRequest, request) => {
+              setForwardedHeaders(proxyRequest, request)
+            })
+            proxy.on('proxyRes', (proxyRes) => {
+              proxyRes.headers['x-pneumata-vite-proxy'] = 'Pneumata-Client:5173';
+            })
+          },
         },
-      },
-      '/uploads': {
-        target: 'http://localhost:5170',
-        changeOrigin: true,
-        configure(proxy) {
-          proxy.on('proxyReq', (proxyRequest, request) => {
-            setForwardedHeaders(proxyRequest, request)
-          })
+        '/uploads': {
+          target: 'http://localhost:5170',
+          changeOrigin: true,
+          configure(proxy) {
+            proxy.on('proxyReq', (proxyRequest, request) => {
+              setForwardedHeaders(proxyRequest, request)
+            })
+          },
         },
-      },
-      '^/ai(?:/|$)': {
-        target: 'http://localhost:5170',
-        changeOrigin: true,
-        configure(proxy) {
-          proxy.on('proxyReq', (proxyRequest, request) => {
-            setForwardedHeaders(proxyRequest, request)
-          })
+        '^/ai(?:/|$)': {
+          target: 'http://localhost:5170',
+          changeOrigin: true,
+          configure(proxy) {
+            proxy.on('proxyReq', (proxyRequest, request) => {
+              setForwardedHeaders(proxyRequest, request)
+            })
+          },
         },
-      },
-      '^/v1(?:/|$)': {
-        target: 'http://localhost:5170',
-        changeOrigin: true,
-        configure(proxy) {
-          proxy.on('proxyReq', (proxyRequest, request) => {
-            setForwardedHeaders(proxyRequest, request)
-          })
+        '^/v1(?:/|$)': {
+          target: 'http://localhost:5170',
+          changeOrigin: true,
+          configure(proxy) {
+            proxy.on('proxyReq', (proxyRequest, request) => {
+              setForwardedHeaders(proxyRequest, request)
+            })
+          },
         },
-      },
-      '^/(models|responses|embeddings|chat/completions|images/generations|anthropic|web_search)(?:/|$)': {
-        target: 'http://localhost:5170',
-        changeOrigin: true,
-        configure(proxy) {
-          proxy.on('proxyReq', (proxyRequest, request) => {
-            setForwardedHeaders(proxyRequest, request)
-          })
+        '^/(models|responses|embeddings|chat/completions|images/generations|anthropic|web_search)(?:/|$)': {
+          target: 'http://localhost:5170',
+          changeOrigin: true,
+          configure(proxy) {
+            proxy.on('proxyReq', (proxyRequest, request) => {
+              setForwardedHeaders(proxyRequest, request)
+            })
+          },
         },
-      },
-      '^/setup-[^/]+\\.(sh|ps1)$': {
-        target: 'http://localhost:5170',
-        changeOrigin: true,
-        configure(proxy) {
-          proxy.on('proxyReq', (proxyRequest, request) => {
-            setForwardedHeaders(proxyRequest, request)
-          })
+        '^/setup-[^/]+\\.(sh|ps1)$': {
+          target: 'http://localhost:5170',
+          changeOrigin: true,
+          configure(proxy) {
+            proxy.on('proxyReq', (proxyRequest, request) => {
+              setForwardedHeaders(proxyRequest, request)
+            })
+          },
         },
       },
     },
-  },
-  plugins: [
-    publicAiProxyCorsPlugin(),
-    react(),
-    manualDevUpdatePlugin(),
-    VitePWA({
-      registerType: appUpdateMode === 'prompt' ? 'prompt' : 'autoUpdate',
-      includeAssets: ['favicon.svg', 'logo-192.png', 'logo-512.png'],
-      manifest: {
-        name: 'Sense Murmur',
-        short_name: 'SenseMurmur',
-        description: 'AI Multi-Agent Social World Simulation Platform',
-        theme_color: '#6750A4',
-        background_color: '#FEF7FF',
-        display: 'standalone',
-        scope: '/',
-        start_url: '/',
-        icons: [
-          {
-            src: 'logo-192.png',
-            sizes: '192x192',
-            type: 'image/png',
-          },
-          {
-            src: 'logo-512.png',
-            sizes: '512x512',
-            type: 'image/png',
-            purpose: 'any maskable',
-          },
-        ],
-      },
-      workbox: {
-        clientsClaim: appUpdateMode === 'auto',
-        skipWaiting: appUpdateMode === 'auto',
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
-        runtimeCaching: [
-          {
-            urlPattern: /\/uploads\/avatars\/.*/i,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'avatar-images',
-              expiration: {
-                maxEntries: 400,
-                maxAgeSeconds: 60 * 60 * 24 * 30,
-              },
-              cacheableResponse: {
-                statuses: [200],
+    plugins: [
+      publicAiProxyCorsPlugin(),
+      react(),
+      manualDevUpdatePlugin(),
+      VitePWA({
+        registerType: appUpdateMode === 'prompt' ? 'prompt' : 'autoUpdate',
+        includeAssets: ['favicon.svg', 'logo-192.png', 'logo-512.png'],
+        manifest: {
+          name: 'Sense Murmur',
+          short_name: 'SenseMurmur',
+          description: 'AI Multi-Agent Social World Simulation Platform',
+          theme_color: '#6750A4',
+          background_color: '#FEF7FF',
+          display: 'standalone',
+          scope: '/',
+          start_url: '/',
+          icons: [
+            {
+              src: 'logo-192.png',
+              sizes: '192x192',
+              type: 'image/png',
+            },
+            {
+              src: 'logo-512.png',
+              sizes: '512x512',
+              type: 'image/png',
+              purpose: 'any maskable',
+            },
+          ],
+        },
+        workbox: {
+          clientsClaim: appUpdateMode === 'auto',
+          skipWaiting: appUpdateMode === 'auto',
+          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+          runtimeCaching: [
+            {
+              urlPattern: /\/uploads\/avatars\/.*/i,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'avatar-images',
+                expiration: {
+                  maxEntries: 400,
+                  maxAgeSeconds: 60 * 60 * 24 * 30,
+                },
+                cacheableResponse: {
+                  statuses: [200],
+                },
               },
             },
-          },
-          {
-            urlPattern: /^https:\/\/api\.openai\.com\/.*/i,
-            handler: 'NetworkOnly',
-          },
-        ],
+            {
+              urlPattern: /^https:\/\/api\.openai\.com\/.*/i,
+              handler: 'NetworkOnly',
+            },
+          ],
+        },
+      }),
+    ],
+    resolve: {
+      alias: {
+        '@': '/src',
       },
-    }),
-  ],
-  resolve: {
-    alias: {
-      '@': '/src',
     },
-  },
-  build: {
-    rollupOptions: {
-      output: {
-        manualChunks(id) {
-          if (id.includes('node_modules')) {
-            if (id.includes('@mui/x-charts')) return 'vendor-mui-charts'
-            if (id.includes('@mui/icons-material')) return 'vendor-mui-icons'
-            if (id.includes('@emotion/')) return 'vendor-emotion'
-            if (id.includes('@mui/')) return 'vendor-mui-core'
-            if (id.includes('react-router') || id.includes('@remix-run/')) return 'vendor-router'
-            if (id.includes('react-i18next') || id.includes('i18next')) return 'vendor-i18n'
-            if (id.includes('react/jsx-runtime') || id.includes('/react/') || id.includes('/react-dom/')) return 'vendor-react'
-          }
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules')) {
+              if (id.includes('@mui/x-charts')) return 'vendor-mui-charts'
+              if (id.includes('@mui/icons-material')) return 'vendor-mui-icons'
+              if (id.includes('@emotion/')) return 'vendor-emotion'
+              if (id.includes('@mui/')) return 'vendor-mui-core'
+              if (id.includes('react-router') || id.includes('@remix-run/')) return 'vendor-router'
+              if (id.includes('react-i18next') || id.includes('i18next')) return 'vendor-i18n'
+              if (id.includes('react/jsx-runtime') || id.includes('/react/') || id.includes('/react-dom/')) return 'vendor-react'
+            }
+          },
         },
       },
     },
-  },
+  }
 })

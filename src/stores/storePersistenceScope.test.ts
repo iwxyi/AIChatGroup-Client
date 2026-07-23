@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createBufferedJsonStorage,
   createScopedBufferedJsonStorage,
+  createScopedIndexedDbBufferedJsonStorage,
   createScopedIndexedDbStorage,
   flushBufferedPersistenceWrites,
   migrateLocalStorageFallbacksToIndexedDb,
@@ -118,6 +119,44 @@ describe('storePersistenceScope', () => {
     await storage.setItem('scoped-messages', 'next-cache');
 
     expect(rawStorage.getItem('scoped-messages-user-1')).toBe('next-cache');
+  });
+
+  it('prefers localStorage fallback for buffered IndexedDB storage hydration', async () => {
+    const rawStorage = createStorageMock();
+    vi.stubGlobal('localStorage', rawStorage);
+    const indexedOpen = vi.fn();
+    vi.stubGlobal('indexedDB', { open: indexedOpen });
+    rawStorage.setItem('scoped-chats-user-1', JSON.stringify({ state: { value: 'local' }, version: 5 }));
+    const storage = createScopedIndexedDbBufferedJsonStorage<{ value: string }>({
+      getScopedKey: () => 'scoped-chats-user-1',
+      storageName: 'scoped-chats',
+    });
+
+    await expect(storage.getItem('scoped-chats')).resolves.toEqual({ state: { value: 'local' }, version: 5 });
+    expect(indexedOpen).not.toHaveBeenCalled();
+  });
+
+  it('times out blocked IndexedDB reads so store hydration cannot hang forever', async () => {
+    const rawStorage = createStorageMock();
+    vi.stubGlobal('localStorage', rawStorage);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    vi.stubGlobal('indexedDB', {
+      open: vi.fn(() => ({})),
+    });
+    const storage = createScopedIndexedDbBufferedJsonStorage<{ value: string }>({
+      getScopedKey: () => 'blocked-chats-user-1',
+      storageName: 'blocked-chats',
+    });
+
+    const resultPromise = storage.getItem('blocked-chats');
+    await vi.advanceTimersByTimeAsync(1200);
+
+    await expect(resultPromise).resolves.toBeNull();
+    expect(readPersistenceHealth().latestFailure).toMatchObject({
+      name: 'blocked-chats-user-1',
+      reason: 'read_failed',
+    });
+    warnSpy.mockRestore();
   });
 
   it('returns explicit IndexedDB diagnostics when storage is unavailable', async () => {

@@ -1,14 +1,60 @@
 import { useAuthStore } from './useAuthStore';
 import type { SyncPatchOperation } from '../services/syncProjector';
-import { isCloudSyncEnabled } from '../services/cloudSyncPreference';
+import { isCloudSyncEnabled, isCloudSyncUserDisabled, setCloudSyncEnabled } from '../services/cloudSyncPreference';
 import { isCloudSyncBootstrapLocked } from '../services/cloudSyncBootstrapLock';
 
 export function isLocalOnlyMode() {
   return useAuthStore.getState().authMode === 'local';
 }
 
+function getCloudSyncGateState() {
+  const authState = useAuthStore.getState();
+  const authMode = authState.authMode;
+  const isLoggedIn = authState.isLoggedIn;
+  const userDisabled = isCloudSyncUserDisabled();
+  const entitlementDisabled = authState.user?.cloudSyncEntitled === false;
+  let cloudSyncEnabled = isCloudSyncEnabled();
+
+  if (
+    authMode === 'cloud'
+    && isLoggedIn
+    && !cloudSyncEnabled
+    && !userDisabled
+    && !entitlementDisabled
+  ) {
+    setCloudSyncEnabled(true, { source: 'auth' });
+    cloudSyncEnabled = true;
+  }
+
+  const bootstrapLocked = isCloudSyncBootstrapLocked();
+  const reasons = [
+    authMode === 'local' ? 'local-mode' : '',
+    !isLoggedIn ? 'not-logged-in' : '',
+    !cloudSyncEnabled && userDisabled ? 'cloud-sync-user-disabled' : '',
+    !cloudSyncEnabled && entitlementDisabled ? 'cloud-sync-not-entitled' : '',
+    !cloudSyncEnabled && !userDisabled && !entitlementDisabled ? 'cloud-sync-disabled' : '',
+    bootstrapLocked ? 'bootstrap-locked' : '',
+  ].filter(Boolean);
+
+  return {
+    skipCloudSync: reasons.length > 0,
+    reasons,
+    authMode,
+    isLoggedIn,
+    cloudSyncEnabled,
+    cloudSyncUserDisabled: userDisabled,
+    cloudSyncEntitlementDisabled: entitlementDisabled,
+    bootstrapLocked,
+    userId: authState.user?.id || null,
+  };
+}
+
 export function shouldSkipCloudSync() {
-  return isLocalOnlyMode() || !useAuthStore.getState().isLoggedIn || !isCloudSyncEnabled() || isCloudSyncBootstrapLocked();
+  return getCloudSyncGateState().skipCloudSync;
+}
+
+export function getCloudSyncSkipDiagnostics() {
+  return getCloudSyncGateState();
 }
 
 export function canAttemptOnlineSync() {

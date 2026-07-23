@@ -131,7 +131,7 @@ export default function LettersPage() {
       sx={{
         p: 3,
         pt: { xs: 1, sm: 1, md: 3 },
-        pb: { xs: 'calc(96px + env(safe-area-inset-bottom, 0px))', sm: 3 },
+        pb: { xs: 'calc(82px + env(safe-area-inset-bottom, 0px))', sm: 3 },
         width: '100%',
         maxWidth: 1240,
         mx: 'auto',

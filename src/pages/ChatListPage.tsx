@@ -10,6 +10,7 @@ import { useTranslation } from 'react-i18next';
 import { useShallow } from 'zustand/react/shallow';
 import { useChatStore } from '../stores/useChatStore';
 import { useCharacterStore } from '../stores/useCharacterStore';
+import { useAuthStore } from '../stores/useAuthStore';
 import ChatCard from '../components/chat/ChatCard';
 import EmptyState from '../components/common/EmptyState';
 import NoCharactersDialog from '../components/common/NoCharactersDialog';
@@ -54,6 +55,8 @@ export default function ChatListPage() {
     prefetchCharacters: state.prefetchCharacters,
     markCharactersWarm: state.markCharactersWarm,
   })));
+  const authMode = useAuthStore((state) => state.authMode);
+  const isLoggedIn = useAuthStore((state) => state.isLoggedIn);
   const [search, setSearch] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [detailCollapsed, setDetailCollapsed] = useState(readDetailCollapsedState);
@@ -180,7 +183,7 @@ export default function ChatListPage() {
     void restoreLocalChats();
     void prefetchChats();
     void prefetchCharacters();
-  }, [markCharactersWarm, markChatsWarm, prefetchCharacters, prefetchChats, restoreLocalChats]);
+  }, [authMode, isLoggedIn, markCharactersWarm, markChatsWarm, prefetchCharacters, prefetchChats, restoreLocalChats]);
 
   useEffect(() => {
     setTab(initialTab);
@@ -237,11 +240,11 @@ export default function ChatListPage() {
   } : {
     position: 'fixed' as const,
     right: { xs: 20, sm: 28, md: 36 },
-    bottom: { xs: 'calc(env(safe-area-inset-bottom, 0px) + 88px)', sm: 32, md: 36 },
+    bottom: { xs: 'calc(env(safe-area-inset-bottom, 0px) + 76px)', sm: 32, md: 36 },
   };
 
   return (
-    <Box sx={{ position: 'relative', containerType: 'inline-size', p: 3, pt: { xs: 1, sm: 1, md: 3 }, pb: { xs: 'calc(env(safe-area-inset-bottom, 0px) + 96px)', sm: 12 } }}>
+    <Box sx={{ position: 'relative', containerType: 'inline-size', p: 3, pt: { xs: 1, sm: 1, md: 3 }, pb: { xs: 'calc(env(safe-area-inset-bottom, 0px) + 82px)', sm: 12 } }}>
       <Stack
         spacing={1.25}
         sx={buildFloatingTabContainerSx()}

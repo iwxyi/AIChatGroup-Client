@@ -57,7 +57,10 @@ let bufferedLifecycleRegistered = false;
 const INDEXED_DB_NAME = 'pneumata-local-store';
 const INDEXED_DB_VERSION = 1;
 const INDEXED_DB_OBJECT_STORE = 'kv';
+const INDEXED_DB_OPEN_TIMEOUT_MS = 1200;
+const INDEXED_DB_READ_TIMEOUT_MS = 1200;
 let indexedDbOpenPromise: Promise<IDBDatabase | null> | null = null;
+let indexedDbLastOpenFailure: Error | null = null;
 
 function scheduleBufferedFlush(flush: () => void, delayMs: number) {
   const scheduler = (globalThis as typeof globalThis & {
@@ -111,9 +114,25 @@ function textSizeBytes(value: string) {
 }
 
 function openIndexedDb() {
-  if (typeof indexedDB === 'undefined') return Promise.resolve(null);
+  if (typeof indexedDB === 'undefined') {
+    indexedDbOpenPromise = null;
+    indexedDbLastOpenFailure = null;
+    return Promise.resolve(null);
+  }
   if (indexedDbOpenPromise) return indexedDbOpenPromise;
   indexedDbOpenPromise = new Promise((resolve) => {
+    let settled = false;
+    const finish = (database: IDBDatabase | null) => {
+      if (settled) return;
+      settled = true;
+      globalThis.clearTimeout(timeoutHandle);
+      resolve(database);
+    };
+    const timeoutHandle = globalThis.setTimeout(() => {
+      console.warn('[storage] indexeddb open timed out');
+      indexedDbLastOpenFailure = new Error('IndexedDB open timed out');
+      finish(null);
+    }, INDEXED_DB_OPEN_TIMEOUT_MS);
     const request = indexedDB.open(INDEXED_DB_NAME, INDEXED_DB_VERSION);
     request.onupgradeneeded = () => {
       const database = request.result;
@@ -121,10 +140,11 @@ function openIndexedDb() {
         database.createObjectStore(INDEXED_DB_OBJECT_STORE);
       }
     };
-    request.onsuccess = () => resolve(request.result);
+    request.onsuccess = () => finish(request.result);
     request.onerror = () => {
       console.warn('[storage] indexeddb open failed', request.error);
-      resolve(null);
+      indexedDbLastOpenFailure = request.error || new Error('IndexedDB open failed');
+      finish(null);
     };
     request.onblocked = () => {
       console.warn('[storage] indexeddb open blocked');
@@ -135,12 +155,29 @@ function openIndexedDb() {
 
 async function readIndexedDbItem(key: string) {
   const database = await openIndexedDb();
+  if (!database && indexedDbLastOpenFailure) throw indexedDbLastOpenFailure;
   if (!database) return null;
   return new Promise<string | null>((resolve, reject) => {
+    let settled = false;
+    const finish = (value: string | null) => {
+      if (settled) return;
+      settled = true;
+      globalThis.clearTimeout(timeoutHandle);
+      resolve(value);
+    };
+    const fail = (error: unknown) => {
+      if (settled) return;
+      settled = true;
+      globalThis.clearTimeout(timeoutHandle);
+      reject(error);
+    };
+    const timeoutHandle = globalThis.setTimeout(() => {
+      fail(new Error(`IndexedDB read timed out for ${key}`));
+    }, INDEXED_DB_READ_TIMEOUT_MS);
     const transaction = database.transaction(INDEXED_DB_OBJECT_STORE, 'readonly');
     const request = transaction.objectStore(INDEXED_DB_OBJECT_STORE).get(key);
-    request.onsuccess = () => resolve(typeof request.result === 'string' ? request.result : null);
-    request.onerror = () => reject(request.error || new Error('IndexedDB read failed'));
+    request.onsuccess = () => finish(typeof request.result === 'string' ? request.result : null);
+    request.onerror = () => fail(request.error || new Error('IndexedDB read failed'));
   });
 }
 
@@ -301,10 +338,16 @@ export function createScopedIndexedDbStorage(params: ScopedStorageParams): State
         if (typeof localStorage === 'undefined') return null;
         return localStorage.getItem(name);
       }
-      const indexedValue = await readIndexedDbItem(scopedName);
-      if (indexedValue != null) return indexedValue;
-      if (typeof localStorage === 'undefined') return null;
-      return localStorage.getItem(scopedName);
+      const localValue = typeof localStorage === 'undefined' ? null : localStorage.getItem(scopedName);
+      if (localValue != null) return localValue;
+      try {
+        const indexedValue = await readIndexedDbItem(scopedName);
+        if (indexedValue != null) return indexedValue;
+      } catch (error) {
+        recordPersistenceFailure({ name: scopedName, reason: 'read_failed', error });
+        console.warn('[storage] indexeddb read failed', { name: scopedName, error });
+      }
+      return null;
     },
     setItem: async (name: string, value: string) => {
       const scopedName = params.getScopedKey();
@@ -473,10 +516,15 @@ export function createScopedIndexedDbBufferedJsonStorage<T>(
       return {
         key: scopedName,
         getItem: async () => {
-          const indexedValue = await readIndexedDbItem(scopedName);
-          if (indexedValue != null) return indexedValue;
-          if (typeof localStorage === 'undefined') return null;
-          return localStorage.getItem(scopedName);
+          const localValue = typeof localStorage === 'undefined' ? null : localStorage.getItem(scopedName);
+          if (localValue != null) return localValue;
+          try {
+            return await readIndexedDbItem(scopedName);
+          } catch (error) {
+            recordPersistenceFailure({ name: scopedName, reason: 'read_failed', error });
+            console.warn('[storage] indexeddb buffered read failed', { name: scopedName, error });
+            return null;
+          }
         },
         setItem: async (value) => {
           const storageBackend = await writeIndexedDbItem(scopedName, value);

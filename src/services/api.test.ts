@@ -97,6 +97,10 @@ describe('api sync changes', () => {
   });
 
   it('dispatches a session expired event when an authenticated request returns 401', async () => {
+    installLocalStorage({
+      'pneumata-auth-mode': 'cloud',
+      'pneumata-token': 'token-1',
+    });
     const fetchMock = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({
       error: '登录已过期，请重新登录',
     }), {
@@ -124,6 +128,37 @@ describe('api sync changes', () => {
     expect(events).toEqual([
       expect.objectContaining({ status: 401, path: '/auth/me' }),
     ]);
+  });
+
+  it('does not dispatch a session expired event for local-only requests that return 401', async () => {
+    installLocalStorage({
+      'pneumata-auth-mode': 'local',
+    });
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({
+      error: '需要登录',
+    }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+    vi.stubGlobal('CustomEvent', class<T = unknown> extends Event {
+      detail: T;
+      constructor(type: string, init?: CustomEventInit<T>) {
+        super(type);
+        this.detail = init?.detail as T;
+      }
+    });
+    const eventTarget = new EventTarget();
+    Object.defineProperty(eventTarget, 'location', {
+      value: { pathname: '/characters/create', search: '', hash: '' },
+    });
+    vi.stubGlobal('window', eventTarget);
+    const events: unknown[] = [];
+    window.addEventListener(AUTH_SESSION_EXPIRED_EVENT, (event) => events.push((event as CustomEvent).detail));
+
+    await expect(api.getMe()).rejects.toBeInstanceOf(ApiError);
+
+    expect(events).toEqual([]);
   });
 });
 

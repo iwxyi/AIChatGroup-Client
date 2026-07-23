@@ -30,7 +30,7 @@ import { createCharacterBubbleStyleId } from '../utils/bubbleStyle';
 import { getPreferredAIProfile, isAIProfileUsable } from '../types/settings';
 import { useChatStore } from '../stores/useChatStore';
 import { buildDirectChatDraft } from '../services/chatDraftBuilder';
-import { api, type BillingMembershipResponse } from '../services/api';
+import { api, type BillingMembershipResponse, type VipEntitlementInfo } from '../services/api';
 import type { AICharacter } from '../types/character';
 import { readPersistentUiValue, writePersistentUiValue } from '../utils/persistentUiState';
 import { buildListGridSx } from '../styles/interaction';
@@ -132,6 +132,7 @@ export default function CharacterLibraryPage() {
     message: '',
     severity: 'success',
   });
+  const [freeEntitlement, setFreeEntitlement] = useState<VipEntitlementInfo | null>(null);
   const [membership, setMembership] = useState<BillingMembershipResponse | null>(null);
   const [vipLimitDialog, setVipLimitDialog] = useState<{ title: string; description: string; current?: number | null; limit?: number | null; helperText?: string } | null>(null);
   const activeCharacterId = isMasterPane && !selectionMode ? getActiveCharacterId(location.pathname) : null;
@@ -143,7 +144,7 @@ export default function CharacterLibraryPage() {
   } : {
     position: 'fixed' as const,
     right: { xs: 20, sm: 28, md: 36 },
-    bottom: { xs: 'calc(env(safe-area-inset-bottom, 0px) + 88px)', sm: 32, md: 36 },
+    bottom: { xs: 'calc(env(safe-area-inset-bottom, 0px) + 76px)', sm: 32, md: 36 },
   };
 
   useEffect(() => {
@@ -174,6 +175,20 @@ export default function CharacterLibraryPage() {
 
   useEffect(() => {
     let active = true;
+    api.getBillingMembershipConfig()
+      .then((result) => {
+        if (active) setFreeEntitlement(result.entitlements?.free || null);
+      })
+      .catch(() => {
+        if (active) setFreeEntitlement(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
     if (authMode !== 'cloud' || !isLoggedIn) {
       setMembership(null);
       return () => {
@@ -194,7 +209,7 @@ export default function CharacterLibraryPage() {
 
   const presets = useMemo(() => characters.filter((c) => c.isPreset), [characters]);
   const custom = useMemo(() => characters.filter((c) => !c.isPreset), [characters]);
-  const maxCharacters = membership?.vipEntitlement?.entitlement.maxCharacters ?? null;
+  const maxCharacters = membership?.vipEntitlement?.entitlement.maxCharacters ?? freeEntitlement?.maxCharacters ?? null;
   const characterLimitReached = maxCharacters != null && custom.length >= maxCharacters;
   const customGroups = useMemo(() => getCharacterGroupList(custom), [custom]);
   const customGroupOptions = useMemo(() => customGroups.map((group) => ({
@@ -578,7 +593,7 @@ export default function CharacterLibraryPage() {
   };
 
   return (
-    <Box sx={{ position: 'relative', containerType: 'inline-size', p: 3, pt: { xs: 1, sm: 1, md: 3 }, pb: { xs: 'calc(env(safe-area-inset-bottom, 0px) + 96px)', sm: 12 } }}>
+    <Box sx={{ position: 'relative', containerType: 'inline-size', p: 3, pt: { xs: 1, sm: 1, md: 3 }, pb: { xs: 'calc(env(safe-area-inset-bottom, 0px) + 82px)', sm: 12 } }}>
       <Box sx={buildFloatingTabContainerSx()}>
         <FloatingSegmentedTabs
           value={tab}

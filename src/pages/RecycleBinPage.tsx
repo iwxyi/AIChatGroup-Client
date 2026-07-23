@@ -248,7 +248,7 @@ export default function RecycleBinPage() {
         label={i18n.language.startsWith('zh') ? '清空回收站' : 'Empty recycle bin'}
         ariaLabel={i18n.language.startsWith('zh') ? '清空回收站' : 'Empty recycle bin'}
         onClick={() => setConfirmMode('empty')}
-        sx={{ position: 'fixed', right: { xs: 20, sm: 28, md: 36 }, bottom: { xs: 'calc(env(safe-area-inset-bottom, 0px) + 88px)', sm: 32, md: 36 } }}
+        sx={{ position: 'fixed', right: { xs: 20, sm: 28, md: 36 }, bottom: { xs: 'calc(env(safe-area-inset-bottom, 0px) + 76px)', sm: 32, md: 36 } }}
         expandedWidth={188}
       />
 

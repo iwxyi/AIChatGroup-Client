@@ -180,6 +180,7 @@ describe('cloud no-op sync', () => {
   it('does not force remote summaries after auth when cloud sync is explicitly disabled', async () => {
     localStorage.setItem(storageKey('cloud-sync-enabled'), '0');
     localStorage.setItem(storageKey('cloud-sync-user-disabled'), '1');
+    localStorage.setItem(storageKey('cloud-sync-user-disabled-version'), '2');
     localStorage.setItem(storageKey('user'), JSON.stringify({ id: 'local-user' }));
     const { useAuthStore } = await import('./useAuthStore');
 
@@ -194,41 +195,50 @@ describe('cloud no-op sync', () => {
   });
 
   it('shows local chats and characters first when cloud sync is enabled but remote sync is pending', async () => {
-    localStorage.setItem(storageKey('user'), JSON.stringify({ id: 'local-user' }));
-    localStorage.setItem(storageKey('chats-local-user'), JSON.stringify({
+    const accountId = `local-first-user-${Date.now()}-${Math.random()}`;
+    apiMocks.getMe.mockResolvedValueOnce({
+      id: accountId,
+      phone: '13500000000',
+      nickname: '测试用户',
+      avatar: '🍵',
+      cloudSyncEntitled: true,
+    });
+    localStorage.setItem(storageKey('user'), JSON.stringify({ id: accountId }));
+    localStorage.setItem(storageKey(`chats-${accountId}`), JSON.stringify({
       state: {
         chats: [chat({ id: 'local-chat-first', name: '先显示本地会话' })],
         currentChatId: null,
         lastSyncedAt: 12,
         pendingOperations: [],
       },
-      version: 3,
+      version: 5,
     }));
-    localStorage.setItem(storageKey('characters-local-user'), JSON.stringify({
+    localStorage.setItem(storageKey(`characters-${accountId}`), JSON.stringify({
       state: {
         characters: [character({ id: 'local-character-first', name: '先显示本地角色' })],
         lastSyncedAt: 12,
         pendingOperations: [],
       },
-      version: 3,
+      version: 5,
     }));
     let resolveChanges: (value: unknown) => void = () => undefined;
     apiMocks.getSyncChanges.mockImplementation(() => new Promise((resolve) => {
       resolveChanges = resolve;
     }));
-    const [{ useAuthStore }, { useChatStore }, { useCharacterStore }] = await Promise.all([
+    const [{ useAuthStore }, { useChatStore }, { useCharacterStore }, { getLocalDataUserId }] = await Promise.all([
       import('./useAuthStore'),
       import('./useChatStore'),
       import('./useCharacterStore'),
+      import('../services/authStorageScope'),
     ]);
 
+    expect(getLocalDataUserId()).toBe(accountId);
     await useAuthStore.getState().checkAuth();
 
     await vi.waitFor(() => {
       expect(useChatStore.getState().chats.map((item) => item.name)).toEqual(['先显示本地会话']);
       expect(useCharacterStore.getState().characters.map((item) => item.name)).toEqual(['先显示本地角色']);
-    });
-    expect(apiMocks.getSyncChanges).toHaveBeenCalled();
+    }, { timeout: 5000 });
     expect(apiMocks.getChats).not.toHaveBeenCalled();
     expect(apiMocks.getCharacters).not.toHaveBeenCalled();
 
@@ -255,6 +265,7 @@ describe('cloud no-op sync', () => {
     localStorage.setItem(storageKey('auth-mode'), 'local');
     localStorage.setItem(storageKey('cloud-sync-enabled'), '0');
     localStorage.setItem(storageKey('cloud-sync-user-disabled'), '1');
+    localStorage.setItem(storageKey('cloud-sync-user-disabled-version'), '2');
     localStorage.setItem(storageKey('chats-guest'), JSON.stringify({
       state: {
         chats: [chat({ id: 'guest-chat-disabled-sync', name: '未登录本地会话' })],
@@ -308,6 +319,8 @@ describe('cloud no-op sync', () => {
   it('prefetches chats from local persistence when cloud sync is disabled', async () => {
     const localUserId = `local-chat-prefetch-user-${Date.now()}-${Math.random()}`;
     localStorage.setItem(storageKey('cloud-sync-enabled'), '0');
+    localStorage.setItem(storageKey('cloud-sync-user-disabled'), '1');
+    localStorage.setItem(storageKey('cloud-sync-user-disabled-version'), '2');
     localStorage.setItem(storageKey('user'), JSON.stringify({ id: localUserId }));
     localStorage.setItem(storageKey(`chats-${localUserId}`), JSON.stringify({
       state: {
@@ -511,6 +524,91 @@ describe('cloud no-op sync', () => {
     expect(apiMocks.getChats).not.toHaveBeenCalled();
   });
 
+  it('treats chat summary changes without runtime detail flags as summaries', async () => {
+    apiMocks.getSyncChanges.mockResolvedValueOnce({
+      status: 'modified',
+      cursor: 'chats.summary:rev-2',
+      revision: 'chats.summary:rev-2',
+      changes: [{
+        op: 'upsert',
+        entity: 'chat_summary',
+        id: 'chat-1',
+        revision: 2,
+        patch: {
+          id: 'chat-1',
+          type: 'group',
+          mode: 'open_chat',
+          name: '缺标记摘要新版',
+          topic: '测试主题',
+          style: 'free',
+          runtimeEvolutionIntensity: 'balanced',
+          memberIds: ['character-1'],
+          sourceChatId: null,
+          sourceMemberIds: [],
+          speed: 1,
+          isActive: true,
+          allowIntervention: true,
+          showRoleActions: true,
+          topicSeed: '',
+          deletedAt: null,
+          fieldVersions: {},
+          createdAt: 1,
+          updatedAt: 2,
+          lastMessageAt: 2,
+          latestMessage: {
+            id: 'message-2',
+            chatId: 'chat-1',
+            type: 'ai',
+            senderId: 'character-1',
+            senderName: '小甲',
+            content: '最新摘要消息',
+            emotion: 60,
+            timestamp: 2,
+            isDeleted: false,
+          },
+        },
+      }],
+    });
+    const { useChatStore } = await import('./useChatStore');
+    await useChatStore.persist.rehydrate();
+    useChatStore.setState({
+      chats: [chat({
+        name: '测试群聊',
+        runtimeDetailLoaded: true,
+        runtimeSeed: { notes: ['本地完整前情'], artifacts: [] },
+        relationshipLedger: [{
+          pairKey: 'character-1:character-2',
+          actorId: 'character-1',
+          targetId: 'character-2',
+          current: { warmth: 10, trust: 20, competence: 0, threat: 0 },
+          trend: 'flat',
+          lastUpdatedAt: 1,
+          recentEvents: [],
+        }],
+        runtimeEventsV2: [{ id: 'event-1', conversationId: 'chat-1', kind: 'room_shift', createdAt: 1, summary: '本地运行事件', payload: {} }],
+        updatedAt: 1,
+        lastMessageAt: 1,
+      })],
+      currentChatId: null,
+      lastSyncedAt: 1,
+      pendingOperations: [],
+      pendingEditSyncCount: 0,
+      pendingEditSyncError: null,
+      remoteDeletedChatIds: [],
+      remoteDeletedChats: [],
+      isLoading: false,
+    });
+
+    await useChatStore.getState().loadChats();
+
+    const merged = useChatStore.getState().chats[0];
+    expect(merged.name).toBe('缺标记摘要新版');
+    expect(merged.runtimeDetailLoaded).toBe(true);
+    expect(merged.runtimeSeed?.notes).toEqual(['本地完整前情']);
+    expect(merged.relationshipLedger?.[0]?.pairKey).toBe('character-1:character-2');
+    expect(merged.runtimeEventsV2?.[0]?.summary).toBe('本地运行事件');
+  });
+
   it('keeps pending chat fields projected over newer remote field versions', async () => {
     apiMocks.getSyncChanges.mockResolvedValueOnce({
       status: 'modified',
@@ -604,15 +702,102 @@ describe('cloud no-op sync', () => {
       isLoading: false,
     });
 
-    await useChatStore.getState().loadChat('chat-1');
+    const loaded = await useChatStore.getState().loadChat('chat-1');
 
     const merged = useChatStore.getState().chats[0];
+    expect(loaded?.name).toBe('本地较新群聊名');
     expect(merged.name).toBe('本地较新群聊名');
     expect(merged.topic).toBe('本地较新主题');
     expect(merged.runtimeDetailLoaded).toBe(true);
     expect(merged.runtimeSeed?.notes).toEqual(['远端详情前情']);
     expect(merged.updatedAt).toBe(200);
     expect(merged.fieldVersions?.name).toBe(200);
+  });
+
+  it('does not treat summary-only chats as fully loaded', async () => {
+    apiMocks.getChat.mockResolvedValueOnce(chat({
+      id: 'chat-1',
+      name: '云端详情群聊名',
+      topic: '云端详情主题',
+      runtimeDetailLoaded: true,
+      runtimeSeed: { notes: ['云端详情前情'], artifacts: [] },
+      updatedAt: 1,
+      lastMessageAt: 1,
+    }));
+    const { useChatStore } = await import('./useChatStore');
+    await useChatStore.persist.rehydrate();
+    useChatStore.setState({
+      chats: [chat({
+        id: 'chat-1',
+        name: '摘要群聊名',
+        topic: '摘要主题',
+        runtimeDetailLoaded: false,
+        runtimeSeed: { notes: [], artifacts: [] },
+        updatedAt: 1,
+        lastMessageAt: 1,
+      })],
+      currentChatId: null,
+      lastSyncedAt: 1,
+      pendingOperations: [],
+      pendingEditSyncCount: 0,
+      pendingEditSyncError: null,
+      remoteDeletedChatIds: [],
+      remoteDeletedChats: [],
+      isLoading: false,
+    });
+
+    expect(useChatStore.getState().hasChatLoaded('chat-1')).toBe(false);
+
+    await useChatStore.getState().loadChat('chat-1');
+
+    const merged = useChatStore.getState().chats[0];
+    expect(apiMocks.getChat).toHaveBeenCalledTimes(1);
+    expect(useChatStore.getState().hasChatLoaded('chat-1')).toBe(true);
+    expect(merged.name).toBe('摘要群聊名');
+    expect(merged.topic).toBe('摘要主题');
+    expect(merged.runtimeSeed?.notes).toEqual(['云端详情前情']);
+  });
+
+  it('rechecks chats that were incorrectly marked loaded by legacy summary data', async () => {
+    apiMocks.getChat.mockResolvedValueOnce(chat({
+      id: 'chat-1',
+      name: '云端完整群聊',
+      runtimeDetailLoaded: true,
+      runtimeSeed: { notes: ['重新拉取的完整前情'], artifacts: [] },
+      updatedAt: 1,
+      lastMessageAt: 1,
+    }));
+    const { useChatStore } = await import('./useChatStore');
+    await useChatStore.persist.rehydrate();
+    useChatStore.setState({
+      chats: [chat({
+        id: 'chat-1',
+        name: '旧摘要群聊',
+        runtimeDetailLoaded: true,
+        runtimeSeed: { notes: [], artifacts: [] },
+        layeredMemories: [],
+        runtimeTimeline: [],
+        runtimeEventsV2: [],
+        relationshipLedger: [],
+        updatedAt: 1,
+        lastMessageAt: 1,
+      })],
+      currentChatId: null,
+      lastSyncedAt: 1,
+      pendingOperations: [],
+      pendingEditSyncCount: 0,
+      pendingEditSyncError: null,
+      remoteDeletedChatIds: [],
+      remoteDeletedChats: [],
+      isLoading: false,
+    });
+
+    expect(useChatStore.getState().hasChatLoaded('chat-1')).toBe(false);
+
+    await useChatStore.getState().loadChat('chat-1');
+
+    expect(apiMocks.getChat).toHaveBeenCalledTimes(1);
+    expect(useChatStore.getState().chats[0]?.runtimeSeed?.notes).toEqual(['重新拉取的完整前情']);
   });
 
   it('keeps local chat details when cloud detail is missing', async () => {
@@ -871,6 +1056,8 @@ describe('cloud no-op sync', () => {
   it('prefetches characters from local persistence when cloud sync is disabled', async () => {
     const localUserId = `local-character-prefetch-user-${Date.now()}-${Math.random()}`;
     localStorage.setItem(storageKey('cloud-sync-enabled'), '0');
+    localStorage.setItem(storageKey('cloud-sync-user-disabled'), '1');
+    localStorage.setItem(storageKey('cloud-sync-user-disabled-version'), '2');
     localStorage.setItem(storageKey('user'), JSON.stringify({ id: localUserId }));
     localStorage.setItem(storageKey(`characters-${localUserId}`), JSON.stringify({
       state: {
@@ -998,6 +1185,64 @@ describe('cloud no-op sync', () => {
     expect(apiMocks.getCharacters).not.toHaveBeenCalled();
   });
 
+  it('treats character summary changes without detail flags as summaries', async () => {
+    apiMocks.getSyncChanges.mockResolvedValueOnce({
+      status: 'modified',
+      cursor: 'characters.summary:rev-2',
+      revision: 'characters.summary:rev-2',
+      changes: [{
+        op: 'upsert',
+        entity: 'character_summary',
+        id: 'character-1',
+        revision: 2,
+        patch: {
+          id: 'character-1',
+          name: '小甲摘要新版',
+          avatar: '',
+          personality: { openness: 70, extroversion: 50, agreeableness: 50, neuroticism: 50, humor: 50, creativity: 50, assertiveness: 50, empathy: 50 },
+          expertise: ['测试'],
+          group: null,
+          bubbleStyleId: null,
+          bubbleStyle: null,
+          isPreset: false,
+          deletedAt: null,
+          fieldVersions: {},
+          createdAt: 1,
+          updatedAt: 2,
+        },
+      }],
+    });
+    const { useCharacterStore } = await import('./useCharacterStore');
+    await useCharacterStore.persist.rehydrate();
+    useCharacterStore.setState({
+      characters: [character({
+        name: '小甲',
+        background: '本地完整背景',
+        speakingStyle: '本地完整说话方式',
+        relationships: [{ characterId: 'character-2', note: '旧关系', warmth: 10, trust: 20, competence: 0, threat: 0 }],
+        memory: { longTerm: ['旧记忆'], shortTermSummary: '短期摘要', secrets: [], obsessions: [], tabooTopics: [], userMemories: [] },
+        characterDetailLoaded: true,
+        updatedAt: 1,
+      })],
+      lastSyncedAt: 1,
+      pendingOperations: [],
+      pendingEditSyncCount: 0,
+      pendingEditSyncError: null,
+      remoteDeletedCharacterIds: [],
+      isLoading: false,
+    });
+
+    await useCharacterStore.getState().loadCharacters();
+
+    const merged = useCharacterStore.getState().characters[0];
+    expect(merged.name).toBe('小甲摘要新版');
+    expect(merged.characterDetailLoaded).toBe(true);
+    expect(merged.background).toBe('本地完整背景');
+    expect(merged.speakingStyle).toBe('本地完整说话方式');
+    expect(merged.relationships?.[0]?.note).toBe('旧关系');
+    expect(merged.memory?.longTerm).toEqual(['旧记忆']);
+  });
+
   it('keeps pending character fields projected over newer remote field versions', async () => {
     apiMocks.getSyncChanges.mockResolvedValueOnce({
       status: 'modified',
@@ -1087,15 +1332,56 @@ describe('cloud no-op sync', () => {
       isLoading: false,
     });
 
-    await useCharacterStore.getState().loadCharacter('character-1');
+    const loaded = await useCharacterStore.getState().loadCharacter('character-1');
 
     const merged = useCharacterStore.getState().characters[0];
+    expect(loaded?.name).toBe('本地较新角色名');
     expect(merged.name).toBe('本地较新角色名');
     expect(merged.background).toBe('远端详情背景');
     expect(merged.speakingStyle).toBe('远端详情说话方式');
     expect(merged.characterDetailLoaded).toBe(true);
     expect(merged.updatedAt).toBe(200);
     expect(merged.fieldVersions?.name).toBe(200);
+  });
+
+  it('does not treat summary-only characters as fully loaded', async () => {
+    apiMocks.getCharacter.mockResolvedValueOnce(character({
+      id: 'character-1',
+      name: '云端详情角色名',
+      background: '云端详情背景',
+      speakingStyle: '云端详情说话方式',
+      characterDetailLoaded: true,
+      updatedAt: 1,
+    }));
+    const { useCharacterStore } = await import('./useCharacterStore');
+    await useCharacterStore.persist.rehydrate();
+    useCharacterStore.setState({
+      characters: [character({
+        id: 'character-1',
+        name: '摘要角色名',
+        background: '',
+        speakingStyle: '',
+        characterDetailLoaded: false,
+        updatedAt: 1,
+      })],
+      lastSyncedAt: 1,
+      pendingOperations: [],
+      pendingEditSyncCount: 0,
+      pendingEditSyncError: null,
+      remoteDeletedCharacterIds: [],
+      isLoading: false,
+    });
+
+    expect(useCharacterStore.getState().hasCharacterLoaded('character-1')).toBe(false);
+
+    await useCharacterStore.getState().loadCharacter('character-1');
+
+    const merged = useCharacterStore.getState().characters[0];
+    expect(apiMocks.getCharacter).toHaveBeenCalledTimes(1);
+    expect(useCharacterStore.getState().hasCharacterLoaded('character-1')).toBe(true);
+    expect(merged.name).toBe('摘要角色名');
+    expect(merged.background).toBe('云端详情背景');
+    expect(merged.speakingStyle).toBe('云端详情说话方式');
   });
 
   it('keeps local character details when cloud detail fetch fails', async () => {

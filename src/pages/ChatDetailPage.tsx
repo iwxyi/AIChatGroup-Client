@@ -918,6 +918,7 @@ export default function ChatDetailPage() {
   const showLocalInterceptionHints = useSettingsStore((s) => s.developerMode && s.developerUI.showLocalInterceptionHints);
   const currentUser = useAuthStore((s) => s.user);
   const authMode = useAuthStore((s) => s.authMode);
+  const isLoggedIn = useAuthStore((s) => s.isLoggedIn);
   const isRemoteDeletedChat = Boolean(id && remoteDeletedChatIds.includes(id));
 
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'error' | 'success' }>({ open: false, message: '', severity: 'error' });
@@ -949,7 +950,7 @@ export default function ChatDetailPage() {
   const isStoryReaderAtTailRef = useRef(true);
   const consumedHomeCommandRef = useRef<string | null>(null);
   const lastReadingPositionPersistRef = useRef<{ chatId: string; key: string; at: number } | null>(null);
-  const openedChatWindowRef = useRef<{ chatId: string; requestKey: string; openedAt: number; restored: boolean } | null>(null);
+  const openedChatWindowRef = useRef<{ chatId: string; requestKey: string; openedAt: number; restored: boolean; cloudMode: boolean } | null>(null);
   const storyEntryReadingPositionRef = useRef<{ chatId: string; key: string; position: MessageListScrollPosition } | null>(null);
   const activeChatIdRef = useRef<string | null>(id ?? null);
   const isManualInputPendingRef = useRef<() => boolean>(() => false);
@@ -1013,10 +1014,38 @@ export default function ChatDetailPage() {
     setDetailBootstrapComplete(false);
     markChatsWarm();
     markCharactersWarm();
+    logDeveloperDiagnostic('chat-detail:bootstrap:start', {
+      chatId: id,
+      authMode,
+      isLoggedIn,
+      currentChats: useChatStore.getState().chats.length,
+      currentCharacters: useCharacterStore.getState().characters.length,
+    }, 'debug', 'chat-page');
     void (async () => {
       await restoreLocalChats();
+      const localChat = id ? useChatStore.getState().chats.find((item) => item.id === id) || null : null;
+      logDeveloperDiagnostic('chat-detail:bootstrap:local-chat', {
+        chatId: id,
+        found: Boolean(localChat),
+        runtimeDetailLoaded: localChat?.runtimeDetailLoaded,
+        memberCount: localChat?.memberIds?.length,
+      }, localChat ? 'debug' : 'info', 'chat-page');
+      if (localChat && !cancelled) setDetailBootstrapComplete(true);
       const loadedChat = id ? await loadChat(id) : null;
-      const memberIds = loadedChat?.memberIds || useChatStore.getState().chats.find((item) => item.id === id)?.memberIds || [];
+      logDeveloperDiagnostic('chat-detail:bootstrap:loaded-chat', {
+        chatId: id,
+        found: Boolean(loadedChat),
+        runtimeDetailLoaded: loadedChat?.runtimeDetailLoaded,
+        memberCount: loadedChat?.memberIds?.length,
+      }, loadedChat ? 'debug' : 'warn', 'chat-page');
+      if (!localChat && !cancelled) setDetailBootstrapComplete(true);
+      const memberIds = loadedChat?.memberIds || localChat?.memberIds || useChatStore.getState().chats.find((item) => item.id === id)?.memberIds || [];
+      logDeveloperDiagnostic('chat-detail:bootstrap:load-members', {
+        chatId: id,
+        memberIds,
+        missingCharacterIds: getSyncableCharacterMemberIds(memberIds)
+          .filter((memberId) => !useCharacterStore.getState().hasCharacterLoaded(memberId)),
+      }, 'debug', 'chat-page');
       await Promise.all(
         getSyncableCharacterMemberIds(memberIds)
           .filter((memberId) => !useCharacterStore.getState().hasCharacterLoaded(memberId))
@@ -1028,7 +1057,7 @@ export default function ChatDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [id, loadCharacter, loadChat, markCharactersWarm, markChatsWarm, restoreLocalChats]);
+  }, [authMode, id, isLoggedIn, loadCharacter, loadChat, markCharactersWarm, markChatsWarm, restoreLocalChats]);
 
   const remoteDeletedChat = remoteDeletedChats.find((c) => c.id === id);
   const chat = chats.find((c) => c.id === id) || remoteDeletedChat;
@@ -1952,16 +1981,37 @@ export default function ChatDetailPage() {
 
   useEffect(() => {
     if (id) {
-      if (!chat) return;
-      if (isStoryRoom && !uiHydrated) return;
+      if (!chat) {
+        logDeveloperDiagnostic('chat-detail:open-window:blocked', {
+          chatId: id,
+          reason: 'chat-not-loaded',
+          chatsInStore: chats.length,
+          chatsLoading,
+          detailBootstrapComplete,
+        }, 'warn', 'chat-page');
+        return;
+      }
+      if (isStoryRoom && !uiHydrated) {
+        logDeveloperDiagnostic('chat-detail:open-window:blocked', {
+          chatId: id,
+          reason: 'story-ui-not-hydrated',
+        }, 'debug', 'chat-page');
+        return;
+      }
       const aroundTimestamp = entryStoryReadingPosition && !entryStoryReadingPosition.pinned
         ? entryStoryReadingPosition.sourceTimestamp
         : undefined;
       const requestKey = aroundTimestamp !== undefined && storyReadingRestoreKey
         ? `restore:${storyReadingRestoreKey}`
         : 'tail';
+      const cloudMode = authMode === 'cloud' && isLoggedIn;
       const previousOpen = openedChatWindowRef.current;
-      if (previousOpen?.chatId === id) {
+      if (previousOpen?.chatId === id && previousOpen.requestKey === requestKey && previousOpen.cloudMode === cloudMode) {
+        logDeveloperDiagnostic('chat-detail:open-window:skip-duplicate', {
+          chatId: id,
+          requestKey,
+          cloudMode,
+        }, 'debug', 'chat-page');
         if (isStoryRoom) {
           logDeveloperDiagnostic('故事阅读恢复：跳过重复打开窗口', {
             chatId: id,
@@ -1982,6 +2032,7 @@ export default function ChatDetailPage() {
         requestKey,
         openedAt: Date.now(),
         restored: requestKey !== 'tail',
+        cloudMode,
       };
       if (isStoryRoom) {
         logDeveloperDiagnostic('故事阅读恢复：打开消息窗口', {
@@ -2015,7 +2066,7 @@ export default function ChatDetailPage() {
         resetWindow: !isStoryRoom && aroundTimestamp === undefined,
       });
     }
-  }, [chat, entryStoryReadingPosition, id, isStoryRoom, openChatWindow, storyReadingRestoreKey, uiHydrated]);
+  }, [authMode, chat, chats.length, chatsLoading, detailBootstrapComplete, entryStoryReadingPosition, id, isLoggedIn, isStoryRoom, openChatWindow, storyReadingRestoreKey, uiHydrated]);
 
   useEffect(() => {
     userDraftActivityRef.current = null;

@@ -44,7 +44,7 @@ export default function CalendarPage() {
   } : {
     position: 'fixed' as const,
     right: { xs: 20, sm: 28, md: 36 },
-    bottom: { xs: 'calc(env(safe-area-inset-bottom, 0px) + 88px)', sm: 32, md: 36 },
+    bottom: { xs: 'calc(env(safe-area-inset-bottom, 0px) + 76px)', sm: 32, md: 36 },
   };
 
   const handleCreateManualEvent = async (chatId: string, event: RuntimeEventV2) => {
@@ -80,7 +80,7 @@ export default function CalendarPage() {
   }, [isZh, setHeaderBackAction, setHeaderTitle]);
 
   return (
-    <Box sx={{ position: 'relative', pb: { xs: 'calc(env(safe-area-inset-bottom, 0px) + 96px)', sm: 10 } }}>
+    <Box sx={{ position: 'relative', pb: { xs: 'calc(env(safe-area-inset-bottom, 0px) + 82px)', sm: 10 } }}>
       <Box
         sx={{
           px: { xs: 1.5, sm: 2, md: 3 },

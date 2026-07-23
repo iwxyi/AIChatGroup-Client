@@ -59,8 +59,8 @@ function MemoryCard({
   ) : '';
   return (
     <>
-      <Box sx={{ p: { xs: 1, sm: 1.15 }, borderRadius: 2, bgcolor: item.archivedAt ? 'transparent' : 'action.hover', border: '1px solid', borderColor: item.archivedAt ? 'divider' : 'rgba(148, 163, 184, 0.12)', opacity: item.archivedAt ? 0.72 : 1 }}>
-        <Stack spacing={0.6}>
+      <Box sx={{ p: { xs: 1, sm: 1.15 }, borderRadius: 2, bgcolor: item.archivedAt ? 'transparent' : 'action.hover', border: '1px solid', borderColor: item.archivedAt ? 'divider' : 'rgba(148, 163, 184, 0.12)', opacity: item.archivedAt ? 0.72 : 1, minWidth: 0, maxWidth: '100%', overflow: 'hidden' }}>
+        <Stack spacing={0.6} sx={{ minWidth: 0 }}>
           <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.75, minWidth: 0 }}>
             <Typography variant="body2" sx={{ flex: 1, minWidth: 0, fontWeight: 700, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{presented.displayText}</Typography>
             {showEvidenceIcon ? (
@@ -85,7 +85,7 @@ function MemoryCard({
             ) : null}
           </Box>
           <StatChipRow items={presented.metaItems} />
-          {includeDebugDetails ? <Typography variant="caption" color="text.secondary" sx={{ display: 'block', opacity: 0.85 }}>{presented.debugText}</Typography> : null}
+          {includeDebugDetails ? <Typography variant="caption" color="text.secondary" sx={{ display: 'block', opacity: 0.85, overflowWrap: 'anywhere' }}>{presented.debugText}</Typography> : null}
         </Stack>
       </Box>
       <Dialog
@@ -214,6 +214,7 @@ interface LayeredMemoryPanelProps {
   includeRuntimeEvidence?: boolean;
   showDebugChip?: boolean;
   hideEvidenceTooltip?: boolean;
+  hideFilterHints?: boolean;
   formatMemoryText?: (text: string, item: MemoryItem) => string;
   members?: DisplayTextMember[];
 }
@@ -228,6 +229,7 @@ export default function LayeredMemoryPanel({
   includeRuntimeEvidence = false,
   showDebugChip = true,
   hideEvidenceTooltip = false,
+  hideFilterHints = false,
   formatMemoryText,
   members = [],
 }: LayeredMemoryPanelProps) {
@@ -251,25 +253,55 @@ export default function LayeredMemoryPanel({
   const displayEmptyText = localizeLayeredMemoryPanelText(emptyText, language);
 
   return (
-    <SurfaceCard>
+    <SurfaceCard sx={{ width: '100%', maxWidth: '100%', minWidth: 0, overflow: 'hidden' }} contentSx={{ minWidth: 0, maxWidth: '100%' }}>
       <SectionHeader title={displayTitle} dense action={includeRuntimeEvidence && showDebugChip ? <DebugChip /> : undefined} />
-      <Stack spacing={1.15}>
+      <Stack spacing={1.15} sx={{ minWidth: 0, maxWidth: '100%' }}>
         {visibleSourceMemories.length ? (
           <Tabs
             value={activeFilter}
             onChange={(_, value) => { setActiveFilter(value); setExpanded(false); }}
             variant="scrollable"
-            scrollButtons={false}
-            sx={{ minHeight: 34, borderBottom: '1px solid', borderColor: 'divider', '& .MuiTab-root': { minWidth: 0, minHeight: 34, px: { xs: 0.75, sm: 1.25 }, py: 0.5, fontSize: { xs: 12, sm: 13 }, whiteSpace: 'nowrap' } }}
+            scrollButtons="auto"
+            allowScrollButtonsMobile
+            sx={{
+              minHeight: 34,
+              maxWidth: '100%',
+              minWidth: 0,
+              borderBottom: '1px solid',
+              borderColor: 'divider',
+              '& .MuiTabs-scroller': {
+                maxWidth: '100%',
+                overflowX: 'auto !important',
+                scrollbarWidth: 'none',
+                '&::-webkit-scrollbar': { display: 'none' },
+              },
+              '& .MuiTabs-flexContainer': { minWidth: 0 },
+              '& .MuiTabs-scrollButtons': {
+                width: 28,
+                flexShrink: 0,
+                '&.Mui-disabled': { opacity: 0.18 },
+              },
+              '& .MuiTab-root': {
+                minWidth: 0,
+                minHeight: 34,
+                maxWidth: { xs: 112, sm: 160 },
+                px: { xs: 0.75, sm: 1.25 },
+                py: 0.5,
+                fontSize: { xs: 12, sm: 13 },
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              },
+            }}
           >
             {filters.map((filter) => (
               <Tab key={filter.key} value={filter.key} label={`${filter.label} ${filter.items.length}`} />
             ))}
           </Tabs>
         ) : null}
-        {activeMeta ? <Typography variant="caption" color="text.secondary">{activeMeta.hint}</Typography> : null}
+        {!hideFilterHints && activeMeta ? <Typography variant="caption" color="text.secondary">{activeMeta.hint}</Typography> : null}
         {visibleMemories.length ? (
-          <Stack spacing={1}>
+          <Stack spacing={1} sx={{ minWidth: 0 }}>
             {visibleMemories.map((item) => (
               <MemoryCard
                 key={item.id}
