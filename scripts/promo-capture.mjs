@@ -6,7 +6,12 @@ const CDP_URL = process.env.PNEUMATA_CDP_URL || 'http://127.0.0.1:9222';
 const CLIENT_URL = process.env.PNEUMATA_CLIENT_URL || 'http://127.0.0.1:5173';
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const OUT_DIR = path.join(REPO_ROOT, 'docs/picture');
+const POSTER_DIR = path.join(OUT_DIR, 'posters');
+const SCREENSHOT_DIR = path.join(OUT_DIR, 'screenshots');
+const PREVIEW_DIR = path.join(OUT_DIR, 'preview');
 const AVATAR_DIR = path.join(OUT_DIR, 'avatars');
+const CARD_WIDTH = 1080;
+const CARD_HEIGHT = 1747;
 
 async function cdpFetch(route, init) {
   const response = await fetch(`${CDP_URL}${route}`, init);
@@ -149,7 +154,7 @@ function buildSeedExpression(avatars) {
   return `(() => import('/src/types/chat.ts').then(async ({ normalizeConversation }) => {
   localStorage.setItem('pneumata-auth-mode', 'local');
   localStorage.setItem('pneumata-user', JSON.stringify({
-    id: 'xhs-demo-user',
+    id: 'promo-demo-user',
     phone: '',
     nickname: '我',
     avatar: ${JSON.stringify(avatars.me || '')},
@@ -173,7 +178,7 @@ function buildSeedExpression(avatars) {
   useAuthStore.setState({
     token: null,
     user: {
-      id: 'xhs-demo-user',
+      id: 'promo-demo-user',
       phone: '',
       nickname: '我',
       avatar: avatarDataUrls.me || '',
@@ -218,7 +223,7 @@ function buildSeedExpression(avatars) {
   });
   const characters = [
     {
-      id: 'xhs-awan',
+      id: 'promo-awan',
       name: '阿晚',
       avatar: avatarDataUrls.awan,
       personality: { ...basePersonality, empathy: 92, creativity: 82 },
@@ -229,12 +234,15 @@ function buildSeedExpression(avatars) {
       group: '晚间陪伴',
       relationships: [
         { characterId: 'user', warmth: 78, competence: 32, trust: 72, threat: 4, note: '记得用户上周说过“不要被工作牵着走”。', updatedAt: now - 86400000 },
-        { characterId: 'xhs-laoli', warmth: 36, competence: 65, trust: 42, threat: 8, note: '会接住老李的现实建议，但也会提醒他别太硬。', updatedAt: now - 7200000 },
+        { characterId: 'promo-laoli', warmth: 36, competence: 65, trust: 42, threat: 8, note: '会接住老李的现实建议，但也会提醒他别太硬。', updatedAt: now - 7200000 },
       ],
       memory: memory(['上周一起把“周五夜聊”约成了固定仪式。', '用户不喜欢被催促，更愿意被轻轻提醒。'], '今晚的话题停在“如何把自己从加班感里捞出来”。'),
       layeredMemories: [
-        layeredMemory('mem-awan-1', 'relationship', 'long_term', 'bond', 'xhs-awan', '用户把周五夜聊当成一周的收尾仪式。', 0.88, 0.9, now - 86400000, ['user']),
-        layeredMemory('mem-awan-2', 'character_self', 'episodic', 'trait_evidence', 'xhs-awan', '用户对温和提醒反应更好，不喜欢命令式建议。', 0.76, 0.86, now - 7200000, ['user']),
+        layeredMemory('mem-awan-1', 'relationship', 'long_term', 'bond', 'promo-awan', '用户把周五夜聊当成一周的收尾仪式。', 0.88, 0.9, now - 86400000, ['user']),
+        layeredMemory('mem-awan-2', 'character_self', 'episodic', 'trait_evidence', 'promo-awan', '用户对温和提醒反应更好，不喜欢命令式建议。', 0.76, 0.86, now - 7200000, ['user']),
+        layeredMemory('mem-awan-3', 'character_self', 'long_term', 'preference', 'promo-awan', '阿晚会先确认用户是不是被消耗太久，再决定要不要给方案。', 0.79, 0.84, now - 5400000, ['user']),
+        layeredMemory('mem-awan-4', 'relationship', 'episodic', 'promise', 'promo-awan', '十点后不回工作消息已经变成阿晚和用户之间的低负担约定。', 0.83, 0.87, now - 3600000, ['user']),
+        layeredMemory('mem-awan-5', 'character_self', 'episodic', 'boundary', 'promo-awan', '当用户说“脑子很空”时，阿晚会避免追问原因，先给安静的陪伴。', 0.74, 0.82, now - 2400000, ['user']),
       ],
       intervention: { allowSpeakAs: true, allowDirectorPrompt: true, allowPrivateThread: true },
       runtimeTimeline: [
@@ -248,7 +256,7 @@ function buildSeedExpression(avatars) {
       updatedAt: now - 120000,
     },
     {
-      id: 'xhs-laoli',
+      id: 'promo-laoli',
       name: '老李',
       avatar: avatarDataUrls.laoli,
       personality: { ...basePersonality, agreeableness: 58, assertiveness: 78, humor: 72 },
@@ -257,9 +265,9 @@ function buildSeedExpression(avatars) {
       speakingStyle: '像靠谱朋友，直接但不冒犯，喜欢把问题拆成两三步。',
       background: '社区咖啡店老板，见过很多人的焦虑和绕路。',
       group: '现实派朋友',
-      relationships: [{ characterId: 'xhs-sese', warmth: 30, competence: 50, trust: 38, threat: 12, note: '觉得涩涩很聪明，但需要被拉回重点。', updatedAt: now - 5400000 }],
+      relationships: [{ characterId: 'promo-sese', warmth: 30, competence: 50, trust: 38, threat: 12, note: '觉得涩涩很聪明，但需要被拉回重点。', updatedAt: now - 5400000 }],
       memory: memory(['曾经提醒用户：真正难的不是计划，是给计划留余地。'], '正在帮用户把今晚的低能量状态拆成可执行的小动作。'),
-      layeredMemories: [layeredMemory('mem-laoli-1', 'conversation', 'episodic', 'decision', 'xhs-chat-main', '低能量日只保留一个必须完成的动作。', 0.72, 0.82, now - 1800000, ['xhs-laoli'])],
+      layeredMemories: [layeredMemory('mem-laoli-1', 'conversation', 'episodic', 'decision', 'promo-chat-main', '低能量日只保留一个必须完成的动作。', 0.72, 0.82, now - 1800000, ['promo-laoli'])],
       intervention: { allowSpeakAs: true, allowDirectorPrompt: true, allowPrivateThread: true },
       runtimeTimeline: [{ type: 'memory', text: '提出“今晚只做一件事”的房间规则。', createdAt: now - 900000 }],
       coreProfile: { coreDesire: '把混乱的生活拆成能走的一小步。', valuePriority: ['清醒', '可靠', '留白'] },
@@ -269,7 +277,7 @@ function buildSeedExpression(avatars) {
       updatedAt: now - 120000,
     },
     {
-      id: 'xhs-sese',
+      id: 'promo-sese',
       name: '涩涩',
       avatar: avatarDataUrls.sese,
       personality: { ...basePersonality, extroversion: 76, humor: 88, creativity: 90 },
@@ -278,9 +286,9 @@ function buildSeedExpression(avatars) {
       speakingStyle: '快、俏皮、会插科打诨，但关键时刻很会补刀式安慰。',
       background: '自由插画师，嘴上很轻浮，记忆里其实有很多细节。',
       group: '气氛组',
-      relationships: [{ characterId: 'xhs-awan', warmth: 62, competence: 55, trust: 58, threat: 3, note: '喜欢逗阿晚，但知道她护短。', updatedAt: now - 3600000 }],
+      relationships: [{ characterId: 'promo-awan', warmth: 62, competence: 55, trust: 58, threat: 3, note: '喜欢逗阿晚，但知道她护短。', updatedAt: now - 3600000 }],
       memory: memory(['用户上次说“我只是想被谁站在我这边一下”。'], '今天负责把房间气氛从沉重里拉出来。'),
-      layeredMemories: [layeredMemory('mem-sese-1', 'relationship', 'episodic', 'bond', 'xhs-sese', '用户在压力大时最需要先被站队，再谈方案。', 0.81, 0.84, now - 600000, ['user'])],
+      layeredMemories: [layeredMemory('mem-sese-1', 'relationship', 'episodic', 'bond', 'promo-sese', '用户在压力大时最需要先被站队，再谈方案。', 0.81, 0.84, now - 600000, ['user'])],
       intervention: { allowSpeakAs: true, allowDirectorPrompt: true, allowPrivateThread: true },
       runtimeTimeline: [{ type: 'relationship', text: '用玩笑缓和了用户和老李的建议冲突。', createdAt: now - 300000 }],
       coreProfile: { coreDesire: '用轻快的方式保护朋友的自尊。', valuePriority: ['轻盈', '敏锐', '护短'] },
@@ -292,18 +300,18 @@ function buildSeedExpression(avatars) {
   ];
   const messageRows = [
     ['user', 'user', '我', '今天又被临时需求拖到很晚，脑子很空，但又不想直接睡。'],
-    ['ai', 'xhs-awan', '阿晚', '我在。先别急着把今天总结成“我又没做好”。你只是被消耗太久了。'],
-    ['ai', 'xhs-laoli', '老李', '我直说：今晚别复盘人生。洗澡、喝水、把明天第一件事写下来，就够了。'],
-    ['ai', 'xhs-sese', '涩涩', '等下，老李这次居然说得像人话。今晚任务：把自己从“工作缓存”里弹出来。'],
+    ['ai', 'promo-awan', '阿晚', '我在。先别急着把今天总结成“我又没做好”。你只是被消耗太久了。'],
+    ['ai', 'promo-laoli', '老李', '我直说：今晚别复盘人生。洗澡、喝水、把明天第一件事写下来，就够了。'],
+    ['ai', 'promo-sese', '涩涩', '等下，老李这次居然说得像人话。今晚任务：把自己从“工作缓存”里弹出来。'],
     ['user', 'user', '我', '我怕明天醒来还是一团乱。'],
-    ['ai', 'xhs-awan', '阿晚', '那我们沿用上周的约定：十点后不回工作消息。你只要先守住这一小块地方。'],
-    ['ai', 'xhs-laoli', '老李', '明天如果乱，就先处理最短的那件。别用一个晚上替明天受罚。'],
-    ['ai', 'xhs-sese', '涩涩', '我负责监督：如果你又打开工作群，我就在精神上把手机盖到桌面上。'],
+    ['ai', 'promo-awan', '阿晚', '那我们沿用上周的约定：十点后不回工作消息。你只要先守住这一小块地方。'],
+    ['ai', 'promo-laoli', '老李', '明天如果乱，就先处理最短的那件。别用一个晚上替明天受罚。'],
+    ['ai', 'promo-sese', '涩涩', '我负责监督：如果你又打开工作群，我就在精神上把手机盖到桌面上。'],
   ];
   const messages = messageRows.map((item, index) => ({
-    id: 'xhs-msg-' + index,
-    clientKey: 'xhs-msg-' + index,
-    chatId: 'xhs-chat-main',
+    id: 'promo-msg-' + index,
+    clientKey: 'promo-msg-' + index,
+    chatId: 'promo-chat-main',
     type: item[0],
     senderId: item[1],
     senderName: item[2],
@@ -314,7 +322,7 @@ function buildSeedExpression(avatars) {
     metadata: {},
   }));
   const chat = normalizeConversation({
-    id: 'xhs-chat-main',
+    id: 'promo-chat-main',
     type: 'group',
     mode: 'open_chat',
     name: '周五夜聊房',
@@ -327,8 +335,8 @@ function buildSeedExpression(avatars) {
     showRoleActions: true,
     topicSeed: '晚间陪伴 / 低能量复盘 / 朋友站队',
     layeredMemories: [
-      layeredMemory('room-mem-1', 'conversation', 'long_term', 'bond', 'xhs-chat-main', '房间形成了十点后不回工作消息的共同约定。', 0.86, 0.9, now - 600000, ['user', 'xhs-awan']),
-      layeredMemory('room-mem-2', 'relationship', 'episodic', 'bond', 'xhs-chat-main', '用户压力大时，角色会先表达站在用户这边，再给建议。', 0.82, 0.88, now - 300000, ['user', 'xhs-sese']),
+      layeredMemory('room-mem-1', 'conversation', 'long_term', 'bond', 'promo-chat-main', '房间形成了十点后不回工作消息的共同约定。', 0.86, 0.9, now - 600000, ['user', 'promo-awan']),
+      layeredMemory('room-mem-2', 'relationship', 'episodic', 'bond', 'promo-chat-main', '用户压力大时，角色会先表达站在用户这边，再给建议。', 0.82, 0.88, now - 300000, ['user', 'promo-sese']),
     ],
     runtimeTimeline: [
       { type: 'note', text: '房间气氛从疲惫转向安定，阿晚主导安抚，老李给出低负担计划。', createdAt: now - 600000 },
@@ -351,8 +359,34 @@ function buildSeedExpression(avatars) {
     updatedAt: now - 120000,
     lastMessageAt: messages.at(-1).timestamp,
   });
+  const directChat = normalizeConversation({
+    id: 'promo-chat-direct',
+    type: 'direct',
+    mode: 'open_chat',
+    name: '阿晚',
+    topic: '睡前十分钟，把今天放轻一点',
+    style: 'free',
+    memberIds: ['promo-awan'],
+    speed: 50,
+    isActive: false,
+    allowIntervention: true,
+    showRoleActions: true,
+    topicSeed: '睡前陪伴 / 低负担提醒',
+    layeredMemories: [
+      layeredMemory('direct-mem-1', 'conversation', 'long_term', 'ritual', 'promo-chat-direct', '睡前十分钟只聊今天留下来的情绪，不急着解决所有问题。', 0.78, 0.84, now - 1200000, ['user', 'promo-awan']),
+    ],
+    runtimeTimeline: [
+      { type: 'memory', text: '阿晚记得用户希望提醒温柔一点，不要像打卡。', createdAt: now - 1200000 },
+    ],
+    runtimeDetailLoaded: true,
+    worldRuntimeLoaded: true,
+    createdAt: now - 345600000,
+    updatedAt: now - 600000,
+    lastMessageAt: now - 600000,
+    latestMessage: { id: 'promo-direct-latest', chatId: 'promo-chat-direct', type: 'ai', senderId: 'promo-awan', senderName: '阿晚', content: '今天先不追答案，先把自己放回身体里。', timestamp: now - 600000, isDeleted: false },
+  });
   const storyChat = normalizeConversation({
-    id: 'xhs-chat-story',
+    id: 'promo-chat-story',
     type: 'group',
     mode: 'scripted_play',
     sessionKind: { topology: 'group', family: 'simulation', scenarioId: 'story-reader', surfaceProfile: 'timeline' },
@@ -379,7 +413,7 @@ function buildSeedExpression(avatars) {
       stakes: ['如果误判纸条，角色之间的信任会被改写。'],
       choiceEpoch: 1,
     },
-    latestMessage: { id: 'xhs-story-latest', chatId: 'xhs-chat-story', type: 'ai', senderId: 'xhs-awan', senderName: '阿晚', content: '先别开后门。我们先看监控。', timestamp: now - 900000, isDeleted: false },
+    latestMessage: { id: 'promo-story-latest', chatId: 'promo-chat-story', type: 'ai', senderId: 'promo-awan', senderName: '阿晚', content: '先别开后门。我们先看监控。', timestamp: now - 900000, isDeleted: false },
     runtimeDetailLoaded: true,
     worldRuntimeLoaded: true,
     createdAt: now - 432000000,
@@ -394,18 +428,18 @@ function buildSeedExpression(avatars) {
     characterSummaryLoadedAt: now,
   });
   useChatStore.setState({
-    chats: [chat, storyChat],
-    currentChatId: 'xhs-chat-main',
+    chats: [chat, directChat, storyChat],
+    currentChatId: 'promo-chat-main',
     lastSyncedAt: now,
     pendingOperations: [],
     isLoading: false,
     chatSummaryLoadedAt: now,
   });
   useMessageStore.setState({
-    activeChatId: 'xhs-chat-main',
+    activeChatId: 'promo-chat-main',
     messages,
     messageWindowsByChatId: {
-      'xhs-chat-main': { messages, lastSyncedAt: now, updatedAt: now, remoteExhausted: true, remoteNewerExhausted: true, activeLimit: 80 },
+      'promo-chat-main': { messages, lastSyncedAt: now, updatedAt: now, remoteExhausted: true, remoteNewerExhausted: true, activeLimit: 80 },
     },
     pendingOperations: [],
     isLoading: false,
@@ -416,60 +450,229 @@ function buildSeedExpression(avatars) {
   });
   flushBufferedPersistenceWrites();
   await new Promise((resolve) => setTimeout(resolve, 700));
-  return { chatId: chat.id, storyChatId: storyChat.id, characters: characters.map((item) => item.name) };
+  return { chatId: chat.id, directChatId: directChat.id, storyChatId: storyChat.id, characters: characters.map((item) => item.name) };
 }))()`;
 }
 
 const promoCards = [
   {
     id: '01-cover',
-    shot: 'shot-chat.png',
+    shot: null,
     kicker: '给喜欢角色感的人',
-    title: '我不想再和一个会忘记我的 AI 聊天了',
+    title: '我不想再和会忘记我的 AI 聊天了',
     subtitle: '《生息》让角色带着关系、记忆和旧经历，继续陪你生活。',
-    chips: ['会记得你', '多人陪聊', '关系会变'],
+    chips: ['被记住', '被接住', '有后续'],
+    decorChips: ['记得你', '旧约定', '关系 +1', '今晚也在'],
+    layout: 'cover',
+    proof: [
+      ['角色关系', '不是一次性回答，而是每次相处都会留下变化。'],
+      ['长期记忆', '约定、偏好、边界会进入下一轮对话。'],
+      ['多人房间', '不同角色用不同方式接话、拆解、缓和气氛。'],
+    ],
   },
   {
     id: '02-chat',
-    shot: 'shot-chat.png',
+    shot: '../screenshots/shot-chat-list.png',
     kicker: '下班后不想听大道理',
     title: '有人接住情绪，有人帮你拆开问题',
-    subtitle: '不是一个助手冷冰冰回答，而是一群角色用各自的方式陪你说完。',
+    subtitle: '群聊、单聊、故事房都能留下关系痕迹，不再只是一次性对话。',
     chips: ['安慰', '吐槽', '建议', '站在你这边'],
+    decorChips: ['有人接话', '低能量日', '朋友在场', '不讲大道理'],
+    layout: 'rooms',
+    proof: [
+      ['群聊', '适合吐槽、情绪复盘、多人站队。'],
+      ['单聊', '适合睡前十分钟和低负担陪伴。'],
+      ['故事房', '适合脑洞、分支和旧关系入场。'],
+    ],
   },
   {
     id: '03-memory',
-    shot: 'shot-memory.png',
+    shot: '../screenshots/shot-memory.png',
     kicker: '真正让人上头的是延续感',
     title: '她记得你说过的小事，也记得你们的约定',
     subtitle: '偏好、边界、关系变化会沉淀下来，下一次见面不用重新介绍自己。',
     chips: ['小事被记住', '共同约定', '下次还算数'],
+    decorChips: ['小事存档', '边界被记住', '偏好沉淀', '下次还算'],
+    layout: 'memory',
+    proof: [
+      ['会影响语气', '她知道哪些提醒方式对你更有效。'],
+      ['会召回约定', '下一次聊天不必重讲背景。'],
+      ['可被整理', '重要记忆可以查看和手动补充。'],
+    ],
   },
   {
     id: '04-character',
-    shot: 'shot-character.png',
+    shot: '../screenshots/shot-character.png',
     kicker: '角色不是一句 Prompt',
     title: '她不是模板人设，会慢慢长成你的那一个',
     subtitle: '说话方式、软肋、边界和关系，会随着互动一点点成形。',
     chips: ['语气', '软肋', '边界', '你的版本'],
+    decorChips: ['性格漂移', '语气成形', '软肋浮现', '不是模板'],
+    layout: 'character',
+    proof: [
+      ['性格参数', '不是只靠一句人设，而是有可调的行为倾向。'],
+      ['关系记录', '角色会根据相处历史改变反应。'],
+      ['说话风格', '口头禅、边界和软肋会慢慢固定下来。'],
+    ],
   },
   {
     id: '05-room',
-    shot: 'shot-story.png',
+    shot: '../screenshots/shot-story.png',
     kicker: '不只陪聊，也能一起玩故事',
     title: '日常、脑洞、故事分支，都能留在同一段关系里',
     subtitle: '今天是夜聊，明天也可以把同一群角色带进新的故事房。',
     chips: ['故事房', '脑洞续写', '旧关系入场'],
+    decorChips: ['分支选择', '线索回收', '旧关系入场', '一起推进'],
+    layout: 'story',
+    proof: [
+      ['选择会留下后果', '分支不只是按钮，会影响线索和信任。'],
+      ['旧关系可入场', '日常陪伴里的角色能进入新故事。'],
+      ['世界会延续', '线索、风险和章节点能被带回后续。'],
+    ],
   },
   {
     id: '06-cta',
-    shot: 'shot-chat.png',
-    kicker: '《生息》 Sense Murmur',
+    shot: null,
+    kicker: '不用懂大模型',
     title: '适合想被角色长期陪伴的人',
     subtitle: '不用懂大模型。你只要进入房间，和他们慢慢熟起来。',
     chips: ['长期陪伴', '角色群像', '故事感聊天'],
+    decorChips: ['慢慢熟悉', '长期陪伴', '角色群像', '打开房间'],
+    layout: 'audience',
+    proof: [
+      ['普通用户', '不用学术语，只要知道角色会记得你。'],
+      ['角色玩家', '可以养成属于你的角色关系。'],
+      ['创作者', '把脑洞、分支和关系放进同一个世界。'],
+    ],
   },
 ];
+
+function renderMetric(label, value, note) {
+  return `<div class="metric"><b>${value}</b><span>${label}</span>${note ? `<em>${note}</em>` : ''}</div>`;
+}
+
+function renderBars(items) {
+  return `<div class="bar-list">${items.map((item) => `
+    <div class="bar-row">
+      <div class="bar-head"><span>${item.label}</span><b>${item.value}</b></div>
+      <div class="bar-track"><i style="width:${item.value}%"></i></div>
+    </div>
+  `).join('')}</div>`;
+}
+
+function renderInfoModules(card) {
+  if (card.layout === 'cover') {
+    return `
+      <section class="compare">
+        <div><span>普通聊天</span><b>聊完就清空</b><p>下一次又要重新介绍自己。</p></div>
+        <div><span>《生息》</span><b>关系会延续</b><p>小事、约定和相处痕迹会回到下一轮。</p></div>
+      </section>
+      <section class="flow">
+        <span>说出今天</span><i></i><span>角色接住</span><i></i><span>形成记忆</span><i></i><span>下次带回</span>
+      </section>
+      <section class="cover-dashboard">
+        <div class="dialogue-preview">
+          <div class="dialogue-line user-line"><strong>我</strong><p>今天脑子很空，但又不想直接睡。</p></div>
+          <div class="dialogue-line"><strong>阿晚</strong><p>我在。先别急着把今天总结成“我又没做好”。</p></div>
+          <div class="dialogue-line"><strong>老李</strong><p>今晚别复盘人生，先把明天第一件事写下来。</p></div>
+        </div>
+        <div class="signal-stack">
+          ${renderMetric('沉淀记忆', '5', '可回看')}
+          ${renderMetric('关系变化', '2', '影响语气')}
+          ${renderMetric('多人房间', '3', '一起接话')}
+        </div>
+      </section>
+    `;
+  }
+  if (card.layout === 'rooms') {
+    return `
+      <section class="room-grid">
+        <div><b>群聊房</b><p>多人接话、吐槽、站队</p></div>
+        <div><b>单聊</b><p>低负担陪伴和边界感</p></div>
+        <div><b>故事房</b><p>分支、线索、旧关系入场</p></div>
+        <div><b>讨论房</b><p>脑洞、计划和现实建议</p></div>
+      </section>
+      <section class="mini-table">
+        <div><span>安慰</span><b>阿晚</b></div>
+        <div><span>拆解</span><b>老李</b></div>
+        <div><span>气氛</span><b>涩涩</b></div>
+      </section>
+      <section class="scene-strip">
+        <div><b>疲惫</b><span>先被接住</span></div>
+        <div><b>混乱</b><span>拆成一步</span></div>
+        <div><b>脑洞</b><span>有人续上</span></div>
+        <div><b>故事</b><span>留下线索</span></div>
+      </section>
+    `;
+  }
+  if (card.layout === 'memory') {
+    return `
+      <section class="memory-list">
+        <div><b>边界</b><p>十点后不回工作消息。</p></div>
+        <div><b>偏好</b><p>温和提醒比命令式建议更有效。</p></div>
+        <div><b>关系</b><p>先站在你这边，再一起处理问题。</p></div>
+      </section>
+      <section class="stats-row">
+        ${renderMetric('沉淀记忆', '5', '可回看')}
+        ${renderMetric('关系线索', '2', '会影响语气')}
+        ${renderMetric('共同约定', '1', '下次还算')}
+      </section>
+    `;
+  }
+  if (card.layout === 'character') {
+    return `
+      <section class="trait-panel">
+        ${renderBars([
+          { label: '共情力', value: 92 },
+          { label: '创造力', value: 82 },
+          { label: '开放性', value: 78 },
+          { label: '主动性', value: 74 },
+        ])}
+      </section>
+      <section class="profile-grid">
+        <div><span>说话方式</span><b>短句、温柔、记得细节</b></div>
+        <div><span>核心边界</span><b>不催促，不命令</b></div>
+      </section>
+      <section class="voice-card">
+        <span>同一个角色，会因为你们的相处方式变得更像“你的版本”。</span>
+      </section>
+    `;
+  }
+  if (card.layout === 'story') {
+    return `
+      <section class="branch-board">
+        <div class="branch active"><span>可选</span><b>检查监控</b><p>确认纸条来源，风险较低。</p></div>
+        <div class="branch locked"><span>锁定</span><b>打开后门</b><p>推进更快，但会改写信任。</p></div>
+      </section>
+      <section class="clue-row">
+        <span>无署名纸条</span><span>后门敲击声</span><span>断电记录</span>
+      </section>
+    `;
+  }
+  return `
+    <section class="audience-list">
+      <div><b>想要陪伴的人</b><p>下班后有人接住，而不是只给答案。</p></div>
+      <div><b>喜欢角色的人</b><p>关系、语气和软肋会慢慢长出来。</p></div>
+      <div><b>喜欢故事的人</b><p>旧关系可以进入新的剧情和房间。</p></div>
+    </section>
+    <section class="audience-matrix">
+      <div><span>陪伴</span><b>夜聊 / 树洞 / 低能量日</b></div>
+      <div><span>角色</span><b>OC / 群像 / 关系变化</b></div>
+      <div><span>故事</span><b>分支 / 线索 / 旧经历</b></div>
+      <div><span>创作</span><b>脑洞 / 对话 / 世界延续</b></div>
+    </section>
+    <section class="closing-line">进入房间，不用先懂 AI，只要慢慢熟起来。</section>
+  `;
+}
+
+function renderProofPanel(card) {
+  if (!card.proof?.length) return '';
+  return `
+    <section class="proof-panel">
+      ${card.proof.map(([label, text]) => `<div><b>${label}</b><p>${text}</p></div>`).join('')}
+    </section>
+  `;
+}
 
 function createCardHtml() {
   const cards = promoCards.map((card, index) => `
@@ -478,10 +681,10 @@ function createCardHtml() {
       <div class="decor" aria-hidden="true">
         <span class="thread thread-a"></span>
         <span class="thread thread-b"></span>
-        <span class="memory-chip chip-a">记得你</span>
-        <span class="memory-chip chip-b">旧约定</span>
-        <span class="memory-chip chip-c">关系 +1</span>
-        <span class="memory-chip chip-d">今晚也在</span>
+        <span class="memory-chip chip-a">${card.decorChips[0]}</span>
+        <span class="memory-chip chip-b">${card.decorChips[1]}</span>
+        <span class="memory-chip chip-c">${card.decorChips[2]}</span>
+        <span class="memory-chip chip-d">${card.decorChips[3]}</span>
         <span class="spark s1"></span>
         <span class="spark s2"></span>
         <span class="spark s3"></span>
@@ -500,10 +703,18 @@ function createCardHtml() {
         <h1>${card.title}</h1>
         <p class="subtitle">${card.subtitle}</p>
       </div>
-      <div class="phone ${index === 0 ? 'hero-phone' : ''}">
-        <img src="./${card.shot}" alt="">
+      <div class="content ${card.layout}">
+        <div class="info-modules">
+          ${renderInfoModules(card)}
+        </div>
+        ${card.shot ? `
+          <div class="phone ${index === 0 ? 'hero-phone' : ''}">
+            <img src="${card.shot}" alt="">
+          </div>
+        ` : ''}
       </div>
       <div class="chips">${card.chips.map((chip) => `<span>${chip}</span>`).join('')}</div>
+      ${renderProofPanel(card)}
       <div class="footer">
         <span>AI 多角色互动房间</span>
         <span>${String(index + 1).padStart(2, '0')} / ${String(promoCards.length).padStart(2, '0')}</span>
@@ -517,12 +728,12 @@ function createCardHtml() {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
   * { box-sizing: border-box; }
-  html, body { margin: 0; width: 1080px; min-height: 1440px; background: #FFF4EC; font-family: Inter, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  html, body { margin: 0; width: ${CARD_WIDTH}px; min-height: ${CARD_HEIGHT}px; background: #FFF4EC; font-family: Inter, "PingFang SC", "Microsoft YaHei", sans-serif; }
   body { overflow: hidden; }
   .card {
     position: relative;
-    width: 1080px;
-    height: 1440px;
+    width: ${CARD_WIDTH}px;
+    height: ${CARD_HEIGHT}px;
     overflow: hidden;
     color: #341D31;
     background:
@@ -530,7 +741,7 @@ function createCardHtml() {
       radial-gradient(circle at 92% 74%, rgba(255, 184, 77, .34), transparent 34%),
       linear-gradient(152deg, #FFF7EF 0%, #FFE9DE 42%, #F7D2DF 70%, #E8D9FF 100%);
     display: none;
-    padding: 70px 72px 58px;
+    padding: 58px 72px 54px;
   }
   .card.active { display: block; }
   .noise {
@@ -615,16 +826,92 @@ function createCardHtml() {
   .s6 { right: 160px; bottom: 312px; width: 7px; height: 7px; background: #4B243F; }
   .s7 { left: 920px; top: 92px; width: 6px; height: 6px; background: #FFB84D; }
   .s8 { left: 44px; top: 1102px; width: 6px; height: 6px; background: #4B243F; }
-  .brand-row, .copy, .phone, .chips, .footer { position: relative; z-index: 1; }
-  .brand-row { display: flex; align-items: baseline; gap: 16px; margin-bottom: 42px; }
+  .brand-row, .copy, .content, .chips, .proof-panel, .footer { position: relative; z-index: 1; }
+  .brand-row { display: flex; align-items: baseline; gap: 16px; margin-bottom: 24px; }
   .brand { font-size: 34px; font-weight: 900; letter-spacing: 0; }
   .brand-sub { color: #C5524B; font-size: 22px; font-weight: 800; }
   .kicker { margin: 0 0 18px; color: #C5524B; font-size: 28px; font-weight: 900; }
-  h1 { margin: 0; max-width: 920px; font-size: 68px; line-height: 1.08; letter-spacing: 0; font-weight: 950; }
-  .subtitle { margin: 28px 0 36px; max-width: 820px; color: rgba(52,29,49,.74); font-size: 30px; line-height: 1.46; font-weight: 700; }
+  h1 { margin: 0; max-width: 940px; font-size: 62px; line-height: 1.08; letter-spacing: 0; font-weight: 950; }
+  .subtitle { margin: 20px 0 24px; max-width: 900px; color: rgba(52,29,49,.74); font-size: 28px; line-height: 1.4; font-weight: 700; }
+  .content { display: grid; gap: 24px; }
+  .content.cover, .content.rooms, .content.audience { grid-template-columns: 1fr; }
+  .content.memory, .content.character, .content.story { grid-template-columns: 405px 1fr; align-items: stretch; gap: 22px; }
+  .info-modules { display: grid; gap: 18px; min-width: 0; }
+  .compare, .flow, .cover-dashboard, .room-grid, .mini-table, .scene-strip, .memory-list, .stats-row, .trait-panel, .profile-grid, .voice-card, .branch-board, .clue-row, .audience-list, .audience-matrix, .closing-line, .proof-panel {
+    border: 1px solid rgba(197,82,75,.18);
+    border-radius: 22px;
+    background: rgba(255,255,255,.55);
+    box-shadow: 0 22px 58px rgba(96,45,71,.10);
+    backdrop-filter: blur(14px);
+  }
+  .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; padding: 16px; }
+  .compare div { min-height: 126px; border-radius: 16px; padding: 18px; background: rgba(255,247,239,.66); }
+  .compare div:last-child { background: linear-gradient(135deg, rgba(255,126,108,.16), rgba(255,255,255,.7)); }
+  .compare span, .profile-grid span, .branch span, .mini-table span { color: #C5524B; font-size: 20px; font-weight: 900; }
+  .compare b { display: block; margin: 8px 0 8px; font-size: 32px; line-height: 1.1; }
+  .compare p, .room-grid p, .memory-list p, .audience-list p, .branch p { margin: 0; color: rgba(52,29,49,.66); font-size: 20px; line-height: 1.35; font-weight: 700; }
+  .flow { display: grid; grid-template-columns: auto 1fr auto 1fr auto 1fr auto; align-items: center; gap: 12px; padding: 18px 20px; }
+  .flow span { font-size: 22px; font-weight: 900; color: #4B243F; white-space: nowrap; }
+  .flow i { height: 3px; border-radius: 999px; background: linear-gradient(90deg, #FF7A66, rgba(75,36,63,.14)); }
+  .cover-dashboard { display: grid; grid-template-columns: 1fr 308px; gap: 18px; padding: 18px; }
+  .dialogue-preview { display: grid; gap: 12px; }
+  .dialogue-line {
+    display: grid;
+    grid-template-columns: 78px 1fr;
+    gap: 12px;
+    align-items: start;
+    border-radius: 18px;
+    padding: 16px 18px;
+    background: rgba(255,255,255,.7);
+    border: 1px solid rgba(75,36,63,.08);
+  }
+  .dialogue-line strong { color: #C5524B; font-size: 22px; line-height: 1.28; }
+  .dialogue-line p { margin: 0; color: #341D31; font-size: 24px; line-height: 1.34; font-weight: 850; }
+  .user-line { background: linear-gradient(135deg, rgba(255,122,102,.18), rgba(255,255,255,.74)); }
+  .signal-stack { display: grid; grid-template-columns: 1fr; overflow: hidden; border-radius: 18px; border: 1px solid rgba(197,82,75,.14); background: rgba(255,247,239,.62); }
+  .signal-stack .metric { border-right: 0; border-bottom: 1px solid rgba(197,82,75,.12); }
+  .signal-stack .metric:last-child { border-bottom: 0; }
+  .room-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; padding: 16px; }
+  .room-grid div, .audience-list div { border-radius: 16px; background: rgba(255,255,255,.62); padding: 18px; }
+  .room-grid b, .memory-list b, .audience-list b, .branch b { display: block; margin-bottom: 8px; font-size: 28px; line-height: 1.1; }
+  .mini-table { display: grid; grid-template-columns: repeat(3, 1fr); overflow: hidden; }
+  .mini-table div { padding: 18px; border-right: 1px solid rgba(197,82,75,.14); }
+  .mini-table div:last-child { border-right: 0; }
+  .mini-table b { display: block; margin-top: 6px; font-size: 28px; }
+  .scene-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; overflow: hidden; background: rgba(197,82,75,.14); }
+  .scene-strip div { min-height: 86px; padding: 16px 14px; background: rgba(255,255,255,.62); }
+  .scene-strip b { display: block; margin-bottom: 6px; color: #C5524B; font-size: 22px; }
+  .scene-strip span { color: #4B243F; font-size: 20px; font-weight: 900; }
+  .memory-list, .audience-list { display: grid; gap: 12px; padding: 16px; }
+  .memory-list div { padding: 16px 18px; border-radius: 16px; background: rgba(255,255,255,.62); }
+  .stats-row { display: grid; grid-template-columns: repeat(3, 1fr); overflow: hidden; }
+  .metric { padding: 16px 14px; border-right: 1px solid rgba(197,82,75,.14); text-align: center; }
+  .metric:last-child { border-right: 0; }
+  .metric b { display: block; font-size: 44px; line-height: 1; color: #C5524B; }
+  .metric span { display: block; margin-top: 8px; font-size: 18px; font-weight: 900; }
+  .metric em { display: block; margin-top: 4px; color: rgba(52,29,49,.52); font-size: 15px; font-style: normal; font-weight: 800; }
+  .trait-panel { padding: 18px; }
+  .bar-list { display: grid; gap: 16px; }
+  .bar-head { display: flex; justify-content: space-between; color: #341D31; font-size: 20px; font-weight: 900; }
+  .bar-track { height: 12px; margin-top: 9px; border-radius: 999px; background: rgba(75,36,63,.12); overflow: hidden; }
+  .bar-track i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #FF7A66, #696BFF); }
+  .profile-grid { display: grid; grid-template-columns: 1fr; gap: 12px; padding: 16px; }
+  .profile-grid div { padding: 15px 16px; border-radius: 16px; background: rgba(255,255,255,.62); }
+  .profile-grid b { display: block; margin-top: 7px; font-size: 22px; line-height: 1.25; }
+  .voice-card { padding: 18px 20px; color: #4B243F; font-size: 22px; line-height: 1.35; font-weight: 900; }
+  .branch-board { display: grid; gap: 14px; padding: 16px; }
+  .branch { padding: 18px; border-radius: 16px; background: rgba(255,255,255,.64); border: 1px solid rgba(197,82,75,.12); }
+  .branch.locked { opacity: .72; }
+  .clue-row { display: flex; flex-wrap: wrap; gap: 10px; padding: 16px; }
+  .clue-row span { min-height: 44px; display: inline-flex; align-items: center; padding: 0 15px; border-radius: 999px; background: rgba(255,126,108,.12); color: #4B243F; font-size: 18px; font-weight: 900; }
+  .audience-matrix { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1px; overflow: hidden; background: rgba(197,82,75,.14); }
+  .audience-matrix div { min-height: 94px; padding: 18px; background: rgba(255,255,255,.62); }
+  .audience-matrix span { display: block; margin-bottom: 6px; color: #C5524B; font-size: 20px; font-weight: 900; }
+  .audience-matrix b { display: block; color: #341D31; font-size: 23px; line-height: 1.28; }
+  .closing-line { padding: 22px 24px; color: #4B243F; font-size: 28px; line-height: 1.25; font-weight: 950; }
   .phone {
-    width: 760px;
-    height: 642px;
+    width: 100%;
+    height: 720px;
     margin: 0 auto;
     border: 12px solid rgba(255,255,255,.92);
     border-radius: 46px;
@@ -633,9 +920,12 @@ function createCardHtml() {
     box-shadow: 0 44px 110px rgba(96,45,71,.24), 0 0 0 1px rgba(255,255,255,.7), 0 0 70px rgba(255,122,102,.22);
     transform: rotate(-1.5deg);
   }
-  .hero-phone { width: 800px; height: 678px; transform: rotate(1.2deg); }
+  .content.rooms .phone, .content.audience .phone { width: 780px; height: 540px; }
+  .hero-phone { width: 790px; height: 656px; transform: rotate(1.2deg); }
   .phone img { width: 100%; height: 100%; object-fit: cover; object-position: top center; display: block; }
-  .chips { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 42px; }
+  #04-character .phone img { object-position: center 8%; }
+  #05-room .phone img { object-position: center 6%; }
+  .chips { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 26px; }
   .chips span {
     display: inline-flex;
     align-items: center;
@@ -648,19 +938,50 @@ function createCardHtml() {
     font-size: 24px;
     font-weight: 800;
   }
+  .proof-panel {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    margin-top: 24px;
+    overflow: hidden;
+    background: rgba(197,82,75,.14);
+  }
+  .proof-panel div {
+    min-height: 126px;
+    padding: 18px;
+    background: rgba(255,255,255,.58);
+  }
+  .proof-panel b {
+    display: block;
+    margin-bottom: 8px;
+    color: #C5524B;
+    font-size: 22px;
+    line-height: 1.18;
+  }
+  .proof-panel p {
+    margin: 0;
+    color: rgba(52,29,49,.72);
+    font-size: 19px;
+    line-height: 1.34;
+    font-weight: 800;
+  }
   .footer {
     position: absolute;
     left: 72px;
     right: 72px;
-    bottom: 52px;
+    bottom: 46px;
     display: flex;
     justify-content: space-between;
     color: rgba(52,29,49,.48);
     font-size: 22px;
     font-weight: 700;
   }
-  #06-cta h1 { font-size: 76px; max-width: 790px; }
-  #06-cta .phone { height: 560px; }
+  #01-cover h1 { max-width: 900px; font-size: 60px; }
+  #06-cta h1 { font-size: 66px; max-width: 850px; }
+  #03-memory .phone, #04-character .phone, #05-room .phone { height: 760px; }
+  #06-cta .audience-list { grid-template-columns: 1fr; }
+  #06-cta .proof-panel { margin-top: 28px; }
+  #01-cover .content, #02-chat .content, #06-cta .content { gap: 18px; }
 </style>
 </head>
 <body>
@@ -677,6 +998,7 @@ async function captureAppShot(cdp, route, fileName, waitText, options = {}) {
   await setViewport(cdp, options.width || 430, options.height || 932, 2);
   await navigate(cdp, `${CLIENT_URL}${route}`);
   if (waitText) await waitFor(cdp, `document.body.innerText.includes(${JSON.stringify(waitText)})`, 12000);
+  if (options.beforeShot) await evaluate(cdp, options.beforeShot, true);
   await screenshot(cdp, fileName);
 }
 
@@ -691,7 +1013,12 @@ async function clickText(cdp, pattern) {
 }
 
 async function main() {
-  await fs.mkdir(OUT_DIR, { recursive: true });
+  await Promise.all([
+    fs.mkdir(OUT_DIR, { recursive: true }),
+    fs.mkdir(POSTER_DIR, { recursive: true }),
+    fs.mkdir(SCREENSHOT_DIR, { recursive: true }),
+    fs.mkdir(PREVIEW_DIR, { recursive: true }),
+  ]);
   const page = await cdpFetch(`/json/new?${encodeURIComponent(CLIENT_URL)}`, { method: 'PUT' });
   const cdp = new CdpClient(page.webSocketDebuggerUrl);
   await cdp.open();
@@ -706,7 +1033,7 @@ async function main() {
     await waitFor(cdp, `document.body && document.body.innerText.length > 0`, 15000);
     const seeded = await evaluate(cdp, buildSeedExpression(avatarDataUrls), true);
     console.log('seeded', seeded);
-    const messageDiagnostics = await evaluate(cdp, `import('/src/stores/useMessageStore.ts').then(({ useMessageStore }) => JSON.stringify(useMessageStore.getState().messageWindowsByChatId['xhs-chat-main']?.messages?.map((message) => ({
+    const messageDiagnostics = await evaluate(cdp, `import('/src/stores/useMessageStore.ts').then(({ useMessageStore }) => JSON.stringify(useMessageStore.getState().messageWindowsByChatId['promo-chat-main']?.messages?.map((message) => ({
       id: message.id,
       type: message.type,
       senderId: message.senderId,
@@ -715,22 +1042,51 @@ async function main() {
       metadataKeys: Object.keys(message.metadata || {}),
     })) || []))`, true);
     console.log('message diagnostics', messageDiagnostics);
-    await captureAppShot(cdp, '/chats/xhs-chat-main', 'shot-chat.png', '周五夜聊房');
-    await setViewport(cdp, 430, 932, 2);
-    await navigate(cdp, `${CLIENT_URL}/characters/xhs-awan/edit`);
+    await captureAppShot(cdp, '/chats/promo-chat-main', 'screenshots/shot-chat.png', '周五夜聊房', { height: 1040 });
+    await captureAppShot(cdp, '/chats?tab=0', 'screenshots/shot-chat-list.png', '周五夜聊房', { height: 1040 });
+    await captureAppShot(cdp, '/characters', 'screenshots/shot-character-list.png', '阿晚', { height: 1040 });
+    await setViewport(cdp, 430, 1040, 2);
+    await navigate(cdp, `${CLIENT_URL}/characters/promo-awan/edit`);
     await waitFor(cdp, `document.body.innerText.includes('阿晚')`, 12000);
     await clickText(cdp, '记忆');
-    await screenshot(cdp, 'shot-memory.png');
+    await evaluate(cdp, `new Promise((resolve) => {
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: 90, behavior: 'instant' });
+        resolve(true);
+      });
+    })`, true);
+    await screenshot(cdp, 'screenshots/shot-memory.png');
     await clickText(cdp, '人格');
-    await screenshot(cdp, 'shot-character.png');
-    await captureAppShot(cdp, '/chats/xhs-chat-story', 'shot-story.png', '雨夜便利店');
+    await evaluate(cdp, `new Promise((resolve) => {
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: 260, behavior: 'instant' });
+        resolve(true);
+      });
+    })`, true);
+    await screenshot(cdp, 'screenshots/shot-character.png');
+    await captureAppShot(cdp, '/chats/promo-chat-story', 'screenshots/shot-story.png', '雨夜便利店', {
+      height: 1040,
+      beforeShot: `new Promise((resolve) => {
+        requestAnimationFrame(() => {
+          window.scrollTo({ top: 92, behavior: 'instant' });
+          const storyCard = Array.from(document.querySelectorAll('.MuiCard-root, [class*="Card"], article, section'))
+            .find((element) => (element.innerText || '').includes('故事即将开始'));
+          if (storyCard) {
+            storyCard.style.transform = 'translateY(-72px)';
+            storyCard.style.marginBottom = '-72px';
+          }
+          resolve(true);
+        });
+      })`,
+    });
 
-    await fs.writeFile(path.join(OUT_DIR, 'cards.html'), createCardHtml(), 'utf8');
+    const previewPath = path.join(PREVIEW_DIR, 'cards.html');
+    await fs.writeFile(previewPath, createCardHtml(), 'utf8');
     for (const card of promoCards) {
-      await setViewport(cdp, 1080, 1440, 1);
-      await navigate(cdp, `file://${path.join(OUT_DIR, 'cards.html')}?card=${card.id}`);
+      await setViewport(cdp, CARD_WIDTH, CARD_HEIGHT, 1);
+      await navigate(cdp, `file://${previewPath}?card=${card.id}`);
       await waitFor(cdp, `document.querySelector('.card.active') !== null`, 5000);
-      await screenshot(cdp, `${card.id}.png`);
+      await screenshot(cdp, `posters/${card.id}.png`);
     }
     console.log(`wrote ${OUT_DIR}`);
   } finally {
