@@ -472,7 +472,7 @@ const promoCards = [
   },
   {
     id: '02-chat',
-    shot: null,
+    shot: '../screenshots/shot-chat-list.png',
     kicker: '下班后不想听大道理',
     title: '有人接住情绪，帮你拆开问题',
     subtitle: '群聊、单聊、故事房都能留下关系痕迹，不再只是一次性对话。',
@@ -533,7 +533,7 @@ const promoCards = [
   },
   {
     id: '06-cta',
-    shot: null,
+    shot: '../screenshots/shot-chat-list.png',
     kicker: '不用懂大模型',
     title: '适合想被角色长期陪伴的人',
     subtitle: '不用懂大模型。你只要进入房间，和他们慢慢熟起来。',
@@ -563,13 +563,8 @@ function renderBars(items) {
 }
 
 function renderInfoModules(card) {
-  if (card.layout === 'cover') {
-    return `
-      <section class="flow">
-        <span>说出今天</span><i></i><span>角色接住</span><i></i><span>形成记忆</span><i></i><span>下次带回</span>
-      </section>
-    `;
-  }
+  if (card.shot) return '';
+  if (card.layout === 'cover') return '';
   if (card.layout === 'rooms') {
     return `
       <section class="role-stack">
@@ -655,17 +650,11 @@ function renderInfoModules(card) {
 }
 
 function renderProofPanel(card) {
-  if (!card.proof?.length) return '';
-  const [label, text] = card.proof[0];
-  return `
-    <section class="proof-panel">
-      <div><b>${label}</b><p>${text}</p></div>
-    </section>
-  `;
+  return '';
 }
 
 function renderSpotlight(card) {
-  return card.spotlight ? `<section class="spotlight-panel">${card.spotlight}</section>` : '';
+  return card.spotlight && !card.shot ? `<section class="spotlight-panel">${card.spotlight}</section>` : '';
 }
 
 function createCardHtml() {
@@ -826,7 +815,7 @@ function createCardHtml() {
   .content { display: grid; gap: 16px; }
   .content.cover { grid-template-columns: 1fr; align-items: stretch; }
   .content.rooms, .content.audience { grid-template-columns: 1fr; }
-  .content.memory, .content.character, .content.story { grid-template-columns: 390px 1fr; align-items: stretch; gap: 18px; }
+  .content.memory, .content.character, .content.story { grid-template-columns: 1fr; align-items: stretch; gap: 18px; }
   .info-modules { display: grid; gap: 14px; min-width: 0; }
   .compare, .flow, .cover-dashboard, .room-grid, .role-stack, .scene-strip, .memory-list, .stats-row, .trait-panel, .profile-grid, .voice-card, .branch-board, .clue-row, .audience-list, .audience-matrix, .closing-line, .spotlight-panel, .proof-panel {
     border: 1px solid rgba(197,82,75,.18);
@@ -867,7 +856,7 @@ function createCardHtml() {
   .room-grid b, .memory-list b, .audience-list b, .branch b { display: block; margin-bottom: 8px; font-size: 36px; line-height: 1.06; }
   .role-stack { display: grid; gap: 1px; overflow: hidden; background: rgba(197,82,75,.14); }
   .role-stack div {
-    min-height: 150px;
+    min-height: 176px;
     display: grid;
     grid-template-columns: 66px 96px 1fr;
     grid-template-rows: auto auto;
@@ -890,7 +879,7 @@ function createCardHtml() {
     grid-column: 2 / 4;
     margin: 6px 0 0;
     color: rgba(52,29,49,.68);
-    font-size: 26px;
+    font-size: 25px;
     line-height: 1.16;
     font-weight: 800;
   }
@@ -948,10 +937,11 @@ function createCardHtml() {
     box-shadow: 0 44px 110px rgba(96,45,71,.24), 0 0 0 1px rgba(255,255,255,.7), 0 0 70px rgba(255,122,102,.22);
     transform: rotate(-1.5deg);
   }
-  .content.rooms .phone, .content.audience .phone { width: 790px; height: 480px; }
-  .content.cover .phone { width: 760px; height: 620px; }
-  .hero-phone { width: 760px; height: 620px; transform: rotate(1.1deg); }
+  .content.rooms .phone, .content.audience .phone { width: 760px; height: 1080px; }
+  .content.cover .phone { width: 760px; height: 960px; }
+  .hero-phone { width: 760px; height: 960px; transform: rotate(1.1deg); }
   .phone img { width: 100%; height: 100%; object-fit: cover; object-position: top center; display: block; }
+  #02-chat .phone img, #06-cta .phone img { transform: scale(1.18); transform-origin: top center; }
   #04-character .phone img { object-position: center 8%; }
   #05-room .phone img { object-position: center 6%; }
   .chips {
@@ -976,27 +966,27 @@ function createCardHtml() {
     display: grid;
     grid-template-columns: 1fr;
     gap: 0;
-    margin-top: 16px;
+    margin-top: 22px;
     overflow: hidden;
     background: rgba(197,82,75,.14);
   }
   .proof-panel div {
-    min-height: 118px;
-    padding: 20px 26px;
+    min-height: 208px;
+    padding: 28px 30px;
     background: rgba(255,255,255,.58);
   }
   .proof-panel b {
     display: block;
-    margin-bottom: 10px;
+    margin-bottom: 12px;
     color: #C5524B;
-    font-size: 31px;
+    font-size: 38px;
     line-height: 1.12;
   }
   .proof-panel p {
     margin: 0;
     color: rgba(52,29,49,.72);
-    font-size: 28px;
-    line-height: 1.22;
+    font-size: 31px;
+    line-height: 1.28;
     font-weight: 800;
   }
   .footer {
@@ -1012,22 +1002,19 @@ function createCardHtml() {
   }
   #01-cover h1 { max-width: 950px; font-size: 76px; }
   #01-cover .subtitle { margin-bottom: 16px; }
-  #01-cover .content { gap: 14px; }
+  #01-cover .content { gap: 0; }
   #01-cover .phone { order: -1; }
   #01-cover .info-modules { grid-template-columns: 1fr; gap: 12px; }
-  #01-cover .proof-panel div { min-height: 118px; }
+  #01-cover .proof-panel div { min-height: 198px; }
   #06-cta h1 { font-size: 76px; max-width: 910px; }
-  #02-chat .phone { width: 760px; height: 350px; }
-  #02-chat .subtitle { margin-bottom: 18px; }
-  #02-chat .proof-panel div { min-height: 118px; }
-  #03-memory .phone, #04-character .phone, #05-room .phone { height: 805px; }
-  #03-memory .proof-panel div, #04-character .proof-panel div, #05-room .proof-panel div { min-height: 118px; }
+  #02-chat .phone { width: 760px; height: 1080px; }
+  #02-chat .subtitle { margin-bottom: 14px; }
+  #03-memory .phone, #04-character .phone, #05-room .phone, #06-cta .phone { width: 760px; height: 1080px; }
   #02-chat .info-modules, #06-cta .info-modules { align-content: start; }
   #06-cta .audience-list { grid-template-columns: 1fr; }
-  #06-cta .audience-list div { min-height: 128px; }
-  #06-cta .closing-line { min-height: 104px; display: flex; align-items: center; }
-  #06-cta .proof-panel { margin-top: 0; }
-  #01-cover .content, #02-chat .content, #06-cta .content { gap: 18px; }
+  #06-cta .audience-list div { min-height: 96px; }
+  #06-cta .closing-line { min-height: 88px; display: flex; align-items: center; }
+  #01-cover .content, #02-chat .content, #06-cta .content { gap: 12px; }
 </style>
 </head>
 <body>
