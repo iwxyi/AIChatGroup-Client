@@ -19,11 +19,18 @@ const mobileItems: Array<{ path: string; labelKey: string; iconKind: AnimatedNav
   { path: '/settings', labelKey: 'nav.settings', iconKind: 'settings' },
 ];
 
+type NavPreview = {
+  index: number;
+  originPath: string;
+  originKey: string;
+  phase: 'pointer' | 'commit';
+};
+
 export default function BottomNav() {
   const navigate = useNavigate();
   const location = useLocation();
   const { t } = useTranslation();
-  const [preview, setPreview] = useState<{ index: number; originPath: string } | null>(null);
+  const [preview, setPreview] = useState<NavPreview | null>(null);
   const navigationRef = useRef<HTMLDivElement | null>(null);
   const pointerRef = useRef<{ index: number; x: number; y: number; pointerId: number } | null>(null);
   const draggedRef = useRef(false);
@@ -35,8 +42,10 @@ export default function BottomNav() {
     }
     return location.pathname.startsWith(path) ? idx : acc;
   }, 0);
-  const isPressPreviewing = preview !== null && preview.originPath === location.pathname;
-  const visualIndex = isPressPreviewing ? preview.index : currentIndex;
+  const isPressPreviewing = preview !== null
+    && preview.originPath === location.pathname
+    && preview.originKey === location.key;
+  const visualIndex = isPressPreviewing && preview !== null ? preview.index : currentIndex;
 
   useEffect(() => {
     const handleWindowBlur = () => {
@@ -61,7 +70,12 @@ export default function BottomNav() {
       pointerId: event.pointerId,
     };
     draggedRef.current = false;
-    setPreview({ index, originPath: location.pathname });
+    setPreview({
+      index,
+      originPath: location.pathname,
+      originKey: location.key,
+      phase: 'pointer',
+    });
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
@@ -92,8 +106,18 @@ export default function BottomNav() {
       0,
       Math.min(mobileItems.length - 1, Math.floor((relativeX / bounds.width) * mobileItems.length)),
     );
-    if (preview?.index !== nextIndex || preview?.originPath !== location.pathname) {
-      setPreview({ index: nextIndex, originPath: location.pathname });
+    if (
+      preview?.index !== nextIndex
+      || preview?.originPath !== location.pathname
+      || preview?.originKey !== location.key
+      || preview?.phase !== 'pointer'
+    ) {
+      setPreview({
+        index: nextIndex,
+        originPath: location.pathname,
+        originKey: location.key,
+        phase: 'pointer',
+      });
     }
   };
 
@@ -102,27 +126,43 @@ export default function BottomNav() {
     if (!pointer) return;
 
     pointerRef.current = null;
-    if (draggedRef.current) {
-      const targetIndex = preview?.originPath === location.pathname ? preview.index : currentIndex;
-      draggedRef.current = false;
-      suppressNextChangeRef.current = true;
-      setPreview(null);
+    const releasePointerCapture = () => {
       if (event.currentTarget.hasPointerCapture(pointer.pointerId)) {
         event.currentTarget.releasePointerCapture(pointer.pointerId);
       }
+    };
+    const commitSelection = (targetIndex: number) => {
       if (targetIndex !== currentIndex) {
         const nextPath = mobileItems[targetIndex]?.path;
-        if (nextPath && nextPath !== location.pathname) navigate(nextPath);
+        if (nextPath && nextPath !== location.pathname) {
+          suppressNextChangeRef.current = true;
+          setPreview({
+            index: targetIndex,
+            originPath: location.pathname,
+            originKey: location.key,
+            phase: 'commit',
+          });
+          navigate(nextPath);
+          window.setTimeout(() => {
+            suppressNextChangeRef.current = false;
+          }, 0);
+          return;
+        }
       }
-      window.setTimeout(() => {
-        suppressNextChangeRef.current = false;
-      }, 0);
+
+      setPreview(null);
+    };
+
+    if (draggedRef.current) {
+      const targetIndex = preview?.originPath === location.pathname ? preview.index : currentIndex;
+      draggedRef.current = false;
+      releasePointerCapture();
+      commitSelection(targetIndex);
       return;
     }
 
-    if (event.currentTarget.hasPointerCapture(pointer.pointerId)) {
-      event.currentTarget.releasePointerCapture(pointer.pointerId);
-    }
+    releasePointerCapture();
+    commitSelection(pointer.index);
   };
 
   const handlePointerCancel = () => {
@@ -174,7 +214,7 @@ export default function BottomNav() {
     >
       <BottomNavigation
         ref={navigationRef}
-        value={currentIndex}
+        value={visualIndex}
         onChange={(_, newValue) => {
           if (suppressNextChangeRef.current) {
             suppressNextChangeRef.current = false;
@@ -231,6 +271,9 @@ export default function BottomNav() {
             '&:hover': {
               bgcolor: 'transparent',
             },
+            '& .MuiTouchRipple-root': {
+              display: 'none',
+            },
             '& .PneumataNavIcon': {
               transition: 'transform 200ms cubic-bezier(.22,1.28,.36,1)',
             },
@@ -259,8 +302,9 @@ export default function BottomNav() {
           <BottomNavigationAction
             key={item.path}
             className="PneumataNavButton"
+            disableRipple
             label={t(item.labelKey)}
-            icon={<AnimatedNavIcon kind={item.iconKind} active={currentIndex === index} size={24} />}
+            icon={<AnimatedNavIcon kind={item.iconKind} active={visualIndex === index} size={24} />}
             onPointerDown={(event) => handlePointerDown(index, event)}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
