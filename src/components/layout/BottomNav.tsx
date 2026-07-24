@@ -4,6 +4,7 @@ import type { PointerEvent as ReactPointerEvent } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import AnimatedNavIcon, { type AnimatedNavIconKind } from './AnimatedNavIcon';
+import { motion, transition } from '../../styles/motion';
 
 const pathToIndex: Record<string, number> = {
   '/': 0,
@@ -250,8 +251,14 @@ export default function BottomNav() {
               ? '0 4px 14px rgba(15,23,42,0.06)'
               : '0 4px 16px rgba(0,0,0,0.16)',
             transition: !isPressPreviewing
-              ? 'left 260ms cubic-bezier(.22,1.28,.36,1), background-color 220ms ease, box-shadow 220ms ease'
-              : 'left 120ms cubic-bezier(.22,.8,.26,1), background-color 220ms ease, box-shadow 220ms ease',
+              ? [
+                transition(['left'], motion.durations.navTrack, motion.navTrack),
+                transition(['background-color', 'box-shadow'], motion.durations.base),
+              ].join(', ')
+              : [
+                transition(['left'], motion.durations.instant, motion.navDrag),
+                transition(['background-color', 'box-shadow'], motion.durations.base),
+              ].join(', '),
             transform: isPressPreviewing ? 'scaleX(0.965)' : 'scaleX(1)',
             transformOrigin: 'center',
             willChange: 'left',
@@ -267,7 +274,7 @@ export default function BottomNav() {
             py: 0.25,
             backgroundColor: 'transparent',
             touchAction: 'pan-y',
-            transition: 'color 220ms ease, opacity 220ms ease',
+            transition: transition(['color', 'opacity'], motion.durations.base),
             '&:hover': {
               bgcolor: 'transparent',
             },
@@ -275,7 +282,7 @@ export default function BottomNav() {
               display: 'none',
             },
             '& .PneumataNavIcon': {
-              transition: 'transform 200ms cubic-bezier(.22,1.28,.36,1)',
+              transition: transition(['transform'], motion.durations.navIcon, motion.navTrack),
             },
             '&.Mui-selected .PneumataNavIcon': {
               transform: 'translateY(-0.5px)',
@@ -289,11 +296,11 @@ export default function BottomNav() {
             fontWeight: 650,
             lineHeight: 1.15,
             transform: 'none',
-            transition: 'color 180ms ease, opacity 180ms ease',
+            transition: transition(['color', 'opacity'], motion.durations.label),
             '&.Mui-selected': {
               fontSize: 10.5,
               transform: 'none',
-              transitionDelay: '45ms',
+              transitionDelay: `${motion.durations.selectedDelay}ms`,
             },
           },
         }}
