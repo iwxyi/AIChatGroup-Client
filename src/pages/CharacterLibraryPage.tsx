@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { useLayoutHeaderActions } from '../components/layout/AppLayoutContext';
 import { Box, Button, Alert, IconButton, Menu, MenuItem, Chip, Dialog, DialogTitle, DialogContent, DialogActions, TextField, Typography, Divider, Tooltip } from '@mui/material';
 import type { Theme } from '@mui/material/styles';
@@ -79,6 +79,153 @@ function sortCharactersForLibrary(
   });
 }
 
+function CharacterLibraryHeaderActions({
+  customCount,
+  sortField,
+  sortDirection,
+  sortGroupFirst,
+  onSortFieldChange,
+  onSortDirectionChange,
+  onToggleSortGroupFirst,
+  onImport,
+  onExport,
+}: {
+  customCount: number;
+  sortField: CharacterSortField;
+  sortDirection: CharacterSortDirection;
+  sortGroupFirst: boolean;
+  onSortFieldChange: (value: CharacterSortField) => void;
+  onSortDirectionChange: (value: CharacterSortDirection) => void;
+  onToggleSortGroupFirst: () => void;
+  onImport: () => void;
+  onExport: () => void;
+}) {
+  const { t, i18n } = useTranslation();
+  const navigate = useNavigate();
+  const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null);
+  const [sortMenuAnchorEl, setSortMenuAnchorEl] = useState<null | HTMLElement>(null);
+  const isZh = i18n.language.startsWith('zh');
+  const sortFieldLabel = sortField === 'name'
+    ? (isZh ? '名称' : 'Name')
+    : (isZh ? '创建时间' : 'Created time');
+  const sortDirectionLabel = sortDirection === 'asc'
+    ? (isZh ? '正序' : 'Ascending')
+    : (isZh ? '逆序' : 'Descending');
+
+  return (
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+      <Chip
+        size="small"
+        label={`${sortFieldLabel} · ${sortDirectionLabel}${sortGroupFirst ? ` · ${isZh ? '分组优先' : 'Group first'}` : ''}`}
+        sx={{ display: { xs: 'none', md: 'inline-flex' } }}
+      />
+      <Tooltip title={isZh ? '排序' : 'Sort'}>
+        <IconButton
+          onClick={(event) => {
+            setSortMenuAnchorEl(event.currentTarget);
+            setMenuAnchorEl(null);
+          }}
+          aria-label={isZh ? '排序' : 'Sort'}
+          sx={{
+            width: 40,
+            height: 40,
+            borderRadius: 1,
+            border: '1px solid',
+            borderColor: sortMenuAnchorEl ? 'primary.main' : 'transparent',
+            bgcolor: sortMenuAnchorEl
+              ? (theme) => theme.palette.mode === 'light' ? 'rgba(49,90,156,0.10)' : 'rgba(120,156,220,0.14)'
+              : 'transparent',
+            transition: 'background-color 180ms ease, border-color 180ms ease, color 180ms ease',
+            '&:hover': {
+              borderColor: sortMenuAnchorEl
+                ? 'primary.main'
+                : (theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.08)' : 'rgba(226,232,240,0.10)',
+              bgcolor: sortMenuAnchorEl
+                ? (theme) => theme.palette.mode === 'light' ? 'rgba(49,90,156,0.12)' : 'rgba(120,156,220,0.16)'
+                : (theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.035)' : 'rgba(226,232,240,0.06)',
+            },
+          }}
+        >
+          <SortIcon fontSize="small" />
+        </IconButton>
+      </Tooltip>
+      <Menu
+        anchorEl={sortMenuAnchorEl}
+        open={Boolean(sortMenuAnchorEl)}
+        onClose={() => setSortMenuAnchorEl(null)}
+      >
+        <MenuItem selected={sortField === 'name'} onClick={() => { onSortFieldChange('name'); setSortMenuAnchorEl(null); }}>
+          {sortField === 'name' ? '✓ ' : ''}{isZh ? '名称' : 'Name'}
+        </MenuItem>
+        <MenuItem selected={sortField === 'createdAt'} onClick={() => { onSortFieldChange('createdAt'); setSortMenuAnchorEl(null); }}>
+          {sortField === 'createdAt' ? '✓ ' : ''}{isZh ? '创建时间' : 'Created time'}
+        </MenuItem>
+        <Divider />
+        <MenuItem selected={sortDirection === 'asc'} onClick={() => { onSortDirectionChange('asc'); setSortMenuAnchorEl(null); }}>
+          {sortDirection === 'asc' ? '✓ ' : ''}{isZh ? '正序' : 'Ascending'}
+        </MenuItem>
+        <MenuItem selected={sortDirection === 'desc'} onClick={() => { onSortDirectionChange('desc'); setSortMenuAnchorEl(null); }}>
+          {sortDirection === 'desc' ? '✓ ' : ''}{isZh ? '逆序' : 'Descending'}
+        </MenuItem>
+        <Divider />
+        <MenuItem selected={sortGroupFirst} onClick={() => { onToggleSortGroupFirst(); setSortMenuAnchorEl(null); }}>
+          {sortGroupFirst ? '✓ ' : ''}{isZh ? '分组优先' : 'Group first'}
+        </MenuItem>
+      </Menu>
+      <Tooltip title={isZh ? '更多' : 'More'}>
+        <IconButton
+          aria-label={isZh ? '更多' : 'More'}
+          onClick={(event) => {
+            setMenuAnchorEl(event.currentTarget);
+            setSortMenuAnchorEl(null);
+          }}
+          sx={{
+            width: 40,
+            height: 40,
+            borderRadius: 1,
+            border: '1px solid',
+            borderColor: menuAnchorEl ? 'primary.main' : 'transparent',
+            bgcolor: menuAnchorEl
+              ? (theme) => theme.palette.mode === 'light' ? 'rgba(49,90,156,0.10)' : 'rgba(120,156,220,0.14)'
+              : 'transparent',
+            transition: 'background-color 180ms ease, border-color 180ms ease, color 180ms ease',
+            '&:hover': {
+              borderColor: menuAnchorEl
+                ? 'primary.main'
+                : (theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.08)' : 'rgba(226,232,240,0.10)',
+              bgcolor: menuAnchorEl
+                ? (theme) => theme.palette.mode === 'light' ? 'rgba(49,90,156,0.12)' : 'rgba(120,156,220,0.16)'
+                : (theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.035)' : 'rgba(226,232,240,0.06)',
+            },
+          }}
+        >
+          <MoreIcon fontSize="small" />
+        </IconButton>
+      </Tooltip>
+      <Menu anchorEl={menuAnchorEl} open={Boolean(menuAnchorEl)} onClose={() => setMenuAnchorEl(null)}>
+        <MenuItem onClick={() => {
+          setMenuAnchorEl(null);
+          navigate('/characters/batch-generate');
+        }}>
+          批量生成角色
+        </MenuItem>
+        <MenuItem onClick={() => {
+          setMenuAnchorEl(null);
+          onImport();
+        }}>
+          {t('character.import')}
+        </MenuItem>
+        <MenuItem onClick={() => {
+          setMenuAnchorEl(null);
+          onExport();
+        }} disabled={customCount === 0}>
+          {t('character.exportAll')}
+        </MenuItem>
+      </Menu>
+    </Box>
+  );
+}
+
 export default function CharacterLibraryPage() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
@@ -116,8 +263,6 @@ export default function CharacterLibraryPage() {
   const [bulkGroupValue, setBulkGroupValue] = useState('');
   const [groupActionTarget, setGroupActionTarget] = useState<string | null>(null);
   const [groupActionDialogOpen, setGroupActionDialogOpen] = useState(false);
-  const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null);
-  const [sortMenuAnchorEl, setSortMenuAnchorEl] = useState<null | HTMLElement>(null);
   const [sortField, setSortField] = useState<CharacterSortField>(() => readPersistentUiValue(CHARACTER_LIBRARY_SORT_FIELD_KEY, 'name', isCharacterSortField));
   const [sortDirection, setSortDirection] = useState<CharacterSortDirection>(() => readPersistentUiValue(CHARACTER_LIBRARY_SORT_DIRECTION_KEY, 'asc', isCharacterSortDirection));
   const [sortGroupFirst, setSortGroupFirst] = useState(() => readPersistentUiValue(CHARACTER_LIBRARY_SORT_GROUP_FIRST_KEY, false, isBoolean));
@@ -387,149 +532,6 @@ export default function CharacterLibraryPage() {
     }
   };
 
-  const desktopListMenu = null;
-  void desktopListMenu;
-
-  const mobileListHeader = null;
-  void mobileListHeader;
-
-  const renderListMenu = useMemo(() => (
-    <>
-      <Tooltip title={i18n.language.startsWith('zh') ? '更多' : 'More'}>
-      <IconButton
-        aria-label={i18n.language.startsWith('zh') ? '更多' : 'More'}
-        onClick={(e) => setMenuAnchorEl(e.currentTarget)}
-        sx={{
-          width: 40,
-          height: 40,
-          borderRadius: 1,
-          border: '1px solid',
-          borderColor: (theme) => menuAnchorEl
-            ? theme.palette.primary.main
-            : 'transparent',
-          bgcolor: (theme) => menuAnchorEl
-            ? theme.palette.mode === 'light' ? 'rgba(49,90,156,0.10)' : 'rgba(120,156,220,0.14)'
-            : 'transparent',
-          transition: 'background-color 180ms ease, border-color 180ms ease, color 180ms ease',
-          '&:hover': {
-            borderColor: (theme) => menuAnchorEl
-              ? theme.palette.primary.main
-              : theme.palette.mode === 'light' ? 'rgba(15,23,42,0.08)' : 'rgba(226,232,240,0.10)',
-            bgcolor: (theme) => menuAnchorEl
-              ? theme.palette.mode === 'light' ? 'rgba(49,90,156,0.12)' : 'rgba(120,156,220,0.16)'
-              : theme.palette.mode === 'light' ? 'rgba(15,23,42,0.035)' : 'rgba(226,232,240,0.06)',
-          },
-        }}
-      >
-        <MoreIcon fontSize="small" />
-      </IconButton>
-      </Tooltip>
-      <Menu anchorEl={menuAnchorEl} open={Boolean(menuAnchorEl)} onClose={() => setMenuAnchorEl(null)}>
-        <MenuItem onClick={() => {
-          setMenuAnchorEl(null);
-          navigate('/characters/batch-generate');
-        }}>
-          批量生成角色
-        </MenuItem>
-        <MenuItem onClick={() => {
-          setMenuAnchorEl(null);
-          handleImport();
-        }}>
-          {t('character.import')}
-        </MenuItem>
-        <MenuItem onClick={() => {
-          setMenuAnchorEl(null);
-          handleExport();
-        }} disabled={custom.length === 0}>
-          {t('character.exportAll')}
-        </MenuItem>
-      </Menu>
-    </>
-  ), [custom.length, i18n.language, menuAnchorEl, navigate, t]);
-
-  const sortFieldLabel = sortField === 'name'
-    ? (i18n.language.startsWith('zh') ? '名称' : 'Name')
-    : (i18n.language.startsWith('zh') ? '创建时间' : 'Created time');
-  const sortDirectionLabel = sortDirection === 'asc'
-    ? (i18n.language.startsWith('zh') ? '正序' : 'Ascending')
-    : (i18n.language.startsWith('zh') ? '逆序' : 'Descending');
-  const renderSortMenu = useMemo(() => (
-    <>
-      <Tooltip title={i18n.language.startsWith('zh') ? '排序' : 'Sort'}>
-      <IconButton
-        onClick={(event) => setSortMenuAnchorEl(event.currentTarget)}
-        aria-label={i18n.language.startsWith('zh') ? '排序' : 'Sort'}
-        sx={{
-          width: 40,
-          height: 40,
-          borderRadius: 1,
-          border: '1px solid',
-          borderColor: (theme) => sortMenuAnchorEl
-            ? theme.palette.primary.main
-            : 'transparent',
-          bgcolor: (theme) => sortMenuAnchorEl
-            ? theme.palette.mode === 'light' ? 'rgba(49,90,156,0.10)' : 'rgba(120,156,220,0.14)'
-            : 'transparent',
-          transition: 'background-color 180ms ease, border-color 180ms ease, color 180ms ease',
-          '&:hover': {
-            borderColor: (theme) => sortMenuAnchorEl
-              ? theme.palette.primary.main
-              : theme.palette.mode === 'light' ? 'rgba(15,23,42,0.08)' : 'rgba(226,232,240,0.10)',
-            bgcolor: (theme) => sortMenuAnchorEl
-              ? theme.palette.mode === 'light' ? 'rgba(49,90,156,0.12)' : 'rgba(120,156,220,0.16)'
-              : theme.palette.mode === 'light' ? 'rgba(15,23,42,0.035)' : 'rgba(226,232,240,0.06)',
-          },
-        }}
-      >
-        <SortIcon fontSize="small" />
-      </IconButton>
-      </Tooltip>
-      <Menu anchorEl={sortMenuAnchorEl} open={Boolean(sortMenuAnchorEl)} onClose={() => setSortMenuAnchorEl(null)}>
-        <MenuItem selected={sortField === 'name'} onClick={() => { setSortField('name'); setSortMenuAnchorEl(null); }}>
-          {sortField === 'name' ? '✓ ' : ''}{i18n.language.startsWith('zh') ? '名称' : 'Name'}
-        </MenuItem>
-        <MenuItem selected={sortField === 'createdAt'} onClick={() => { setSortField('createdAt'); setSortMenuAnchorEl(null); }}>
-          {sortField === 'createdAt' ? '✓ ' : ''}{i18n.language.startsWith('zh') ? '创建时间' : 'Created time'}
-        </MenuItem>
-        <Divider />
-        <MenuItem selected={sortDirection === 'asc'} onClick={() => { setSortDirection('asc'); setSortMenuAnchorEl(null); }}>
-          {sortDirection === 'asc' ? '✓ ' : ''}{i18n.language.startsWith('zh') ? '正序' : 'Ascending'}
-        </MenuItem>
-        <MenuItem selected={sortDirection === 'desc'} onClick={() => { setSortDirection('desc'); setSortMenuAnchorEl(null); }}>
-          {sortDirection === 'desc' ? '✓ ' : ''}{i18n.language.startsWith('zh') ? '逆序' : 'Descending'}
-        </MenuItem>
-        <Divider />
-        <MenuItem selected={sortGroupFirst} onClick={() => { setSortGroupFirst((value) => !value); setSortMenuAnchorEl(null); }}>
-          {sortGroupFirst ? '✓ ' : ''}{i18n.language.startsWith('zh') ? '分组优先' : 'Group first'}
-        </MenuItem>
-      </Menu>
-    </>
-  ), [i18n.language, sortField, sortMenuAnchorEl, sortDirection, sortGroupFirst]);
-
-  useEffect(() => {
-    setHideMobileBottomNav(false);
-    setHeaderBackAction(null);
-    setHeaderTitle(null);
-    setHeaderActions(
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-        <Chip
-          size="small"
-          label={`${sortFieldLabel} · ${sortDirectionLabel}${sortGroupFirst ? ` · ${i18n.language.startsWith('zh') ? '分组优先' : 'Group first'}` : ''}`}
-          sx={{ display: { xs: 'none', md: 'inline-flex' } }}
-        />
-        {renderSortMenu}
-        {renderListMenu}
-      </Box>
-    );
-
-    return () => {
-      setHeaderActions(null);
-      setHeaderTitle(null);
-      setHeaderBackAction(null);
-      setHideMobileBottomNav(false);
-    };
-  }, [i18n.language, renderListMenu, renderSortMenu, setHeaderActions, setHeaderBackAction, setHeaderTitle, setHideMobileBottomNav, sortDirectionLabel, sortFieldLabel, sortGroupFirst]);
-
   const openCreateForm = () => {
     if (characterLimitReached) {
       setVipLimitDialog({
@@ -543,7 +545,7 @@ export default function CharacterLibraryPage() {
     navigate('/characters/create');
   };
 
-  const handleExport = () => {
+  const handleExport = useCallback(() => {
     const data = JSON.stringify(custom, null, 2);
     const blob = new Blob([data], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -552,9 +554,9 @@ export default function CharacterLibraryPage() {
     a.download = 'pneumata-characters.json';
     a.click();
     URL.revokeObjectURL(url);
-  };
+  }, [custom]);
 
-  const handleImport = () => {
+  const handleImport = useCallback(() => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.json';
@@ -582,7 +584,33 @@ export default function CharacterLibraryPage() {
       }
     };
     input.click();
-  };
+  }, [custom, i18n.language, importCharacters, maxCharacters, t]);
+
+  useEffect(() => {
+    setHideMobileBottomNav(false);
+    setHeaderBackAction(null);
+    setHeaderTitle(null);
+    setHeaderActions(
+      <CharacterLibraryHeaderActions
+        customCount={custom.length}
+        sortField={sortField}
+        sortDirection={sortDirection}
+        sortGroupFirst={sortGroupFirst}
+        onSortFieldChange={setSortField}
+        onSortDirectionChange={setSortDirection}
+        onToggleSortGroupFirst={() => setSortGroupFirst((value) => !value)}
+        onImport={handleImport}
+        onExport={handleExport}
+      />
+    );
+
+    return () => {
+      setHeaderActions(null);
+      setHeaderTitle(null);
+      setHeaderBackAction(null);
+      setHideMobileBottomNav(false);
+    };
+  }, [custom.length, handleExport, handleImport, i18n.language, setHeaderActions, setHeaderBackAction, setHeaderTitle, setHideMobileBottomNav, sortDirection, sortField, sortGroupFirst]);
 
   return (
     <Box sx={{ position: 'relative', containerType: 'inline-size', p: 3, pt: { xs: 1, sm: 1, md: 3 }, pb: { xs: 'calc(env(safe-area-inset-bottom, 0px) + 82px)', sm: 12 } }}>

@@ -1,4 +1,6 @@
 import { BottomNavigation, BottomNavigationAction, Paper } from '@mui/material';
+import { useEffect, useRef, useState } from 'react';
+import type { PointerEvent as ReactPointerEvent } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import AnimatedNavIcon, { type AnimatedNavIconKind } from './AnimatedNavIcon';
@@ -21,6 +23,11 @@ export default function BottomNav() {
   const navigate = useNavigate();
   const location = useLocation();
   const { t } = useTranslation();
+  const [preview, setPreview] = useState<{ index: number; originPath: string } | null>(null);
+  const navigationRef = useRef<HTMLDivElement | null>(null);
+  const pointerRef = useRef<{ index: number; x: number; y: number; pointerId: number } | null>(null);
+  const draggedRef = useRef(false);
+  const suppressNextChangeRef = useRef(false);
 
   const currentIndex = Object.entries(pathToIndex).reduce((acc, [path, idx]) => {
     if (path === '/') {
@@ -28,6 +35,102 @@ export default function BottomNav() {
     }
     return location.pathname.startsWith(path) ? idx : acc;
   }, 0);
+  const isPressPreviewing = preview !== null && preview.originPath === location.pathname;
+  const visualIndex = isPressPreviewing ? preview.index : currentIndex;
+
+  useEffect(() => {
+    const handleWindowBlur = () => {
+      pointerRef.current = null;
+      draggedRef.current = false;
+      suppressNextChangeRef.current = false;
+      setPreview(null);
+    };
+
+    window.addEventListener('blur', handleWindowBlur);
+    return () => window.removeEventListener('blur', handleWindowBlur);
+  }, []);
+
+  const handlePointerDown = (index: number, event: ReactPointerEvent) => {
+    if (!event.isPrimary) return;
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+
+    pointerRef.current = {
+      index,
+      x: event.clientX,
+      y: event.clientY,
+      pointerId: event.pointerId,
+    };
+    draggedRef.current = false;
+    setPreview({ index, originPath: location.pathname });
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const handlePointerMove = (event: ReactPointerEvent) => {
+    const pointer = pointerRef.current;
+    if (!pointer) return;
+
+    const deltaX = event.clientX - pointer.x;
+    const deltaY = event.clientY - pointer.y;
+    const distance = Math.hypot(deltaX, deltaY);
+    if (Math.abs(deltaY) > 20 && Math.abs(deltaY) > Math.abs(deltaX)) {
+      handlePointerCancel();
+      return;
+    }
+
+    if (distance > 8) {
+      draggedRef.current = true;
+    }
+
+    if (!draggedRef.current) return;
+
+    const navigation = navigationRef.current;
+    if (!navigation) return;
+
+    const bounds = navigation.getBoundingClientRect();
+    const relativeX = Math.max(0, Math.min(bounds.width - 1, event.clientX - bounds.left));
+    const nextIndex = Math.max(
+      0,
+      Math.min(mobileItems.length - 1, Math.floor((relativeX / bounds.width) * mobileItems.length)),
+    );
+    if (preview?.index !== nextIndex || preview?.originPath !== location.pathname) {
+      setPreview({ index: nextIndex, originPath: location.pathname });
+    }
+  };
+
+  const handlePointerUp = (event: ReactPointerEvent) => {
+    const pointer = pointerRef.current;
+    if (!pointer) return;
+
+    pointerRef.current = null;
+    if (draggedRef.current) {
+      const targetIndex = preview?.originPath === location.pathname ? preview.index : currentIndex;
+      draggedRef.current = false;
+      suppressNextChangeRef.current = true;
+      setPreview(null);
+      if (event.currentTarget.hasPointerCapture(pointer.pointerId)) {
+        event.currentTarget.releasePointerCapture(pointer.pointerId);
+      }
+      if (targetIndex !== currentIndex) {
+        const nextPath = mobileItems[targetIndex]?.path;
+        if (nextPath && nextPath !== location.pathname) navigate(nextPath);
+      }
+      window.setTimeout(() => {
+        suppressNextChangeRef.current = false;
+      }, 0);
+      return;
+    }
+
+    if (event.currentTarget.hasPointerCapture(pointer.pointerId)) {
+      event.currentTarget.releasePointerCapture(pointer.pointerId);
+    }
+  };
+
+  const handlePointerCancel = () => {
+    pointerRef.current = null;
+    draggedRef.current = false;
+    suppressNextChangeRef.current = false;
+    setPreview(null);
+  };
 
   return (
     <Paper
@@ -70,8 +173,13 @@ export default function BottomNav() {
       elevation={0}
     >
       <BottomNavigation
+        ref={navigationRef}
         value={currentIndex}
         onChange={(_, newValue) => {
+          if (suppressNextChangeRef.current) {
+            suppressNextChangeRef.current = false;
+            return;
+          }
           const nextPath = mobileItems[newValue]?.path;
           if (nextPath !== location.pathname) navigate(nextPath);
         }}
@@ -87,7 +195,7 @@ export default function BottomNav() {
             zIndex: 0,
             top: 2,
             bottom: 2,
-            left: `calc(${currentIndex * 25}% + 0.5%)`,
+            left: `calc(${visualIndex * 25}% + 0.5%)`,
             width: '24%',
             borderRadius: 1.25,
             pointerEvents: 'none',
@@ -101,7 +209,12 @@ export default function BottomNav() {
             boxShadow: (theme) => theme.palette.mode === 'light'
               ? '0 4px 14px rgba(15,23,42,0.06)'
               : '0 4px 16px rgba(0,0,0,0.16)',
-            transition: 'left 260ms cubic-bezier(.2,.8,.2,1), background-color 220ms ease, box-shadow 220ms ease',
+            transition: !isPressPreviewing
+              ? 'left 260ms cubic-bezier(.22,1.28,.36,1), background-color 220ms ease, box-shadow 220ms ease'
+              : 'left 120ms cubic-bezier(.22,.8,.26,1), background-color 220ms ease, box-shadow 220ms ease',
+            transform: isPressPreviewing ? 'scaleX(0.965)' : 'scaleX(1)',
+            transformOrigin: 'center',
+            willChange: 'left',
           },
           '& .MuiBottomNavigationAction-root': {
             minWidth: 0,
@@ -113,9 +226,16 @@ export default function BottomNav() {
             my: 0.25,
             py: 0.25,
             backgroundColor: 'transparent',
+            touchAction: 'pan-y',
             transition: 'color 220ms ease, opacity 220ms ease',
             '&:hover': {
               bgcolor: 'transparent',
+            },
+            '& .PneumataNavIcon': {
+              transition: 'transform 200ms cubic-bezier(.22,1.28,.36,1)',
+            },
+            '&.Mui-selected .PneumataNavIcon': {
+              transform: 'translateY(-0.5px)',
             },
           },
           '& .Mui-selected': {
@@ -130,6 +250,7 @@ export default function BottomNav() {
             '&.Mui-selected': {
               fontSize: 10.5,
               transform: 'none',
+              transitionDelay: '45ms',
             },
           },
         }}
@@ -140,6 +261,10 @@ export default function BottomNav() {
             className="PneumataNavButton"
             label={t(item.labelKey)}
             icon={<AnimatedNavIcon kind={item.iconKind} active={currentIndex === index} size={24} />}
+            onPointerDown={(event) => handlePointerDown(index, event)}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerCancel}
           />
         ))}
       </BottomNavigation>
