@@ -4,25 +4,31 @@ import { storageKey } from '../constants/brand';
 
 const getMessagesMock = vi.hoisted(() => vi.fn());
 const getSyncChangesMock = vi.hoisted(() => vi.fn());
+const reportRecoverableErrorMock = vi.hoisted(() => vi.fn());
+const MockApiError = vi.hoisted(() => class ApiError extends Error {
+  code?: string;
+  status?: number;
+
+  constructor(message: string, options?: { code?: string; status?: number }) {
+    super(message);
+    this.name = 'ApiError';
+    this.code = options?.code;
+    this.status = options?.status;
+  }
+});
 
 vi.mock('../services/api', () => ({
-  ApiError: class ApiError extends Error {
-    code?: string;
-    status?: number;
-
-    constructor(message: string, options?: { code?: string; status?: number }) {
-      super(message);
-      this.name = 'ApiError';
-      this.code = options?.code;
-      this.status = options?.status;
-    }
-  },
+  ApiError: MockApiError,
   api: {
     getSyncChanges: getSyncChangesMock,
     getMessages: getMessagesMock,
     createMessage: vi.fn(),
     deleteMessage: vi.fn(),
   },
+}));
+
+vi.mock('../services/diagnostics', () => ({
+  reportRecoverableError: reportRecoverableErrorMock,
 }));
 
 interface StorageLike {
@@ -87,6 +93,7 @@ describe('useMessageStore', () => {
     vi.resetModules();
     getMessagesMock.mockReset();
     getSyncChangesMock.mockReset();
+    reportRecoverableErrorMock.mockReset();
     vi.stubGlobal('localStorage', createStorageMock());
     localStorage.setItem(storageKey('auth-mode'), 'local');
   });
@@ -1032,7 +1039,7 @@ describe('useMessageStore', () => {
     expect(state.messageWindowsByChatId[chatId]?.messages).toHaveLength(1);
   });
 
-  it('keeps first message pending until a newly created local chat is synced', async () => {
+  it('uses local message window and keeps first message pending until a newly created local chat is synced', async () => {
     localStorage.setItem(storageKey('auth-mode'), 'cloud');
     const { useMessageStore } = await import('./useMessageStore');
     const { useChatStore } = await import('./useChatStore');
@@ -1079,6 +1086,9 @@ describe('useMessageStore', () => {
       isLoading: false,
     });
 
+    await useMessageStore.getState().openChatWindow('local-chat-12345678', { limit: 40, revalidate: true });
+    expect(getMessagesMock).not.toHaveBeenCalled();
+
     await useMessageStore.getState().addMessage({
       chatId: 'local-chat-12345678',
       type: 'ai',
@@ -1092,6 +1102,47 @@ describe('useMessageStore', () => {
     expect(useMessageStore.getState().pendingOperations[0]?.chatId).toBe('local-chat-12345678');
     expect(useMessageStore.getState().messageWindowsByChatId['local-chat-12345678']?.messages[0]?.chatId).toBe('local-chat-12345678');
     expect(useChatStore.getState().pendingOperations[0]?.kind).toBe('create');
+    expect(getMessagesMock).not.toHaveBeenCalled();
+  });
+
+  it('keeps local messages visible without a user-facing error when the cloud message resource is missing', async () => {
+    localStorage.setItem(storageKey('auth-mode'), 'cloud');
+    const { useMessageStore } = await import('./useMessageStore');
+    const chatId = 'local-first-chat';
+    const cachedMessage = buildMessage(1, chatId);
+    getSyncChangesMock.mockResolvedValueOnce({
+      status: 'modified',
+      scope: `messages.window:${chatId}`,
+      cursor: 'messages.window:rev-missing',
+      revision: 'messages.window:rev-missing',
+      changes: [],
+    });
+    getMessagesMock.mockRejectedValueOnce(new MockApiError('群聊不存在', { code: 'NOT_FOUND', status: 404 }));
+
+    useMessageStore.setState({
+      messages: [],
+      messageWindowsByChatId: {
+        [chatId]: {
+          messages: [cachedMessage],
+          lastSyncedAt: 0,
+          updatedAt: cachedMessage.timestamp,
+        },
+      },
+      pendingOperations: [],
+      activeChatId: null,
+      isLoading: false,
+      isLoadingOlder: false,
+      isLoadingNewer: false,
+      hasMore: true,
+      hasMoreNewer: false,
+    });
+
+    await useMessageStore.getState().loadMessages(chatId, { limit: 40 });
+
+    expect(getMessagesMock).toHaveBeenCalledWith(chatId, { limit: 40, before: undefined });
+    expect(useMessageStore.getState().messages.map((message) => message.id)).toEqual(['message-1']);
+    expect(useMessageStore.getState().isLoading).toBe(false);
+    expect(reportRecoverableErrorMock).not.toHaveBeenCalled();
   });
 
   it('opens a cloud message window around a historical timestamp', async () => {

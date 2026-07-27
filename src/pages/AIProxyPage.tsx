@@ -231,7 +231,7 @@ export default function AIProxyPage() {
     () => quickSetupLines(quickSetupTarget, proxyBaseUrl, quickSetupDisplayKey, quickSetupPreviewPlatform),
     [proxyBaseUrl, quickSetupDisplayKey, quickSetupPreviewPlatform, quickSetupTarget],
   );
-  const exampleModel = keys[0]?.allowedModels?.[0] || modelOptions[0] || 'deepseek-chat';
+  const exampleModel = keys[0]?.allowedModels?.[0] || modelOptions[0] || 'deepseek-v4-flash';
   const curlDisplayExamples = useMemo(() => buildCurlExamples(curlDisplayKey, proxyBaseUrl, exampleModel), [curlDisplayKey, exampleModel, proxyBaseUrl]);
   const curlCopyExamples = useMemo(() => buildCurlExamples(curlCopyKey, proxyBaseUrl, exampleModel), [curlCopyKey, exampleModel, proxyBaseUrl]);
   const endpointList = useMemo(() => [

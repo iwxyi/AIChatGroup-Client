@@ -9,7 +9,7 @@ describe('normalizeAIProfiles', () => {
       expect.objectContaining({
         type: 'text',
         provider: 'official-deepseek',
-        model: 'deepseek-chat',
+        model: 'deepseek-v4-flash',
         isDefault: true,
       }),
       expect.objectContaining({
@@ -33,9 +33,52 @@ describe('normalizeAIProfiles', () => {
       model: 'deepseek-chat',
     }]);
 
+    expect(profiles.find((profile) => profile.type === 'text')).toEqual(expect.objectContaining({
+      provider: 'official-deepseek',
+      model: 'deepseek-v4-flash',
+      isDefault: true,
+    }));
     expect(profiles.find((profile) => profile.type === 'image')).toEqual(expect.objectContaining({
       provider: 'official-nanobanana',
       model: DEFAULT_IMAGE_AI_PROFILE.model,
+      isDefault: true,
+    }));
+  });
+
+  it('migrates legacy official DeepSeek reasoner settings to the configured v4 pro model', () => {
+    const profiles = normalizeAIProfiles([{
+      id: 'default',
+      name: 'Text',
+      type: 'text',
+      isDefault: true,
+      provider: 'official-deepseek',
+      apiKey: '',
+      baseUrl: '/api/ai',
+      model: 'deepseek-reasoner',
+    }]);
+
+    expect(profiles.find((profile) => profile.type === 'text')).toEqual(expect.objectContaining({
+      provider: 'official-deepseek',
+      model: 'deepseek-v4-pro',
+      isDefault: true,
+    }));
+  });
+
+  it('migrates legacy custom DeepSeek model settings to supported v4 names', () => {
+    const profiles = normalizeAIProfiles([{
+      id: 'custom-deepseek',
+      name: 'DeepSeek',
+      type: 'text',
+      isDefault: true,
+      provider: 'deepseek',
+      apiKey: 'key',
+      baseUrl: 'https://api.deepseek.com/v1',
+      model: 'deepseek-chat',
+    }]);
+
+    expect(profiles.find((profile) => profile.type === 'text')).toEqual(expect.objectContaining({
+      provider: 'deepseek',
+      model: 'deepseek-v4-flash',
       isDefault: true,
     }));
   });

@@ -49,8 +49,8 @@ const OFFICIAL_TEXT_MODELS = [
 ];
 
 const OFFICIAL_DEEPSEEK_TEXT_MODELS = [
-  'deepseek-chat',
-  'deepseek-reasoner',
+  'deepseek-v4-flash',
+  'deepseek-v4-pro',
 ];
 
 const OFFICIAL_MOACODE_CODE_MODELS = [
@@ -97,8 +97,8 @@ export const AI_PROVIDER_CATALOG: AIProviderCatalogEntry[] = [
     label: '官方1（DeepSeek）',
     family: 'SenseMurmur DeepSeek',
     defaults: {
-      text: { baseUrl: '/api/ai', model: 'deepseek-chat' },
-      document: { baseUrl: '/api/ai', model: 'deepseek-chat' },
+      text: { baseUrl: '/api/ai', model: 'deepseek-v4-flash' },
+      document: { baseUrl: '/api/ai', model: 'deepseek-v4-flash' },
     },
     popularModels: {
       text: OFFICIAL_DEEPSEEK_TEXT_MODELS,
@@ -223,12 +223,12 @@ export const AI_PROVIDER_CATALOG: AIProviderCatalogEntry[] = [
     label: 'DeepSeek',
     family: 'DeepSeek',
     defaults: {
-      text: { baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
-      document: { baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
+      text: { baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-v4-flash' },
+      document: { baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-v4-flash' },
     },
     popularModels: {
-      text: ['deepseek-chat', 'deepseek-reasoner'],
-      document: ['deepseek-chat', 'deepseek-reasoner'],
+      text: ['deepseek-v4-flash', 'deepseek-v4-pro'],
+      document: ['deepseek-v4-flash', 'deepseek-v4-pro'],
     },
   },
   {

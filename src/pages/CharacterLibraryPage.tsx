@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { useLayoutHeaderActions } from '../components/layout/AppLayoutContext';
 import { Box, Button, Alert, IconButton, Menu, MenuItem, Chip, Dialog, DialogTitle, DialogContent, DialogActions, TextField, Typography, Divider, Tooltip } from '@mui/material';
-import type { Theme } from '@mui/material/styles';
 import AddIcon from '@mui/icons-material/Add';
 import MoreIcon from '@mui/icons-material/MoreVert';
 import ClearAllIcon from '@mui/icons-material/ClearAll';
@@ -275,7 +274,9 @@ export default function CharacterLibraryPage() {
     severity: 'success',
   });
   const [freeEntitlement, setFreeEntitlement] = useState<VipEntitlementInfo | null>(null);
+  const [freeEntitlementLoaded, setFreeEntitlementLoaded] = useState(false);
   const [membership, setMembership] = useState<BillingMembershipResponse | null>(null);
+  const [membershipLoaded, setMembershipLoaded] = useState(authMode !== 'cloud' || !isLoggedIn);
   const [vipLimitDialog, setVipLimitDialog] = useState<{ title: string; description: string; current?: number | null; limit?: number | null; helperText?: string } | null>(null);
   const activeCharacterId = isMasterPane && !selectionMode ? getActiveCharacterId(location.pathname) : null;
   const floatingActionPositionSx = isMasterPane ? {
@@ -313,12 +314,19 @@ export default function CharacterLibraryPage() {
 
   useEffect(() => {
     let active = true;
+    setFreeEntitlementLoaded(false);
     api.getBillingMembershipConfig()
       .then((result) => {
-        if (active) setFreeEntitlement(result.entitlements?.free || null);
+        if (active) {
+          setFreeEntitlement(result.entitlements?.free || null);
+          setFreeEntitlementLoaded(true);
+        }
       })
       .catch(() => {
-        if (active) setFreeEntitlement(null);
+        if (active) {
+          setFreeEntitlement(null);
+          setFreeEntitlementLoaded(true);
+        }
       });
     return () => {
       active = false;
@@ -329,16 +337,24 @@ export default function CharacterLibraryPage() {
     let active = true;
     if (authMode !== 'cloud' || !isLoggedIn) {
       setMembership(null);
+      setMembershipLoaded(true);
       return () => {
         active = false;
       };
     }
+    setMembershipLoaded(false);
     api.getBillingMembership()
       .then((result) => {
-        if (active) setMembership(result);
+        if (active) {
+          setMembership(result);
+          setMembershipLoaded(true);
+        }
       })
       .catch(() => {
-        if (active) setMembership(null);
+        if (active) {
+          setMembership(null);
+          setMembershipLoaded(true);
+        }
       });
     return () => {
       active = false;
@@ -346,7 +362,10 @@ export default function CharacterLibraryPage() {
   }, [authMode, isLoggedIn]);
 
   const custom = useMemo(() => characters.filter((c) => !c.isPreset), [characters]);
-  const maxCharacters = membership?.vipEntitlement?.entitlement.maxCharacters ?? freeEntitlement?.maxCharacters ?? null;
+  const entitlementReady = freeEntitlementLoaded && (authMode !== 'cloud' || !isLoggedIn || membershipLoaded);
+  const maxCharacters = entitlementReady
+    ? membership?.vipEntitlement?.entitlement.maxCharacters ?? freeEntitlement?.maxCharacters ?? null
+    : null;
   const characterLimitReached = maxCharacters != null && custom.length >= maxCharacters;
   const customGroups = useMemo(() => getCharacterGroupList(custom), [custom]);
   const customGroupOptions = useMemo(() => customGroups.map((group) => ({
@@ -584,7 +603,7 @@ export default function CharacterLibraryPage() {
       }
     };
     input.click();
-  }, [custom, i18n.language, importCharacters, maxCharacters, t]);
+  }, [custom, importCharacters, maxCharacters, t]);
 
   useEffect(() => {
     setHideMobileBottomNav(false);

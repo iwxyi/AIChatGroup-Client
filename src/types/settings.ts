@@ -389,9 +389,15 @@ export function normalizeAIProfiles(aiProfiles?: AIModelProfile[], api?: APIConf
     const type = profile.type || 'text';
     const isDefault = Boolean(profile.isDefault) && !seenDefaultTypes.has(type);
     if (isDefault) seenDefaultTypes.add(type);
+    const provider = profile.provider || DEFAULT_AI_PROFILE.provider;
+    const baseUrl = profile.baseUrl || DEFAULT_AI_PROFILE.baseUrl;
+    const model = normalizeDeepSeekModelName(provider, baseUrl, profile.model || DEFAULT_AI_PROFILE.model);
     return {
       ...DEFAULT_AI_PROFILE,
       ...profile,
+      provider,
+      baseUrl,
+      model,
       id: profile.id || (index === 0 ? 'default' : `profile-${index + 1}`),
       name: profile.name || (index === 0 ? 'Default' : `Model ${index + 1}`),
       type,
@@ -891,11 +897,24 @@ export const DEFAULT_CHAT_APPEARANCE_SETTINGS: ChatAppearanceSettings = {
 
 export type AppSettingsWithMemory = AppSettings & { memoryUI: { showDeveloperMemory?: boolean } };
 
+const OFFICIAL_DEEPSEEK_LEGACY_MODEL_MAP: Record<string, string> = {
+  'deepseek-chat': 'deepseek-v4-flash',
+  'deepseek-reasoner': 'deepseek-v4-pro',
+};
+
+function normalizeDeepSeekModelName(provider: AIProvider, baseUrl: string, model: string) {
+  const normalizedModel = model.trim();
+  if ((provider === 'official-deepseek' && baseUrl === '/api/ai') || provider === 'deepseek') {
+    return OFFICIAL_DEEPSEEK_LEGACY_MODEL_MAP[normalizedModel] || normalizedModel || 'deepseek-v4-flash';
+  }
+  return normalizedModel;
+}
+
 export const DEFAULT_API_CONFIG: APIConfig = {
   provider: 'official-deepseek',
   apiKey: '',
   baseUrl: '/api/ai',
-  model: 'deepseek-chat',
+  model: 'deepseek-v4-flash',
 };
 
 export const DEFAULT_IMAGE_CAPABILITIES: AIModelImageCapabilities = {

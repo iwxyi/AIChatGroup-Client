@@ -252,8 +252,8 @@ function buildInternalLedgerTokenPricing(providerCode: string, form: DeepSeekPri
     models: {
       default: modelPricing,
       ...(providerCode === 'deepseek' ? {
-        'deepseek-chat': modelPricing,
-        'deepseek-reasoner': modelPricing,
+        'deepseek-v4-flash': modelPricing,
+        'deepseek-v4-pro': modelPricing,
       } : {}),
     },
   };

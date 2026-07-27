@@ -651,11 +651,10 @@ function buildOnlineOfficialProviderOption(provider: OfficialAiProviderInfo): (A
     unavailableReason: provider.accessAllowed === false ? '当前会员不可用' : undefined,
     defaults: nextDefaults,
     popularModels: {
-      ...catalogEntry.popularModels,
-      text: catalogEntry.popularModels.text || (textDefaultModel ? [textDefaultModel] : []),
-      image: catalogEntry.popularModels.image || (imageDefaultModel ? [imageDefaultModel] : []),
-      audio: catalogEntry.popularModels.audio || [],
-      document: catalogEntry.popularModels.document || (textDefaultModel ? [textDefaultModel] : []),
+      text: textDefaultModel ? [textDefaultModel] : [],
+      image: imageDefaultModel ? [imageDefaultModel] : [],
+      audio: [],
+      document: textDefaultModel ? [textDefaultModel] : [],
     },
     sortOrder: typeof provider.sortOrder === 'number' ? provider.sortOrder : 999,
   };

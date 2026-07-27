@@ -1,5 +1,5 @@
 import { Fab, useMediaQuery } from '@mui/material';
-import type { SxProps, Theme } from '@mui/material/styles';
+import { alpha, type SxProps, type Theme } from '@mui/material/styles';
 import type { ReactNode } from 'react';
 import { motion, transition } from '../../styles/motion';
 
@@ -38,26 +38,53 @@ export default function ExpandableFab({ icon, label, ariaLabel, onClick, color =
           overflow: 'hidden',
           justifyContent: 'flex-start',
           borderRadius: '999px',
+          border: '1px solid',
+          borderColor: (theme) => {
+            const main = theme.palette[color]?.main || theme.palette.primary.main;
+            return alpha(main, theme.palette.mode === 'light' ? 0.26 : 0.34);
+          },
+          color: (theme) => theme.palette[color]?.main || theme.palette.primary.main,
+          bgcolor: (theme) => {
+            const main = theme.palette[color]?.main || theme.palette.primary.main;
+            return alpha(main, theme.palette.mode === 'light' ? 0.13 : 0.18);
+          },
+          backdropFilter: 'blur(18px) saturate(1.35)',
+          WebkitBackdropFilter: 'blur(18px) saturate(1.35)',
           boxShadow: (theme) => theme.palette.mode === 'light'
-            ? '0 16px 34px rgba(15,23,42,0.18)'
-            : '0 18px 42px rgba(0,0,0,0.40)',
+            ? `0 16px 34px ${alpha(theme.palette[color]?.main || theme.palette.primary.main, 0.18)}`
+            : `0 18px 42px ${alpha(theme.palette.common.black, 0.42)}`,
           transformOrigin: 'right center',
           transition: [
             transition(['width', 'min-width'], 420, fabSettle),
-            transition(['box-shadow'], 320, fabSettle),
+            transition(['background-color', 'border-color', 'box-shadow', 'color'], 320, fabSettle),
           ].join(', '),
           '&:hover, &:focus-visible': canHover ? {
             width: expandedWidth,
             minWidth: expandedWidth,
             borderRadius: '999px',
+            borderColor: (theme) => {
+              const main = theme.palette[color]?.main || theme.palette.primary.main;
+              return alpha(main, theme.palette.mode === 'light' ? 0.34 : 0.46);
+            },
+            bgcolor: (theme) => {
+              const main = theme.palette[color]?.main || theme.palette.primary.main;
+              return alpha(main, theme.palette.mode === 'light' ? 0.19 : 0.25);
+            },
             transition: [
               transition(['width', 'min-width'], 820, fabSpring),
-              transition(['box-shadow'], 540, fabSpring),
+              transition(['background-color', 'border-color', 'box-shadow', 'color'], 540, fabSpring),
             ].join(', '),
             boxShadow: (theme) => theme.palette.mode === 'light'
-              ? '0 20px 42px rgba(15,23,42,0.22)'
-              : '0 22px 52px rgba(0,0,0,0.46)',
+              ? `0 20px 42px ${alpha(theme.palette[color]?.main || theme.palette.primary.main, 0.24)}`
+              : `0 22px 52px ${alpha(theme.palette.common.black, 0.50)}`,
           } : undefined,
+          '&.Mui-disabled': {
+            borderColor: (theme) => alpha(theme.palette.text.disabled, theme.palette.mode === 'light' ? 0.16 : 0.24),
+            color: 'text.disabled',
+            bgcolor: (theme) => alpha(theme.palette.action.disabledBackground, theme.palette.mode === 'light' ? 0.58 : 0.36),
+            backdropFilter: 'blur(18px) saturate(1.15)',
+            WebkitBackdropFilter: 'blur(18px) saturate(1.15)',
+          },
           '&:active': {
             transform: 'translateY(1px) scale(0.985)',
             transitionTimingFunction: motion.press,

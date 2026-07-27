@@ -63,9 +63,15 @@ export const useUIStore = create<UIStore>()(
       name: scopedStorageKey('ui'),
       version: CLIENT_STORE_SCHEMA_VERSION,
       migrate: (persistedState) => migrateUiStoreState(persistedState as Partial<UIStore>) as UIStore,
+      merge: (persistedState, currentState) => ({
+        ...currentState,
+        ...(persistedState as Partial<UIStore>),
+        rightPanelOpen: false,
+        rightPanelGestureOffset: null,
+        rightPanelGestureDragging: false,
+      }),
       partialize: (state) => ({
         sidebarOpen: state.sidebarOpen,
-        rightPanelOpen: state.rightPanelOpen,
         rightPanelTab: state.rightPanelTab,
         chatReadingPositions: state.chatReadingPositions,
       }),

@@ -11,7 +11,7 @@ import { CLIENT_STORE_SCHEMA_VERSION, migrateMessageStoreState } from './storeMi
 import { createScopedIndexedDbBufferedJsonStorage, flushBufferedPersistenceWrites } from './storePersistenceScope';
 import { createSyncScheduler } from './storeSyncScheduler';
 import { canAttemptOnlineSync, getPendingQueueWorkerPriority, recoverInterruptedOperations, retryFailedOperations, runPendingOperationQueue } from './storeSyncHelpers';
-import { scopedStorageKey, storageKey } from '../constants/brand';
+import { scopedStorageKey } from '../constants/brand';
 import { getLocalDataUserId } from '../services/authStorageScope';
 import { isCloudSyncEnabled } from '../services/cloudSyncPreference';
 import { useChatStore } from './useChatStore';
@@ -181,6 +181,7 @@ function canLoadMoreFromWindow(window: CachedMessageWindow | undefined, activeMe
 }
 
 function canLoadNewerFromWindow(window: CachedMessageWindow | undefined, activeMessages: Message[], limit: number) {
+  void limit;
   const cachedMessages = window?.messages || [];
   const latestActive = [...activeMessages].reverse().find((message) => !message.isDeleted)?.timestamp;
   if (latestActive !== undefined && cachedMessages.some((message) => !message.isDeleted && message.timestamp > latestActive)) return true;
@@ -333,6 +334,8 @@ function localRecentMessages(state: MessageStore, n: number) {
   return state.messages.filter((message) => !message.isDeleted).slice(-n);
 }
 
+void localRecentMessages;
+
 function localCreateWindow(cache: Record<string, CachedMessageWindow>, chatId: string, messages: Message[]) {
   return mergeLocalWindow(cache, chatId, messages);
 }
@@ -367,6 +370,8 @@ function buildLocalMessageWindowState(state: MessageStore, chatId: string) {
     messages: localMessagesForChat(state, chatId),
   };
 }
+
+void buildLocalMessageWindowState;
 
 function localDeleteWindowMessages(state: MessageStore, chatId: string, n: number) {
   return locallyDeleteLastN(state, chatId, n);
@@ -462,6 +467,8 @@ function shouldCreateMessagesLocally() {
   return shouldSkipCloudSync();
 }
 
+void shouldCreateMessagesLocally;
+
 function logMessageWindowDebug(event: string, payload: Record<string, unknown>) {
   logDeveloperDiagnostic(`message-window:${event}`, payload, 'debug', 'message-window');
 }
@@ -489,6 +496,8 @@ function summarizeMessageWindows(cache: Record<string, CachedMessageWindow>, foc
 function shouldDeleteMessagesLocally() {
   return shouldSkipCloudSync();
 }
+
+void shouldDeleteMessagesLocally;
 
 function localMessageUploadKey() {
   return scopedStorageKey('messages-guest');
@@ -4563,7 +4572,8 @@ function stripLargeInlineMediaForPersistence<T>(value: T, key = '', seen = new W
 
 function compactMessageForPersistence(message: Message, options: { stripInlineMedia?: boolean } = {}) {
   const normalized = compactMessage(normalizeMessage(message), { dropContextText: true });
-  const { isStreaming: _isStreaming, ...persisted } = normalized;
+  const persisted = { ...normalized };
+  delete persisted.isStreaming;
   if (options.stripInlineMedia === false) return persisted;
   return {
     ...persisted,
@@ -4737,10 +4747,10 @@ function mergeMessages(localMessages: Message[], remoteMessages: Message[]) {
   }
 
   for (const remote of remoteMessages.map(normalizeMessage)) {
-    let localIdentity = buildMessageIdentityKeys(remote)
+    const localIdentity = buildMessageIdentityKeys(remote)
       .map((key) => identityIndex.get(key))
       .find((identity): identity is string => Boolean(identity)) || null;
-    let local = localIdentity ? merged.get(localIdentity) || null : null;
+    const local = localIdentity ? merged.get(localIdentity) || null : null;
 
     if (!local) {
       const identity = getMessageRenderIdentity(remote);
@@ -4939,11 +4949,27 @@ function hasPendingCreateOperation(queue: PendingMessageOperation[], message: Me
 }
 
 function hasPendingChatCreate(chatId: string) {
-  return useChatStore.getState().pendingOperations.some((operation) => operation.kind === 'create' && operation.entityId === chatId);
+  return useChatStore.getState().pendingOperations.some((operation) => (
+    operation.kind === 'create'
+    && operation.entityId === chatId
+    && operation.status !== 'failed'
+  ));
+}
+
+function isChatCreatePendingForMessages(chatId: string) {
+  if (shouldSkipCloudSync()) return false;
+  return hasPendingChatCreate(chatId);
 }
 
 function scheduleChatSyncFirst() {
   void useChatStore.getState().resumeSync();
+}
+
+function isCloudMissingResourceError(error: unknown) {
+  return error instanceof ApiError && (
+    error.status === 404
+    || error.code?.toUpperCase() === 'NOT_FOUND'
+  );
 }
 
 function removePendingMessageOperation(queue: PendingMessageOperation[], operationId: string) {
@@ -5176,6 +5202,11 @@ export const useMessageStore = create<MessageStore>()(
           revalidate: options?.revalidate ?? true,
         });
         await get().hydrateMessagesFromCache(chatId, { limit });
+        if (isChatCreatePendingForMessages(chatId)) {
+          scheduleChatSyncFirst();
+          messageSyncScheduler.schedule(flushPendingOperations, 450);
+          return;
+        }
         const hydratedWindow = get().messageWindowsByChatId[chatId];
         const shouldRevalidate = shouldRevalidateMessageWindow(currentWindow?.lastSyncedAt, options?.revalidate ?? true);
         const shouldRefreshCompactedNarrative = hasCompactedNarrativeWindow(hydratedWindow);
@@ -5227,6 +5258,17 @@ export const useMessageStore = create<MessageStore>()(
         });
         if (shouldSkipCloudSync()) {
           set((state) => localFetchedMessages(state, chatId, options));
+          return;
+        }
+        if (isChatCreatePendingForMessages(chatId)) {
+          scheduleChatSyncFirst();
+          messageSyncScheduler.schedule(flushPendingOperations, 450);
+          set((state) => ({
+            ...localFetchedMessages(state, chatId, options),
+            isLoading: false,
+            isLoadingOlder: false,
+            isLoadingNewer: false,
+          }));
           return;
         }
         try {
@@ -5374,12 +5416,14 @@ export const useMessageStore = create<MessageStore>()(
           });
         } catch (error) {
           if (!isAppend && !options?.before && !options?.after && options?.aroundTimestamp === undefined) messageSyncScopes.markError(messageWindowScope(chatId), error);
-          reportRecoverableError({
-            location: 'cloud-sync:messages-load',
-            error,
-            userMessage: buildApiErrorUserMessage(error, '消息云同步'),
-            extra: { chatId },
-          });
+          if (!isCloudMissingResourceError(error)) {
+            reportRecoverableError({
+              location: 'cloud-sync:messages-load',
+              error,
+              userMessage: buildApiErrorUserMessage(error, '消息云同步'),
+              extra: { chatId },
+            });
+          }
           set((state) => ({
             ...(isAppend ? {} : localFetchedMessages(state, chatId)),
             isLoading: false,
@@ -5391,7 +5435,7 @@ export const useMessageStore = create<MessageStore>()(
 
       addMessage: async (msgData) => {
         let created: Message | null = null;
-        const pendingChatCreate = !shouldSkipCloudSync() && hasPendingChatCreate(msgData.chatId);
+        const pendingChatCreate = isChatCreatePendingForMessages(msgData.chatId);
         set((state) => {
           const next = localMessageInsertResult(state, msgData);
           created = next.message;
