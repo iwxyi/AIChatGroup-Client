@@ -1,5 +1,5 @@
 import { defineConfig, loadEnv } from 'vite'
-import type { Plugin } from 'vite'
+import type { Plugin, ProxyOptions, UserConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
@@ -114,10 +114,69 @@ function setForwardedHeaders(proxyRequest: { setHeader(name: string, value: stri
   if (portMatch?.[1]) proxyRequest.setHeader('x-forwarded-port', portMatch[1]);
 }
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ mode }): UserConfig => {
   const env = loadClientEnv(mode)
   const appUpdateMode = resolveAppUpdateMode(env)
   const allowedHosts = resolveAllowedHosts(env)
+  const proxy: Record<string, string | ProxyOptions> = {
+    '/api': {
+      target: 'http://localhost:5170',
+      changeOrigin: true,
+      configure(proxy) {
+        proxy.on('proxyReq', (proxyRequest, request) => {
+          setForwardedHeaders(proxyRequest, request)
+        })
+        proxy.on('proxyRes', (proxyRes) => {
+          proxyRes.headers['x-pneumata-vite-proxy'] = 'Pneumata-Client:5173';
+        })
+      },
+    },
+    '/uploads': {
+      target: 'http://localhost:5170',
+      changeOrigin: true,
+      configure(proxy) {
+        proxy.on('proxyReq', (proxyRequest, request) => {
+          setForwardedHeaders(proxyRequest, request)
+        })
+      },
+    },
+    '^/ai(?:/|$)': {
+      target: 'http://localhost:5170',
+      changeOrigin: true,
+      configure(proxy) {
+        proxy.on('proxyReq', (proxyRequest, request) => {
+          setForwardedHeaders(proxyRequest, request)
+        })
+      },
+    },
+    '^/v1(?:/|$)': {
+      target: 'http://localhost:5170',
+      changeOrigin: true,
+      configure(proxy) {
+        proxy.on('proxyReq', (proxyRequest, request) => {
+          setForwardedHeaders(proxyRequest, request)
+        })
+      },
+    },
+    '^/(models|responses|embeddings|chat/completions|images/generations|anthropic|web_search)(?:/|$)': {
+      target: 'http://localhost:5170',
+      changeOrigin: true,
+      configure(proxy) {
+        proxy.on('proxyReq', (proxyRequest, request) => {
+          setForwardedHeaders(proxyRequest, request)
+        })
+      },
+    },
+    '^/setup-[^/]+\\.(sh|ps1)$': {
+      target: 'http://localhost:5170',
+      changeOrigin: true,
+      configure(proxy) {
+        proxy.on('proxyReq', (proxyRequest, request) => {
+          setForwardedHeaders(proxyRequest, request)
+        })
+      },
+    },
+  }
 
   return {
     server: {
@@ -126,65 +185,7 @@ export default defineConfig(({ mode }) => {
       cors: false,
       hmr: appUpdateMode === 'auto',
       allowedHosts,
-      proxy: {
-        '/api': {
-          target: 'http://localhost:5170',
-          changeOrigin: true,
-          configure(proxy) {
-            proxy.on('proxyReq', (proxyRequest, request) => {
-              setForwardedHeaders(proxyRequest, request)
-            })
-            proxy.on('proxyRes', (proxyRes) => {
-              proxyRes.headers['x-pneumata-vite-proxy'] = 'Pneumata-Client:5173';
-            })
-          },
-        },
-        '/uploads': {
-          target: 'http://localhost:5170',
-          changeOrigin: true,
-          configure(proxy) {
-            proxy.on('proxyReq', (proxyRequest, request) => {
-              setForwardedHeaders(proxyRequest, request)
-            })
-          },
-        },
-        '^/ai(?:/|$)': {
-          target: 'http://localhost:5170',
-          changeOrigin: true,
-          configure(proxy) {
-            proxy.on('proxyReq', (proxyRequest, request) => {
-              setForwardedHeaders(proxyRequest, request)
-            })
-          },
-        },
-        '^/v1(?:/|$)': {
-          target: 'http://localhost:5170',
-          changeOrigin: true,
-          configure(proxy) {
-            proxy.on('proxyReq', (proxyRequest, request) => {
-              setForwardedHeaders(proxyRequest, request)
-            })
-          },
-        },
-        '^/(models|responses|embeddings|chat/completions|images/generations|anthropic|web_search)(?:/|$)': {
-          target: 'http://localhost:5170',
-          changeOrigin: true,
-          configure(proxy) {
-            proxy.on('proxyReq', (proxyRequest, request) => {
-              setForwardedHeaders(proxyRequest, request)
-            })
-          },
-        },
-        '^/setup-[^/]+\\.(sh|ps1)$': {
-          target: 'http://localhost:5170',
-          changeOrigin: true,
-          configure(proxy) {
-            proxy.on('proxyReq', (proxyRequest, request) => {
-              setForwardedHeaders(proxyRequest, request)
-            })
-          },
-        },
-      },
+      proxy,
     },
     plugins: [
       publicAiProxyCorsPlugin(),
