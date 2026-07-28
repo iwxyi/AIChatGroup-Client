@@ -4,6 +4,7 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import { Alert, Avatar, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Divider, IconButton, Stack, Tooltip, Typography } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import FloatingSegmentedTabs, { buildFloatingTabContainerSx } from '../components/common/FloatingSegmentedTabs';
+import AccessState, { accessStateActions } from '../components/common/AccessState';
 import { useLayoutHeaderActions } from '../components/layout/AppLayoutContext';
 import SurfaceCard from '../components/common/SurfaceCard';
 import { buildBundledCharacterPreview, buildImportedChatDraft, getBundledCharacterEntries, remapIds } from '../services/marketImportDraft';
@@ -804,9 +805,14 @@ export default function MarketPage() {
 
   if (!marketAccessEntitled) {
     return (
-      <Box sx={{ p: { xs: 2, md: 3 }, maxWidth: 720 }}>
-        <Alert severity="info">当前账号未开通市场浏览与下载权限。</Alert>
-      </Box>
+      <AccessState
+        kind="forbidden"
+        title="无法访问市场"
+        description="当前账号未开通市场浏览与下载权限。"
+        actions={[
+          accessStateActions.home('返回首页', () => navigate('/')),
+        ]}
+      />
     );
   }
 

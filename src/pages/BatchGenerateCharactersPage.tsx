@@ -20,16 +20,24 @@ import { useLayoutHeaderActions } from '../components/layout/AppLayoutContext';
 import { BATCH_GENERATE_EXAMPLES } from '../constants/batchGenerateExamples';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { useCharacterStore } from '../stores/useCharacterStore';
+import { useAuthStore } from '../stores/useAuthStore';
 import { DEFAULT_CHARACTER_INTERVENTION, DEFAULT_CHARACTER_MEMORY } from '../types';
 import { getTopicDerivedCharacterGroup } from '../types/character';
 import { getPreferredAIProfile, isAIProfileUsable } from '../types/settings';
 import { chooseRandomBubbleStyleId, createCharacterBubbleStyleId } from '../utils/bubbleStyle';
-import { api, type BillingMembershipResponse } from '../services/api';
+import { api, type BillingMembershipResponse, type VipEntitlementInfo } from '../services/api';
 
 const BATCH_GENERATE_GROUP_SIZE = 10;
 const MOBILE_BOTTOM_NAV_FAB_OFFSET = 'calc(env(safe-area-inset-bottom, 0px) + 104px)';
 const MOBILE_BOTTOM_NAV_CONTENT_PADDING = 'calc(env(safe-area-inset-bottom, 0px) + 176px)';
 const HIGH_RELATIONSHIP_CONFIDENCE = 0.75;
+
+function usesPlatformAi(profile: AIModelProfile | null | undefined) {
+  if (!profile) return false;
+  return profile.provider === 'official'
+    || String(profile.provider).startsWith('official-')
+    || profile.baseUrl.replace(/\/+$/, '') === '/api/ai';
+}
 
 interface ProgressItem {
   name: string;
@@ -778,8 +786,12 @@ export default function BatchGenerateCharactersPage() {
   const [loadingNames, setLoadingNames] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [progress, setProgress] = useState<{ current: number; total: number; currentName?: string; items: ProgressItem[] }>({ current: 0, total: 0, currentName: '', items: [] });
+  const [freeEntitlement, setFreeEntitlement] = useState<VipEntitlementInfo | null>(null);
+  const [freeEntitlementLoading, setFreeEntitlementLoading] = useState(false);
   const [membership, setMembership] = useState<BillingMembershipResponse | null>(null);
   const [membershipLoading, setMembershipLoading] = useState(false);
+  const [membershipLoaded, setMembershipLoaded] = useState(false);
+  const [membershipLoadFailed, setMembershipLoadFailed] = useState(false);
   const [vipLimitDialog, setVipLimitDialog] = useState<{ title: string; description: string; current?: number | null; limit?: number | null; helperText?: string } | null>(null);
   const cancelGenerationRef = useRef(false);
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
@@ -788,6 +800,8 @@ export default function BatchGenerateCharactersPage() {
     severity: 'success',
   });
   const returnTo = initialParams.get('returnTo');
+  const authMode = useAuthStore((state) => state.authMode);
+  const isLoggedIn = useAuthStore((state) => state.isLoggedIn);
 
   useEffect(() => {
     setHeaderTitle(i18n.language.startsWith('zh') ? '批量生成角色' : 'Batch Generate');
@@ -806,16 +820,53 @@ export default function BatchGenerateCharactersPage() {
 
   useEffect(() => {
     let active = true;
+    if (authMode !== 'cloud' || !isLoggedIn) {
+      setMembership(null);
+      setMembershipLoading(false);
+      setMembershipLoaded(true);
+      setMembershipLoadFailed(false);
+      return () => {
+        active = false;
+      };
+    }
     setMembershipLoading(true);
+    setMembershipLoaded(false);
+    setMembershipLoadFailed(false);
     api.getBillingMembership()
       .then((result) => {
-        if (active) setMembership(result);
+        if (active) {
+          setMembership(result);
+          setMembershipLoaded(true);
+          setMembershipLoadFailed(false);
+        }
       })
       .catch(() => {
-        if (active) setMembership(null);
+        if (active) {
+          setMembership(null);
+          setMembershipLoaded(true);
+          setMembershipLoadFailed(true);
+        }
       })
       .finally(() => {
         if (active) setMembershipLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [authMode, isLoggedIn]);
+
+  useEffect(() => {
+    let active = true;
+    setFreeEntitlementLoading(true);
+    api.getBillingMembershipConfig()
+      .then((result) => {
+        if (active) setFreeEntitlement(result.entitlements?.free || null);
+      })
+      .catch(() => {
+        if (active) setFreeEntitlement(null);
+      })
+      .finally(() => {
+        if (active) setFreeEntitlementLoading(false);
       });
     return () => {
       active = false;
@@ -836,23 +887,40 @@ export default function BatchGenerateCharactersPage() {
   }, [candidateCharacters, candidateCircles, candidateRelationships, nameFormat]);
   const example = useMemo(() => BATCH_GENERATE_EXAMPLES[Math.floor(Math.random() * BATCH_GENERATE_EXAMPLES.length)], []);
   const localizedExample = i18n.language.startsWith('zh') ? example.zh : example.en;
-  const entitlement = membership?.vipEntitlement?.entitlement || null;
-  const dailyGenerationLimit = entitlement?.dailyAiGenerationLimit ?? null;
+  const textProfile = useMemo(() => getPreferredAIProfile(settings.aiProfiles, 'text'), [settings.aiProfiles]);
+  const platformAi = usesPlatformAi(textProfile);
+  const useFreeEntitlement = authMode !== 'cloud' || !isLoggedIn;
+  const entitlement = platformAi
+    ? useFreeEntitlement
+      ? freeEntitlement
+      : membership?.vipEntitlement?.entitlement || null
+    : null;
+  const entitlementLoading = platformAi && (useFreeEntitlement ? freeEntitlementLoading : membershipLoading);
+  const entitlementUnavailable = platformAi && !useFreeEntitlement && membershipLoaded && membershipLoadFailed;
+  const dailyGenerationLimit = platformAi ? entitlement?.dailyAiGenerationLimit ?? null : null;
   const dailyGenerationUsed = Number(membership?.dailyAiGenerationUsage?.used || 0);
   const dailyGenerationRemaining = dailyGenerationLimit == null ? null : Math.max(0, dailyGenerationLimit - dailyGenerationUsed);
-  const batchCharacterLimit = entitlement?.batchCharacterGenerationLimit ?? null;
+  const batchCharacterLimit = platformAi ? entitlement?.batchCharacterGenerationLimit ?? null : null;
   const dailyGenerationExhausted = dailyGenerationRemaining != null && dailyGenerationRemaining <= 0;
   const batchSelectionExceeded = batchCharacterLimit != null && selectedCandidateIds.length > batchCharacterLimit;
   const canGenerateNames = Boolean(topic.trim() || description.trim()) && !loadingNames && !dailyGenerationExhausted;
   const canGenerateCharacters = selectedCandidateIds.length > 0 && !generating && !batchSelectionExceeded;
-  const entitlementLimitLabel = [
-    dailyGenerationLimit == null
-      ? (i18n.language.startsWith('zh') ? '今日生成：不限' : 'Daily generation: unlimited')
-      : (i18n.language.startsWith('zh') ? `今日生成：${dailyGenerationUsed}/${dailyGenerationLimit}` : `Daily generation: ${dailyGenerationUsed}/${dailyGenerationLimit}`),
-    batchCharacterLimit == null
-      ? (i18n.language.startsWith('zh') ? '单次批量：不限' : 'Batch size: unlimited')
-      : (i18n.language.startsWith('zh') ? `单次批量：最多 ${batchCharacterLimit}` : `Batch size: max ${batchCharacterLimit}`),
-  ].join(' · ');
+  const entitlementLimitLabel = entitlementUnavailable
+    ? (i18n.language.startsWith('zh')
+      ? '暂时无法确认当前账号权益，生成时会由服务器再次校验'
+      : 'Unable to confirm account quota. The server will validate it when generating')
+    : platformAi
+      ? [
+      dailyGenerationLimit == null
+        ? (i18n.language.startsWith('zh') ? '今日生成：不限' : 'Daily generation: unlimited')
+        : (i18n.language.startsWith('zh') ? `今日生成：${dailyGenerationUsed}/${dailyGenerationLimit}` : `Daily generation: ${dailyGenerationUsed}/${dailyGenerationLimit}`),
+      batchCharacterLimit == null
+        ? (i18n.language.startsWith('zh') ? '单次批量：不限' : 'Batch size: unlimited')
+        : (i18n.language.startsWith('zh') ? `单次批量：最多 ${batchCharacterLimit}` : `Batch size: max ${batchCharacterLimit}`),
+      ].join(' · ')
+      : (i18n.language.startsWith('zh')
+        ? '自定义 AI：不占用平台生成次数 · 单次批量：不限'
+        : 'Custom AI: does not use platform generation quota · Batch size: unlimited');
 
   const toggleCandidate = (candidateId: string) => {
     if (!selectedCandidateIds.includes(candidateId) && batchCharacterLimit != null && selectedCandidateIds.length >= batchCharacterLimit) {
@@ -1116,8 +1184,8 @@ export default function BatchGenerateCharactersPage() {
       gap: 2,
     }}>
       <Box sx={{ p: 2.5, border: 1, borderColor: 'divider', borderRadius: 4, bgcolor: 'background.paper', display: 'flex', flexDirection: 'column', gap: 2 }}>
-        <Alert severity={dailyGenerationExhausted || batchSelectionExceeded ? 'warning' : 'info'} sx={{ alignItems: 'center' }}>
-          {membershipLoading
+        <Alert severity={!entitlementLoading && (entitlementUnavailable || dailyGenerationExhausted || batchSelectionExceeded) ? 'warning' : 'info'} sx={{ alignItems: 'center' }}>
+          {entitlementLoading
             ? (i18n.language.startsWith('zh') ? '正在读取会员权益限制…' : 'Loading membership limits...')
             : entitlementLimitLabel}
           {batchSelectionExceeded

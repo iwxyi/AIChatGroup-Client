@@ -128,11 +128,11 @@ describe('roomTemplates story seeds', () => {
     expect(standardTemplateKeys).toContain('open_chat');
     expect(standardTemplateKeys).toContain('story_reader');
     expect(standardTemplateKeys).toContain('opinion_review');
-    expect(standardTemplateKeys).toContain('roundtable_review');
-    expect(standardTemplateKeys).toContain('role_debate');
-    expect(standardTemplateKeys).toContain('courtroom_deliberation');
-    expect(standardTemplateKeys).toContain('expert_review');
-    expect(standardTemplateKeys).toContain('public_inquiry');
+    expect(standardTemplateKeys).not.toContain('roundtable_review');
+    expect(standardTemplateKeys).not.toContain('role_debate');
+    expect(standardTemplateKeys).not.toContain('courtroom_deliberation');
+    expect(standardTemplateKeys).not.toContain('expert_review');
+    expect(standardTemplateKeys).not.toContain('public_inquiry');
     expect(standardTemplateKeys).not.toContain('brainstorm_workshop');
     expect(standardTemplateKeys).not.toContain('retrospective_room');
     expect(standardTemplateKeys).toContain('free_chat_preset');

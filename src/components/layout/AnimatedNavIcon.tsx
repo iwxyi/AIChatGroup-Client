@@ -137,14 +137,10 @@ const iconSx: SystemStyleObject<Theme> = {
     '0%, 100%': { transform: 'scale(1)' },
     '50%': { transform: 'scale(1.16)' },
   },
-  '@keyframes navRipple': {
-    '0%, 100%': { transform: 'scale(1)', opacity: 0.42 },
-    '50%': { transform: 'scale(1.18)', opacity: 0.88 },
-  },
-  '@keyframes navMomentTrace': {
-    '0%, 8%': { strokeDashoffset: 1 },
-    '52%, 64%': { strokeDashoffset: 0 },
-    '100%': { strokeDashoffset: -1 },
+  '@keyframes navMomentMountain': {
+    '0%, 100%': { transform: 'translateY(0) scaleY(1)', strokeDashoffset: 0 },
+    '45%': { transform: 'translateY(-0.9px) scaleY(1.05)', strokeDashoffset: -3.2 },
+    '72%': { transform: 'translateY(-0.25px) scaleY(1.02)', strokeDashoffset: -4.8 },
   },
   '@keyframes navChatTailLeft': {
     '0%, 12%': { opacity: 1, transform: 'translateX(0) scale(1)' },
@@ -292,15 +288,16 @@ const iconSx: SystemStyleObject<Theme> = {
   '& .focus-core': {
     animation: 'navFocus 1.45s ease-in-out infinite',
   },
-  '& .moment-ripple': {
-    animation: 'navRipple 1.45s ease-in-out infinite',
-  },
   '& .moment-figure': {
     transformBox: 'view-box',
     transformOrigin: '12px 12px',
   },
-  '& .moment-trace': {
-    animation: 'navMomentTrace 3.6s ease-in-out infinite',
+  '& .moment-mountain': {
+    transformBox: 'fill-box',
+    transformOrigin: 'center bottom',
+    strokeDasharray: 22,
+    strokeDashoffset: 0,
+    animation: 'navMomentMountain 1.7s cubic-bezier(.37,0,.2,1) infinite',
   },
   '& .awning': {
     animation: 'navAwning 1.55s ease-in-out infinite',
@@ -458,20 +455,9 @@ function iconPaths(kind: AnimatedNavIconKind) {
       return (
         <>
           <g className="moment-figure">
-            <path className="surface" d="M5.9 7.7h12.2v8.1c0 1.2-.9 2.1-2.1 2.1H8c-1.2 0-2.1-.9-2.1-2.1Z" />
-            <path className="secondary" d="M5.9 7.7h12.2v8.1c0 1.2-.9 2.1-2.1 2.1H8c-1.2 0-2.1-.9-2.1-2.1Z" />
-            <circle className="accent nav-dot moment-ripple" cx="8.8" cy="10.7" r="0.74" />
-            <path className="secondary" d="M10.8 10.7h4.2M8.2 13.7h6.8" />
-            <path
-              className="accent moment-trace"
-              d="M8.2 16.1h6.8"
-              pathLength={1}
-              strokeDasharray="1"
-              strokeDashoffset="1"
-              fill="none"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
+            <circle className="surface" cx="12" cy="12" r="7.3" />
+            <circle className="secondary" cx="12" cy="12" r="7.3" />
+            <path className="accent moment-mountain" d="M7.4 15.5 10.2 11.7l2.1 2.3 2.7-3.7 1.8 5.2Z" />
           </g>
         </>
       );

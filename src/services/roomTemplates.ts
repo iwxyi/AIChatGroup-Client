@@ -820,11 +820,6 @@ export function getRoomTemplateKernel(templateOrKey: RoomTemplateDefinition | Ro
 const PUBLIC_ROOM_TEMPLATE_KERNEL_KEYS = new Set<RoomTemplateKey>([
   'open_chat',
   'opinion_review',
-  'roundtable_review',
-  'role_debate',
-  'courtroom_deliberation',
-  'expert_review',
-  'public_inquiry',
   'story_reader',
 ]);
 

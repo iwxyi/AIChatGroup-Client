@@ -271,6 +271,9 @@ export default function CreateChatPage() {
   const [saveAsChatSaving, setSaveAsChatSaving] = useState(false);
   const [membership, setMembership] = useState<BillingMembershipResponse | null>(null);
   const [freeEntitlement, setFreeEntitlement] = useState<VipEntitlementInfo | null>(null);
+  const [freeEntitlementLoaded, setFreeEntitlementLoaded] = useState(false);
+  const [membershipLoaded, setMembershipLoaded] = useState(authMode !== 'cloud' || !isLoggedIn);
+  const [membershipLoadFailed, setMembershipLoadFailed] = useState(false);
   const [vipLimitDialog, setVipLimitDialog] = useState<{ title: string; description: string; current?: number | null; limit?: number | null; helperText?: string } | null>(null);
   const [aiAutofilling, setAiAutofilling] = useState(false);
   const [hotTopicOpenSignal, setHotTopicOpenSignal] = useState(0);
@@ -335,12 +338,19 @@ export default function CreateChatPage() {
 
   useEffect(() => {
     let active = true;
+    setFreeEntitlementLoaded(false);
     apiClient.getBillingMembershipConfig()
       .then((result) => {
-        if (active) setFreeEntitlement(result.entitlements?.free || null);
+        if (active) {
+          setFreeEntitlement(result.entitlements?.free || null);
+          setFreeEntitlementLoaded(true);
+        }
       })
       .catch(() => {
-        if (active) setFreeEntitlement(null);
+        if (active) {
+          setFreeEntitlement(null);
+          setFreeEntitlementLoaded(true);
+        }
       });
     return () => {
       active = false;
@@ -351,16 +361,28 @@ export default function CreateChatPage() {
     let active = true;
     if (authMode !== 'cloud' || !isLoggedIn) {
       setMembership(null);
+      setMembershipLoaded(true);
+      setMembershipLoadFailed(false);
       return () => {
         active = false;
       };
     }
+    setMembershipLoaded(false);
+    setMembershipLoadFailed(false);
     apiClient.getBillingMembership()
       .then((result) => {
-        if (active) setMembership(result);
+        if (active) {
+          setMembership(result);
+          setMembershipLoaded(true);
+          setMembershipLoadFailed(false);
+        }
       })
       .catch(() => {
-        if (active) setMembership(null);
+        if (active) {
+          setMembership(null);
+          setMembershipLoaded(true);
+          setMembershipLoadFailed(true);
+        }
       });
     return () => {
       active = false;
@@ -1000,9 +1022,16 @@ export default function CreateChatPage() {
   const memberSummaryEmptyLabel = isZh ? '未选择AI角色' : 'No AI roles selected';
   const memberDialogConfirmLabel = t('common.confirm');
   const startChatLabel = editingChat ? t('common.save') : '开始群聊';
-  const maxChats = membership?.vipEntitlement?.entitlement.maxChats ?? freeEntitlement?.maxChats ?? null;
+  const useFreeEntitlement = authMode !== 'cloud' || !isLoggedIn;
+  const entitlementReady = useFreeEntitlement ? freeEntitlementLoaded : membershipLoaded;
+  const maxChats = entitlementReady
+    ? useFreeEntitlement
+      ? freeEntitlement?.maxChats ?? null
+      : membership?.vipEntitlement?.entitlement.maxChats ?? null
+    : null;
   const activeChatCount = chats.filter((chat) => !chat.deletedAt).length;
   const chatLimitReached = !editingChat && maxChats != null && activeChatCount >= maxChats;
+  const chatEntitlementUnavailable = !editingChat && !useFreeEntitlement && membershipLoaded && membershipLoadFailed;
   const showChatLimitDialog = (title = '聊天数量已达上限') => {
     setVipLimitDialog({
       title,
@@ -1348,7 +1377,11 @@ export default function CreateChatPage() {
   return (
     <Box sx={{ p: 3, pt: { xs: 1, sm: 1, md: 3 }, pb: { xs: 18, sm: 14, md: 10 }, maxWidth: 860, mx: 'auto' }}>
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: { xs: 1.5, sm: 2 } }}>
-        {chatLimitReached ? (
+        {chatEntitlementUnavailable ? (
+          <Alert severity="warning">
+            {isZh ? '暂时无法确认当前账号的聊天数量权益，创建时会由服务器再次校验。' : 'Unable to confirm chat quota for this account. The server will validate it when creating.'}
+          </Alert>
+        ) : chatLimitReached ? (
           <Alert severity="warning">
             {isZh ? `聊天数量已达当前会员上限（${chats.filter((chat) => !chat.deletedAt).length}/${maxChats}），升级会员后可创建更多聊天。` : `Chat limit reached (${chats.filter((chat) => !chat.deletedAt).length}/${maxChats}). Upgrade membership to create more chats.`}
           </Alert>

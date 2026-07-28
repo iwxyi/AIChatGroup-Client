@@ -2062,7 +2062,7 @@ export default function SettingsPage() {
   return (
     <Box sx={buildPageSx()}>
       <PageSection spacing={2.25}>
-        <Box sx={{ ...buildFloatingTabContainerSx(), order: -100, mb: 0.5 }}>
+        <Box sx={{ ...buildFloatingTabContainerSx(), order: -100, mb: 0.5, animation: 'none !important', transform: 'none !important' }}>
           <FloatingSegmentedTabs
             value={activeSettingsTab}
             onChange={(value) => {
