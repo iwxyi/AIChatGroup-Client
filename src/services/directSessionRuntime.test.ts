@@ -369,6 +369,34 @@ describe('directSessionRuntime pair-thread adjudication helpers', () => {
     });
     expect(result.handledEventId).toBe('evt-candidate-1');
     expect(updateChat).toHaveBeenCalledTimes(1);
+    const patch = updateChat.mock.calls[0]?.[1] as { runtimeEventsV2?: RuntimeEventV2[] } | undefined;
+    const moment = (patch?.runtimeEventsV2 || []).find((event) => event.kind === 'artifact' && (event.payload as { artifactType?: string }).artifactType === 'moment_text');
+    expect(moment?.createdAt).toBe(3);
+  });
+
+  it('suppresses existing post moment candidates when moments generation is disabled', async () => {
+    const chat = buildChatWithEvents([buildCandidateEvent(buildCandidatePayload({ eventKind: 'post_moment', participantIds: ['a'], confidence: 0.9, reasonType: 'celebration', visibilityPlan: 'public', dedupeKey: 'moment-disabled-existing' }))]);
+    const updateChat = vi.fn(async () => undefined);
+    setAIGenerationRuntimeConfig({ enableMoments: false, enableDiaries: true });
+    try {
+      const result = await runSocialEventAutoFlow(chat, {
+        chats: [chat],
+        characters: [buildCharacter('a', '甲')],
+        updateChat,
+        addChat: vi.fn(async () => buildBaseChat()),
+        addMessage: vi.fn(async () => ({})),
+        appendEventMessage: vi.fn(async () => undefined),
+      });
+      expect(result.handledEventId).toBe('evt-candidate-1');
+      const patch = updateChat.mock.calls[0]?.[1] as { runtimeEventsV2?: RuntimeEventV2[] } | undefined;
+      const events = patch?.runtimeEventsV2 || [];
+      expect(events.some((event) => event.kind === 'artifact' && (event.payload as { artifactType?: string }).artifactType === 'moment_text')).toBe(false);
+      expect(events.some((event) => event.kind === 'artifact'
+        && (event.payload as { eventType?: string; reasonType?: string }).eventType === 'event_candidate_suppressed'
+        && (event.payload as { reasonType?: string }).reasonType === 'world_attention_moment_disabled')).toBe(true);
+    } finally {
+      setAIGenerationRuntimeConfig({ enableMoments: true, enableDiaries: true });
+    }
   });
 
   it('suppresses post moment publish during quiet hours for non-night-owl persona', async () => {
@@ -1938,6 +1966,64 @@ describe('directSessionRuntime pair-thread adjudication helpers', () => {
     const artifacts = (worldCandidate.payload as { expectedArtifacts?: string[] }).expectedArtifacts || [];
     expect(artifacts.includes('moment_text')).toBe(true);
     expect(artifacts.every((item) => ['moment_text', 'moment_selfie', 'moment_group_photo', 'moment_scene_photo'].includes(item))).toBe(true);
+  });
+
+  it('backdates world-driven post_moment artifacts into the offline idle window', async () => {
+    const now = Date.now();
+    const lastChatAt = now - 4 * 60 * 60_000;
+    const chat = {
+      ...buildChatWithEvents([
+        {
+          id: 'att-1',
+          conversationId: 'chat-1',
+          kind: 'attention_candidate',
+          createdAt: lastChatAt + 1_000,
+          actorIds: ['user'],
+          targetIds: ['a'],
+          summary: '用户提到最近状态',
+          visibility: 'derived_public',
+          payload: { source: 'user_group_message', targetIds: ['a'], confidence: 0.9, reason: '用户刚提到近期生活状态' },
+        } as RuntimeEventV2,
+        {
+          id: 'check-1',
+          conversationId: 'chat-1',
+          kind: 'artifact',
+          createdAt: now - 60 * 60_000,
+          actorIds: ['a'],
+          targetIds: ['user'],
+          summary: '甲刚刚问候过',
+          visibility: 'derived_public',
+          payload: { artifactType: 'check_in_note', eventKind: 'check_in', text: '甲刚刚问候过' },
+        } as RuntimeEventV2,
+      ]),
+      updatedAt: lastChatAt,
+      lastMessageAt: lastChatAt,
+      relationshipLedger: [{
+        pairKey: 'a->user',
+        actorId: 'a',
+        targetId: 'user',
+        current: { warmth: 11, competence: 4, trust: 9, threat: 0 },
+        trend: 'up' as const,
+        recentEvents: [],
+        lastUpdatedAt: lastChatAt + 2_000,
+      }],
+    };
+    const updateChat = vi.fn(async () => undefined);
+    await runSocialEventAutoFlow(chat, {
+      chats: [chat],
+      characters: [buildCharacter('a', '甲')],
+      imageModelEnabled: false,
+      updateChat,
+      addChat: vi.fn(async () => buildBaseChat()),
+      addMessage: vi.fn(async () => ({})),
+      appendEventMessage: vi.fn(async () => undefined),
+    });
+    const patch = updateChat.mock.calls[0]?.[1] as { runtimeEventsV2?: RuntimeEventV2[] } | undefined;
+    const candidate = (patch?.runtimeEventsV2 || []).find((event) => event.kind === 'event_candidate' && (event.payload as { eventKind?: string }).eventKind === 'post_moment');
+    const moment = (patch?.runtimeEventsV2 || []).find((event) => event.kind === 'artifact' && (event.payload as { artifactType?: string }).artifactType === 'moment_text');
+    expect(candidate?.createdAt).toBeLessThanOrEqual(now - 5 * 60_000);
+    expect(candidate?.createdAt).toBeGreaterThanOrEqual(lastChatAt + 2 * 60 * 60_000);
+    expect(moment?.createdAt).toBe((candidate?.createdAt || 0) + 2);
   });
 
   it('does not create world-driven post_moment when global moments generation is disabled', async () => {

@@ -154,7 +154,9 @@ function buildPostMomentCompanionshipReflectionEvents(
   sourceChat: GroupChat,
   payload: SocialEventCandidatePayload,
   momentText: string,
+  createdAt?: number,
 ): RuntimeEventV2[] {
+  const baseCreatedAt = resolveEventTimestamp(createdAt);
   const seen = new Set<string>();
   return (payload.companionshipSeeds || [])
     .map((seed) => ({ seed, reflectionType: classifyMomentCompanionshipSeed(seed) }))
@@ -193,7 +195,7 @@ function buildPostMomentCompanionshipReflectionEvents(
         targetIds: participantIds.filter((id) => id !== payload.initiatorId),
         visibility: userId ? 'pair_private' : 'role_private',
         payload: reflectionPayload as unknown as Record<string, unknown>,
-        createdAt: Date.now() + index + 1,
+        createdAt: baseCreatedAt + index + 4,
       });
     });
 }
@@ -224,6 +226,16 @@ function readPendingMomentDelayWindow(chat: GroupChat, actorId: string | null, n
     if (latest == null || payload.nextSuggestedAt > latest) latest = payload.nextSuggestedAt;
   });
   return latest;
+}
+
+function resolveWorldDrivenCandidateCreatedAt(chat: GroupChat, actorId: string, now: number) {
+  const updatedAt = typeof chat.updatedAt === 'number' && Number.isFinite(chat.updatedAt) ? chat.updatedAt : now;
+  const idleMs = Math.max(0, now - updatedAt);
+  const offlineWindowMs = 2 * 60 * 60_000;
+  if (idleMs < offlineWindowMs) return now;
+  const seed = parseInt(stableEventSeed([chat.id, actorId, updatedAt]), 36);
+  const offsetMs = 8 * 60_000 + (Number.isFinite(seed) ? seed % (42 * 60_000) : 0);
+  return Math.max(updatedAt, Math.min(now - 5 * 60_000, updatedAt + offlineWindowMs + offsetMs));
 }
 
 function readWorldInfluenceBias(chat: GroupChat, actorId: string, now = Date.now()) {
@@ -536,10 +548,11 @@ function buildPostMomentSummary(actorName: string, payload: SocialEventCandidate
   return addHint(`${actorName} 发了一条动态，表达了刚才的情绪。`);
 }
 
-function buildPostMomentEffectEvents(sourceChat: GroupChat, payload: SocialEventCandidatePayload, actorName: string) {
+function buildPostMomentEffectEvents(sourceChat: GroupChat, payload: SocialEventCandidatePayload, actorName: string, createdAt?: number) {
+  const baseCreatedAt = resolveEventTimestamp(createdAt);
   const summary = buildPostMomentSummary(actorName, payload);
   const momentText = buildMomentPostText(actorName, payload);
-  const companionshipReflectionEvents = buildPostMomentCompanionshipReflectionEvents(sourceChat, payload, momentText);
+  const companionshipReflectionEvents = buildPostMomentCompanionshipReflectionEvents(sourceChat, payload, momentText, baseCreatedAt);
   const shiftedRoom = calculateRoomShift(sourceChat.worldState.structuredRoomState || null, {
     kind: payload.reasonType === 'celebration' ? 'support' : 'side_comment',
     actorId: payload.initiatorId,
@@ -563,6 +576,7 @@ function buildPostMomentEffectEvents(sourceChat: GroupChat, payload: SocialEvent
         summary: `动态回流：${summary}`,
         confidence: payload.confidence,
       },
+      createdAt: baseCreatedAt,
     }),
     memoryEvent: createRuntimeEventV2({
       conversationId: sourceChat.id,
@@ -577,6 +591,7 @@ function buildPostMomentEffectEvents(sourceChat: GroupChat, payload: SocialEvent
         salience: payload.reasonType === 'celebration' ? 0.72 : 0.64,
         confidence: payload.confidence,
       },
+      createdAt: baseCreatedAt + 1,
     }),
     artifactEvent: createRuntimeEventV2({
       conversationId: sourceChat.id,
@@ -596,6 +611,7 @@ function buildPostMomentEffectEvents(sourceChat: GroupChat, payload: SocialEvent
         activityType: payload.activityType,
         targetIds: payload.targetIds,
       },
+      createdAt: baseCreatedAt + 2,
     }),
     roomShiftEvent: createRuntimeEventV2({
       conversationId: sourceChat.id,
@@ -605,6 +621,7 @@ function buildPostMomentEffectEvents(sourceChat: GroupChat, payload: SocialEvent
       targetIds: payload.targetIds,
       visibility: 'derived_public',
       payload: shiftedRoom.shift,
+      createdAt: baseCreatedAt + 3,
     }),
     companionshipReflectionEvents,
     nextStructuredRoomState: shiftedRoom.nextState,
@@ -612,8 +629,8 @@ function buildPostMomentEffectEvents(sourceChat: GroupChat, payload: SocialEvent
   };
 }
 
-export function updateSourceChatAfterPostMoment(sourceChat: GroupChat, payload: SocialEventCandidatePayload, actorName: string) {
-  const { effectEvent, memoryEvent, artifactEvent, roomShiftEvent, companionshipReflectionEvents, nextStructuredRoomState, publicSummary } = buildPostMomentEffectEvents(sourceChat, payload, actorName);
+export function updateSourceChatAfterPostMoment(sourceChat: GroupChat, payload: SocialEventCandidatePayload, actorName: string, options: { createdAt?: number } = {}) {
+  const { effectEvent, memoryEvent, artifactEvent, roomShiftEvent, companionshipReflectionEvents, nextStructuredRoomState, publicSummary } = buildPostMomentEffectEvents(sourceChat, payload, actorName, options.createdAt);
   return withFrameworkPatch(sourceChat, {
     lastMessageAt: Date.now(),
     runtimeEventsV2: appendStructuredRuntimeEvents(sourceChat, [effectEvent, memoryEvent, artifactEvent, roomShiftEvent, ...companionshipReflectionEvents]),
@@ -2071,6 +2088,7 @@ async function buildWorldDrivenCandidate(
     actorIds: [attention.actorId],
     targetIds: ['user'],
     visibility: 'derived_public',
+    createdAt: resolveWorldDrivenCandidateCreatedAt(chat, attention.actorId, now),
     summary: `${actorName} 触发世界驱动${eventKind === 'post_moment'
       ? '动态候选'
       : eventKind === 'social_outing'
@@ -2530,7 +2548,7 @@ export async function runSocialEventAutoFlow(sourceChat: GroupChat, ops: SocialE
       }), momentCandidate.id, payload.initiatorId));
       return { handledEventId: momentCandidate.id };
     }
-    await ops.updateChat(sourceChat.id, appendHandledSocialEvent(sourceChat, updateSourceChatAfterPostMoment(sourceChat, payload, actorName), momentCandidate.id, payload.initiatorId));
+    await ops.updateChat(sourceChat.id, appendHandledSocialEvent(sourceChat, updateSourceChatAfterPostMoment(sourceChat, payload, actorName, { createdAt: momentCandidate.createdAt }), momentCandidate.id, payload.initiatorId));
     return { handledEventId: momentCandidate.id };
   }
 
@@ -2651,7 +2669,7 @@ export async function runSocialEventAutoFlow(sourceChat: GroupChat, ops: SocialE
         await ops.updateChat(sourceChat.id, appendHandledSocialEvent(seededChat, blockedPatch, worldDrivenCandidate.id, payload.initiatorId));
         return { handledEventId: worldDrivenCandidate.id };
       }
-      await ops.updateChat(sourceChat.id, appendHandledSocialEvent(seededChat, updateSourceChatAfterPostMoment(seededChat, payload, actorName), worldDrivenCandidate.id, payload.initiatorId));
+      await ops.updateChat(sourceChat.id, appendHandledSocialEvent(seededChat, updateSourceChatAfterPostMoment(seededChat, payload, actorName, { createdAt: worldDrivenCandidate.createdAt }), worldDrivenCandidate.id, payload.initiatorId));
       return { handledEventId: worldDrivenCandidate.id };
     }
     if (payload.eventKind === 'check_in') {

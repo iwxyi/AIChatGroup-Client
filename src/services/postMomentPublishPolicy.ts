@@ -1,15 +1,16 @@
 import type { AICharacter } from '../types/character';
 import type { GroupChat } from '../types/chat';
 import type { SocialEventCandidatePayload, SocialEventKind } from '../types/runtimeEvent';
+import { isCharacterFeatureEnabled } from './characterGenerationPolicy';
 
 export type PostMomentPublishGuardResult = {
   allow: true;
 } | {
   allow: false;
-  reasonType: 'world_attention_moment_quiet_hours' | 'world_attention_moment_spam_window' | 'world_attention_moment_delay_window';
+  reasonType: 'world_attention_moment_disabled' | 'world_attention_moment_quiet_hours' | 'world_attention_moment_spam_window' | 'world_attention_moment_delay_window';
   reasonLabel: string;
   reasonDetail: string;
-  nextSuggestedAt: number;
+  nextSuggestedAt?: number;
 };
 
 export const POST_MOMENT_DELAY_SOURCE_EVENT_KINDS = [
@@ -48,6 +49,14 @@ export function resolvePostMomentPublishGuard(params: {
   const now = typeof params.now === 'number' ? params.now : Date.now();
   const actorId = params.payload.initiatorId;
   if (!actorId) return { allow: true };
+  if (!isCharacterFeatureEnabled(params.actor, 'moments')) {
+    return {
+      allow: false,
+      reasonType: 'world_attention_moment_disabled',
+      reasonLabel: '朋友圈功能关闭',
+      reasonDetail: '该角色当前不允许自动发朋友圈，已取消本次动态发布。',
+    };
+  }
   const actorNightOwl = isNightOwlPersona(params.actor);
   const hour = new Date(now).getHours();
   const isLateNight = hour >= 23 || hour < 7;

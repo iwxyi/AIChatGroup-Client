@@ -1275,6 +1275,7 @@ function mergeCandidatesWithinBatch(events: RuntimeEventV2[]) {
 
 type CandidateSuppressionReason =
   | 'restraint_policy'
+  | 'world_attention_moment_disabled'
   | 'world_attention_moment_quiet_hours'
   | 'world_attention_moment_spam_window'
   | 'world_attention_moment_delay_window'
