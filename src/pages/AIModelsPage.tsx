@@ -1183,10 +1183,13 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
       <Box
         sx={{
           display: 'grid',
+          width: '100%',
+          maxWidth: { xs: 560, md: 1080, xl: 'none' },
+          mx: 'auto',
           gridTemplateColumns: {
             xs: 'minmax(0, min(100%, 560px))',
-            md: 'repeat(2, minmax(0, 1fr))',
-            xl: 'repeat(3, minmax(0, 1fr))',
+            md: 'repeat(auto-fit, minmax(min(100%, 520px), 520px))',
+            xl: 'repeat(auto-fit, minmax(min(100%, 416px), 416px))',
           },
           justifyContent: 'center',
           gap: 2,
