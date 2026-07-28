@@ -22,7 +22,7 @@ import AppSnackbar from '../components/common/AppSnackbar';
 import ExpandableFab from '../components/common/ExpandableFab';
 import VipLimitDialog from '../components/common/VipLimitDialog';
 import { usePaneLayout } from '../components/layout/PaneLayoutContext';
-import { canDeleteCharacterGroup, getCharacterGroupList, getCharactersInGroup, normalizeCharacterGroup, getDuplicateCharacterBannerText, getDuplicateCharacterCount } from '../types/character';
+import { canDeleteCharacterGroup, getCharacterGroupList, getCharactersInGroup, normalizeCharacterGroup, normalizeCharacterName, getDuplicateCharacterBannerText, getDuplicateCharacterCount, getDuplicateCharacters } from '../types/character';
 import { enqueueAvatarGenerationForCharacters } from '../services/avatarGeneration';
 import { generateCharacterProfile } from '../services/characterGenerator';
 import { createCharacterBubbleStyleId } from '../utils/bubbleStyle';
@@ -76,6 +76,26 @@ function sortCharactersForLibrary(
     if (fieldDiff !== 0) return fieldDiff * directionMultiplier;
     return a.name.localeCompare(b.name, 'zh-Hans-CN', { numeric: true, sensitivity: 'base' });
   });
+}
+
+function buildDuplicateCharacterGroups(characters: AICharacter[], language: string) {
+  const groups = new Map<string, { name: string; items: AICharacter[] }>();
+  getDuplicateCharacters(characters).forEach((character) => {
+    const key = normalizeCharacterName(character.name);
+    const current = groups.get(key) || { name: character.name, items: [] };
+    current.items.push(character);
+    groups.set(key, current);
+  });
+  return [...groups.values()].map((group) => ({
+    ...group,
+    description: group.items
+      .map((character) => {
+        const characterGroup = normalizeCharacterGroup(character.group) || (language.startsWith('zh') ? '未分组' : 'Ungrouped');
+        const createdAt = character.createdAt ? new Date(character.createdAt).toLocaleDateString(language.startsWith('zh') ? 'zh-CN' : undefined) : '';
+        return createdAt ? `${characterGroup} · ${createdAt}` : characterGroup;
+      })
+      .join('、'),
+  }));
 }
 
 function CharacterLibraryHeaderActions({
@@ -375,6 +395,7 @@ export default function CharacterLibraryPage() {
   })), [custom, customGroups]);
   const duplicateCharacterCount = useMemo(() => getDuplicateCharacterCount(custom), [custom]);
   const duplicateCharacterBannerText = useMemo(() => getDuplicateCharacterBannerText(custom, i18n.language), [custom, i18n.language]);
+  const duplicateCharacterGroups = useMemo(() => buildDuplicateCharacterGroups(custom, i18n.language), [custom, i18n.language]);
   const filteredCustom = useMemo(() => (
     selectedGroup === 'all' ? custom : getCharactersInGroup(custom, selectedGroup)
   ), [custom, selectedGroup]);
@@ -648,7 +669,25 @@ export default function CharacterLibraryPage() {
               {loadError}
             </Alert>
           ) : null}
-          {duplicateCharacterCount > 0 ? <Alert severity="warning" sx={{ mb: 2 }}>{duplicateCharacterBannerText}</Alert> : null}
+          {duplicateCharacterCount > 0 ? (
+            <Alert severity="warning" sx={{ mb: 2 }}>
+              <Typography variant="body2">{duplicateCharacterBannerText}</Typography>
+              {duplicateCharacterGroups.length ? (
+                <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap', mt: 1 }}>
+                  {duplicateCharacterGroups.map((group) => (
+                    <Chip
+                      key={normalizeCharacterName(group.name)}
+                      size="small"
+                      variant="outlined"
+                      color="warning"
+                      label={`${group.name}：${group.description}`}
+                      sx={{ maxWidth: '100%', '& .MuiChip-label': { minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' } }}
+                    />
+                  ))}
+                </Box>
+              ) : null}
+            </Alert>
+          ) : null}
         </Box>
       ) : null}
 
