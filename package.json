@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "typecheck": "tsc -p tsconfig.app.json --pretty false",
+    "typecheck:test": "tsc -p tsconfig.test.json --pretty false",
     "lint": "eslint .",
     "test": "vitest run",
     "test:related": "vitest run --passWithNoTests --testTimeout=15000",

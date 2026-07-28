@@ -53,32 +53,65 @@ const iconSx: SystemStyleObject<Theme> = {
     fill: 'none',
     fillOpacity: 0,
     stroke: 'currentColor',
-    opacity: 1,
+    strokeWidth: 1.15,
+    opacity: 0.32,
   },
   '& .accent-surface': {
     fill: 'none',
     fillOpacity: 0,
     stroke: 'var(--nav-icon-accent)',
-    opacity: 1,
+    strokeWidth: 1.15,
+    opacity: 0.28,
   },
   '& .accent': {
     stroke: 'var(--nav-icon-accent)',
     opacity: 0.84,
   },
+  '& .nav-dot': {
+    fill: 'currentColor',
+    stroke: 'none',
+  },
+  '& .accent.nav-dot': {
+    fill: 'var(--nav-icon-accent)',
+  },
+  '& .muted.nav-dot': {
+    fill: 'currentColor',
+    opacity: 0.58,
+  },
+  '& .model-node-ring': {
+    strokeWidth: 1.22,
+    opacity: 0.58,
+  },
+  '& .accent.model-node-ring': {
+    opacity: 0.72,
+  },
   '& .muted': {
-    opacity: 0.5,
+    opacity: 0.58,
   },
   '& .secondary': {
-    opacity: 0.68,
+    opacity: 0.72,
+  },
+  '& .muted.market-guide': {
+    strokeWidth: 1.32,
+    opacity: 0.78,
   },
   '&.is-active .accent, .PneumataNavButton:hover & .accent': {
     opacity: 1,
   },
   '&.is-active .muted, .PneumataNavButton:hover & .muted': {
-    opacity: 0.72,
+    opacity: 0.78,
   },
   '&.is-active .secondary, .PneumataNavButton:hover & .secondary': {
-    opacity: 0.82,
+    opacity: 0.86,
+  },
+  '&.is-active .model-node-ring, .PneumataNavButton:hover & .model-node-ring': {
+    opacity: 0.78,
+  },
+  '&.is-active .accent.model-node-ring, .PneumataNavButton:hover & .accent.model-node-ring': {
+    opacity: 0.88,
+  },
+  '&.is-active .muted.market-guide, .PneumataNavButton:hover & .muted.market-guide': {
+    opacity: 0.9,
   },
   '@keyframes navHomeRoof': {
     '0%, 100%': { transform: 'translateY(0)' },
@@ -397,7 +430,7 @@ function iconPaths(kind: AnimatedNavIconKind) {
           <path className="home-roof" d="M4.8 11 12 5l7.2 6" />
           <path d="M6.7 10.8v6.8c0 .8.6 1.4 1.4 1.4h7.8c.8 0 1.4-.6 1.4-1.4v-6.8" />
           <path className="accent home-door" d="M10.1 19v-4.3c0-.4.3-.7.7-.7h2.4c.4 0 .7.3.7.7V19" />
-          <circle className="accent home-orbit" cx="16.8" cy="7.8" r="0.75" />
+          <circle className="accent nav-dot home-orbit" cx="16.8" cy="7.8" r="0.62" />
         </>
       );
     case 'chats':
@@ -405,9 +438,9 @@ function iconPaths(kind: AnimatedNavIconKind) {
         <>
           <path className="surface" d="M5.2 8.2c0-1.3 1-2.3 2.3-2.3h9c1.3 0 2.3 1 2.3 2.3v4.7c0 1.3-1 2.3-2.3 2.3h-6.1l-4.3 3 1-3.2c-1.1-.2-1.9-1.1-1.9-2.2Z" />
           <path d="M5.2 8.2c0-1.3 1-2.3 2.3-2.3h9c1.3 0 2.3 1 2.3 2.3v4.7c0 1.3-1 2.3-2.3 2.3h-6.1l-4.3 3 1-3.2c-1.1-.2-1.9-1.1-1.9-2.2Z" />
-          <circle className="typing-a" cx="8.7" cy="10.8" r="0.78" />
-          <circle className="accent typing-b" cx="12" cy="10.8" r="0.78" />
-          <circle className="typing-c" cx="15.3" cy="10.8" r="0.78" />
+          <circle className="nav-dot typing-a" cx="8.7" cy="10.8" r="0.68" />
+          <circle className="accent nav-dot typing-b" cx="12" cy="10.8" r="0.68" />
+          <circle className="nav-dot typing-c" cx="15.3" cy="10.8" r="0.68" />
         </>
       );
     case 'characters':
@@ -425,9 +458,10 @@ function iconPaths(kind: AnimatedNavIconKind) {
       return (
         <>
           <g className="moment-figure">
-            <circle className="muted" cx="12" cy="12" r="7.5" />
-            <path className="muted" d="M5 10.4c3.3-1.45 10.7-1.45 14 0" />
-            <path className="muted" d="M5 13.6c3.3 1.45 10.7 1.45 14 0" />
+            <circle className="surface" cx="12" cy="12" r="7.5" />
+            <circle className="secondary" cx="12" cy="12" r="7.5" />
+            <path className="secondary" d="M5 10.4c3.3-1.45 10.7-1.45 14 0" />
+            <path className="secondary" d="M5 13.6c3.3 1.45 10.7 1.45 14 0" />
             <path
               className="accent moment-trace"
               d="M5 10.4c3.3-1.45 10.7-1.45 14 0A7.5 7.5 0 0 1 19 13.6c-3.3 1.45-10.7 1.45-14 0A7.5 7.5 0 0 1 5 10.4Z"
@@ -445,8 +479,8 @@ function iconPaths(kind: AnimatedNavIconKind) {
       return (
         <>
           <g className="market-stack-far">
-            <path className="muted" d="m6.2 15.1 5.8 2.9 5.8-2.9" />
-            <path className="muted" d="M12 15.1v2.8" />
+            <path className="muted market-guide" d="m6.2 15.1 5.8 2.9 5.8-2.9" />
+            <path className="muted market-guide" d="M12 15.1v2.8" />
           </g>
           <g className="market-stack-mid">
             <path className="surface" d="m6.2 12.2 5.8 2.9 5.8-2.9" />
@@ -455,7 +489,7 @@ function iconPaths(kind: AnimatedNavIconKind) {
           <g className="market-stack-near">
             <path className="surface" d="m6.2 9.3 5.8-2.9 5.8 2.9-5.8 2.9Z" />
             <path className="accent" d="m6.2 9.3 5.8 2.9 5.8-2.9" />
-            <circle className="accent market-handle" cx="12" cy="9.3" r="1.1" />
+            <circle className="accent nav-dot market-handle" cx="12" cy="9.3" r="0.78" />
           </g>
         </>
       );
@@ -484,12 +518,12 @@ function iconPaths(kind: AnimatedNavIconKind) {
         <>
           <path className="accent model-flow" d="M8.6 8.8 12 12.1l3.4-3.3M12 12.1v4.2" strokeDasharray="9" strokeDashoffset="9" />
           <circle className="surface model-node-a" cx="8.6" cy="8.8" r="2.35" />
-          <circle className="model-node-a" cx="8.6" cy="8.8" r="2.35" />
+          <circle className="secondary model-node-ring model-node-a" cx="8.6" cy="8.8" r="2.35" />
           <circle className="surface model-node-b" cx="15.4" cy="8.8" r="2.35" />
-          <circle className="model-node-b" cx="15.4" cy="8.8" r="2.35" />
+          <circle className="secondary model-node-ring model-node-b" cx="15.4" cy="8.8" r="2.35" />
           <circle className="accent-surface core-pulse" cx="12" cy="16.9" r="2.55" />
-          <circle className="accent core-pulse" cx="12" cy="16.9" r="2.55" />
-          <circle className="muted" cx="12" cy="12.1" r="0.82" />
+          <circle className="accent model-node-ring core-pulse" cx="12" cy="16.9" r="2.55" />
+          <circle className="muted nav-dot" cx="12" cy="12.1" r="0.58" />
         </>
       );
     case 'proxy':
@@ -498,14 +532,12 @@ function iconPaths(kind: AnimatedNavIconKind) {
           <g className="gateway-left">
             <rect className="surface" x="5.1" y="7.1" width="4.1" height="9.8" rx="1.9" />
             <rect x="5.1" y="7.1" width="4.1" height="9.8" rx="1.9" />
-            <circle className="accent-surface port-pulse" cx="7.15" cy="12" r="0.9" />
-            <circle className="accent port-pulse" cx="7.15" cy="12" r="0.9" />
+            <circle className="accent nav-dot port-pulse" cx="7.15" cy="12" r="0.72" />
           </g>
           <g className="gateway-right">
             <rect className="surface" x="14.8" y="7.1" width="4.1" height="9.8" rx="1.9" />
             <rect x="14.8" y="7.1" width="4.1" height="9.8" rx="1.9" />
-            <circle className="surface" cx="16.85" cy="12" r="0.9" />
-            <circle cx="16.85" cy="12" r="0.9" />
+            <circle className="secondary nav-dot port-pulse" cx="16.85" cy="12" r="0.72" />
           </g>
           <path className="accent proxy-flow" d="M9.8 10.2h4.4l-1.3-1.3M14.2 13.8H9.8l1.3 1.3" strokeDasharray="10" strokeDashoffset="10" />
         </>
@@ -539,7 +571,7 @@ function iconPaths(kind: AnimatedNavIconKind) {
           <path d="M6.2 7.3c0-.9.7-1.6 1.6-1.6h8.4c.9 0 1.6.7 1.6 1.6v9.4c0 .9-.7 1.6-1.6 1.6H7.8c-.9 0-1.6-.7-1.6-1.6Z" />
           <path className="accent intro-path" d="M8.9 13.5c1.8-3.1 4.1-3.7 6.4-2" strokeDasharray="10" strokeDashoffset="10" />
           <circle className="accent-surface intro-needle" cx="15.3" cy="11.5" r="1.45" />
-          <circle className="accent intro-needle" cx="15.3" cy="11.5" r="0.78" />
+          <circle className="accent nav-dot intro-needle" cx="15.3" cy="11.5" r="0.6" />
           <path className="muted" d="M9 8.7h4.7M9 16h3.2" />
         </>
       );
@@ -548,13 +580,13 @@ function iconPaths(kind: AnimatedNavIconKind) {
   }
 }
 
-export default function AnimatedNavIcon({ kind, active = false, size = 28 }: AnimatedNavIconProps) {
+export default function AnimatedNavIcon({ kind, active = false, size = 24 }: AnimatedNavIconProps) {
   return (
     <Box
       className={`PneumataNavIcon PneumataNavIcon-${kind}${active ? ' is-active' : ''}`}
       sx={{ ...iconSx, '--nav-icon-size': `${size}px` }}
     >
-      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.45" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
         {iconPaths(kind)}
       </svg>
     </Box>
