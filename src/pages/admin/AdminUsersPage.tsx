@@ -43,6 +43,9 @@ type AccountEntitlementDraft = {
   aiProxyEnabled: boolean;
   agentEnabled: boolean;
   aiSearchEnabled: boolean;
+  marketAccessEnabled: boolean;
+  marketUploadEnabled: boolean;
+  chatShareEnabled: boolean;
   maxCharacters: string;
   maxChats: string;
   dailyAiGenerationLimit: string;
@@ -62,6 +65,9 @@ const EMPTY_ACCOUNT_ENTITLEMENT_DRAFT: AccountEntitlementDraft = {
   aiProxyEnabled: false,
   agentEnabled: false,
   aiSearchEnabled: false,
+  marketAccessEnabled: false,
+  marketUploadEnabled: false,
+  chatShareEnabled: false,
   maxCharacters: '',
   maxChats: '',
   dailyAiGenerationLimit: '',
@@ -170,6 +176,9 @@ function accountEntitlementToDraft(value: unknown): AccountEntitlementDraft {
     aiProxyEnabled: entitlement.aiProxyEnabled === true,
     agentEnabled: entitlement.agentEnabled === true,
     aiSearchEnabled: entitlement.aiSearchEnabled === true,
+    marketAccessEnabled: entitlement.marketAccessEnabled === true,
+    marketUploadEnabled: entitlement.marketUploadEnabled === true,
+    chatShareEnabled: entitlement.chatShareEnabled === true,
     maxCharacters: draftText(entitlement.maxCharacters),
     maxChats: draftText(entitlement.maxChats),
     dailyAiGenerationLimit: draftText(entitlement.dailyAiGenerationLimit),
@@ -217,6 +226,9 @@ function buildAccountEntitlementPayload(draft: AccountEntitlementDraft, allowedP
   if (draft.aiProxyEnabled) entitlement.aiProxyEnabled = true;
   if (draft.agentEnabled) entitlement.agentEnabled = true;
   if (draft.aiSearchEnabled) entitlement.aiSearchEnabled = true;
+  if (draft.marketAccessEnabled) entitlement.marketAccessEnabled = true;
+  if (draft.marketUploadEnabled) entitlement.marketUploadEnabled = true;
+  if (draft.chatShareEnabled) entitlement.chatShareEnabled = true;
   if (draft.developerModeEnabled) entitlement.developerModeEnabled = true;
   const officialProviderAccess = filterAllowedProviderAccess(normalizeOfficialProviderAccess(draft.officialProviderAccess), allowedProviderIds);
   if (officialProviderAccess.length) entitlement.officialProviderAccess = officialProviderAccess;
@@ -887,6 +899,18 @@ export default function AdminUsersPage() {
                       <FormControlLabel
                         control={<Switch checked={accountEntitlementDraft.aiSearchEnabled} onChange={(event) => updateAccountEntitlementDraft({ aiSearchEnabled: event.target.checked })} />}
                         label="AI 搜索"
+                      />
+                      <FormControlLabel
+                        control={<Switch checked={accountEntitlementDraft.marketAccessEnabled} onChange={(event) => updateAccountEntitlementDraft({ marketAccessEnabled: event.target.checked })} />}
+                        label="市场浏览/下载"
+                      />
+                      <FormControlLabel
+                        control={<Switch checked={accountEntitlementDraft.marketUploadEnabled} onChange={(event) => updateAccountEntitlementDraft({ marketUploadEnabled: event.target.checked })} />}
+                        label="上传市场"
+                      />
+                      <FormControlLabel
+                        control={<Switch checked={accountEntitlementDraft.chatShareEnabled} onChange={(event) => updateAccountEntitlementDraft({ chatShareEnabled: event.target.checked })} />}
+                        label="分享聊天"
                       />
                     </Stack>
                     <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', lg: 'repeat(4, minmax(0, 1fr))' }, gap: 1 }}>

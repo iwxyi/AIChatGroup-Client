@@ -104,7 +104,11 @@ export default function Sidebar({ collapsed }: SidebarProps) {
   const accountSubtitle = user?.phone || (authMode === 'cloud' ? t('nav.account') : t('nav.signInSync'));
   const accountAvatar = user?.avatar;
   const visibleNavSections = navSections
-    .map((section) => section.filter((item) => item.path !== '/ai-proxy' || user?.aiProxyEntitled === true))
+    .map((section) => section.filter((item) => {
+      if (item.path === '/ai-proxy') return user?.aiProxyEntitled === true;
+      if (item.path === '/market') return user?.marketAccessEntitled === true;
+      return true;
+    }))
     .filter((section) => section.length > 0);
 
   const handleNav = (path: string) => {

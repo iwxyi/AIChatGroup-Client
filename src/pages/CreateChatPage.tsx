@@ -215,6 +215,7 @@ export default function CreateChatPage() {
   const isLoggedIn = useAuthStore((state) => state.isLoggedIn);
   const authMode = useAuthStore((state) => state.authMode);
   const currentUser = useAuthStore((state) => state.user);
+  const marketUploadEntitled = currentUser?.marketUploadEntitled === true;
   const [memberDialogOpen, setMemberDialogOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [clearMessagesConfirmOpen, setClearMessagesConfirmOpen] = useState(false);
@@ -1038,14 +1039,14 @@ export default function CreateChatPage() {
             {autofillLabel}
           </Button>
         ) : null}
-        {editingChat ? (
+        {editingChat && marketUploadEntitled ? (
           <IconButton size="small" onClick={(event) => setMarketMenuAnchor(event.currentTarget)} aria-label={isZh ? '更多操作' : 'More actions'}>
             <MoreVertIcon fontSize="small" />
           </IconButton>
         ) : null}
       </Box>
     );
-  }, [autofillLabel, canAutofill, editingChat, handleAutofillAction, headerTitle, isZh, navigate, setHeaderActions, setHeaderBackAction, setHeaderTitle, setHideMobileBottomNav]);
+  }, [autofillLabel, canAutofill, editingChat, handleAutofillAction, headerTitle, isZh, marketUploadEntitled, navigate, setHeaderActions, setHeaderBackAction, setHeaderTitle, setHideMobileBottomNav]);
 
   useEffect(() => {
     return () => {
@@ -1727,32 +1728,36 @@ export default function CreateChatPage() {
         </Suspense>
       ) : null}
 
-      <Menu
-        anchorEl={marketMenuAnchor}
-        open={Boolean(marketMenuAnchor)}
-        onClose={() => setMarketMenuAnchor(null)}
-      >
-        <MenuItem onClick={() => openChatMarketUpload('chat_template')}>
-          提交聊天到市场
-        </MenuItem>
-        <MenuItem onClick={() => openChatMarketUpload('bundle_template')}>
-          上传组合包到市场
-        </MenuItem>
-      </Menu>
+      {marketUploadEntitled ? (
+        <>
+          <Menu
+            anchorEl={marketMenuAnchor}
+            open={Boolean(marketMenuAnchor)}
+            onClose={() => setMarketMenuAnchor(null)}
+          >
+            <MenuItem onClick={() => openChatMarketUpload('chat_template')}>
+              提交聊天到市场
+            </MenuItem>
+            <MenuItem onClick={() => openChatMarketUpload('bundle_template')}>
+              上传组合包到市场
+            </MenuItem>
+          </Menu>
 
-      <MarketUploadDialog
-        open={Boolean(marketUploadDraft)}
-        draft={marketUploadDraft}
-        onClose={() => setMarketUploadDraft(null)}
-        onUploaded={(item) => {
-          if (!editingChat || item.kind !== 'chat_template') return;
-          void updateChat(editingChat.id, {
-            sourceMarketItemId: item.id,
-            sourceMarketItemVersion: item.payloadVersion,
-            sourceMarketKind: item.kind,
-          });
-        }}
-      />
+          <MarketUploadDialog
+            open={Boolean(marketUploadDraft)}
+            draft={marketUploadDraft}
+            onClose={() => setMarketUploadDraft(null)}
+            onUploaded={(item) => {
+              if (!editingChat || item.kind !== 'chat_template') return;
+              void updateChat(editingChat.id, {
+                sourceMarketItemId: item.id,
+                sourceMarketItemVersion: item.payloadVersion,
+                sourceMarketKind: item.kind,
+              });
+            }}
+          />
+        </>
+      ) : null}
     </Box>
   );
 }

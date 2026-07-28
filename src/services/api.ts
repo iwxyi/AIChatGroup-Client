@@ -20,6 +20,9 @@ export interface AuthUserResponse {
   aiProxyEntitled?: boolean;
   agentEntitled?: boolean;
   aiSearchEntitled?: boolean;
+  marketAccessEntitled?: boolean;
+  marketUploadEntitled?: boolean;
+  chatShareEntitled?: boolean;
   developerModeEntitled?: boolean;
   retentionLimits?: Record<string, { storage: number; recall: number }>;
 }
@@ -94,6 +97,9 @@ export interface VipEntitlementInfo {
   aiProxyEnabled: boolean;
   agentEnabled: boolean;
   aiSearchEnabled: boolean;
+  marketAccessEnabled: boolean;
+  marketUploadEnabled: boolean;
+  chatShareEnabled: boolean;
   developerModeEnabled: boolean;
   retentionLimits?: Record<string, { storage: number; recall: number }>;
 }

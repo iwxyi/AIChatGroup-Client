@@ -20,6 +20,9 @@ interface User {
   aiProxyEntitled?: boolean;
   agentEntitled?: boolean;
   aiSearchEntitled?: boolean;
+  marketAccessEntitled?: boolean;
+  marketUploadEntitled?: boolean;
+  chatShareEntitled?: boolean;
   developerModeEntitled?: boolean;
   retentionLimits?: Record<string, { storage: number; recall: number }>;
 }

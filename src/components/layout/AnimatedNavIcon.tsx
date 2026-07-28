@@ -458,13 +458,13 @@ function iconPaths(kind: AnimatedNavIconKind) {
       return (
         <>
           <g className="moment-figure">
-            <circle className="surface" cx="12" cy="12" r="7.5" />
-            <circle className="secondary" cx="12" cy="12" r="7.5" />
-            <path className="secondary" d="M5 10.4c3.3-1.45 10.7-1.45 14 0" />
-            <path className="secondary" d="M5 13.6c3.3 1.45 10.7 1.45 14 0" />
+            <path className="surface" d="M5.9 7.7h12.2v8.1c0 1.2-.9 2.1-2.1 2.1H8c-1.2 0-2.1-.9-2.1-2.1Z" />
+            <path className="secondary" d="M5.9 7.7h12.2v8.1c0 1.2-.9 2.1-2.1 2.1H8c-1.2 0-2.1-.9-2.1-2.1Z" />
+            <circle className="accent nav-dot moment-ripple" cx="8.8" cy="10.7" r="0.74" />
+            <path className="secondary" d="M10.8 10.7h4.2M8.2 13.7h6.8" />
             <path
               className="accent moment-trace"
-              d="M5 10.4c3.3-1.45 10.7-1.45 14 0A7.5 7.5 0 0 1 19 13.6c-3.3 1.45-10.7 1.45-14 0A7.5 7.5 0 0 1 5 10.4Z"
+              d="M8.2 16.1h6.8"
               pathLength={1}
               strokeDasharray="1"
               strokeDashoffset="1"

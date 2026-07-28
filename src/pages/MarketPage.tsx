@@ -680,6 +680,7 @@ export default function MarketPage() {
   const navigate = useNavigate();
   const { setHeaderActions, setHeaderBackAction, setHeaderTitle } = useLayoutHeaderActions();
   const currentUserId = useAuthStore((state) => state.user?.id || null);
+  const marketAccessEntitled = useAuthStore((state) => state.user?.marketAccessEntitled === true);
   const characters = useCharacterStore((state) => state.characters);
   const chats = useChatStore((state) => state.chats);
   const [kind, setKind] = useState<MarketItemKind | ''>('');
@@ -692,6 +693,12 @@ export default function MarketPage() {
   const [error, setError] = useState('');
 
   const load = useCallback(async () => {
+    if (!marketAccessEntitled) {
+      setItems([]);
+      setLoading(false);
+      setError('');
+      return;
+    }
     setLoading(true);
     setError('');
     try {
@@ -702,7 +709,7 @@ export default function MarketPage() {
     } finally {
       setLoading(false);
     }
-  }, [kind]);
+  }, [kind, marketAccessEntitled]);
 
   useEffect(() => {
     void load();
@@ -711,6 +718,14 @@ export default function MarketPage() {
   useEffect(() => {
     setHeaderTitle('市场');
     setHeaderBackAction(null);
+    if (!marketAccessEntitled) {
+      setHeaderActions(null);
+      return () => {
+        setHeaderTitle(null);
+        setHeaderBackAction(null);
+        setHeaderActions(null);
+      };
+    }
     setHeaderActions(
       <Tooltip title="刷新">
         <span>
@@ -725,9 +740,10 @@ export default function MarketPage() {
       setHeaderBackAction(null);
       setHeaderActions(null);
     };
-  }, [load, loading, setHeaderActions, setHeaderBackAction, setHeaderTitle]);
+  }, [load, loading, marketAccessEntitled, setHeaderActions, setHeaderBackAction, setHeaderTitle]);
 
   const openImport = async (item: MarketItem) => {
+    if (!marketAccessEntitled) return;
     if (detailLoadingId) return;
     setSelected(item);
     setDetail(null);
@@ -744,6 +760,7 @@ export default function MarketPage() {
   };
 
   const importSelected = async () => {
+    if (!marketAccessEntitled) return;
     if (!detail?.payload) return;
     setImporting(true);
     setError('');
@@ -784,6 +801,14 @@ export default function MarketPage() {
     ? (detail?.kind === 'bundle_template' ? '创建副本' : '创建副本并编辑')
     : (detail?.kind === 'bundle_template' ? '导入' : '导入并编辑');
   const importingText = detail?.kind === 'bundle_template' ? '导入中' : '打开中';
+
+  if (!marketAccessEntitled) {
+    return (
+      <Box sx={{ p: { xs: 2, md: 3 }, maxWidth: 720 }}>
+        <Alert severity="info">当前账号未开通市场浏览与下载权限。</Alert>
+      </Box>
+    );
+  }
 
   return (
     <Box sx={{ p: { xs: 2, md: 3 }, display: 'grid', gap: 2 }}>

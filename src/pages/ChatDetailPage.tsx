@@ -919,6 +919,7 @@ export default function ChatDetailPage() {
   const currentUser = useAuthStore((s) => s.user);
   const authMode = useAuthStore((s) => s.authMode);
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn);
+  const chatShareAvailable = authMode === 'cloud' && currentUser?.chatShareEntitled === true;
   const isRemoteDeletedChat = Boolean(id && remoteDeletedChatIds.includes(id));
 
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'error' | 'success' }>({ open: false, message: '', severity: 'error' });
@@ -3396,7 +3397,7 @@ export default function ChatDetailPage() {
                         subtitle="世界事件驱动的会话活动时间线"
                         showHeader={false}
                       />
-                      <ChatSharePanel chat={chat} />
+                      {chatShareAvailable ? <ChatSharePanel chat={chat} /> : null}
                       {visibleActivityPanelActions.length ? (
                         <SessionActionPanel title="派生动作" actions={visibleActivityPanelActions} onRunAction={runSessionAction} hideHeader frameless />
                       ) : null}

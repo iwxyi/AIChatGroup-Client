@@ -8,6 +8,7 @@ import { useLayoutHeaderActions } from '../components/layout/AppLayoutContext';
 import { useCharacterStore } from '../stores/useCharacterStore';
 import { useChatStore } from '../stores/useChatStore';
 import { useSettingsStore } from '../stores/useSettingsStore';
+import { useAuthStore } from '../stores/useAuthStore';
 import { ensureCharacterArtifactStoreHydrated, useCharacterArtifactStore } from '../stores/useCharacterArtifactStore';
 import CharacterForm from '../components/character/CharacterForm';
 import ConfirmDialog from '../components/common/ConfirmDialog';
@@ -49,6 +50,7 @@ export default function CharacterEditorPage() {
   const chats = useChatStore((state) => state.chats);
   const updateChatSession = useChatStore((state) => state.updateChat);
   const syncArtifactCloud = useCharacterArtifactStore((state) => state.syncCloud);
+  const marketUploadEntitled = useAuthStore((state) => state.user?.marketUploadEntitled === true);
   const syncedDiaryCharacterIdsRef = useRef(new Set<string>());
   const [bootstrapComplete, setBootstrapComplete] = useState(false);
   const characterDataReady = bootstrapComplete || characters.length > 0;
@@ -123,7 +125,7 @@ export default function CharacterEditorPage() {
     setHeaderTitle(headerTitle);
     setHeaderBackAction(() => () => goBack());
     setHideMobileBottomNav(true);
-    setHeaderActions(editChar && editId && !editChar.isPreset ? (
+    setHeaderActions(editChar && editId && !editChar.isPreset && marketUploadEntitled ? (
       <IconButton
         size="small"
         onClick={(event) => setMarketMenuAnchor(event.currentTarget)}
@@ -139,7 +141,7 @@ export default function CharacterEditorPage() {
       setHeaderBackAction(null);
       setHideMobileBottomNav(false);
     };
-  }, [editChar, editId, goBack, headerTitle, i18n.language, setHeaderActions, setHeaderBackAction, setHeaderTitle, setHideMobileBottomNav, t]);
+  }, [editChar, editId, goBack, headerTitle, i18n.language, marketUploadEntitled, setHeaderActions, setHeaderBackAction, setHeaderTitle, setHideMobileBottomNav, t]);
 
   const openCharacterMarketUpload = useCallback(() => {
     if (!editChar || !editId) return;
@@ -269,29 +271,33 @@ export default function CharacterEditorPage() {
         onCancel={goBack}
       />
 
-      <Menu
-        anchorEl={marketMenuAnchor}
-        open={Boolean(marketMenuAnchor)}
-        onClose={() => setMarketMenuAnchor(null)}
-      >
-        <MenuItem onClick={openCharacterMarketUpload}>
-          提交角色到市场
-        </MenuItem>
-      </Menu>
+      {marketUploadEntitled ? (
+        <>
+          <Menu
+            anchorEl={marketMenuAnchor}
+            open={Boolean(marketMenuAnchor)}
+            onClose={() => setMarketMenuAnchor(null)}
+          >
+            <MenuItem onClick={openCharacterMarketUpload}>
+              提交角色到市场
+            </MenuItem>
+          </Menu>
 
-      <MarketUploadDialog
-        open={Boolean(marketUploadDraft)}
-        draft={marketUploadDraft}
-        onClose={() => setMarketUploadDraft(null)}
-        onUploaded={(item) => {
-          if (!editId) return;
-          void updateCharacter(editId, {
-            sourceMarketItemId: item.id,
-            sourceMarketItemVersion: item.payloadVersion,
-            sourceMarketKind: item.kind,
-          });
-        }}
-      />
+          <MarketUploadDialog
+            open={Boolean(marketUploadDraft)}
+            draft={marketUploadDraft}
+            onClose={() => setMarketUploadDraft(null)}
+            onUploaded={(item) => {
+              if (!editId) return;
+              void updateCharacter(editId, {
+                sourceMarketItemId: item.id,
+                sourceMarketItemVersion: item.payloadVersion,
+                sourceMarketKind: item.kind,
+              });
+            }}
+          />
+        </>
+      ) : null}
 
       <ConfirmDialog
         open={deleteOpen}

@@ -93,6 +93,9 @@ type VipEntitlementForm = {
   aiProxyEnabled: boolean;
   agentEnabled: boolean;
   aiSearchEnabled: boolean;
+  marketAccessEnabled: boolean;
+  marketUploadEnabled: boolean;
+  chatShareEnabled: boolean;
   retentionLimitsText: string;
 };
 
@@ -217,6 +220,9 @@ const DEFAULT_VIP_ENTITLEMENTS: Record<string, VipEntitlementForm> = {
     aiProxyEnabled: false,
     agentEnabled: false,
     aiSearchEnabled: false,
+    marketAccessEnabled: false,
+    marketUploadEnabled: false,
+    chatShareEnabled: false,
     retentionLimitsText: retentionLimitsText(scaleRetentionLimits(0.5), scaleRetentionLimits(0.5)),
   },
   basic: {
@@ -235,6 +241,9 @@ const DEFAULT_VIP_ENTITLEMENTS: Record<string, VipEntitlementForm> = {
     aiProxyEnabled: false,
     agentEnabled: true,
     aiSearchEnabled: false,
+    marketAccessEnabled: false,
+    marketUploadEnabled: false,
+    chatShareEnabled: false,
     retentionLimitsText: retentionLimitsText(DEFAULT_BASIC_RETENTION_LIMITS, DEFAULT_BASIC_RETENTION_LIMITS),
   },
   pro: {
@@ -253,6 +262,9 @@ const DEFAULT_VIP_ENTITLEMENTS: Record<string, VipEntitlementForm> = {
     aiProxyEnabled: true,
     agentEnabled: true,
     aiSearchEnabled: true,
+    marketAccessEnabled: false,
+    marketUploadEnabled: false,
+    chatShareEnabled: false,
     retentionLimitsText: retentionLimitsText(scaleRetentionLimits(1.5), scaleRetentionLimits(1.5)),
   },
   premium: {
@@ -271,6 +283,9 @@ const DEFAULT_VIP_ENTITLEMENTS: Record<string, VipEntitlementForm> = {
     aiProxyEnabled: true,
     agentEnabled: true,
     aiSearchEnabled: true,
+    marketAccessEnabled: false,
+    marketUploadEnabled: false,
+    chatShareEnabled: false,
     retentionLimitsText: retentionLimitsText({
       characterLayeredMemories: { storage: 200, recall: 15 },
       characterRuntimeTimeline: { storage: 200, recall: 15 },
@@ -521,6 +536,9 @@ function toEntitlementForm(value: unknown, fallback: VipEntitlementForm): VipEnt
     aiProxyEnabled: hasOwnRecordValue(record, 'aiProxyEnabled') ? toBoolean(record.aiProxyEnabled, fallback.aiProxyEnabled) : fallback.aiProxyEnabled,
     agentEnabled: hasOwnRecordValue(record, 'agentEnabled') ? toBoolean(record.agentEnabled, fallback.agentEnabled) : fallback.agentEnabled,
     aiSearchEnabled: hasOwnRecordValue(record, 'aiSearchEnabled') ? toBoolean(record.aiSearchEnabled, fallback.aiSearchEnabled) : fallback.aiSearchEnabled,
+    marketAccessEnabled: hasOwnRecordValue(record, 'marketAccessEnabled') ? toBoolean(record.marketAccessEnabled, fallback.marketAccessEnabled) : fallback.marketAccessEnabled,
+    marketUploadEnabled: hasOwnRecordValue(record, 'marketUploadEnabled') ? toBoolean(record.marketUploadEnabled, fallback.marketUploadEnabled) : fallback.marketUploadEnabled,
+    chatShareEnabled: hasOwnRecordValue(record, 'chatShareEnabled') ? toBoolean(record.chatShareEnabled, fallback.chatShareEnabled) : fallback.chatShareEnabled,
     retentionLimitsText: hasOwnRecordValue(record, 'retentionLimits')
       ? retentionLimitsText(record.retentionLimits, parseRetentionLimitsText(fallback.retentionLimitsText, DEFAULT_BASIC_RETENTION_LIMITS) as Record<string, { storage: number; recall: number }>)
       : fallback.retentionLimitsText,
@@ -556,6 +574,9 @@ function buildEntitlementPayload(form: VipEntitlementForm, allowedProviderIds?: 
     aiProxyEnabled: form.aiProxyEnabled,
     agentEnabled: form.agentEnabled,
     aiSearchEnabled: form.aiSearchEnabled,
+    marketAccessEnabled: form.marketAccessEnabled,
+    marketUploadEnabled: form.marketUploadEnabled,
+    chatShareEnabled: form.chatShareEnabled,
     retentionLimits: parseRetentionLimitsText(form.retentionLimitsText, DEFAULT_BASIC_RETENTION_LIMITS),
   };
 }
@@ -829,6 +850,9 @@ function EntitlementEditor({
         <FormControlLabel control={<Switch checked={entitlement.aiProxyEnabled} onChange={(event) => onEntitlementChange('aiProxyEnabled', event.target.checked)} />} label="允许中转站" />
         <FormControlLabel control={<Switch checked={entitlement.agentEnabled} onChange={(event) => onEntitlementChange('agentEnabled', event.target.checked)} />} label="允许 Agent" />
         <FormControlLabel control={<Switch checked={entitlement.aiSearchEnabled} onChange={(event) => onEntitlementChange('aiSearchEnabled', event.target.checked)} />} label="允许 AI 搜索" />
+        <FormControlLabel control={<Switch checked={entitlement.marketAccessEnabled} onChange={(event) => onEntitlementChange('marketAccessEnabled', event.target.checked)} />} label="允许市场浏览/下载" />
+        <FormControlLabel control={<Switch checked={entitlement.marketUploadEnabled} onChange={(event) => onEntitlementChange('marketUploadEnabled', event.target.checked)} />} label="允许上传市场" />
+        <FormControlLabel control={<Switch checked={entitlement.chatShareEnabled} onChange={(event) => onEntitlementChange('chatShareEnabled', event.target.checked)} />} label="允许分享聊天" />
       </Box>
       <Box>
         <Typography variant="subtitle2" sx={{ fontWeight: 900, mb: 1 }}>支持的官方 AI 供应商</Typography>
