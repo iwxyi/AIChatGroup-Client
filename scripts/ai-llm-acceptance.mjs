@@ -2,7 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 const DEFAULT_BASE_URL = 'https://api.openai.com/v1';
-const VALID_CASES = ['basic', 'json', 'activity', 'story', 'storylong', 'role', 'group', 'chat', 'generation', 'agent', 'ops', 'artifact', 'artifactflow', 'memory', 'calendar', 'safety', 'image', 'e2e', 'e2e_direct', 'quality'];
+const VALID_CASES = ['basic', 'json', 'activity', 'story', 'storylong', 'role', 'group', 'chat', 'chatflow', 'generation', 'agent', 'ops', 'artifact', 'artifactflow', 'memory', 'calendar', 'safety', 'image', 'e2e', 'e2e_direct', 'quality'];
 
 const HELP = `
 AI real-model acceptance.
@@ -22,12 +22,23 @@ Optional environment:
                                   ${VALID_CASES.join(',')}
                                   Defaults to basic,json,activity,story,quality.
   PNEUMATA_TEST_LLM_REPEAT_COUNT  Repeat every selected case per model. Defaults to 1.
-  PNEUMATA_TEST_LLM_REPORT_DIR    Optional directory for JSON reports.
+  PNEUMATA_TEST_LLM_REPORT_DIR    Optional directory for JSON and Markdown reports.
   PNEUMATA_TEST_LLM_STOP_ON_FAILURE Stop current model after first failed case. Defaults to false.
+  PNEUMATA_TEST_LLM_PROVIDER      Runtime chat provider used by chatflow. Defaults to openai.
+  PNEUMATA_TEST_LLM_CHATFLOW_TURNS Runtime chatflow turns per scenario. Defaults to 6.
+  PNEUMATA_TEST_LLM_CHATFLOW_SCENARIOS Optional comma-separated chatflow scenario names.
   PNEUMATA_TEST_LLM_JUDGE_MODEL   Optional evaluator model. Defaults to the tested model.
   PNEUMATA_TEST_LLM_JUDGE_API_KEY Optional evaluator API key. Defaults to the tested key.
   PNEUMATA_TEST_LLM_JUDGE_BASE_URL Optional evaluator base URL. Defaults to tested base URL.
   PNEUMATA_TEST_LLM_MIN_SCORE     Minimum model-judge score. Defaults to 75.
+
+Optional CLI overrides:
+  --cases=chatflow                 Override PNEUMATA_TEST_LLM_CASES.
+  --report-dir=tmp/ai-reports      Override PNEUMATA_TEST_LLM_REPORT_DIR.
+  --provider=openai                Override PNEUMATA_TEST_LLM_PROVIDER.
+  --chatflow-turns=6               Override PNEUMATA_TEST_LLM_CHATFLOW_TURNS.
+  --chatflow-scenarios=story_choice_room,deliberation_artifact_room
+                                  Override PNEUMATA_TEST_LLM_CHATFLOW_SCENARIOS.
 
 Examples:
   PNEUMATA_TEST_LLM_API_KEY=... PNEUMATA_TEST_LLM_MODELS=deepseek-chat,gpt-5.4 \\
@@ -48,17 +59,34 @@ if (!process.argv.includes('--run')) {
   process.exit(2);
 }
 
+function readArgValue(name) {
+  const prefix = `--${name}=`;
+  const inline = process.argv.find((arg) => arg.startsWith(prefix));
+  if (inline) return inline.slice(prefix.length);
+  const index = process.argv.indexOf(`--${name}`);
+  if (index >= 0 && process.argv[index + 1] && !process.argv[index + 1].startsWith('--')) return process.argv[index + 1];
+  return '';
+}
+
 let config;
 try {
+  const casesArg = readArgValue('cases');
+  const reportDirArg = readArgValue('report-dir');
+  const providerArg = readArgValue('provider');
+  const chatflowTurnsArg = readArgValue('chatflow-turns');
+  const chatflowScenariosArg = readArgValue('chatflow-scenarios');
   config = {
     apiKey: process.env.PNEUMATA_TEST_LLM_API_KEY || '',
     models: parseList(process.env.PNEUMATA_TEST_LLM_MODELS || process.env.PNEUMATA_TEST_LLM_MODEL || ''),
     baseUrl: process.env.PNEUMATA_TEST_LLM_BASE_URL || DEFAULT_BASE_URL,
     timeoutMs: parseTimeoutMs(process.env.PNEUMATA_TEST_LLM_TIMEOUT_MS),
-    cases: parseCases(process.env.PNEUMATA_TEST_LLM_CASES),
+    cases: parseCases(casesArg || process.env.PNEUMATA_TEST_LLM_CASES),
     repeatCount: parsePositiveInteger(process.env.PNEUMATA_TEST_LLM_REPEAT_COUNT, 1, 20),
-    reportDir: String(process.env.PNEUMATA_TEST_LLM_REPORT_DIR || '').trim(),
+    reportDir: String(reportDirArg || process.env.PNEUMATA_TEST_LLM_REPORT_DIR || '').trim(),
     stopOnFailure: parseBoolean(process.env.PNEUMATA_TEST_LLM_STOP_ON_FAILURE),
+    provider: providerArg || process.env.PNEUMATA_TEST_LLM_PROVIDER || 'openai',
+    chatflowTurns: parsePositiveInteger(chatflowTurnsArg || process.env.PNEUMATA_TEST_LLM_CHATFLOW_TURNS, 6, 60),
+    chatflowScenarios: parseList(chatflowScenariosArg || process.env.PNEUMATA_TEST_LLM_CHATFLOW_SCENARIOS || ''),
     judgeModel: process.env.PNEUMATA_TEST_LLM_JUDGE_MODEL || '',
     judgeApiKey: process.env.PNEUMATA_TEST_LLM_JUDGE_API_KEY || process.env.PNEUMATA_TEST_LLM_API_KEY || '',
     judgeBaseUrl: process.env.PNEUMATA_TEST_LLM_JUDGE_BASE_URL || process.env.PNEUMATA_TEST_LLM_BASE_URL || DEFAULT_BASE_URL,
@@ -68,6 +96,11 @@ try {
   console.error(String(error?.message || error));
   console.error(HELP);
   process.exit(2);
+}
+
+function logProgress(message, detail = {}) {
+  const suffix = Object.keys(detail).length ? ` ${JSON.stringify(detail)}` : '';
+  console.error(`[ai-acceptance] ${new Date().toISOString()} ${message}${suffix}`);
 }
 
 if (!config.apiKey || !config.models.length) {
@@ -231,7 +264,7 @@ function resolveJudgeModel(model) {
   return config.judgeModel || model;
 }
 
-async function callJudge(model, rubric, sample) {
+async function callJudge(model, rubric, sample, options = {}) {
   const judgeModel = resolveJudgeModel(model);
   const messages = [
     {
@@ -258,7 +291,7 @@ async function callJudge(model, rubric, sample) {
     messages,
     apiKey: config.judgeApiKey,
     baseUrl: config.judgeBaseUrl,
-    options: { json: true, maxTokens: 700, temperature: 0 },
+    options: { json: true, maxTokens: 1600, temperature: 0 },
     retryLabel: 'judge',
   });
   const parsed = response.parsed;
@@ -276,7 +309,7 @@ async function callJudge(model, rubric, sample) {
     protocolRetries: response.protocolRetries,
     firstInvalidJson: response.firstInvalidJson,
   };
-  assertCondition(normalized.pass, 'judge rejected generated sample', normalized);
+  if (options.throwOnFail !== false) assertCondition(normalized.pass, 'judge rejected generated sample', normalized);
   return normalized;
 }
 
@@ -2285,10 +2318,1101 @@ async function runDirectE2ECase(model) {
   };
 }
 
+let runtimeModulePromise = null;
+
+function ensureNodeRuntimeGlobals() {
+  if (typeof globalThis.localStorage === 'undefined') {
+    const values = new Map();
+    globalThis.localStorage = {
+      getItem: (key) => values.get(String(key)) ?? null,
+      setItem: (key, value) => { values.set(String(key), String(value)); },
+      removeItem: (key) => { values.delete(String(key)); },
+      clear: () => { values.clear(); },
+      key: (index) => Array.from(values.keys())[index] ?? null,
+      get length() { return values.size; },
+    };
+  }
+}
+
+async function loadRuntimeChatModules() {
+  ensureNodeRuntimeGlobals();
+  if (!runtimeModulePromise) {
+    runtimeModulePromise = (async () => {
+      const { createServer } = await import('vite');
+      const server = await createServer({
+        configFile: resolve(process.cwd(), 'vite.config.ts'),
+        server: { middlewareMode: true },
+        appType: 'custom',
+        logLevel: 'error',
+      });
+      try {
+        const [chatEngine, chatTypes, chatDraftBuilder, generatedTurnCommit, sessionEngineLoader] = await Promise.all([
+          server.ssrLoadModule('/src/services/chatEngine.ts'),
+          server.ssrLoadModule('/src/types/chat.ts'),
+          server.ssrLoadModule('/src/services/chatDraftBuilder.ts'),
+          server.ssrLoadModule('/src/services/generatedMessageTurnCommit.ts'),
+          server.ssrLoadModule('/src/services/sessionEngineLoader.ts'),
+        ]);
+        return {
+          server,
+          runOneRound: chatEngine.runOneRound,
+          normalizeConversation: chatTypes.normalizeConversation,
+          createDefaultSessionKind: chatTypes.createDefaultSessionKind,
+          buildGroupChatDraft: chatDraftBuilder.buildGroupChatDraft,
+          commitGeneratedMessageTurn: generatedTurnCommit.commitGeneratedMessageTurn,
+          loadSessionEngine: sessionEngineLoader.loadSessionEngine,
+        };
+      } catch (error) {
+        await server.close();
+        runtimeModulePromise = null;
+        throw error;
+      }
+    })();
+  }
+  return runtimeModulePromise;
+}
+
+async function closeRuntimeChatModules() {
+  if (!runtimeModulePromise) return;
+  const runtime = await runtimeModulePromise.catch(() => null);
+  runtimeModulePromise = null;
+  await runtime?.server?.close();
+}
+
+function runtimeProfile(model) {
+  return [{
+    id: `acceptance-${model}`,
+    name: `Acceptance ${model}`,
+    type: 'text',
+    provider: config.provider,
+    apiKey: config.apiKey,
+    baseUrl: config.baseUrl,
+    model,
+    isDefault: true,
+  }];
+}
+
+function acceptanceCharacter(id, name, patch = {}) {
+  return {
+    id,
+    name,
+    avatar: '',
+    personality: { openness: 50, extroversion: 50, agreeableness: 50, neuroticism: 50, humor: 50, creativity: 50, assertiveness: 50, empathy: 50 },
+    behavior: { proactivity: 50, aggressiveness: 50, humorIntensity: 50, empathyLevel: 50, summarizing: 35, offTopic: 25 },
+    expertise: [],
+    speakingStyle: '',
+    background: '',
+    relationships: [],
+    memory: { longTerm: [], shortTermSummary: '', secrets: [], obsessions: [], tabooTopics: [], userMemories: [] },
+    intervention: { allowSpeakAs: true, allowDirectorPrompt: true, allowPrivateThread: true },
+    isPreset: false,
+    createdAt: 1,
+    updatedAt: 1,
+    ...patch,
+  };
+}
+
+function acceptanceUserMessage(chatId, content, timestamp) {
+  return {
+    id: `user-${timestamp}`,
+    chatId,
+    type: 'user',
+    senderId: 'user',
+    senderName: '用户',
+    content,
+    emotion: 0,
+    timestamp,
+    isDeleted: false,
+  };
+}
+
+function acceptanceAiMessage(chatId, senderId, senderName, content, timestamp) {
+  return {
+    id: `seed-${senderId}-${timestamp}`,
+    chatId,
+    type: 'ai',
+    senderId,
+    senderName,
+    content,
+    emotion: 0,
+    timestamp,
+    isDeleted: false,
+  };
+}
+
+function runtimeChatflowScenarios() {
+  const now = Date.now();
+  return [
+    {
+      name: 'outing_conflict_room',
+      roomKind: 'open_chat',
+      rubricHint: '应体现活动协商中的立场差异、关系压力、退让或修复，不能每轮都像主持人总结。',
+      userInjections: [
+        { afterTurn: 2, content: '等一下，瑟瑟刚说她可能加班，这件事别跳过去，先确认她到底还能不能去。' },
+      ],
+      chat: {
+        id: 'acceptance-chatflow-outing',
+        name: '周末要不要去露营',
+        topic: '三个朋友正在商量周末露营，预算、天气和临时加班造成分歧。',
+        memberIds: ['user', 'awan', 'laoli', 'sese'],
+      },
+      characters: [
+        acceptanceCharacter('awan', '阿晚', {
+          personality: { openness: 72, extroversion: 38, agreeableness: 68, neuroticism: 57, humor: 44, creativity: 61, assertiveness: 42, empathy: 84 },
+          behavior: { proactivity: 45, aggressiveness: 18, humorIntensity: 30, empathyLevel: 88, summarizing: 22, offTopic: 18 },
+          expertise: ['情绪照顾', '行程折中'],
+          speakingStyle: '温柔、会先接住对方情绪，句子不长，偶尔有一点迟疑。',
+          background: '阿晚是习惯照顾气氛的朋友，害怕别人勉强自己，也怕计划最后散掉。',
+          coreProfile: { coreDesire: '让大家不用硬撑也能待在一起', coreFear: '自己一开口就变成扫兴的人', conflictStyle: '先缓和，再小心提出底线' },
+          relationships: [
+            { characterId: 'laoli', warmth: 64, competence: 70, trust: 62, threat: 18, note: '觉得老李靠谱但有时太强势。' },
+            { characterId: 'sese', warmth: 78, competence: 58, trust: 72, threat: 10, note: '常常帮瑟瑟收拾突发想法。' },
+          ],
+        }),
+        acceptanceCharacter('laoli', '老李', {
+          personality: { openness: 45, extroversion: 48, agreeableness: 40, neuroticism: 28, humor: 35, creativity: 36, assertiveness: 82, empathy: 42 },
+          behavior: { proactivity: 83, aggressiveness: 45, humorIntensity: 20, empathyLevel: 38, summarizing: 30, offTopic: 12 },
+          expertise: ['项目管理', '风险控制', '预算'],
+          speakingStyle: '直接、偏理性，喜欢把事情拆成条件和风险，偶尔显得扫兴。',
+          background: '老李负责订车和装备，讨厌临时变卦，觉得计划必须先落地。',
+          coreProfile: { coreDesire: '把混乱变成可执行计划', coreFear: '大家临时放鸽子导致他白忙', conflictStyle: '先压住风险，再接受合理折中' },
+          relationships: [
+            { characterId: 'awan', warmth: 58, competence: 75, trust: 70, threat: 12, note: '信任阿晚能照顾气氛。' },
+            { characterId: 'sese', warmth: 35, competence: 45, trust: 38, threat: 42, note: '担心瑟瑟太随性。' },
+          ],
+        }),
+        acceptanceCharacter('sese', '瑟瑟', {
+          personality: { openness: 86, extroversion: 76, agreeableness: 56, neuroticism: 44, humor: 81, creativity: 80, assertiveness: 58, empathy: 53 },
+          behavior: { proactivity: 66, aggressiveness: 24, humorIntensity: 78, empathyLevel: 55, summarizing: 10, offTopic: 34 },
+          expertise: ['拍照', '社交气氛', '找好吃的'],
+          speakingStyle: '轻快、有画面感，喜欢打趣，不爱被表格和风险管住。',
+          background: '瑟瑟最期待拍日出和夜景，但她刚发现周六上午可能要临时加班。',
+          coreProfile: { coreDesire: '让旅行留下值得讲的瞬间', coreFear: '大家因为现实压力取消期待', conflictStyle: '先插科打诨，真的被逼急会说实话' },
+          relationships: [
+            { characterId: 'laoli', warmth: 40, competence: 66, trust: 46, threat: 35, note: '觉得老李可靠但管太多。' },
+            { characterId: 'awan', warmth: 80, competence: 62, trust: 76, threat: 8, note: '很依赖阿晚帮她翻译情绪。' },
+          ],
+        }),
+      ],
+      seedMessages: [
+        acceptanceUserMessage('acceptance-chatflow-outing', '我想这个周末大家还是去露营，但预算别太高，天气好像也有点不稳。你们自己商量一下。', now - 60_000),
+        acceptanceAiMessage('acceptance-chatflow-outing', 'laoli', '老李', '先说清楚，车和装备如果今晚不定，明天价格就不一样了。', now - 45_000),
+        acceptanceAiMessage('acceptance-chatflow-outing', 'sese', '瑟瑟', '可是如果只为了省钱去一个灰扑扑的地方，那不如在楼下便利店野餐。', now - 30_000),
+        acceptanceAiMessage('acceptance-chatflow-outing', 'awan', '阿晚', '我有点担心你们两个其实都在怕白期待一场。', now - 15_000),
+      ],
+    },
+    {
+      name: 'midgame_user_intent_recovery_room',
+      roomKind: 'open_chat',
+      turns: Math.max(10, Math.min(config.chatflowTurns, 60)),
+      rubricHint: '这是中局/残局测试。房间已有较长历史，用户要求“小唐预算不能超过 80 且别被忽略”已经被后续话题岔开；后续 AI 必须自然把这个约束拉回讨论，而不是继续无视或机械总结。',
+      userInjections: [
+        { afterTurn: 4, content: '我再强调一次，小唐的预算上限是 80，不要把他当成默认能参加。' },
+        { afterTurn: 9, content: '如果你们已经决定了方案，请直接说谁负责确认小唐，而不是继续泛泛聊天。' },
+      ],
+      chat: {
+        id: 'acceptance-chatflow-midgame',
+        name: '生日局方案卡住了',
+        topic: '朋友们已经聊了很久生日聚会方案，但用户担心小唐的预算限制被大家忽略。',
+        memberIds: ['user', 'momo', 'tang', 'chen', 'rui'],
+      },
+      characters: [
+        acceptanceCharacter('momo', '沫沫', {
+          personality: { openness: 78, extroversion: 82, agreeableness: 60, neuroticism: 42, humor: 70, creativity: 76, assertiveness: 55, empathy: 56 },
+          behavior: { proactivity: 72, aggressiveness: 18, humorIntensity: 60, empathyLevel: 58, summarizing: 20, offTopic: 28 },
+          expertise: ['生日策划', '拍照氛围', '社交动员'],
+          speakingStyle: '活泼、会抛点子，容易被新鲜方案带跑。',
+          background: '沫沫想让生日局好看热闹，但常忘记现实约束。',
+          relationships: [
+            { characterId: 'tang', warmth: 72, competence: 45, trust: 62, threat: 8, note: '知道小唐最近手头紧，但容易忘。' },
+          ],
+        }),
+        acceptanceCharacter('tang', '小唐', {
+          personality: { openness: 42, extroversion: 30, agreeableness: 64, neuroticism: 68, humor: 26, creativity: 38, assertiveness: 24, empathy: 58 },
+          behavior: { proactivity: 22, aggressiveness: 8, humorIntensity: 14, empathyLevel: 62, summarizing: 18, offTopic: 8 },
+          expertise: ['省钱路线', '公共交通'],
+          speakingStyle: '有点不好意思，话少，会先附和再小声说限制。',
+          background: '小唐这周预算最多 80 元，不想扫大家兴。',
+          memory: { longTerm: ['这周预算最多 80 元。'], shortTermSummary: '担心聚会花费太高，但不太敢反复提醒。', secrets: [], obsessions: [], tabooTopics: [], userMemories: [] },
+        }),
+        acceptanceCharacter('chen', '陈越', {
+          personality: { openness: 55, extroversion: 48, agreeableness: 48, neuroticism: 30, humor: 32, creativity: 45, assertiveness: 74, empathy: 44 },
+          behavior: { proactivity: 78, aggressiveness: 26, humorIntensity: 18, empathyLevel: 42, summarizing: 58, offTopic: 10 },
+          expertise: ['订位', '路线', '预算拆分'],
+          speakingStyle: '实用、直接，喜欢把方案落成待办。',
+          background: '陈越负责订位置，讨厌反复改方案。',
+        }),
+        acceptanceCharacter('rui', '瑞瑞', {
+          personality: { openness: 70, extroversion: 56, agreeableness: 74, neuroticism: 36, humor: 48, creativity: 60, assertiveness: 38, empathy: 78 },
+          behavior: { proactivity: 50, aggressiveness: 10, humorIntensity: 34, empathyLevel: 82, summarizing: 34, offTopic: 16 },
+          expertise: ['照顾情绪', '折中方案'],
+          speakingStyle: '温和、会照顾没说出口的人。',
+          background: '瑞瑞常常帮小唐把不好意思说的话讲出来。',
+        }),
+      ],
+      seedMessages: [
+        acceptanceUserMessage('acceptance-chatflow-midgame', '你们继续商量生日局，但记得小唐预算不能超过 80，别让他难开口。', now - 240_000),
+        acceptanceAiMessage('acceptance-chatflow-midgame', 'momo', '沫沫', '那我们搞个漂亮一点的屋顶餐吧吧！灯串、蛋糕、合照，效果一定很好。', now - 225_000),
+        acceptanceAiMessage('acceptance-chatflow-midgame', 'chen', '陈越', '屋顶餐吧人均至少一百五，还要服务费。先别只看照片。', now - 210_000),
+        acceptanceAiMessage('acceptance-chatflow-midgame', 'tang', '小唐', '其实我都可以，你们定就好，我晚点看能不能调整一下。', now - 195_000),
+        acceptanceAiMessage('acceptance-chatflow-midgame', 'rui', '瑞瑞', '小唐说“都可以”的时候，可能不是真的都可以。', now - 180_000),
+        acceptanceAiMessage('acceptance-chatflow-midgame', 'momo', '沫沫', '那换成桌游店？不过桌游店拍照好像不够生日。', now - 165_000),
+        acceptanceAiMessage('acceptance-chatflow-midgame', 'chen', '陈越', '桌游店包间三小时 320，四个人分摊也刚好 80。饮料另算。', now - 150_000),
+        acceptanceUserMessage('acceptance-chatflow-midgame', '重点是别让小唐额外花饮料和交通的钱，方案要把这些也算进去。', now - 135_000),
+        acceptanceAiMessage('acceptance-chatflow-midgame', 'momo', '沫沫', '或者我们买点小蜡烛和投影布？这样照片也能救回来。', now - 120_000),
+        acceptanceAiMessage('acceptance-chatflow-midgame', 'chen', '陈越', '投影布我可以借，蜡烛别买太多，场地可能不让点。', now - 105_000),
+        acceptanceAiMessage('acceptance-chatflow-midgame', 'rui', '瑞瑞', '你们刚刚又绕到布置了，预算那条还没落下来。', now - 90_000),
+        acceptanceAiMessage('acceptance-chatflow-midgame', 'tang', '小唐', '我坐公交过去就行，真的不用太顾虑我。', now - 75_000),
+        acceptanceAiMessage('acceptance-chatflow-midgame', 'momo', '沫沫', '那我负责蛋糕！小一点但好看一点的。', now - 60_000),
+        acceptanceAiMessage('acceptance-chatflow-midgame', 'chen', '陈越', '我先问桌游店能不能自带饮料和蛋糕。', now - 45_000),
+        acceptanceAiMessage('acceptance-chatflow-midgame', 'rui', '瑞瑞', '如果可以自带，可能就能把小唐那部分压住。', now - 30_000),
+      ],
+    },
+    {
+      name: 'persona_contrast_room',
+      roomKind: 'open_chat',
+      rubricHint: '应让历史、料理、运营三个角色自然分工，既回答用户设问，也保持各自人格和说话节奏。',
+      chat: {
+        id: 'acceptance-chatflow-persona',
+        name: '秦始皇开餐馆会怎样',
+        topic: '用户想看秦始皇、御厨和现代餐饮运营讨论如果开一家主题餐馆会发生什么。',
+        memberIds: ['user', 'qin', 'chef', 'operator'],
+      },
+      characters: [
+        acceptanceCharacter('qin', '秦始皇', {
+          personality: { openness: 36, extroversion: 58, agreeableness: 22, neuroticism: 28, humor: 18, creativity: 45, assertiveness: 94, empathy: 24 },
+          behavior: { proactivity: 76, aggressiveness: 52, humorIntensity: 12, empathyLevel: 20, summarizing: 28, offTopic: 8 },
+          expertise: ['帝国制度', '统一标准', '威权管理'],
+          speakingStyle: '威严、短促、有命令感，不说现代网络腔。',
+          background: '他把餐馆视为秩序工程，重视标准、供应链和奖惩。',
+          coreProfile: { coreDesire: '建立不可动摇的秩序', coreFear: '失控和低效', conflictStyle: '直接下令并要求结果' },
+        }),
+        acceptanceCharacter('chef', '御厨阿衡', {
+          personality: { openness: 67, extroversion: 42, agreeableness: 62, neuroticism: 35, humor: 30, creativity: 76, assertiveness: 48, empathy: 58 },
+          behavior: { proactivity: 52, aggressiveness: 18, humorIntensity: 22, empathyLevel: 64, summarizing: 35, offTopic: 12 },
+          expertise: ['古法烹饪', '宴席设计', '食材处理'],
+          speakingStyle: '谨慎、讲究火候和食材，常用烹饪细节说话。',
+          background: '阿衡习惯在权力压力下保住菜的味道，也懂得委婉提醒。',
+          coreProfile: { coreDesire: '让菜品有体面和余味', coreFear: '菜变成纯粹的权力道具', conflictStyle: '用细节和后果劝人' },
+        }),
+        acceptanceCharacter('operator', '餐饮运营顾问林澈', {
+          personality: { openness: 70, extroversion: 64, agreeableness: 52, neuroticism: 30, humor: 46, creativity: 62, assertiveness: 68, empathy: 50 },
+          behavior: { proactivity: 80, aggressiveness: 22, humorIntensity: 38, empathyLevel: 48, summarizing: 56, offTopic: 10 },
+          expertise: ['品牌定位', '菜单定价', '用户体验', '短视频传播'],
+          speakingStyle: '现代、清晰、会把想法落到商业指标，但不油腻。',
+          background: '林澈负责把皇帝的宏大想法变成能开业、能复购的餐饮方案。',
+          coreProfile: { coreDesire: '把强概念变成真实生意', coreFear: '只剩噱头没有复购', conflictStyle: '用数据和用户体验反推决策' },
+        }),
+      ],
+      seedMessages: [
+        acceptanceUserMessage('acceptance-chatflow-persona', '如果秦始皇真的开一家主题餐馆，你们觉得第一天会发生什么？不要总结，直接聊起来。', now - 30_000),
+      ],
+    },
+    {
+      name: 'direct_mention_hijack_room',
+      roomKind: 'open_chat',
+      turns: Math.max(8, Math.min(config.chatflowTurns, 36)),
+      rubricHint: '用户明确点名安安回答，但另一个强势角色有抢话倾向。测试发言者选择是否尊重点名、沉默角色是否能被接住、抢话角色是否不会长期霸占。',
+      userInjections: [
+        { afterTurn: 3, content: '我刚才是想听安安说，不是让周策替她做决定。' },
+      ],
+      chat: {
+        id: 'acceptance-chatflow-mention',
+        name: '点名却被抢话',
+        topic: '团队在讨论是否公开一个失败项目的复盘，用户想听沉默成员安安的真实想法。',
+        memberIds: ['user', 'anan', 'zhou', 'mei'],
+      },
+      characters: [
+        acceptanceCharacter('anan', '安安', {
+          personality: { openness: 58, extroversion: 18, agreeableness: 70, neuroticism: 62, humor: 18, creativity: 50, assertiveness: 20, empathy: 74 },
+          behavior: { proactivity: 18, aggressiveness: 4, humorIntensity: 8, empathyLevel: 78, summarizing: 20, offTopic: 6 },
+          expertise: ['用户访谈', '失败复盘', '细节观察'],
+          speakingStyle: '慢热、谨慎、会先说事实再补一点真实感受。',
+          background: '安安做了一线访谈，知道用户为什么流失，但害怕说出来会得罪人。',
+        }),
+        acceptanceCharacter('zhou', '周策', {
+          personality: { openness: 48, extroversion: 74, agreeableness: 28, neuroticism: 30, humor: 35, creativity: 42, assertiveness: 88, empathy: 28 },
+          behavior: { proactivity: 86, aggressiveness: 48, humorIntensity: 20, empathyLevel: 26, summarizing: 60, offTopic: 10 },
+          expertise: ['汇报包装', '风险控制', '组织沟通'],
+          speakingStyle: '强势、会替别人总结，喜欢把问题压成结论。',
+          background: '周策担心复盘公开后影响团队评价。',
+        }),
+        acceptanceCharacter('mei', '梅青', {
+          personality: { openness: 68, extroversion: 52, agreeableness: 62, neuroticism: 34, humor: 40, creativity: 60, assertiveness: 48, empathy: 68 },
+          behavior: { proactivity: 54, aggressiveness: 12, humorIntensity: 26, empathyLevel: 72, summarizing: 44, offTopic: 10 },
+          expertise: ['团队协作', '会议引导'],
+          speakingStyle: '平衡、会把话题递回给被忽略的人。',
+          background: '梅青希望复盘真实但不要变成追责。',
+        }),
+      ],
+      seedMessages: [
+        acceptanceUserMessage('acceptance-chatflow-mention', '安安，你直接说吧，用户到底为什么不再用了？不用先照顾周策的汇报口径。', now - 90_000),
+        acceptanceAiMessage('acceptance-chatflow-mention', 'zhou', '周策', '我先补一句，流失不能简单归因到一个点，外部环境也有影响。', now - 75_000),
+        acceptanceAiMessage('acceptance-chatflow-mention', 'mei', '梅青', '周策，可以先让安安把访谈原话说完。', now - 60_000),
+      ],
+    },
+    {
+      name: 'high_conflict_boundary_room',
+      roomKind: 'open_chat',
+      turns: Math.max(10, Math.min(config.chatflowTurns, 40)),
+      rubricHint: '强冲突测试。角色可以尖锐，但不能人身攻击、不能替用户定性、不能把争执无限升级；应逐渐出现事实澄清、边界和下一步。',
+      userInjections: [
+        { afterTurn: 5, content: '你们可以吵，但别骂人。把争议点说清楚：到底是谁误解了需求？' },
+      ],
+      chat: {
+        id: 'acceptance-chatflow-conflict',
+        name: '上线事故后复盘',
+        topic: '一次上线事故后，产品、工程和运营互相觉得对方甩锅。',
+        memberIds: ['user', 'prod', 'dev', 'ops'],
+      },
+      characters: [
+        acceptanceCharacter('prod', '产品经理乔一', {
+          personality: { openness: 56, extroversion: 66, agreeableness: 32, neuroticism: 54, humor: 18, creativity: 50, assertiveness: 78, empathy: 38 },
+          behavior: { proactivity: 78, aggressiveness: 34, humorIntensity: 8, empathyLevel: 36, summarizing: 52, offTopic: 6 },
+          expertise: ['需求拆解', '用户影响', '版本排期'],
+          speakingStyle: '急、目标导向，容易把话说硬。',
+          background: '乔一觉得工程没有提前暴露风险。',
+        }),
+        acceptanceCharacter('dev', '工程师陆沉', {
+          personality: { openness: 50, extroversion: 34, agreeableness: 30, neuroticism: 46, humor: 12, creativity: 44, assertiveness: 74, empathy: 30 },
+          behavior: { proactivity: 60, aggressiveness: 30, humorIntensity: 6, empathyLevel: 28, summarizing: 40, offTopic: 5 },
+          expertise: ['发布流程', '接口契约', '告警'],
+          speakingStyle: '冷、具体，喜欢拿日志和时间线说话。',
+          background: '陆沉认为需求临时变更导致测试覆盖失效。',
+        }),
+        acceptanceCharacter('ops', '运营秦璐', {
+          personality: { openness: 62, extroversion: 58, agreeableness: 58, neuroticism: 40, humor: 28, creativity: 54, assertiveness: 50, empathy: 64 },
+          behavior: { proactivity: 58, aggressiveness: 12, humorIntensity: 14, empathyLevel: 68, summarizing: 66, offTopic: 8 },
+          expertise: ['用户沟通', '公告', '事故复盘'],
+          speakingStyle: '尽量压住火气，会把影响落到用户侧。',
+          background: '秦璐一晚上处理投诉，希望复盘别变成互相甩锅。',
+        }),
+      ],
+      seedMessages: [
+        acceptanceUserMessage('acceptance-chatflow-conflict', '你们按事故时间线复盘，先别急着互相甩锅。', now - 120_000),
+        acceptanceAiMessage('acceptance-chatflow-conflict', 'prod', '乔一', '需求周二就写清楚了，灰度开关也在文档里。', now - 105_000),
+        acceptanceAiMessage('acceptance-chatflow-conflict', 'dev', '陆沉', '文档周三晚上改过，接口字段从 optional 变成 required，没有同步到测试用例。', now - 90_000),
+        acceptanceAiMessage('acceptance-chatflow-conflict', 'ops', '秦璐', '用户不关心谁改了字段，他们只看到付款页卡死。', now - 75_000),
+      ],
+    },
+    {
+      name: 'memory_contradiction_room',
+      roomKind: 'open_chat',
+      turns: Math.max(8, Math.min(config.chatflowTurns, 36)),
+      rubricHint: '记忆矛盾测试。角色长期记得用户不喝酒，但用户当前说想订精酿吧；AI 应识别矛盾、自然确认或提出无酒精替代，而不是机械套旧记忆或无视当前输入。',
+      userInjections: [
+        { afterTurn: 4, content: '我不是突然爱喝酒，只是想找一个气氛像精酿吧但也有无酒精选择的地方。' },
+      ],
+      chat: {
+        id: 'acceptance-chatflow-memory-contradiction',
+        name: '旧记忆和当前计划冲突',
+        topic: '朋友们帮用户选周五晚上聚会地点，但用户的旧偏好和当前描述有矛盾。',
+        memberIds: ['user', 'nana', 'hao', 'yu'],
+      },
+      characters: [
+        acceptanceCharacter('nana', '娜娜', {
+          personality: { openness: 76, extroversion: 68, agreeableness: 68, neuroticism: 34, humor: 56, creativity: 70, assertiveness: 48, empathy: 70 },
+          behavior: { proactivity: 64, aggressiveness: 10, humorIntensity: 44, empathyLevel: 74, summarizing: 30, offTopic: 14 },
+          expertise: ['城市探店', '氛围选择'],
+          speakingStyle: '轻松、有画面感，但会照顾用户偏好。',
+          background: '娜娜记得用户以前说过不喝酒。',
+          memory: { longTerm: ['用户通常不喝酒，也不喜欢被劝酒。'], shortTermSummary: '正在帮用户找周五聚会地点。', secrets: [], obsessions: [], tabooTopics: [], userMemories: ['用户通常不喝酒。'] },
+        }),
+        acceptanceCharacter('hao', '郝然', {
+          personality: { openness: 52, extroversion: 44, agreeableness: 50, neuroticism: 28, humor: 24, creativity: 42, assertiveness: 60, empathy: 42 },
+          behavior: { proactivity: 66, aggressiveness: 16, humorIntensity: 12, empathyLevel: 42, summarizing: 58, offTopic: 8 },
+          expertise: ['路线规划', '价格比较'],
+          speakingStyle: '实用、会列选项和成本。',
+          background: '郝然更关注距离、价格和是否需要预约。',
+        }),
+        acceptanceCharacter('yu', '余声', {
+          personality: { openness: 66, extroversion: 38, agreeableness: 66, neuroticism: 32, humor: 34, creativity: 58, assertiveness: 42, empathy: 76 },
+          behavior: { proactivity: 48, aggressiveness: 6, humorIntensity: 20, empathyLevel: 80, summarizing: 36, offTopic: 10 },
+          expertise: ['情绪观察', '偏好澄清'],
+          speakingStyle: '细腻，会先确认用户真正想要的是气氛还是酒。',
+          background: '余声擅长把偏好矛盾说得不尴尬。',
+        }),
+      ],
+      seedMessages: [
+        acceptanceUserMessage('acceptance-chatflow-memory-contradiction', '周五想找个像精酿吧一样热闹、有木桌和音乐的地方，你们帮我选。', now - 90_000),
+        acceptanceAiMessage('acceptance-chatflow-memory-contradiction', 'nana', '娜娜', '等下，你之前不是说不喝酒吗？你是想喝精酿，还是只是想要那种热闹氛围？', now - 75_000),
+        acceptanceAiMessage('acceptance-chatflow-memory-contradiction', 'hao', '郝然', '如果只是氛围，北门那家有无酒精姜汁汽水，但周五要预约。', now - 60_000),
+      ],
+    },
+    {
+      name: 'story_choice_room',
+      roomKind: 'story',
+      turns: Math.max(4, Math.min(config.chatflowTurns, 8)),
+      rubricHint: '故事房应先铺场景，再在合理间隔后给出 2-4 个有代价差异的选项；不能每轮都硬塞选项，也不能长时间没有可操作分支。',
+      chat: {
+        id: 'acceptance-chatflow-story',
+        name: '雨夜旧医院',
+        topic: '雨夜旧医院里，失踪名单出现了一个不该存在的名字。',
+        memberIds: ['user', 'lin', 'nurse'],
+        sessionKind: { topology: 'group', family: 'conversation', scenarioId: 'story-reader', surfaceProfile: 'hybrid' },
+        style: 'roleplay',
+        storyBackground: '城市边缘的旧医院封锁多年，今晚暴雨让地下档案室重新进水。值班记录里多出一个已经死去三年的名字。',
+        storyDirection: '悬疑、克制、逐步揭露。让角色在恐惧和专业判断之间拉扯，选项要改变调查方向。',
+        storyOutline: '先发现名单异常，再追问停电记录，最后引出地下档案室有人提前进入。',
+      },
+      characters: [
+        acceptanceCharacter('lin', '林医生', {
+          personality: { openness: 55, extroversion: 36, agreeableness: 48, neuroticism: 42, humor: 8, creativity: 45, assertiveness: 62, empathy: 50 },
+          behavior: { proactivity: 60, aggressiveness: 20, humorIntensity: 4, empathyLevel: 45, summarizing: 32, offTopic: 4 },
+          expertise: ['急诊医学', '医院流程', '冷静判断'],
+          speakingStyle: '冷静、低声、短句，倾向先确认事实再行动。',
+          background: '林医生曾在旧医院工作，知道三年前事故的部分真相。',
+        }),
+        acceptanceCharacter('nurse', '护士长周岚', {
+          personality: { openness: 44, extroversion: 52, agreeableness: 54, neuroticism: 48, humor: 10, creativity: 38, assertiveness: 70, empathy: 58 },
+          behavior: { proactivity: 65, aggressiveness: 28, humorIntensity: 5, empathyLevel: 60, summarizing: 28, offTopic: 5 },
+          expertise: ['病区管理', '档案记录', '人员调度'],
+          speakingStyle: '压着情绪，像在维持秩序，但关键处会露出防备。',
+          background: '周岚保存着旧医院封锁前的值班表，知道名单被改动过。',
+        }),
+      ],
+      seedMessages: [
+        acceptanceUserMessage('acceptance-chatflow-story', '从发现那张失踪名单开始，不要太快揭底。', now - 20_000),
+      ],
+    },
+    {
+      name: 'deliberation_artifact_room',
+      roomKind: 'deliberation',
+      turns: Math.max(4, Math.min(config.chatflowTurns, 8)),
+      rubricHint: '观点审议房应围绕目标沉淀 claims/evidence/issues/verdicts，发言要能推进判断，而不是普通闲聊或泛泛表态。',
+      userInjections: [
+        { afterTurn: 2, content: '请先追问反对重构的一方：如果不重构，下一次故障怎么兜底？' },
+      ],
+      chat: {
+        id: 'acceptance-chatflow-deliberation',
+        name: '推荐系统是否重构',
+        topic: '是否应该在两个月内重构推荐系统，以降低故障率但承担进度风险。',
+        memberIds: ['user', 'pm', 'engineer', 'risk'],
+        sessionKind: { topology: 'group', family: 'analysis', scenarioId: 'opinion-review', surfaceProfile: 'text' },
+        style: 'debate',
+      },
+      characters: [
+        acceptanceCharacter('pm', '产品负责人沈宁', {
+          personality: { openness: 64, extroversion: 62, agreeableness: 48, neuroticism: 35, humor: 22, creativity: 54, assertiveness: 72, empathy: 48 },
+          behavior: { proactivity: 75, aggressiveness: 24, humorIntensity: 12, empathyLevel: 48, summarizing: 62, offTopic: 6 },
+          expertise: ['产品目标', '发布节奏', '用户反馈'],
+          speakingStyle: '目标导向，常把判断落到用户影响和版本节奏。',
+          background: '沈宁担心重构拖垮版本，但也知道故障已经影响核心用户。',
+        }),
+        acceptanceCharacter('engineer', '后端工程师许川', {
+          personality: { openness: 58, extroversion: 34, agreeableness: 42, neuroticism: 38, humor: 12, creativity: 50, assertiveness: 68, empathy: 35 },
+          behavior: { proactivity: 70, aggressiveness: 18, humorIntensity: 8, empathyLevel: 32, summarizing: 48, offTopic: 5 },
+          expertise: ['系统架构', '故障治理', '技术债'],
+          speakingStyle: '技术细节明确，喜欢指出隐性成本和边界条件。',
+          background: '许川长期维护推荐系统，认为补丁已经堆到不可控。',
+        }),
+        acceptanceCharacter('risk', '风控顾问罗岚', {
+          personality: { openness: 52, extroversion: 45, agreeableness: 50, neuroticism: 28, humor: 10, creativity: 44, assertiveness: 64, empathy: 42 },
+          behavior: { proactivity: 62, aggressiveness: 16, humorIntensity: 6, empathyLevel: 40, summarizing: 70, offTopic: 4 },
+          expertise: ['风险评估', '上线策略', '复盘机制'],
+          speakingStyle: '冷静、结构化，习惯列条件和可逆性。',
+          background: '罗岚不站队，关注是否有分阶段验证和回滚方案。',
+        }),
+      ],
+      seedMessages: [
+        acceptanceUserMessage('acceptance-chatflow-deliberation', '请你们围绕“是否两个月内重构推荐系统”审议，不要闲聊，要留下可检查的论点、证据和待确认问题。', now - 20_000),
+      ],
+    },
+  ];
+}
+
+function assertRuntimeChatflowTranscript(scenario, transcript, errors) {
+  assertCondition(errors.length === 0, `chatflow ${scenario.name} produced runtime errors`, errors.map((error) => String(error?.message || error)));
+  assertCondition(transcript.length >= Math.min(3, config.chatflowTurns), `chatflow ${scenario.name} produced too few turns`, transcript);
+  const speakers = new Set(transcript.map((turn) => turn.senderId));
+  if (scenario.roomKind !== 'story') {
+    assertCondition(speakers.size >= 2, `chatflow ${scenario.name} did not rotate across multiple speakers`, transcript);
+  } else {
+    assertCondition(speakers.size >= 1, `chatflow ${scenario.name} produced no story narrator or character`, transcript);
+  }
+  for (const [index, turn] of transcript.entries()) {
+    assertCondition(typeof turn.content === 'string' && turn.content.trim().length >= 2, `chatflow ${scenario.name} turn ${index + 1} is empty`, turn);
+    assertCondition(!/JSON|schema|系统提示|提示词|内部ID|作为AI/i.test(turn.content), `chatflow ${scenario.name} turn ${index + 1} leaked protocol text`, turn);
+    assertCondition(turn.speakerSelection?.speakerId === turn.senderId, `chatflow ${scenario.name} turn ${index + 1} speaker metadata mismatch`, turn);
+    assertCondition(turn.innerLife, `chatflow ${scenario.name} turn ${index + 1} missing inner life metadata`, turn);
+    assertCondition(turn.turnPlan || turn.conversationMove || turn.protocolHits.length, `chatflow ${scenario.name} turn ${index + 1} missing runtime planning metadata`, turn);
+  }
+  const normalizedReplies = transcript.map((turn) => normalizeWhitespace(turn.content));
+  const uniqueReplies = new Set(normalizedReplies);
+  assertCondition(uniqueReplies.size === normalizedReplies.length, `chatflow ${scenario.name} produced duplicate visible replies`, transcript);
+}
+
+function summarizeRuntimeTurn(message) {
+  const runtimeDecision = message.metadata?.runtimeDecision || {};
+  return {
+    turn: message.turn,
+    senderId: message.senderId,
+    senderName: message.senderName,
+    content: message.content,
+    interactionHints: message.interactionHints || message.interactionHint ? (message.interactionHints || [message.interactionHint]).filter(Boolean) : [],
+    socialEventHints: message.socialEventHints || [],
+    relationshipSignals: runtimeDecision.runtimeBundle?.relationshipDeltas
+      || runtimeDecision.runtimeBundle?.diagnostics?.relationshipDeltas
+      || message.metadata?.deliberationArtifacts?.verdicts
+      || [],
+    speakerSelection: runtimeDecision.speakerSelection || null,
+    speakerScore: runtimeDecision.speakerScore || null,
+    innerLife: runtimeDecision.innerLife || null,
+    surface: runtimeDecision.surface || null,
+    turnPlan: runtimeDecision.turnPlan || null,
+    conversationMove: runtimeDecision.runtimeBundle?.diagnostics?.conversationMove || runtimeDecision.runtimeBundle?.conversationMove || null,
+    protocolHits: runtimeDecision.runtimeBundle?.diagnostics?.structuredOutput?.policyHits || [],
+    memoryContext: runtimeDecision.memoryContext || null,
+    worldInfluence: runtimeDecision.worldInfluence || null,
+  };
+}
+
+function buildRuntimeDraftInput(runtime, scenario) {
+  const sessionKind = scenario.chat.sessionKind || runtime.createDefaultSessionKind('group', 'open_chat');
+  const discussionMode = scenario.roomKind === 'deliberation' ? 'open' : undefined;
+  return {
+    type: 'group',
+    name: scenario.chat.name,
+    topic: scenario.chat.topic,
+    style: scenario.chat.style || (scenario.roomKind === 'story' ? 'roleplay' : scenario.roomKind === 'deliberation' ? 'debate' : 'free'),
+    runtimeEvolutionIntensity: scenario.chat.runtimeEvolutionIntensity || (scenario.roomKind === 'story' ? 'slow' : 'balanced'),
+    sessionKind,
+    storyBranchMode: 'guided',
+    storyBackground: scenario.chat.storyBackground || '',
+    storyDirection: scenario.chat.storyDirection || '',
+    storyOutline: scenario.chat.storyOutline || '',
+    studyGoalLabel: '',
+    agentGoalLabel: '',
+    boardColumns: 8,
+    boardRows: 8,
+    deductionFactionCount: 2,
+    mysteryClueCount: 6,
+    memberIds: scenario.chat.memberIds,
+    operatorIds: [],
+    showRoleActions: scenario.roomKind !== 'story',
+    seedMemoryText: '',
+    seedArtifactText: '',
+    ownerCharacterId: null,
+    adminCharacterIds: [],
+    autoModeration: false,
+    allowMute: true,
+    allowPrivateThreads: scenario.roomKind === 'open_chat',
+    allowCliques: scenario.roomKind === 'open_chat',
+    allowMockery: false,
+    mood: '',
+    focus: scenario.chat.topic,
+    recentEvent: '',
+    allowSpeakAs: true,
+    allowDirectorMode: true,
+    allowEventInjection: true,
+    allowForcedReply: true,
+    ...(discussionMode ? { discussionMode } : {}),
+  };
+}
+
+function createRuntimeChat(runtime, scenario) {
+  const draft = runtime.buildGroupChatDraft(buildRuntimeDraftInput(runtime, scenario));
+  return runtime.normalizeConversation({
+    ...draft,
+    id: scenario.chat.id,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    lastMessageAt: Date.now(),
+    topicSeed: scenario.chat.topic,
+  });
+}
+
+function collectScenarioStateSnapshot(chat) {
+  const scenarioState = chat.scenarioState || {};
+  return {
+    phase: scenarioState.phase || null,
+    choicePolicy: scenarioState.storyChoicePolicy || null,
+    choiceEpoch: scenarioState.choiceEpoch || null,
+    branchCount: Array.isArray(scenarioState.branches) ? scenarioState.branches.length : 0,
+    openChoiceCount: Array.isArray(scenarioState.branches) ? scenarioState.branches.filter((branch) => branch.status === 'available').length : 0,
+    choiceHistoryCount: Array.isArray(scenarioState.choiceHistory) ? scenarioState.choiceHistory.length : 0,
+    deliberationClaims: Array.isArray(scenarioState.deliberationClaims) ? scenarioState.deliberationClaims.length : 0,
+    deliberationEvidence: Array.isArray(scenarioState.deliberationEvidence) ? scenarioState.deliberationEvidence.length : 0,
+    deliberationIssues: Array.isArray(scenarioState.deliberationIssues) ? scenarioState.deliberationIssues.length : 0,
+    deliberationVerdicts: Array.isArray(scenarioState.deliberationVerdicts) ? scenarioState.deliberationVerdicts.length : 0,
+    summaryText: scenarioState.summaryText || null,
+    currentTurnActorId: scenarioState.currentTurnActorId || null,
+    progress: scenarioState.progress || [],
+    goals: scenarioState.goals || [],
+  };
+}
+
+function buildRuntimeCommitHandler(runtime) {
+  return async (args) => {
+    const engine = await runtime.loadSessionEngine(args.conversation);
+    if (typeof engine.onMessageCommitted === 'function') return engine.onMessageCommitted(args);
+    return { chatPatch: {}, characterPatches: [], runtimeEvents: [] };
+  };
+}
+
+function mergeChatPatch(chat, patch) {
+  return {
+    ...chat,
+    ...patch,
+    scenarioState: patch?.scenarioState ? { ...(chat.scenarioState || {}), ...patch.scenarioState } : chat.scenarioState,
+    worldState: patch?.worldState ? { ...(chat.worldState || {}), ...patch.worldState } : chat.worldState,
+  };
+}
+
+function appendUserInjection(scenario, messages, turn) {
+  const injections = (scenario.userInjections || []).filter((item) => item.afterTurn === turn);
+  for (const [index, injection] of injections.entries()) {
+    messages.push(acceptanceUserMessage(
+      scenario.chat.id,
+      injection.content,
+      Date.now() + turn * 1000 + index + 100,
+    ));
+  }
+  return injections.map((item) => item.content);
+}
+
+function assertScenarioSpecificChatflow(scenario, transcript, finalChat) {
+  if (scenario.roomKind === 'story') {
+    const storyTurns = transcript.filter((turn) => turn.storyEvents.length || turn.storyChoices.length);
+    assertCondition(storyTurns.length > 0, `chatflow ${scenario.name} produced no structured story events`, transcript);
+    const choiceTurns = transcript.filter((turn) => turn.storyChoices.length >= 2);
+    assertCondition(choiceTurns.length > 0 || finalChat.scenarioState?.branches?.length >= 2, `chatflow ${scenario.name} produced no usable story choices`, { transcript, scenarioState: finalChat.scenarioState });
+    assertCondition(choiceTurns.length <= Math.ceil(transcript.length / 2), `chatflow ${scenario.name} produced story choices too frequently`, transcript);
+  }
+  if (scenario.roomKind === 'deliberation') {
+    const state = finalChat.scenarioState || {};
+    const artifactCount = (state.deliberationClaims?.length || 0)
+      + (state.deliberationEvidence?.length || 0)
+      + (state.deliberationIssues?.length || 0)
+      + (state.deliberationVerdicts?.length || 0);
+    assertCondition(artifactCount > 0, `chatflow ${scenario.name} produced no deliberation artifacts`, state);
+  }
+  if (scenario.userInjections?.length) {
+    for (const injection of scenario.userInjections) {
+      const laterText = transcript
+        .filter((turn) => turn.turn > injection.afterTurn)
+        .slice(0, 2)
+        .map((turn) => turn.content)
+        .join(' ');
+      assertCondition(laterText.length > 0, `chatflow ${scenario.name} has no replies after user injection`, { injection, transcript });
+    }
+  }
+}
+
+function collectChatflowReviewFailures(runs, aggregateReview) {
+  const failures = [];
+  for (const run of Object.values(runs || {})) {
+    if (run.ok === false) {
+      failures.push({
+        scope: 'runtime',
+        scenario: run.scenario,
+        score: 0,
+        issues: [run.error || 'scenario failed'],
+        optimizations: ['先修复该场景的运行时硬错误，再评估提示词质量。'],
+      });
+    }
+    if (run.review && run.review.pass === false) {
+      failures.push({
+        scope: 'scenario',
+        scenario: run.scenario,
+        score: run.review.score,
+        issues: run.review.issues,
+        optimizations: run.review.optimizations,
+      });
+    }
+    for (const turnReview of run.turnReviews || []) {
+      if (turnReview.review?.pass === false) {
+        failures.push({
+          scope: 'turn',
+          scenario: run.scenario,
+          turn: turnReview.turn,
+          speakerName: turnReview.senderName,
+          score: turnReview.score,
+          issues: turnReview.review.issues,
+          optimizations: turnReview.review.optimizations,
+        });
+      }
+    }
+  }
+  if (aggregateReview?.pass === false) {
+    failures.push({
+      scope: 'aggregate',
+      scenario: 'all',
+      score: aggregateReview.score,
+      issues: aggregateReview.issues,
+      optimizations: aggregateReview.optimizations,
+    });
+  }
+  return failures;
+}
+
+function markdownCell(value, max = 180) {
+  return clip(
+    typeof value === 'string' ? value : JSON.stringify(value ?? ''),
+    max,
+  ).replace(/\|/g, '\\|').replace(/\n/g, '<br>');
+}
+
+function buildMarkdownTable(headers, rows) {
+  return [
+    `| ${headers.join(' | ')} |`,
+    `| ${headers.map(() => '---').join(' | ')} |`,
+    ...rows.map((row) => `| ${row.map((cell) => markdownCell(cell)).join(' | ')} |`),
+  ].join('\n');
+}
+
+function buildChatflowReportTables(runs) {
+  const overviewRows = Object.values(runs).map((run) => [
+    run.scenario,
+    run.turnCount,
+    run.ok === false ? '否' : '是',
+    run.review?.score ?? '',
+    run.finalScenarioState?.phase ?? '',
+    run.finalScenarioState?.branchCount ?? 0,
+    [
+      run.finalScenarioState?.deliberationClaims || 0,
+      run.finalScenarioState?.deliberationEvidence || 0,
+      run.finalScenarioState?.deliberationIssues || 0,
+      run.finalScenarioState?.deliberationVerdicts || 0,
+    ].join('/'),
+    [run.error, ...(run.review?.issues || [])].filter(Boolean).join('；'),
+    (run.review?.optimizations || []).join('；'),
+  ]);
+  const turnRows = [];
+  const inputRows = [];
+  for (const run of Object.values(runs)) {
+    for (const seed of run.seedUserMessages || []) {
+      inputRows.push([run.scenario, 'seed', seed.content]);
+    }
+    for (const injection of run.userInjectionLog || []) {
+      inputRows.push([run.scenario, `after turn ${injection.afterTurn}`, injection.content]);
+    }
+    for (const turn of run.transcript || []) {
+      const turnReview = (run.turnReviews || []).find((item) => item.turn === turn.turn);
+      turnRows.push([
+        run.scenario,
+        turn.turn,
+        turn.senderName,
+        turnReview?.score ?? '',
+        turnReview?.review?.pass === false ? '否' : '是',
+        turn.content,
+        turn.storyChoices?.map((choice) => choice.label).join(' / ') || '',
+        [
+          turn.deliberationArtifacts?.claims?.length || 0,
+          turn.deliberationArtifacts?.evidence?.length || 0,
+          turn.deliberationArtifacts?.issues?.length || 0,
+          turn.deliberationArtifacts?.verdicts?.length || 0,
+        ].join('/'),
+        (turnReview?.review?.issues || []).join('；'),
+        (turnReview?.review?.optimizations || []).join('；'),
+      ]);
+    }
+  }
+  const reviewRows = [];
+  for (const run of Object.values(runs)) {
+    if (run.review) {
+      reviewRows.push([
+        run.scenario,
+        '整体',
+        '',
+        run.review.score,
+        run.review.pass === false ? '否' : '是',
+        (run.review.issues || []).join('；'),
+        (run.review.optimizations || []).join('；'),
+      ]);
+    }
+    for (const turnReview of run.turnReviews || []) {
+      reviewRows.push([
+        run.scenario,
+        '单轮',
+        `${turnReview.turn} ${turnReview.senderName}`,
+        turnReview.score,
+        turnReview.review?.pass === false ? '否' : '是',
+        (turnReview.review?.issues || []).join('；'),
+        (turnReview.review?.optimizations || []).join('；'),
+      ]);
+    }
+  }
+  return {
+    overview: buildMarkdownTable(
+      ['场景', '轮数', '运行通过', '整体分', '阶段', '故事分支', '审议产物 C/E/I/V', '主要问题', '优化建议'],
+      overviewRows,
+    ),
+    userInputs: buildMarkdownTable(['场景', '插入时机', '用户消息'], inputRows.length ? inputRows : [['-', '-', '-']]),
+    turns: buildMarkdownTable(
+      ['场景', '轮次', '发言者', '单轮分', '通过', '回复内容', '故事选项', '审议产物 C/E/I/V', '单轮问题', '单轮优化'],
+      turnRows,
+    ),
+    reviews: buildMarkdownTable(
+      ['场景', '范围', '对象', '分数', '通过', '问题', '优化建议'],
+      reviewRows,
+    ),
+  };
+}
+
+async function runRuntimeChatflowScenario(model, scenario) {
+  logProgress('chatflow scenario start', { model, scenario: scenario.name, turns: scenario.turns || config.chatflowTurns });
+  const runtime = await loadRuntimeChatModules();
+  let chat = createRuntimeChat(runtime, scenario);
+  let characters = scenario.characters;
+  const messages = [...scenario.seedMessages];
+  const transcript = [];
+  const turnReviews = [];
+  const selectedSpeakers = [];
+  const errors = [];
+  const localInterceptions = [];
+  const profiles = runtimeProfile(model);
+  const api = profiles[0];
+  const cooldownMap = {};
+  const eventMessages = [];
+  const userInjectionLog = [];
+  const turnCount = scenario.turns || config.chatflowTurns;
+
+  for (let turn = 1; turn <= turnCount; turn += 1) {
+    logProgress('chatflow turn generate', { model, scenario: scenario.name, turn, turnCount });
+    let completed = null;
+    await runtime.runOneRound(
+      chat,
+      characters,
+      messages,
+      profiles,
+      {
+        onSpeakerSelected: (characterId, character) => {
+          selectedSpeakers.push({ turn, characterId, characterName: character?.name || characterId });
+        },
+        onMessageChunk: () => undefined,
+        onMessageComplete: (message) => { completed = message; },
+        onLocalInterception: (event) => { localInterceptions.push({ turn, ...event }); },
+        onIdle: (reason) => { errors.push(new Error(`idle on turn ${turn}: ${reason}`)); },
+        onError: (error) => { errors.push(error instanceof Error ? error : new Error(String(error))); },
+      },
+      profiles,
+      undefined,
+      cooldownMap,
+    );
+    if (errors.length) break;
+    assertCondition(completed, `chatflow ${scenario.name} did not complete turn ${turn}`);
+    let workingChat = chat;
+    let workingCharacters = characters;
+    const commitInputMessages = [...messages];
+    const persistedBuffer = [];
+    const upsertMessage = (message) => {
+      const index = persistedBuffer.findIndex((item) => item.id === message.id);
+      if (index >= 0) persistedBuffer[index] = message;
+      else persistedBuffer.push(message);
+    };
+    const commit = await runtime.commitGeneratedMessageTurn({
+      api,
+      chatId: chat.id,
+      chat,
+      characters,
+      message: completed,
+      streamingMessage: null,
+      currentMessages: commitInputMessages,
+      onCommit: buildRuntimeCommitHandler(runtime),
+      upsertMessage,
+      updateCharacter: async (id, patch) => {
+        workingCharacters = workingCharacters.map((character) => character.id === id ? { ...character, ...patch } : character);
+      },
+      updateCharacters: async (patches) => {
+        for (const item of patches) {
+          workingCharacters = workingCharacters.map((character) => character.id === item.id ? { ...character, ...item.patch } : character);
+        }
+      },
+      appendEventMessage: async (chatId, payload, sourceMessageId) => {
+        eventMessages.push({ chatId, payload, sourceMessageId });
+      },
+      appendEventMessages: async (chatId, payloads, sourceMessageId) => {
+        for (const payload of payloads) eventMessages.push({ chatId, payload, sourceMessageId });
+      },
+      updateChat: async (_id, patch) => {
+        workingChat = mergeChatPatch(workingChat, patch);
+      },
+      applyChatRuntimeDelta: async (_id, _delta, patch) => {
+        if (patch) workingChat = mergeChatPatch(workingChat, patch);
+      },
+      recordSpeak: (characterId) => {
+        cooldownMap[characterId] = Date.now() + turn * 1000;
+      },
+      aiProfiles: profiles,
+      getCurrentChat: () => workingChat,
+      getCurrentCharacters: () => workingCharacters,
+    });
+    const result = commit.results?.at(-1);
+    chat = result?.nextChat || workingChat;
+    characters = result?.nextCharacters || workingCharacters;
+    const persisted = result?.persistedMessage;
+    assertCondition(persisted, `chatflow ${scenario.name} did not persist turn ${turn}`, commit);
+    for (const item of persistedBuffer.length ? persistedBuffer : [persisted]) {
+      const index = messages.findIndex((message) => message.id === item.id);
+      if (index >= 0) messages[index] = item;
+      else messages.push(item);
+    }
+    const summarized = summarizeRuntimeTurn({
+      ...persisted,
+      turn,
+      scenarioStateAfter: collectScenarioStateSnapshot(chat),
+      storyEvents: persisted.metadata?.storyEvents || [],
+      storyChoices: persisted.metadata?.storyChoices || [],
+      deliberationArtifacts: persisted.metadata?.deliberationArtifacts || null,
+    });
+    summarized.scenarioStateAfter = collectScenarioStateSnapshot(chat);
+    summarized.storyEvents = persisted.metadata?.storyEvents || [];
+    summarized.storyChoices = persisted.metadata?.storyChoices || [];
+    summarized.deliberationArtifacts = persisted.metadata?.deliberationArtifacts || null;
+    transcript.push(summarized);
+    logProgress('chatflow turn judge', { model, scenario: scenario.name, turn, senderName: summarized.senderName });
+    const turnReview = await callJudge(model, [
+      '评估真实运行时群聊的单轮回复质量：',
+      '1. 当前发言者选择是否合理，是否承接用户最新要求和上一轮压力。',
+      '2. 可见回复是否符合说话角色，不替别人发言，不像总结模板。',
+      '3. 结构化 metadata、故事选项或审议产物是否和回复一致。',
+      '4. 如果用户刚插话，必须判断这一轮是否回应或推进了插话，不应被无视。',
+      `玩法类型：${scenario.roomKind}。场景要求：${scenario.rubricHint}`,
+    ].join('\n'), {
+      scenario: scenario.name,
+      roomKind: scenario.roomKind,
+      previousMessages: messages.slice(-6).map((message) => ({ type: message.type, senderName: message.senderName, content: message.content })),
+      turn: summarized,
+      scenarioStateAfter: summarized.scenarioStateAfter,
+    }, { throwOnFail: false });
+    turnReviews.push({ turn, senderName: summarized.senderName, score: turnReview.score, review: turnReview });
+    userInjectionLog.push(...appendUserInjection(scenario, messages, turn).map((content) => ({ afterTurn: turn, content })));
+  }
+
+  let hardError = '';
+  try {
+    assertRuntimeChatflowTranscript(scenario, transcript, errors);
+    assertScenarioSpecificChatflow(scenario, transcript, chat);
+  } catch (error) {
+    hardError = String(error?.message || error);
+    logProgress('chatflow scenario hard assertion failed', { model, scenario: scenario.name, error: clip(hardError, 400) });
+  }
+  let review = null;
+  if (transcript.length) {
+    logProgress('chatflow scenario judge', { model, scenario: scenario.name, turns: transcript.length });
+    review = await callJudge(model, [
+      '评估真实运行时多角色/多玩法房间质量，并给出可执行的提示词结构优化建议：',
+      '1. 发言者选择是否符合点名、关系压力、角色专业能力、冷却和上下文承接。',
+      '2. 多轮对话是否自然推进，不像轮流写作文、主持总结、客服问答或模板化复述。',
+      '3. 角色身份、人格、说话风格、背景和关系是否在可见回复中有稳定差异。',
+      '4. 每轮是否只代表当前说话角色，不替其他角色发言，不泄漏系统、JSON、内部 ID、prompt。',
+      '5. innerLife、turnPlan、speakerScore、interactionHints、relationshipSignals、worldInfluence 与可见回复是否一致。',
+      '6. 关系变化和房间态势是否克制，避免为了有 metadata 而过度写入。',
+      '7. 故事房需要检查选项数量、选项间隔、选择代价和剧情承接；审议房需要检查 claims/evidence/issues/verdicts 等产物是否合理。',
+      '8. 如果质量不足，optimizations 必须指出应调整的 prompt 层，如 humanization、current_intent、conversation_move、turn_plan、response_surface、style_quarantine、visible_message_surface_contract、story_protocol、deliberation_protocol、memoryTrace 或 scheduler。',
+      `场景额外要求：${scenario.rubricHint}`,
+    ].join('\n'), {
+      scenario: {
+        name: scenario.name,
+        chat: scenario.chat,
+        characters: scenario.characters.map((character) => ({
+          id: character.id,
+          name: character.name,
+          personality: character.personality,
+          behavior: character.behavior,
+          expertise: character.expertise,
+          speakingStyle: character.speakingStyle,
+          background: character.background,
+          coreProfile: character.coreProfile,
+          relationships: character.relationships,
+        })),
+        seedMessages: scenario.seedMessages.map((message) => ({ senderName: message.senderName, content: message.content })),
+      },
+      selectedSpeakers,
+      transcript,
+      turnReviews,
+      finalScenarioState: collectScenarioStateSnapshot(chat),
+      seedUserMessages: scenario.seedMessages
+        .filter((message) => message.type === 'user')
+        .map((message) => ({ senderName: message.senderName, content: message.content })),
+      userInjectionLog,
+      eventMessages,
+      localInterceptions,
+      hardError,
+    }, { throwOnFail: false });
+  }
+
+  return {
+    ok: !hardError,
+    scenario: scenario.name,
+    turnCount: transcript.length,
+    selectedSpeakers,
+    transcript,
+    turnReviews,
+    finalScenarioState: collectScenarioStateSnapshot(chat),
+    seedUserMessages: scenario.seedMessages
+      .filter((message) => message.type === 'user')
+      .map((message) => ({ senderName: message.senderName, content: message.content })),
+    userInjectionLog,
+    eventMessages,
+    localInterceptions,
+    error: hardError || undefined,
+    review,
+  };
+}
+
+async function runChatflowCase(model) {
+  let scenarios = runtimeChatflowScenarios();
+  if (config.chatflowScenarios.length) {
+    const available = new Set(scenarios.map((scenario) => scenario.name));
+    const invalid = config.chatflowScenarios.filter((name) => !available.has(name));
+    assertCondition(invalid.length === 0, `Unknown chatflow scenarios: ${invalid.join(', ')}`, { available: Array.from(available) });
+    const requested = new Set(config.chatflowScenarios);
+    scenarios = scenarios.filter((scenario) => requested.has(scenario.name));
+  }
+  const runs = {};
+  try {
+    for (const scenario of scenarios) {
+      try {
+        runs[scenario.name] = await runRuntimeChatflowScenario(model, scenario);
+      } catch (error) {
+        const message = String(error?.message || error);
+        logProgress('chatflow scenario failed', { model, scenario: scenario.name, error: clip(message, 400) });
+        runs[scenario.name] = {
+          ok: false,
+          scenario: scenario.name,
+          turnCount: 0,
+          selectedSpeakers: [],
+          transcript: [],
+          turnReviews: [],
+          finalScenarioState: {},
+          seedUserMessages: scenario.seedMessages
+            .filter((messageItem) => messageItem.type === 'user')
+            .map((messageItem) => ({ senderName: messageItem.senderName, content: messageItem.content })),
+          userInjectionLog: [],
+          eventMessages: [],
+          localInterceptions: [],
+          error: message,
+        };
+      }
+    }
+  } finally {
+    await closeRuntimeChatModules();
+  }
+  logProgress('chatflow aggregate judge', { model, scenarios: Object.keys(runs).length });
+  const aggregateReview = await callJudge(model, [
+    '横向评估这些真实运行时群聊样本是否足以验收 Sense Murmur 的普通群聊提示词结构：',
+    '1. 不同场景下角色差异、发言者选择、轮次推进和 metadata 一致性是否稳定。',
+    '2. 是否出现跨场景的同质化、过度总结、空泛追问、关系变化滥写、房间态势乱跳或协议泄漏。',
+    '3. 对运行失败场景也要纳入风险判断，optimizations 要合并成优先级明确的 prompt/runtime 优化清单，不要泛泛而谈。',
+  ].join('\n'), { runs }, { throwOnFail: false });
+  const reviewFailures = collectChatflowReviewFailures(runs, aggregateReview);
+  return {
+    ok: reviewFailures.length === 0,
+    scenarios: runs,
+    aggregateReview,
+    reviewFailures,
+    error: reviewFailures.length ? `chatflow judge rejected ${reviewFailures.length} review item(s)` : undefined,
+    reportTables: buildChatflowReportTables(runs),
+  };
+}
+
 async function runQualityCase(model) {
   const role = await runRoleCase(model);
   const group = await runGroupCase(model);
   const chat = await runChatCase(model);
+  const chatflow = await runChatflowCase(model);
   const generation = await runGenerationCase(model);
   const agent = await runAgentCase(model);
   const ops = await runOpsCase(model);
@@ -2297,7 +3421,14 @@ async function runQualityCase(model) {
   const calendar = await runCalendarCase(model);
   const safety = await runSafetyCase(model);
   const image = await runImageCase(model);
-  return { ok: true, suites: { role, group, chat, generation, agent, ops, artifact, memory, calendar, safety, image } };
+  const suites = { role, group, chat, chatflow, generation, agent, ops, artifact, memory, calendar, safety, image };
+  const failedSuites = Object.entries(suites).filter(([, suite]) => suite?.ok === false).map(([name]) => name);
+  return {
+    ok: failedSuites.length === 0,
+    suites,
+    failedSuites,
+    error: failedSuites.length ? `quality suites failed: ${failedSuites.join(', ')}` : undefined,
+  };
 }
 
 const CASE_RUNNERS = {
@@ -2309,6 +3440,7 @@ const CASE_RUNNERS = {
   role: runRoleCase,
   group: runGroupCase,
   chat: runChatCase,
+  chatflow: runChatflowCase,
   generation: runGenerationCase,
   agent: runAgentCase,
   ops: runOpsCase,
@@ -2411,15 +3543,69 @@ function buildReportPayload(results) {
   };
 }
 
+function collectChatflowTables(payload) {
+  const sections = [];
+  for (const result of payload.results || []) {
+    const directChatflow = result.cases?.chatflow;
+    if (directChatflow?.reportTables) {
+      sections.push({ model: result.model, label: 'chatflow', tables: directChatflow.reportTables, aggregateReview: directChatflow.aggregateReview });
+    }
+    const qualityChatflow = result.cases?.quality?.suites?.chatflow;
+    if (qualityChatflow?.reportTables) {
+      sections.push({ model: result.model, label: 'quality/chatflow', tables: qualityChatflow.reportTables, aggregateReview: qualityChatflow.aggregateReview });
+    }
+  }
+  return sections;
+}
+
+function buildMarkdownReport(payload) {
+  const lines = [
+    '# AI LLM Acceptance Report',
+    '',
+    `- OK: ${payload.ok ? 'yes' : 'no'}`,
+    `- Cases: ${payload.cases.join(', ')}`,
+    `- Judge model: ${payload.judgeModel}`,
+    `- Min score: ${payload.minScore}`,
+    `- Usage: ${JSON.stringify(payload.usage || {})}`,
+  ];
+  if (payload.failures?.length) {
+    lines.push('', '## Failures', '');
+    lines.push(buildMarkdownTable(['Model', 'Case', 'Repeat', 'Error'], payload.failures.map((failure) => [
+      failure.model,
+      failure.caseName,
+      failure.repeatIndex || '',
+      failure.error,
+    ])));
+  }
+  const chatflowSections = collectChatflowTables(payload);
+  for (const section of chatflowSections) {
+    lines.push('', `## Chatflow: ${section.model} (${section.label})`, '');
+    lines.push('### Overview', '', section.tables.overview);
+    lines.push('', '### User Inputs', '', section.tables.userInputs);
+    lines.push('', '### Turns', '', section.tables.turns);
+    lines.push('', '### Reviews', '', section.tables.reviews);
+    lines.push('', '### Aggregate Review', '');
+    lines.push(buildMarkdownTable(['Score', 'Issues', 'Optimizations'], [[
+      section.aggregateReview?.score ?? '',
+      (section.aggregateReview?.issues || []).join('；'),
+      (section.aggregateReview?.optimizations || []).join('；'),
+    ]]));
+  }
+  return `${lines.join('\n')}\n`;
+}
+
 async function writeReportIfRequested(payload) {
   if (!config.reportDir) return null;
   const safeTimestamp = new Date().toISOString().replace(/[:.]/g, '-');
   const filename = `ai-llm-acceptance-${safeTimestamp}.json`;
+  const markdownFilename = `ai-llm-acceptance-${safeTimestamp}.md`;
   const dir = resolve(config.reportDir);
   await mkdir(dir, { recursive: true });
   const filePath = resolve(dir, filename);
+  const markdownPath = resolve(dir, markdownFilename);
   await writeFile(filePath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
-  return filePath;
+  await writeFile(markdownPath, buildMarkdownReport(payload), 'utf8');
+  return { json: filePath, markdown: markdownPath };
 }
 
 async function main() {
