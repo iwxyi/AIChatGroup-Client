@@ -53,6 +53,22 @@ export interface LocalActionPlan {
   groupName?: string;
   groupTopic?: string;
   groupStyle?: 'free' | 'debate' | 'brainstorm' | 'roleplay';
+  roomTemplateKey?: string;
+  scenarioId?: string;
+  roomKind?: string;
+  storyBackground?: string;
+  storyDirection?: string;
+  storyOutline?: string;
+  studyGoalLabel?: string;
+  agentGoalLabel?: string;
+  werewolfRoleConfig?: string;
+  werewolfPostGameMode?: string;
+  mysteryScript?: string;
+  mysteryRoleMappingMode?: string;
+  boardColumns?: number;
+  boardRows?: number;
+  deductionFactionCount?: number;
+  mysteryClueCount?: number;
   chatQuery?: string;
   chatTypePreference?: 'group' | 'direct' | 'assistant' | 'any';
   characterQuery?: string;
@@ -127,6 +143,9 @@ export interface AppCommandExecutionResult {
   candidates?: AppCommandCandidate[];
   choices?: AppCommandChoice[];
   choicePresentation?: 'chips' | 'list' | 'select';
+  recoverable?: boolean;
+  reasonType?: string;
+  observation?: Record<string, unknown>;
 }
 
 export interface AppCommandContext {

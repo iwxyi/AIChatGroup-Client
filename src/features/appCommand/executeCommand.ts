@@ -3,6 +3,7 @@ import { api } from '../../services/api';
 import { generateResponse } from '../../services/aiClient';
 import { buildDirectChatDraft, buildGroupChatDraft } from '../../services/chatDraftBuilder';
 import { generateCharacterProfilesSafe } from '../../services/characterGenerator';
+import { getRoomTemplate, ROOM_TEMPLATES, type RoomTemplateDefinition, type RoomTemplateKey } from '../../services/roomTemplates';
 import { useCharacterStore } from '../../stores/useCharacterStore';
 import { useChatStore } from '../../stores/useChatStore';
 import { useMessageStore } from '../../stores/useMessageStore';
@@ -127,6 +128,51 @@ function scoreText(text: string, query: string) {
   if (!target) return 0;
   if (source.includes(target)) return 20 + target.length;
   return target.split(/\s+/).filter((part) => part && source.includes(part)).length;
+}
+
+function normalizeLooseKey(value?: string | null) {
+  return clean(value).replace(/[\s_-]+/g, '').toLowerCase();
+}
+
+function scoreRoomTemplate(template: RoomTemplateDefinition, query: string) {
+  const normalized = normalizeLooseKey(query);
+  if (!normalized) return 0;
+  const fields = [
+    template.key,
+    template.label,
+    template.description,
+    template.structure,
+    template.category,
+    template.categoryLabel,
+    template.sessionKind.scenarioId,
+    template.sessionKind.family,
+    template.presetLabel,
+    template.presetDescription,
+    ...(template.sellingPoints || []),
+  ].filter(Boolean).join('\n');
+  const compact = normalizeLooseKey(fields);
+  if (compact === normalized) return 100;
+  if (compact.includes(normalized) || normalized.includes(compact)) return 50;
+  return scoreText(fields, query);
+}
+
+function resolveRoomTemplate(plan: LocalActionPlan) {
+  const explicitKey = clean(plan.roomTemplateKey);
+  if (explicitKey && ROOM_TEMPLATES.some((item) => item.key === explicitKey)) {
+    return getRoomTemplate(explicitKey as RoomTemplateKey);
+  }
+  const scenarioId = clean(plan.scenarioId);
+  if (scenarioId) {
+    const byScenario = ROOM_TEMPLATES.find((item) => item.sessionKind.scenarioId === scenarioId || item.key === scenarioId);
+    if (byScenario) return byScenario;
+  }
+  const query = clean(plan.roomKind || plan.roomTemplateKey || plan.scenarioId);
+  if (!query) return getRoomTemplate('open_chat');
+  const ranked = ROOM_TEMPLATES
+    .map((template) => ({ template, score: scoreRoomTemplate(template, query) }))
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score);
+  return ranked[0]?.template || getRoomTemplate('open_chat');
 }
 
 function characterAppLink(characterId: string) {
@@ -288,7 +334,20 @@ async function openExistingChat(plan: LocalActionPlan, context: AppCommandContex
   const top = ranked.slice(0, 5);
   const best = top[0]?.chat;
   if (!best) {
-    return { status: 'info', title: '没有找到会话', message: query ? `没有找到和“${query}”相关的会话。` : '没有找到可打开的会话。' };
+    return {
+      status: 'info',
+      title: '没有找到会话',
+      message: query ? `没有找到和“${query}”相关的会话。` : '没有找到可打开的会话。',
+      recoverable: true,
+      reasonType: 'chat_not_found',
+      observation: {
+        attemptedAction: 'open_existing_chat',
+        query,
+        chatTypePreference: plan.chatTypePreference || 'any',
+        foundCount: 0,
+        possibleNextActions: ['create_direct_chat', 'read_character_info', 'create_character', 'create_group_chat', 'navigate'],
+      },
+    };
   }
   const candidates: AppCommandCandidate[] = top.map(({ chat, score }) => {
     const tab = chat.type === 'assistant' ? 3 : chat.type === 'direct' ? 1 : 0;
@@ -384,7 +443,14 @@ function localActionRouteFromStep(step: Extract<AppCommandRoute, { mode: 'workfl
 
 async function createDirectChat(plan: LocalActionPlan, context: AppCommandContext): Promise<AppCommandExecutionResult> {
   const name = clean(plan.characterName || plan.characters?.[0]?.name || plan.title);
-  if (!name) return { status: 'info', title: '缺少角色名', message: '请告诉我想和哪个角色聊天。' };
+  if (!name) return {
+    status: 'info',
+    title: '缺少角色名',
+    message: '请告诉我想和哪个角色聊天。',
+    recoverable: false,
+    reasonType: 'missing_character_name',
+    observation: { attemptedAction: 'create_direct_chat', possibleNextActions: ['open_existing_chat', 'assistant_agent'] },
+  };
   const [character] = await ensureCharacters([{ name, group: plan.characters?.[0]?.group || null, roleHint: plan.summary }], context);
   const existing = useChatStore.getState().chats.find((chat) => chat.type === 'direct' && chat.memberIds.includes(character.id));
   const chat = existing || await useChatStore.getState().addChat(buildDirectChatDraft(character.id, character.name));
@@ -401,7 +467,16 @@ async function createDirectChat(plan: LocalActionPlan, context: AppCommandContex
 
 async function createGroupChat(plan: LocalActionPlan, context: AppCommandContext): Promise<AppCommandExecutionResult> {
   const plannedCharacters = (plan.characters || []).filter((item) => clean(item.name));
-  if (!plannedCharacters.length) return { status: 'info', title: '缺少角色', message: '创建群聊前需要至少一个角色。' };
+  if (!plannedCharacters.length) return {
+    status: 'info',
+    title: '缺少角色',
+    message: '创建群聊前需要至少一个角色。',
+    recoverable: true,
+    reasonType: 'missing_group_members',
+    observation: { attemptedAction: 'create_group_chat', possibleNextActions: ['create_characters', 'assistant_agent'] },
+  };
+  const template = resolveRoomTemplate(plan);
+  const defaults = template.defaults || {};
   const members = await ensureCharacters(plannedCharacters, context);
   const memberIds = ['user', ...members.map((item) => item.id)];
   const title = clean(plan.groupName || plan.title) || `${plannedCharacters.slice(0, 3).map((item) => item.name).join('、')}的群聊`;
@@ -410,21 +485,35 @@ async function createGroupChat(plan: LocalActionPlan, context: AppCommandContext
     type: 'group',
     name: title,
     topic,
-    style: plan.groupStyle || 'free',
-    sessionKind: undefined,
+    style: template.style || plan.groupStyle || 'free',
+    runtimeEvolutionIntensity: template.runtimeEvolutionIntensity || 'balanced',
+    sessionKind: template.sessionKind,
+    storyBranchMode: defaults.storyBranchMode,
+    storyBackground: clean(plan.storyBackground) || defaults.storyBackground || topic,
+    storyDirection: clean(plan.storyDirection) || defaults.storyDirection || clean(plan.summary) || topic,
+    storyOutline: clean(plan.storyOutline) || defaults.storyOutline || '',
+    studyGoalLabel: clean(plan.studyGoalLabel) || defaults.studyGoalLabel || topic,
+    agentGoalLabel: clean(plan.agentGoalLabel) || defaults.agentGoalLabel || topic,
+    boardColumns: plan.boardColumns || defaults.boardColumns,
+    boardRows: plan.boardRows || defaults.boardRows,
+    deductionFactionCount: plan.deductionFactionCount || defaults.deductionFactionCount,
+    werewolfRoleConfig: clean(plan.werewolfRoleConfig) || defaults.werewolfRoleConfig || topic,
+    werewolfPostGameMode: clean(plan.werewolfPostGameMode) || defaults.werewolfPostGameMode,
+    mysteryClueCount: plan.mysteryClueCount || defaults.mysteryClueCount,
+    mysteryScript: clean(plan.mysteryScript) || defaults.mysteryScript || topic,
+    mysteryRoleMappingMode: clean(plan.mysteryRoleMappingMode) || defaults.mysteryRoleMappingMode,
     memberIds,
     operatorIds: [],
-    showRoleActions: true,
-    runtimeEvolutionIntensity: 'balanced',
+    showRoleActions: template.sessionKind.scenarioId !== 'story-reader',
     seedMemoryText: '',
     seedArtifactText: '',
     ownerCharacterId: null,
     adminCharacterIds: [],
     autoModeration: true,
     allowMute: false,
-    allowPrivateThreads: false,
-    allowCliques: true,
-    allowMockery: false,
+    allowPrivateThreads: defaults.allowPrivateThreads ?? false,
+    allowCliques: defaults.allowCliques ?? true,
+    allowMockery: defaults.allowMockery ?? false,
     mood: '',
     focus: topic,
     recentEvent: '',
@@ -437,16 +526,30 @@ async function createGroupChat(plan: LocalActionPlan, context: AppCommandContext
   context.navigate?.(url);
   return {
     status: 'success',
-    title: '已创建群聊',
-    message: `已创建“${chat.name}”，包含 ${members.length} 个角色。`,
-    markdown: `已创建群聊：${markdownChatLink(chat.name, chat.id, 0)}`,
+    title: `已创建${template.label}`,
+    message: `已创建“${chat.name}”，玩法为${template.label}，包含 ${members.length} 个角色。`,
+    markdown: `已创建${template.label}：${markdownChatLink(chat.name, chat.id, 0)}`,
     navigateTo: url,
+    observation: {
+      completedGoal: true,
+      createdChatId: chat.id,
+      roomTemplateKey: template.key,
+      scenarioId: template.sessionKind.scenarioId,
+      family: template.sessionKind.family,
+    },
   };
 }
 
 async function createCharacters(plan: LocalActionPlan, context: AppCommandContext): Promise<AppCommandExecutionResult> {
   const plannedCharacters = buildPlannedCharacters(plan, context.input);
-  if (!plannedCharacters.length) return { status: 'info', title: '缺少角色名', message: '请告诉我想创建哪个角色。' };
+  if (!plannedCharacters.length) return {
+    status: 'info',
+    title: '缺少角色名',
+    message: '请告诉我想创建哪个角色。',
+    recoverable: true,
+    reasonType: 'missing_character_name',
+    observation: { attemptedAction: plan.action, possibleNextActions: ['create_direct_chat', 'create_group_chat', 'assistant_agent'] },
+  };
   const characters = await ensureCharacters(plannedCharacters, context);
   return {
     status: 'success',
@@ -459,7 +562,19 @@ async function createCharacters(plan: LocalActionPlan, context: AppCommandContex
 
 async function readCharacterInfo(plan: LocalActionPlan, context: AppCommandContext): Promise<AppCommandExecutionResult> {
   const matches = resolveCharacterMatches(plan, context.input);
-  if (!matches.length) return { status: 'info', title: '没有找到角色', message: '角色库里没有找到匹配的角色。' };
+  if (!matches.length) return {
+    status: 'info',
+    title: '没有找到角色',
+    message: '角色库里没有找到匹配的角色。',
+    recoverable: true,
+    reasonType: 'character_not_found',
+    observation: {
+      attemptedAction: 'read_character_info',
+      query: plan.characterName || plan.characterQuery || plan.characters?.map((item) => item.name).join('、') || context.input,
+      foundCount: 0,
+      possibleNextActions: ['create_character', 'create_direct_chat', 'assistant_agent'],
+    },
+  };
   if (shouldAskCharacterMatch(plan, context, matches)) {
     const candidates = characterCandidates(matches);
     return {
@@ -495,7 +610,14 @@ async function compareCharacters(plan: LocalActionPlan, context: AppCommandConte
   const matches = resolveCharacterMatches(plan, context.input);
   const expectedCount = plan.characters?.length || 2;
   const selected = matches.slice(0, Math.max(expectedCount, 2));
-  if (selected.length < 2) return { status: 'info', title: '角色不足', message: '至少需要找到两个角色才能比较。' };
+  if (selected.length < 2) return {
+    status: 'info',
+    title: '角色不足',
+    message: '至少需要找到两个角色才能比较。',
+    recoverable: true,
+    reasonType: 'insufficient_characters',
+    observation: { attemptedAction: 'compare_characters', foundCount: selected.length, expectedCount, possibleNextActions: ['read_character_info', 'create_characters', 'assistant_agent'] },
+  };
   if (matches.length > selected.length && context.source === 'assistant') {
     const candidates = characterCandidates(matches);
     return {
@@ -724,10 +846,6 @@ const LOCAL_ACTION_HANDLERS: Record<LocalActionPlan['action'], LocalActionHandle
 
 async function executeLocalActionPlan(route: Extract<AppCommandRoute, { mode: 'local_action' }>, context: AppCommandContext, secrets: Record<string, string>): Promise<AppCommandExecutionResult> {
   const plan = route.plan;
-  const selectedChoice = route.choices?.find((choice) => choice.kind !== 'cancel' && choice.kind !== 'confirm' && choice.plan);
-  if (selectedChoice && (route.choices?.length || 0) > 1 && route.requiresConfirmation === false) {
-    return executeChoice(plan, selectedChoice, context, secrets);
-  }
   if (shouldOpenSingleCharacterFromHome(plan, context)) {
     return createDirectChat({ ...plan, characterName: buildPlannedCharacters(plan, context.input)[0]?.name }, context);
   }
@@ -777,7 +895,7 @@ export async function executeAppCommandRoute(route: AppCommandRoute, context: Ap
     };
   }
   if (route.mode === 'workflow') {
-    if (route.choices?.length && route.requiresConfirmation) {
+    if (route.choices?.length) {
       savePendingRoute(context, route, secrets, undefined, route.choices);
       return {
         status: 'needs_confirmation',
@@ -798,7 +916,7 @@ export async function executeAppCommandRoute(route: AppCommandRoute, context: Ap
     return executeWorkflowRoute(route, context, secrets);
   }
   const plan = route.plan;
-  if (route.choices?.length && route.requiresConfirmation) {
+  if (route.choices?.length) {
     savePendingRoute(context, route, secrets, undefined, route.choices);
     return {
       status: 'needs_confirmation',

@@ -7,7 +7,7 @@ import SurfaceCard from '../../components/common/SurfaceCard';
 import AppSnackbar from '../../components/common/AppSnackbar';
 import { useAppLinkHandler } from '../../hooks/useAppLinkHandler';
 import type { AppCommandCandidate, AppCommandChoice, AppCommandRoute, LocalActionPlan } from '../appCommand/commandTypes';
-import { HOME_COMMAND_PLACEHOLDERS } from './placeholders';
+import { getRandomHomeCommandPlaceholderIndex, HOME_COMMAND_PLACEHOLDERS, resolveHomeCommandSubmissionValue } from './placeholders';
 
 type PendingConfirmation = {
   input: string;
@@ -53,7 +53,7 @@ export default function HomeCommandLauncher() {
   const navigate = useNavigate();
   const appLink = useAppLinkHandler();
   const [input, setInput] = useState('');
-  const [placeholderIndex, setPlaceholderIndex] = useState(0);
+  const [placeholderIndex, setPlaceholderIndex] = useState(() => getRandomHomeCommandPlaceholderIndex(-1));
   const [loading, setLoading] = useState(false);
   const [feedback, setFeedback] = useState<CommandFeedback | null>(null);
   const [pending, setPending] = useState<PendingConfirmation | null>(null);
@@ -61,7 +61,7 @@ export default function HomeCommandLauncher() {
 
   useEffect(() => {
     const timer = window.setInterval(() => {
-      setPlaceholderIndex((index) => (index + 1) % HOME_COMMAND_PLACEHOLDERS.length);
+      setPlaceholderIndex((index) => getRandomHomeCommandPlaceholderIndex(index));
     }, 3600);
     return () => window.clearInterval(timer);
   }, []);
@@ -74,7 +74,7 @@ export default function HomeCommandLauncher() {
   };
 
   const submit = async () => {
-    const value = input.trim();
+    const value = resolveHomeCommandSubmissionValue(input, placeholder);
     if (!value || loading) return;
     setLoading(true);
     setFeedback(null);
@@ -222,7 +222,7 @@ export default function HomeCommandLauncher() {
           <Button
             type="submit"
             variant="contained"
-            disabled={loading || !input.trim()}
+            disabled={loading}
             startIcon={loading ? <CircularProgress size={16} color="inherit" /> : <SendIcon />}
             sx={{ minWidth: { xs: '100%', sm: 104 } }}
           >

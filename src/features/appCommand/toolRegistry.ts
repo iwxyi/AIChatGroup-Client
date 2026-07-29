@@ -29,11 +29,11 @@ export const APP_COMMAND_TOOLS: AppCommandToolDefinition[] = [
   },
   {
     action: 'create_group_chat',
-    title: '创建群聊',
+    title: '创建群聊或玩法房',
     riskLevel: 'medium',
-    description: '创建群聊并确保所需角色存在。适合“想看一群人在同一个群里”“围绕某主题讨论”。',
-    parameters: ['groupName', 'groupTopic', 'groupStyle', 'characters[]', 'summary'],
-    examples: ['想看10个皇帝在同一个群里', '创建一个三国谋士讨论AI的群聊'],
+    description: '创建群聊并确保所需角色存在。可通过 roomTemplateKey/scenarioId/roomKind 选择自由群聊、故事房、审议、剧本杀、棋盘房、学习/任务等已开放玩法，并填入对应玩法参数。',
+    parameters: ['groupName', 'groupTopic', 'groupStyle', 'roomTemplateKey', 'scenarioId', 'roomKind', 'characters[]', 'storyBackground', 'storyDirection', 'storyOutline', 'studyGoalLabel', 'agentGoalLabel', 'mysteryScript', 'boardColumns', 'boardRows', 'summary'],
+    examples: ['想看10个皇帝在同一个群里', '创建一个三国谋士讨论AI的群聊', '生成一个宫斗故事房', '创建一个围绕产品方向的观点审议房'],
   },
   {
     action: 'create_direct_chat',

@@ -41,7 +41,7 @@ Optional CLI overrides:
                                   Override PNEUMATA_TEST_LLM_CHATFLOW_SCENARIOS.
 
 Examples:
-  PNEUMATA_TEST_LLM_API_KEY=... PNEUMATA_TEST_LLM_MODELS=deepseek-chat,gpt-5.4 \\
+  PNEUMATA_TEST_LLM_API_KEY=... PNEUMATA_TEST_LLM_MODELS=deepseek-v4-flash,gpt-5.4 \\
     npm run test:ai-llm-acceptance --workspace=Pneumata-Client -- --run
 
   PNEUMATA_TEST_LLM_CASES=activity,role,group,generation,ops,e2e PNEUMATA_TEST_LLM_JUDGE_MODEL=gpt-5.4 \\
@@ -1421,11 +1421,20 @@ const AGENT_SCENARIOS = [
     name: 'create_jinyong_group',
     user: '创建金庸常见角色：郭靖、黄蓉、杨过、小龙女、张无忌、赵敏、乔峰、段誉、虚竹，放到金庸分组里，然后开一个群聊。',
     expectedKinds: ['create_characters', 'create_group_chat'],
+    requireOperationText: {
+      kind: 'create_characters',
+      terms: ['金庸', '郭靖', '黄蓉', '杨过', '小龙女', '张无忌', '赵敏', '乔峰', '段誉', '虚竹'],
+    },
   },
   {
     name: 'inspect_existing_character',
     user: '我想看角色库中秦始皇的信息，顺便告诉我他的性格是不是太强势。',
     expectedKinds: ['read_character'],
+    requireOperationText: {
+      kind: 'read_character',
+      terms: ['秦始皇', '性格'],
+    },
+    forbidPreExecutionAnswer: true,
   },
   {
     name: 'generate_image_routes_to_assistant',
@@ -1435,20 +1444,33 @@ const AGENT_SCENARIOS = [
   {
     name: 'ambiguous_chat_target',
     user: '进入之前聊到中元节的那个聊天；如果查到唯一匹配就打开，如果多个就给我选项。',
-    expectedKinds: ['search_chats', 'open_chat'],
+    expectedKinds: ['search_chats'],
+    requireSearchContinuationPolicy: true,
   },
 ];
 
 function agentSystemPrompt() {
   return [
     '你是 Sense Murmur 站内 Agent 的意图规划器。只输出 JSON，不要 Markdown。',
-    'JSON schema: {"intent":"execute|clarify|chat","assistantMessage":"给用户看的简短话","requiresConfirmation":false,"operations":[{"kind":"search_characters|read_character|update_character|create_characters|create_group_chat|create_direct_chat|search_chats|open_chat|open_assistant_agent|generate_image|generate_document|edit_artifact|query_balance|other","target":"...","instruction":"...","risk":"low|medium|high"}],"candidateActions":[{"label":"...","sendText":"..."}]}',
+    'JSON schema: {"intent":"execute|clarify|chat","assistantMessage":"给用户看的简短话","requiresConfirmation":false,"operations":[{"kind":"search_characters|read_character|update_character|create_characters|create_group_chat|create_direct_chat|search_chats|open_chat|open_assistant_agent|generate_image|generate_document|edit_artifact|query_balance|other","target":"...","instruction":"...","risk":"low|medium|high","searchPolicy":{"onSingleResult":"open_chat","onMultipleResults":"provide_choices|clarify","onNoResult":"clarify|create_direct_chat|create_group_chat|open_assistant_agent|chat"}}],"candidateActions":[{"label":"...","sendText":"..."}]}',
     '只做计划，不要假装已经执行。能直接执行的低风险创建/查询 requiresConfirmation=false；跳转、批量修改、高风险修改应给候选操作。',
+    '每个 operation 的 target 和 instruction 都必须是非空自然语言；risk 必须写 low/medium/high。open_assistant_agent 的 instruction 要写明打开哪类助手能力，例如“打开图片生成助手”。',
+    'assistantMessage 只能说明将要执行什么或为什么需要澄清；在 read_character、compare、search 等读取类工具返回前，不要基于常识提前回答用户的事实或评价问题。',
+    '读取角色资料时，如果用户同时提出了评价或比较问题，必须把这个问题写进 read_character/compare 的 instruction，让工具结果回来后再基于资料回答。',
     '如果用户已经明确给出完整角色名单、分组名、动作目标或产物目标，不要无故澄清，应该直接规划可执行操作。',
-    '批量创建角色时，create_characters 的 target 要写清楚目标分组，instruction 要包含角色名单；如果还要开群聊，create_group_chat 的 instruction 要说明使用刚创建或命中的角色。',
-    '按主题、片段或“之前聊到...”查找聊天时，必须先 search_chats，但规划不能停在搜索；还必须包含 open_chat 后续动作，target 可写“唯一匹配聊天”或“用户选择的候选聊天”。除非已有唯一精确命中，否则 requiresConfirmation=true，并提供自然的 candidateActions 让用户选择打开哪一个。',
+    '批量创建角色时，create_characters 的 target 要写清楚目标分组，instruction 必须同时包含目标分组和完整角色名单；如果还要开群聊，create_group_chat 的 instruction 要说明使用刚创建或命中的角色。',
+    'searchPolicy 只允许用于 search_chats 操作，其他 operation 不要写 searchPolicy 或 postObservationPolicy。',
+    '按主题、片段或“之前聊到...”查找聊天时，必须先 search_chats，并在该 operation 上写 searchPolicy：onSingleResult=open_chat，onMultipleResults=provide_choices，onNoResult=clarify 或 create_direct_chat/create_group_chat。规划不能停在裸搜索；不要在搜索前预设固定数量的 candidateActions，也不要为了通用场景强行 requiresConfirmation=true。',
     '生成图片、生成文档、修改图片、修改文档或编辑产物时，首页入口必须先规划 open_assistant_agent，再规划对应的 generate_image/generate_document/edit_artifact 操作。',
   ].join('\n');
+}
+
+function normalizeAgentOperationRisk(kind, risk) {
+  if (kind === 'update_character') return 'high';
+  if (kind === 'create_characters' || kind === 'create_group_chat' || kind === 'create_direct_chat' || kind === 'generate_image' || kind === 'generate_document' || kind === 'edit_artifact') {
+    return risk === 'high' ? 'high' : 'medium';
+  }
+  return risk === 'high' || risk === 'medium' || risk === 'low' ? risk : 'low';
 }
 
 async function runAgentCase(model) {
@@ -1460,10 +1482,44 @@ async function runAgentCase(model) {
     parsed.operations.forEach((operation, index) => {
       assertCondition(operation && typeof operation.kind === 'string' && operation.kind.trim(), `agent scenario ${scenario.name} operation ${index} missing kind`, parsed);
       assertCondition(typeof operation.instruction === 'string' && operation.instruction.trim(), `agent scenario ${scenario.name} operation ${index} missing instruction`, parsed);
+      operation.risk = normalizeAgentOperationRisk(operation.kind, operation.risk);
       assertCondition(['low', 'medium', 'high'].includes(operation.risk), `agent scenario ${scenario.name} operation ${index} invalid risk`, parsed);
+      assertCondition(operation.kind === 'search_chats' || (!operation.searchPolicy && !operation.postObservationPolicy), `agent scenario ${scenario.name} non-search operation should not carry search policy`, { operation, parsed });
     });
     const kinds = parsed.operations.map((operation) => operation?.kind).filter(Boolean);
     scenario.expectedKinds.forEach((kind) => assertCondition(kinds.includes(kind), `agent scenario ${scenario.name} missing operation ${kind}`, { kinds, parsed }));
+    if (scenario.requireOperationText) {
+      const operation = parsed.operations.find((item) => item?.kind === scenario.requireOperationText.kind);
+      const text = normalizeWhitespace(`${operation?.target || ''} ${operation?.instruction || ''}`);
+      for (const term of scenario.requireOperationText.terms) {
+        assertCondition(text.includes(term), `agent scenario ${scenario.name} ${scenario.requireOperationText.kind} missing required term ${term}`, { operation, parsed });
+      }
+    }
+    if (scenario.forbidPreExecutionAnswer) {
+      const message = normalizeWhitespace(parsed.assistantMessage || '');
+      assertCondition(!/历史上|记载|雄才|刚愎|确实有|我认为|已经可以判断|强势的一面/.test(message), `agent scenario ${scenario.name} answered before reading tool result`, { message, parsed });
+    }
+    if (scenario.requireSearchContinuationPolicy) {
+      const searchOperation = parsed.operations.find((operation) => operation?.kind === 'search_chats');
+      const policy = searchOperation?.searchPolicy || searchOperation?.postObservationPolicy || {};
+      const instruction = normalizeWhitespace(searchOperation?.instruction || '');
+      const policyText = normalizeWhitespace(JSON.stringify(policy));
+      assertCondition(
+        (policy.onSingleResult === 'open_chat' || /唯一|single|1个/.test(instruction)) && /open_chat|打开/.test(`${policyText} ${instruction}`),
+        `agent scenario ${scenario.name} search operation missing single-result open policy`,
+        { searchOperation, parsed },
+      );
+      assertCondition(
+        policy.onMultipleResults === 'provide_choices' || policy.onMultipleResults === 'clarify' || /多个|候选|选择|choices?/.test(instruction),
+        `agent scenario ${scenario.name} search operation missing multiple-result choice policy`,
+        { searchOperation, parsed },
+      );
+      assertCondition(
+        Boolean(policy.onNoResult) || /没有|未命中|no result|澄清|创建/.test(instruction),
+        `agent scenario ${scenario.name} search operation missing no-result fallback policy`,
+        { searchOperation, parsed },
+      );
+    }
     samples[scenario.name] = { output: parsed, usage, protocolRetries, firstInvalidJson };
     reviews[scenario.name] = await callJudge(model, [
       '评估站内 Agent 规划是否优秀：',
@@ -1471,10 +1527,10 @@ async function runAgentCase(model) {
       '2. 是否区分可直接执行、需要确认、需要澄清和进入助手聊天的场景。',
       '3. 是否避免假装已执行，避免暴露内部 URL/ID/JSON 给用户。',
       '4. 首页入口偏短平快：低风险创建、查询和明确目标的直接执行不应因为 requiresConfirmation=false 扣分。',
-      '5. candidateActions 只在澄清、不确定或高风险修改时才是必须；直接执行场景可以为空。',
+      '5. 搜索类规划不应提前假设固定的候选数量；search_chats 必须通过 postObservationPolicy 或清晰 instruction 表达：唯一结果 open_chat，多个结果给候选，未命中澄清或按原目标创建。',
       '6. 批量创建/开群聊必须把分组、角色名单、目标群聊和执行顺序写清楚。',
       `场景：${JSON.stringify(scenario, null, 2)}`,
-    ].join('\n'), { scenario, output: parsed });
+    ].join('\n'), { scenario, output: parsed }, { throwOnFail: false });
   }
   return { ok: true, samples, reviews };
 }
@@ -1543,7 +1599,9 @@ const OPS_SCENARIOS = [
       ],
       chats: [],
     },
-    expectedModeAny: ['local_action', 'workflow', 'assistant_agent'],
+    expectedModeAny: ['local_action', 'workflow'],
+    expectedActionsAny: ['compare_characters', 'read_character_info'],
+    forbidFinalResponse: true,
   },
   {
     name: 'api_key_setting_high_risk',
@@ -1555,17 +1613,83 @@ const OPS_SCENARIOS = [
     requireConfirmation: true,
     requireHighRisk: true,
   },
+  {
+    name: 'create_story_room_from_goal',
+    user: '帮我创建一个悬疑故事房，背景是秦朝宫廷夜宴，读者要能做关键选择。',
+    source: 'home',
+    inventory: {
+      characters: [
+        { id: 'c-qin', name: '秦始皇', group: '历史', summary: '威严多疑的皇帝' },
+        { id: 'c-zhao', name: '赵高', group: '历史', summary: '善于揣摩权势变化' },
+      ],
+      chats: [],
+    },
+    expectedModeAny: ['local_action', 'workflow'],
+    expectedActionsAny: ['create_group_chat'],
+    requireCharacterNamesAny: ['秦始皇', '赵高'],
+    requireGameplay: {
+      terms: ['story', 'story_reader', 'story-reader', '故事'],
+      fieldsAny: ['storyBackground', 'storyDirection', 'storyOutline'],
+    },
+  },
+  {
+    name: 'create_deliberation_room_from_goal',
+    user: '创建一个观点审议房，讨论两个月内是否要重构推荐系统，要保留论点和待确认问题。',
+    source: 'home',
+    inventory: { characters: [], chats: [] },
+    expectedModeAny: ['local_action', 'workflow'],
+    expectedActionsAny: ['create_group_chat'],
+    requireGameplay: {
+      terms: ['analysis', 'review', 'deliberation', 'opinion', '审议', '观点'],
+      allowTopicFallback: true,
+    },
+  },
+  {
+    name: 'create_mystery_room_from_goal',
+    user: '创建一个剧本杀房，主题是民国旅馆密室案，需要线索和角色身份。',
+    source: 'home',
+    inventory: { characters: [], chats: [] },
+    expectedModeAny: ['local_action', 'workflow'],
+    expectedActionsAny: ['create_group_chat'],
+    requireGameplay: {
+      terms: ['mystery', 'murder', '剧本杀', '推理'],
+      fieldsAny: ['mysteryScript', 'mysteryRoleMappingMode', 'mysteryClueCount'],
+    },
+  },
+  {
+    name: 'recover_chat_not_found_to_create_direct',
+    user: '这是站内 Agent 的执行观察结果。原始目标：我想和秦始皇聊天。上一轮尝试 open_existing_chat，执行状态 blocked，失败/阻塞类型 chat_not_found，recoverable=true。结构化观察：{"matchedChats":[],"matchedCharacters":[{"name":"秦始皇","group":"历史","summary":"统一六国后的始皇帝"}],"possibleNextActions":["create_direct_chat","read_character_info"]}。请围绕原始目标继续规划下一步。',
+    source: 'home',
+    inventory: {
+      characters: [
+        { id: 'c-qin', name: '秦始皇', group: '历史', summary: '统一六国后的始皇帝' },
+      ],
+      chats: [],
+    },
+    expectedModeAny: ['local_action', 'workflow'],
+    expectedActionsAny: ['create_direct_chat'],
+    forbidFinalResponse: true,
+  },
 ];
 
 function opsSystemPrompt(source) {
   return [
     '你是 Sense Murmur 的站内操作规划器。只输出 JSON，不要 Markdown。',
-    'JSON schema: {"mode":"local_action|workflow|assistant_agent|final_response","title":"...","summary":"...","riskLevel":"low|medium|high","requiresConfirmation":false,"action":"open_existing_chat|create_direct_chat|create_group_chat|create_characters|read_character_info|compare_characters|update_characters|search_chats|query_balance|update_ai_settings|other","plan":{"characterQuery":"...","sourceGroup":"...","targetGroup":"...","characterNames":["..."],"chatQuery":"...","targetChat":"...","updates":{},"reason":"..."},"steps":[{"action":"...","riskLevel":"low|medium|high","requiresConfirmation":false,"plan":{}}],"choices":[{"id":"...","label":"...","kind":"confirm|cancel|execute","action":"...","plan":{}}],"assistantMessage":"..."}',
-    '只能基于 inventory 中可见的角色和聊天做定位，不要编造内部 ID。',
+    'JSON schema: {"mode":"local_action|workflow|assistant_agent|final_response","title":"...","summary":"...","riskLevel":"low|medium|high","requiresConfirmation":false,"action":"open_existing_chat|create_direct_chat|create_group_chat|create_characters|read_character_info|compare_characters|update_characters|search_chats|query_balance|update_ai_settings|other","plan":{"characterQuery":"...","sourceGroup":"...","targetGroup":"...","characterNames":["..."],"chatQuery":"...","targetChat":"...","groupName":"...","groupTopic":"...","roomTemplateKey":"...","scenarioId":"...","roomKind":"...","storyBackground":"...","storyDirection":"...","storyOutline":"...","studyGoalLabel":"...","agentGoalLabel":"...","mysteryScript":"...","mysteryRoleMappingMode":"...","boardColumns":0,"boardRows":0,"deductionFactionCount":0,"mysteryClueCount":0,"updates":{},"reason":"..."},"steps":[{"action":"...","riskLevel":"low|medium|high","requiresConfirmation":false,"plan":{}}],"choices":[{"id":"...","label":"...","kind":"confirm|cancel|execute","action":"...","plan":{}}],"assistantMessage":"..."}',
+    '只能基于 inventory 中可见的角色和聊天做定位，不要编造内部 ID，也不要把 inventory.id 写入 characterName、characterNames 或 characters[].name；角色字段必须写用户可见的角色名称。',
     '只有输入明确是已执行观察、结果确认或任务已完成总结时，才输出 final_response；普通用户原始请求不要输出 final_response。',
+    '你是目标驱动的多步 Agent，不是一次性命令分类器。工具未命中只是 observation，不代表原始目标失败；如果输入里出现 recoverable=true，并且仍有 possibleNextActions 能推进目标，必须继续输出 local_action 或 workflow，不能直接 final_response。',
     '首页来源：唯一精确命中且低风险的打开/查询可直接执行；多个同名或多个相关命中必须 requiresConfirmation=true 并给 choices。',
     '助手来源：跳转、批量修改、高风险设置都必须让用户确认，不能直接假装完成。',
+    '只要输出 choices，就必须设置 requiresConfirmation=true；不要输出 steps 为空的 workflow，只有候选选择时应使用 local_action + choices 或明确可执行 steps。',
     '对“和 X 聊天”“打开和 X 的聊天”这类明确会话意图，若 inventory 里有唯一匹配聊天，优先输出 open_existing_chat；若只有角色可匹配，可输出 create_direct_chat。',
+    '用户要求“结合角色库信息”“查看角色资料”“比较 A 和 B”“谁更...”时，必须输出 read_character_info 或 compare_characters；不能直接 final_response，也不能只凭摘要自由回答。',
+    '创建群聊或玩法房时，必须把用户想要的玩法形态写入 roomTemplateKey、scenarioId 或 roomKind；不要把故事房、观点审议、剧本杀、棋盘、学习、任务协作等目标降级为普通自由群聊。',
+    '玩法消歧：用户明确说“故事房”“互动故事”“读者选择”“关键选择影响剧情”时，优先 story/story_reader，即使题材是悬疑；只有明确说“剧本杀”“案件推理”“搜证”“线索”“角色身份/凶手”时，才用 mystery/剧本杀。',
+    '如果用户描述了故事背景、剧情方向、案件、规则、学习目标或任务目标，应写入对应玩法参数，而不是只塞进 groupTopic。',
+    '创建群聊或玩法房时，如果 inventory 中已有角色和用户主题、时代、地点、人物关系明显相关，必须优先把这些角色写入 plan.characters 或 characterNames；不要创建空房间再让用户手动补。',
+    '如果用户要求 N 人玩法房且 inventory 不足，必须在 workflow 中先 create_characters 补齐，或在 create_group_chat 的 plan.characters 中直接列出 N 个可创建的 AI 角色。',
+    '玩法参数字段只写普通短文本，不要在字符串里嵌套 JSON、数组或带大量转义的结构。',
     '同名或多候选角色需要 choices；每个 choice 的 label 必须带分组或摘要差异，choice.plan 里也要带 characterQuery、characterNames 或 group 等可用于本地消歧的信息。',
     '批量修改角色、移动分组、设置模型/API key 属于 high 风险，必须 requiresConfirmation=true。',
     '“把 X 相关角色移动到 Y 分组”中，X 是 characterQuery，Y 是 targetGroup，不要把 Y 写成 sourceGroup。',
@@ -1575,17 +1699,26 @@ function opsSystemPrompt(source) {
 
 function collectPlannedActions(output) {
   const actions = [];
-  if (typeof output.action === 'string') actions.push({ action: normalizeOpsAction(output.action), riskLevel: output.riskLevel, requiresConfirmation: output.requiresConfirmation, plan: output.plan || {} });
+  if (typeof output.action === 'string') {
+    const action = normalizeOpsAction(output.action);
+    actions.push({ action, riskLevel: normalizeOpsRisk(action, output.riskLevel), requiresConfirmation: output.requiresConfirmation, plan: output.plan || {} });
+  }
   if (Array.isArray(output.steps)) {
     for (const step of output.steps) {
-      if (typeof step?.action === 'string') actions.push({ action: normalizeOpsAction(step.action), riskLevel: step.riskLevel || output.riskLevel, requiresConfirmation: step.requiresConfirmation ?? output.requiresConfirmation, plan: step.plan || {} });
+      if (typeof step?.action === 'string') {
+        const action = normalizeOpsAction(step.action);
+        actions.push({ action, riskLevel: normalizeOpsRisk(action, step.riskLevel || output.riskLevel), requiresConfirmation: step.requiresConfirmation ?? output.requiresConfirmation, plan: step.plan || {} });
+      }
     }
   }
   if (Array.isArray(output.choices)) {
     for (const choice of output.choices) {
       const plan = choice?.plan && typeof choice.plan === 'object' ? choice.plan : {};
       const action = typeof choice?.action === 'string' ? choice.action : typeof plan.action === 'string' ? plan.action : '';
-      if (action) actions.push({ action: normalizeOpsAction(action), riskLevel: choice.riskLevel || output.riskLevel, requiresConfirmation: true, plan });
+      if (action) {
+        const normalizedAction = normalizeOpsAction(action);
+        actions.push({ action: normalizedAction, riskLevel: normalizeOpsRisk(normalizedAction, choice.riskLevel || output.riskLevel), requiresConfirmation: true, plan });
+      }
     }
   }
   return actions;
@@ -1595,10 +1728,92 @@ function normalizeOpsAction(action) {
   return action === 'open_chat' ? 'open_existing_chat' : action;
 }
 
+function normalizeOpsRisk(action, riskLevel) {
+  if (action === 'update_characters' || action === 'update_ai_settings' || action === 'set_ai_model_key') return 'high';
+  if (action === 'create_character' || action === 'create_characters' || action === 'create_group_chat' || action === 'create_direct_chat') return riskLevel === 'high' ? 'high' : 'medium';
+  return riskLevel === 'high' || riskLevel === 'medium' || riskLevel === 'low' ? riskLevel : 'low';
+}
+
+function collectOpsPlans(parsed) {
+  return [
+    parsed?.plan,
+    ...(Array.isArray(parsed?.steps) ? parsed.steps.map((step) => step?.plan) : []),
+    ...(Array.isArray(parsed?.choices) ? parsed.choices.map((choice) => choice?.plan) : []),
+  ].filter((plan) => plan && typeof plan === 'object');
+}
+
+function getOpsPlanText(plan, keys) {
+  return keys
+    .map((key) => plan?.[key])
+    .filter((value) => typeof value === 'string' || typeof value === 'number')
+    .map((value) => String(value).trim())
+    .filter(Boolean)
+    .join('\n')
+    .toLowerCase();
+}
+
+function assertGameplayPlan(parsed, scenario) {
+  const plans = collectOpsPlans(parsed);
+  const createGroupPlans = plans.filter((plan) => {
+    const action = normalizeOpsAction(String(plan.action || ''));
+    return action === 'create_group_chat' || !action;
+  });
+  const terms = scenario.requireGameplay.terms.map((term) => term.toLowerCase());
+  const gameplayKeys = ['roomTemplateKey', 'scenarioId', 'roomKind'];
+  const contextKeys = ['groupName', 'groupTopic', 'title', 'summary'];
+  const gameplayHit = createGroupPlans.some((plan) => {
+    const gameplayText = getOpsPlanText(plan, gameplayKeys);
+    const contextText = scenario.requireGameplay.allowTopicFallback ? getOpsPlanText(plan, contextKeys) : '';
+    return terms.some((term) => gameplayText.includes(term) || contextText.includes(term));
+  });
+  assertCondition(gameplayHit, `ops scenario ${scenario.name} missing gameplay room fields`, {
+    requiredTerms: scenario.requireGameplay.terms,
+    plans: createGroupPlans,
+    parsed,
+  });
+  if (scenario.requireGameplay.fieldsAny?.length) {
+    const contentHit = createGroupPlans.some((plan) => scenario.requireGameplay.fieldsAny.some((field) => {
+      const value = plan?.[field];
+      return typeof value === 'string' ? value.trim().length >= 4 : Number.isFinite(Number(value)) && Number(value) > 0;
+    }));
+    assertCondition(contentHit, `ops scenario ${scenario.name} missing gameplay parameter detail`, {
+      requiredFieldsAny: scenario.requireGameplay.fieldsAny,
+      plans: createGroupPlans,
+      parsed,
+    });
+  }
+  if (scenario.requireGameplay.fieldsAll?.length) {
+    for (const field of scenario.requireGameplay.fieldsAll) {
+      const fieldHit = createGroupPlans.some((plan) => {
+        const value = plan?.[field];
+        return typeof value === 'string' ? value.trim().length >= 4 : Number.isFinite(Number(value)) && Number(value) > 0;
+      });
+      assertCondition(fieldHit, `ops scenario ${scenario.name} missing gameplay parameter ${field}`, {
+        requiredField: field,
+        plans: createGroupPlans,
+        parsed,
+      });
+    }
+  }
+}
+
+function collectOpsCharacterNames(parsed) {
+  const names = [];
+  for (const plan of collectOpsPlans(parsed)) {
+    if (Array.isArray(plan.characterNames)) names.push(...plan.characterNames);
+    if (Array.isArray(plan.characters)) {
+      names.push(...plan.characters.map((character) => typeof character === 'string' ? character : character?.name));
+    }
+  }
+  return names.map((name) => String(name || '').trim()).filter(Boolean);
+}
+
 function assertOpsOutput(parsed, scenario) {
   const actions = collectPlannedActions(parsed);
   const effectiveMode = parsed.mode === 'final_response' && actions.length > 0 ? 'local_action' : parsed.mode;
   assertCondition(scenario.expectedModeAny.includes(effectiveMode), `ops scenario ${scenario.name} wrong mode`, { scenario, effectiveMode, parsed });
+  if (parsed.mode === 'workflow') assertCondition(Array.isArray(parsed.steps) && parsed.steps.length > 0, `ops scenario ${scenario.name} has empty workflow steps`, parsed);
+  if (scenario.forbidFinalResponse) assertCondition(parsed.mode !== 'final_response', `ops scenario ${scenario.name} should not stop at final_response`, parsed);
   assertCondition(actions.length > 0 || parsed.mode === 'assistant_agent' || parsed.mode === 'final_response', `ops scenario ${scenario.name} missing actions`, parsed);
   if (scenario.expectedActionsAny?.length) {
     const actionNames = actions.map((item) => item.action);
@@ -1615,11 +1830,21 @@ function assertOpsOutput(parsed, scenario) {
   }
   if (scenario.requiredTargetGroup) {
     const targetGroups = [parsed.plan, ...(Array.isArray(parsed.steps) ? parsed.steps.map((step) => step.plan) : []), ...(Array.isArray(parsed.choices) ? parsed.choices.map((choice) => choice.plan) : [])]
-      .map((plan) => String(plan?.targetGroup || '').trim())
+      .map((plan) => String(plan?.targetGroup || plan?.updates?.group || '').trim())
       .filter(Boolean);
     const targetGroupHit = targetGroups.some((value) => value === scenario.requiredTargetGroup || value.includes(scenario.requiredTargetGroup) || scenario.requiredTargetGroup.includes(value));
     assertCondition(targetGroupHit, `ops scenario ${scenario.name} missing targetGroup`, { targetGroups, parsed });
   }
+  if (scenario.requireCharacterNamesAny?.length) {
+    const names = collectOpsCharacterNames(parsed);
+    const hasRequiredCharacter = scenario.requireCharacterNamesAny.some((requiredName) => names.some((name) => name.includes(requiredName) || requiredName.includes(name)));
+    assertCondition(hasRequiredCharacter, `ops scenario ${scenario.name} missing relevant inventory characters`, { required: scenario.requireCharacterNamesAny, names, parsed });
+  }
+  if (scenario.minCharacterCount) {
+    const names = collectOpsCharacterNames(parsed);
+    assertCondition(names.length >= scenario.minCharacterCount, `ops scenario ${scenario.name} missing planned characters`, { expectedAtLeast: scenario.minCharacterCount, names, parsed });
+  }
+  if (scenario.requireGameplay) assertGameplayPlan(parsed, scenario);
 }
 
 async function runOpsCase(model) {
@@ -1634,7 +1859,7 @@ async function runOpsCase(model) {
         source: scenario.source,
         inventory: scenario.inventory,
       }, null, 2),
-      { maxTokens: 1500, temperature: 0.2 },
+      { maxTokens: 2400, temperature: 0.2 },
     );
     assertOpsOutput(parsed, scenario);
     samples[scenario.name] = { output: parsed, usage, protocolRetries, firstInvalidJson };
@@ -1645,8 +1870,9 @@ async function runOpsCase(model) {
       '3. 批量修改是否写清查询条件、目标分组和修改内容，没有误用 sourceGroup/targetGroup。',
       '4. 是否没有假装已执行、暴露内部 URL 或编造不存在的资源。',
       '5. choices 是否自然、可点击、能解决歧义。',
+      '6. 只要输出 choices，顶层 requiresConfirmation 必须为 true；workflow 不应带空 steps。',
       `场景：${JSON.stringify(scenario, null, 2)}`,
-    ].join('\n'), { scenario, output: parsed });
+    ].join('\n'), { scenario, output: parsed }, { throwOnFail: false });
   }
   return { ok: true, samples, reviews };
 }

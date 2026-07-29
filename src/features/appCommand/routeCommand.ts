@@ -1,6 +1,6 @@
 import { generateResponse } from '../../services/aiClient';
 import { getUsablePreferredAIProfile } from '../../types/settings';
-import type { AppCommandChoice, AppCommandContext, AppCommandRoute, LocalActionPlan, PlannedCharacter } from './commandTypes';
+import type { AppCommandChoice, AppCommandContext, AppCommandRiskLevel, AppCommandRoute, LocalActionPlan, PlannedCharacter } from './commandTypes';
 import { redactCommandSecrets } from './secretRedaction';
 import { getAppCommandToolPrompt, isSupportedAppCommandAction } from './toolRegistry';
 
@@ -19,6 +19,12 @@ function parsePlannerJson(text: string): unknown {
 
 function shortText(value: unknown, limit: number) {
   return typeof value === 'string' ? value.trim().slice(0, limit) : '';
+}
+
+function positiveInteger(value: unknown, max: number) {
+  const numberValue = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(numberValue) || numberValue <= 0) return undefined;
+  return Math.min(max, Math.floor(numberValue));
 }
 
 function normalizeCharacters(value: unknown): PlannedCharacter[] {
@@ -42,6 +48,7 @@ function normalizeCharacters(value: unknown): PlannedCharacter[] {
 
 function normalizePlan(raw: Record<string, unknown>): LocalActionPlan {
   const rawPlan = (raw.plan && typeof raw.plan === 'object' ? raw.plan : raw) as Record<string, unknown>;
+  const rawUpdates = rawPlan.updates && typeof rawPlan.updates === 'object' ? rawPlan.updates as Record<string, unknown> : {};
   const action = shortText(raw.action ?? rawPlan.action, 60) as LocalActionPlan['action'];
   return {
     action,
@@ -53,10 +60,26 @@ function normalizePlan(raw: Record<string, unknown>): LocalActionPlan {
     groupName: shortText(rawPlan.groupName ?? rawPlan.group_name, 80),
     groupTopic: shortText(rawPlan.groupTopic ?? rawPlan.group_topic, 260),
     groupStyle: rawPlan.groupStyle === 'debate' || rawPlan.groupStyle === 'brainstorm' || rawPlan.groupStyle === 'roleplay' ? rawPlan.groupStyle : 'free',
+    roomTemplateKey: shortText(rawPlan.roomTemplateKey ?? rawPlan.room_template_key, 80),
+    scenarioId: shortText(rawPlan.scenarioId ?? rawPlan.scenario_id, 80),
+    roomKind: shortText(rawPlan.roomKind ?? rawPlan.room_kind, 80),
+    storyBackground: shortText(rawPlan.storyBackground ?? rawPlan.story_background, 1200),
+    storyDirection: shortText(rawPlan.storyDirection ?? rawPlan.story_direction, 1200),
+    storyOutline: shortText(rawPlan.storyOutline ?? rawPlan.story_outline, 1200),
+    studyGoalLabel: shortText(rawPlan.studyGoalLabel ?? rawPlan.study_goal_label, 240),
+    agentGoalLabel: shortText(rawPlan.agentGoalLabel ?? rawPlan.agent_goal_label, 360),
+    werewolfRoleConfig: shortText(rawPlan.werewolfRoleConfig ?? rawPlan.werewolf_role_config, 800),
+    werewolfPostGameMode: shortText(rawPlan.werewolfPostGameMode ?? rawPlan.werewolf_post_game_mode, 80),
+    mysteryScript: shortText(rawPlan.mysteryScript ?? rawPlan.mystery_script, 1200),
+    mysteryRoleMappingMode: shortText(rawPlan.mysteryRoleMappingMode ?? rawPlan.mystery_role_mapping_mode, 80),
+    boardColumns: positiveInteger(rawPlan.boardColumns ?? rawPlan.board_columns, 32),
+    boardRows: positiveInteger(rawPlan.boardRows ?? rawPlan.board_rows, 32),
+    deductionFactionCount: positiveInteger(rawPlan.deductionFactionCount ?? rawPlan.deduction_faction_count, 12),
+    mysteryClueCount: positiveInteger(rawPlan.mysteryClueCount ?? rawPlan.mystery_clue_count, 50),
     chatQuery: shortText(rawPlan.chatQuery ?? rawPlan.chat_query, 120),
     chatTypePreference: rawPlan.chatTypePreference === 'group' || rawPlan.chatTypePreference === 'direct' || rawPlan.chatTypePreference === 'assistant' ? rawPlan.chatTypePreference : 'any',
     sourceGroup: shortText(rawPlan.sourceGroup ?? rawPlan.source_group, 80),
-    targetGroup: shortText(rawPlan.targetGroup ?? rawPlan.target_group, 80),
+    targetGroup: shortText(rawPlan.targetGroup ?? rawPlan.target_group ?? rawUpdates.group, 80),
     updateInstruction: shortText(rawPlan.updateInstruction ?? rawPlan.update_instruction, 260),
     compareQuestion: shortText(rawPlan.compareQuestion ?? rawPlan.compare_question, 260),
     theme: rawPlan.theme === 'light' || rawPlan.theme === 'dark' || rawPlan.theme === 'system' ? rawPlan.theme : undefined,
@@ -100,7 +123,7 @@ function normalizeLocalActionStep(raw: unknown): AppCommandRoute['mode'] extends
   const plan = normalizePlan(record);
   if (!isSupportedAppCommandAction(plan.action)) return null;
   const rawRisk = record.riskLevel ?? record.risk_level;
-  const riskLevel = rawRisk === 'high' || rawRisk === 'medium' ? rawRisk : 'low';
+  const riskLevel = normalizeActionRisk(plan.action, rawRisk === 'high' || rawRisk === 'medium' ? rawRisk : 'low');
   return {
     action: plan.action,
     plan,
@@ -108,6 +131,22 @@ function normalizeLocalActionStep(raw: unknown): AppCommandRoute['mode'] extends
     requiresConfirmation: Boolean(record.requiresConfirmation ?? record.requires_confirmation ?? riskLevel !== 'low'),
     confirmationText: shortText(record.confirmationText ?? record.confirmation_text, 260),
   };
+}
+
+function normalizeActionRisk(action: LocalActionPlan['action'], riskLevel: AppCommandRiskLevel): AppCommandRiskLevel {
+  if (action === 'update_characters' || action === 'set_ai_model_key') return 'high';
+  if ((action === 'create_character' || action === 'create_characters' || action === 'create_group_chat' || action === 'create_direct_chat') && riskLevel === 'low') return 'medium';
+  return riskLevel;
+}
+
+function maxRiskLevel(left: AppCommandRiskLevel, right: AppCommandRiskLevel): AppCommandRiskLevel {
+  const rank: Record<AppCommandRiskLevel, number> = { low: 1, medium: 2, high: 3 };
+  return rank[left] >= rank[right] ? left : right;
+}
+
+function requiresConfirmationForRoute(record: Record<string, unknown>, riskLevel: AppCommandRiskLevel, choices: AppCommandChoice[]) {
+  if (choices.length || riskLevel === 'high') return true;
+  return Boolean(record.requiresConfirmation ?? record.requires_confirmation ?? riskLevel !== 'low');
 }
 
 function normalizeRoute(raw: unknown, fallbackInput: string): AppCommandRoute {
@@ -121,13 +160,14 @@ function normalizeRoute(raw: unknown, fallbackInput: string): AppCommandRoute {
     const choices = normalizeChoices(record.choices);
     if (isSupportedAppCommandAction(plan.action)) {
       const rawRisk = record.riskLevel ?? record.risk_level;
-      const riskLevel = rawRisk === 'high' || rawRisk === 'medium' ? rawRisk : 'low';
+      const rawRiskLevel = rawRisk === 'high' || rawRisk === 'medium' ? rawRisk : 'low';
+      const riskLevel = normalizeActionRisk(plan.action, rawRiskLevel);
       return {
         mode: 'local_action',
         action: plan.action,
         plan,
         riskLevel,
-        requiresConfirmation: Boolean(record.requiresConfirmation ?? record.requires_confirmation ?? riskLevel !== 'low'),
+        requiresConfirmation: requiresConfirmationForRoute(record, riskLevel, choices),
         confirmationText: shortText(record.confirmationText ?? record.confirmation_text, 260),
         choices,
         choicePresentation: record.choicePresentation === 'list' || record.choicePresentation === 'select' ? record.choicePresentation : undefined,
@@ -151,19 +191,48 @@ function normalizeRoute(raw: unknown, fallbackInput: string): AppCommandRoute {
     const steps = Array.isArray(record.steps)
       ? record.steps.map(normalizeLocalActionStep).filter((step): step is NonNullable<typeof step> => Boolean(step)).slice(0, 6)
       : [];
-    if (!steps.length) return { mode: 'assistant_agent', initialMessage: fallbackInput, reason: 'workflow_empty' };
     const rawRisk = record.riskLevel ?? record.risk_level;
     const maxStepRisk = steps.some((step) => step.riskLevel === 'high') ? 'high' : steps.some((step) => step.riskLevel === 'medium') ? 'medium' : 'low';
-    const riskLevel = rawRisk === 'high' || rawRisk === 'medium' || rawRisk === 'low' ? rawRisk : maxStepRisk;
+    const rawRiskLevel = rawRisk === 'high' || rawRisk === 'medium' || rawRisk === 'low' ? rawRisk : maxStepRisk;
+    const riskLevel = maxRiskLevel(rawRiskLevel, maxStepRisk);
+    const choices = normalizeChoices(record.choices);
+    if (!steps.length) {
+      const directPlan = normalizePlan(record);
+      const choicePlan = choices.find((choice) => choice.plan?.action && choice.plan.plan)?.plan;
+      const choiceAction = choicePlan?.action as LocalActionPlan['action'] | undefined;
+      const action = isSupportedAppCommandAction(directPlan.action)
+        ? directPlan.action
+        : choiceAction && isSupportedAppCommandAction(choiceAction)
+          ? choiceAction
+          : undefined;
+      const plan = isSupportedAppCommandAction(directPlan.action)
+        ? directPlan
+        : choicePlan?.plan
+          ? normalizePlan({ action, plan: choicePlan.plan })
+          : null;
+      if (action && plan) {
+        return {
+          mode: 'local_action',
+          action,
+          plan,
+          riskLevel,
+          requiresConfirmation: true,
+          confirmationText: shortText(record.confirmationText ?? record.confirmation_text, 260),
+          choices,
+          choicePresentation: record.choicePresentation === 'list' || record.choicePresentation === 'select' ? record.choicePresentation : undefined,
+        };
+      }
+      return { mode: 'assistant_agent', initialMessage: fallbackInput, reason: 'workflow_empty' };
+    }
     return {
       mode: 'workflow',
       title: shortText(record.title, 80),
       summary: shortText(record.summary, 260),
       steps,
       riskLevel,
-      requiresConfirmation: Boolean(record.requiresConfirmation ?? record.requires_confirmation ?? riskLevel !== 'low'),
+      requiresConfirmation: requiresConfirmationForRoute(record, riskLevel, choices),
       confirmationText: shortText(record.confirmationText ?? record.confirmation_text, 260),
-      choices: normalizeChoices(record.choices),
+      choices,
       choicePresentation: record.choicePresentation === 'list' || record.choicePresentation === 'select' ? record.choicePresentation : undefined,
     };
   }
@@ -172,15 +241,17 @@ function normalizeRoute(raw: unknown, fallbackInput: string): AppCommandRoute {
     return { mode: 'assistant_agent', initialMessage: fallbackInput, reason: 'unsupported_action' };
   }
   const rawRisk = record.riskLevel ?? record.risk_level;
-  const riskLevel = rawRisk === 'high' || rawRisk === 'medium' ? rawRisk : 'low';
+  const rawRiskLevel = rawRisk === 'high' || rawRisk === 'medium' ? rawRisk : 'low';
+  const riskLevel = normalizeActionRisk(plan.action, rawRiskLevel);
+  const choices = normalizeChoices(record.choices);
   return {
     mode: 'local_action',
     action: plan.action,
     plan,
     riskLevel,
-    requiresConfirmation: Boolean(record.requiresConfirmation ?? record.requires_confirmation ?? riskLevel !== 'low'),
+    requiresConfirmation: requiresConfirmationForRoute(record, riskLevel, choices),
     confirmationText: shortText(record.confirmationText ?? record.confirmation_text, 260),
-    choices: normalizeChoices(record.choices),
+    choices,
     choicePresentation: record.choicePresentation === 'list' || record.choicePresentation === 'select' ? record.choicePresentation : undefined,
   };
 }
@@ -192,6 +263,9 @@ function buildPlannerPrompt(source: AppCommandContext['source']) {
     '如果请求可由站内工具直接完成，输出 local_action；如果需要连续执行多个站内工具，输出 workflow。若是普通问答、生成/修改图片、生成/修改文档、代码、网页、表格、图表、文件分析、开放写作、需要多轮讨论或你不确定，输出 assistant_agent。只有当输入明确是上一轮执行观察、结果确认或任务已完成的总结请求时，才输出 final_response；普通用户原始请求不要输出 final_response。',
     '生成或编辑产物必须输出 assistant_agent，让助手页的 artifact 机制处理；不要用 local_action 或 workflow 模拟产物创建。',
     'workflow 是动态多步执行计划，不是固定模板。可把查询、创建、修改、打开等工具按用户目标组合，最多 6 步。',
+    '你是目标驱动的多步 Agent，不是一次性命令分类器。每次决策都先判断：用户最终目标是什么、当前已知状态是什么、目标是否完成、还缺什么、当前工具能力中哪一步最能推进目标。',
+    '工具未命中只是 observation，不代表用户目标失败；只要仍有可用工具能推进原始目标，就继续规划下一步。不要把某个工具的失败当成最终答案。',
+    '收到“这是站内 Agent 的执行观察结果”时，必须读取 originalGoal、上一轮路由、失败/阻塞类型、结构化观察和 possibleNextActions，重新选择下一步。recoverable=true 时不要输出 final_response，除非 observation 已说明没有任何可行下一步，或继续执行会越权/高风险/需要用户澄清。',
     '如果用户意图有多个合理执行方式，仍输出 local_action，但必须提供 choices。每个 choice 是一个用户可点击操作，可以带自己的 action/plan。',
     '可用 local_action 由站内工具能力动态提供：',
     getAppCommandToolPrompt(source),
@@ -202,10 +276,17 @@ function buildPlannerPrompt(source: AppCommandContext['source']) {
     'choices 规则：',
     '- 简单确认可返回 choices=[{"id":"confirm","label":"创建角色和群聊","kind":"confirm"},{"id":"cancel","label":"取消","kind":"cancel"}]。',
     '- 不确定用户要做什么时，返回多个 execute choices，例如“只创建角色”“只创建群聊”“创建角色+群聊”，每个 choice 带 action 和 plan。',
-    '- 角色检索不要编造 ID，只输出名称、分组、自然语言查询；执行器会在本地角色库匹配。',
-    '- 对“和 X 聊天”“打开和 X 的聊天”“进入之前聊到某主题的聊天”这类明确会话意图，优先使用 open_existing_chat；如果是新单聊意图可用 create_direct_chat。不要用 read_character_info 代替聊天跳转。',
+    '- 角色检索不要编造 ID，也不要把本地角色 id 写进 characterName、characters[].name 或 characterQuery；只输出用户可见名称、分组、自然语言查询，执行器会在本地角色库匹配。',
+    '- 会话类目标不要只按字面动词选择工具。若用户目标是“获得一个可继续对话的对象或场景”，可以组合查找、复用、创建和打开等工具；若目标是“找回特定历史内容”，则应优先检索已有数据，未命中时澄清或说明。',
+    '- 创建类、打开类、读取类、修改类、配置类请求都按目标状态判断是否完成：例如目标是“能开始使用”，最终状态通常应是已打开或已准备好，而不只是某个中间查询完成。',
+    '- 创建群聊或玩法房时，必须把用户想要的玩法形态写入 roomTemplateKey、scenarioId 或 roomKind；不要把故事房、审议、剧本杀、棋盘、学习、任务协作等已开放玩法降级为普通自由群聊。',
+    '- 玩法消歧：用户明确说“故事房”“互动故事”“读者选择”“关键选择影响剧情”时，优先 story/story_reader，即使题材是悬疑；只有明确说“剧本杀”“案件推理”“搜证”“线索”“角色身份/凶手”时，才用 mystery/剧本杀。',
+    '- 如果用户描述了故事背景、剧情方向、案件、规则、学习目标或任务目标，应把这些内容写入对应玩法参数，而不是只塞进 groupTopic。',
+    '- 创建群聊或玩法房时，如果本地角色库中已有角色和用户主题、时代、地点、人物关系明显相关，必须优先写入 plan.characters 或 characterName；不要创建空房间再让用户手动补。',
+    '- 如果用户要求 N 人玩法房且本地角色不足，必须 workflow 先 create_characters 补齐，或在 create_group_chat 的 plan.characters 里直接列出 N 个可创建角色。',
+    '- 玩法参数字段写普通短文本，不要在字符串里嵌套 JSON、数组或大量转义内容。',
     '- 同名或多候选角色需要 choices；每个 choice 的 label 必须带分组或摘要差异，choice.plan 里也要带 characterQuery、characterName、characters[].group 等可用于本地消歧的信息。',
-    '- 对“秦始皇的性格怎么样”“A 和 B 谁更擅长做菜”这类请求，优先使用 read_character_info 或 compare_characters，不要退回 assistant_agent。',
+    '- 对“秦始皇的性格怎么样”“A 和 B 谁更擅长做菜”“结合角色库信息回答”这类请求，必须使用 read_character_info 或 compare_characters；不要直接 final_response，不要退回 assistant_agent，也不要只凭摘要自由回答。',
     '- 对“把某分组下角色都改成...”“把喜羊羊相关的角色都移动到喜羊羊分组中”“把小明调外向一点”这类请求，输出 update_characters，并设置 riskLevel=high、requiresConfirmation=true。',
     '- 需要跳转页面时，routePath 优先使用跨平台 AppLink，例如 ssmm://settings?action=open&tab=models&card=models、ssmm://characters?action=open、ssmm://chats?action=open；不要输出 hash 路由或平台私有路径。',
     '- sourceGroup 表示源分组筛选；targetGroup 表示写入目标分组。不要把“移动到 X 分组”里的 X 放到 sourceGroup。',
