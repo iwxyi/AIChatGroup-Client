@@ -3,10 +3,12 @@ import type { AppCommandContext, AppCommandRoute } from './commandTypes';
 import { executeAppCommandRoute, findReusableGroupChat } from './executeCommand';
 import { useCharacterStore } from '../../stores/useCharacterStore';
 import { useChatStore } from '../../stores/useChatStore';
+import { useSettingsStore } from '../../stores/useSettingsStore';
 import type { GroupChat } from '../../types/chat';
 import { DEFAULT_CONVERSATION_DIRECTOR_CONTROLS, DEFAULT_CONVERSATION_DRAMA_RULES, DEFAULT_CONVERSATION_GOVERNANCE, DEFAULT_CONVERSATION_WORLD_STATE, DEFAULT_OPEN_CHAT_MODE_CONFIG, DEFAULT_OPEN_CHAT_MODE_STATE, createDefaultSessionKind } from '../../types/chat';
 import type { AICharacter } from '../../types/character';
 import { DEFAULT_CHARACTER_BEHAVIOR, DEFAULT_CHARACTER_INTERVENTION, DEFAULT_CHARACTER_MEMORY, DEFAULT_PERSONALITY } from '../../types/character';
+import { DEFAULT_CHAT_DRAFT_DEFAULTS } from '../../types/settings';
 
 function context(): AppCommandContext {
   return {
@@ -125,6 +127,71 @@ describe('executeAppCommandRoute', () => {
       scenarioId: 'open-chat',
       memberIds: ['user', 'character-cao', 'character-child-cao'],
     })).toBeNull();
+  });
+
+  it('uses chat draft defaults for app command group creation unless the plan overrides them', async () => {
+    const originalAddChat = useChatStore.getState().addChat;
+    const originalChatDraftDefaults = useSettingsStore.getState().chatDraftDefaults;
+    const addChat = vi.fn(async (draft: Parameters<typeof originalAddChat>[0]) => {
+      const created = { ...draft, id: 'chat-created' } as GroupChat;
+      useChatStore.setState({ chats: [created] });
+      return created;
+    });
+
+    useCharacterStore.setState({ characters: [character('char-qin', '秦始皇')] });
+    useChatStore.setState({ chats: [], addChat });
+    useSettingsStore.setState({
+      chatDraftDefaults: {
+        ...DEFAULT_CHAT_DRAFT_DEFAULTS,
+        includeUserAsMember: false,
+        showRoleActions: false,
+      },
+    });
+
+    try {
+      const defaultResult = await executeAppCommandRoute({
+        mode: 'local_action',
+        action: 'create_group_chat',
+        riskLevel: 'medium',
+        requiresConfirmation: false,
+        plan: {
+          action: 'create_group_chat',
+          groupName: '帝王群聊',
+          groupTopic: '讨论天下',
+          characters: [{ name: '秦始皇' }],
+        },
+      }, context());
+
+      expect(defaultResult.status).toBe('success');
+      expect(addChat).toHaveBeenCalledTimes(1);
+      expect(addChat.mock.calls[0]?.[0].memberIds).toEqual(['char-qin']);
+      expect(addChat.mock.calls[0]?.[0].showRoleActions).toBe(false);
+
+      useChatStore.setState({ chats: [] });
+      const overrideResult = await executeAppCommandRoute({
+        mode: 'local_action',
+        action: 'create_group_chat',
+        riskLevel: 'medium',
+        requiresConfirmation: false,
+        plan: {
+          action: 'create_group_chat',
+          groupName: '帝王群聊二',
+          groupTopic: '继续讨论天下',
+          characters: [{ name: '秦始皇' }],
+          includeUserAsMember: true,
+          showRoleActions: true,
+        },
+      }, context());
+
+      expect(overrideResult.status).toBe('success');
+      expect(addChat).toHaveBeenCalledTimes(2);
+      expect(addChat.mock.calls[1]?.[0].memberIds).toEqual(['char-qin', 'user']);
+      expect(addChat.mock.calls[1]?.[0].showRoleActions).toBe(true);
+    } finally {
+      useCharacterStore.setState({ characters: [] });
+      useChatStore.setState({ chats: [], addChat: originalAddChat });
+      useSettingsStore.setState({ chatDraftDefaults: originalChatDraftDefaults });
+    }
   });
 
   it('deletes explicitly named characters through the character store', async () => {

@@ -422,6 +422,7 @@ export function normalizeAIProfiles(aiProfiles?: AIModelProfile[], api?: APIConf
 export interface ChatDraftDefaults {
   style: 'free' | 'debate' | 'brainstorm' | 'roleplay';
   showRoleActions: boolean;
+  includeUserAsMember: boolean;
   runtimeEvolutionIntensity: RuntimeEvolutionIntensity;
 }
 
@@ -429,6 +430,7 @@ export interface ChatDraftDefaults {
 export interface ChatDraftDefaults {
   style: 'free' | 'debate' | 'brainstorm' | 'roleplay';
   showRoleActions: boolean;
+  includeUserAsMember: boolean;
   runtimeEvolutionIntensity: RuntimeEvolutionIntensity;
 }
 
@@ -991,6 +993,7 @@ export function hasUsableDefaultTextAI(aiProfiles: AIModelProfile[]) {
 export const DEFAULT_CHAT_DRAFT_DEFAULTS: ChatDraftDefaults = {
   style: 'free',
   showRoleActions: true,
+  includeUserAsMember: true,
   runtimeEvolutionIntensity: 'balanced',
 };
 

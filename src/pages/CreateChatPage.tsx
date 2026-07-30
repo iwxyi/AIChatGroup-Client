@@ -490,7 +490,7 @@ export default function CreateChatPage() {
     styleOverriddenRef.current = false;
     setRoomTemplate('open_chat');
     setShowRoleActions(chatDraftDefaults.showRoleActions);
-    setIncludeUserAsMember(true);
+    setIncludeUserAsMember(chatDraftDefaults.includeUserAsMember);
     setRuntimeEvolutionIntensity(chatDraftDefaults.runtimeEvolutionIntensity);
     setStoryBranchMode('guided');
     setStudyGoalLabel('');
@@ -516,7 +516,7 @@ export default function CreateChatPage() {
     setAutoModeration(false);
     setAllowMute(true);
     setAllowPrivateThreads(true);
-  }, [chatDraftDefaults.runtimeEvolutionIntensity, chatDraftDefaults.showRoleActions, chatDraftDefaults.style, editingChat, id, marketImportDraft]);
+  }, [chatDraftDefaults.includeUserAsMember, chatDraftDefaults.runtimeEvolutionIntensity, chatDraftDefaults.showRoleActions, chatDraftDefaults.style, editingChat, id, marketImportDraft]);
 
   const toggleMember = (memberId: string) => {
     setSelectedMembers((prev) => {
@@ -1212,7 +1212,7 @@ export default function CreateChatPage() {
         draftContext.normalizedOwnerCharacterId,
         draftContext.normalizedAdminCharacterIds,
       ));
-      setChatDraftDefaults({ style, showRoleActions, runtimeEvolutionIntensity });
+      setChatDraftDefaults({ style, showRoleActions, includeUserAsMember, runtimeEvolutionIntensity });
       navigate(`/chats/${chat.id}/edit`);
     } catch (error) {
       showError(getActionErrorMessage(error, i18n.language.startsWith('zh') ? '另存为群聊失败' : 'Failed to save as chat'));
@@ -1298,7 +1298,7 @@ export default function CreateChatPage() {
             ...nextDraft.worldState,
           },
         });
-        setChatDraftDefaults({ style, showRoleActions, runtimeEvolutionIntensity });
+        setChatDraftDefaults({ style, showRoleActions, includeUserAsMember, runtimeEvolutionIntensity });
         navigate(-1);
         return;
       }
@@ -1363,7 +1363,7 @@ export default function CreateChatPage() {
         });
       }
       sessionStorage.removeItem(CHAT_DRAFT_KEY);
-      setChatDraftDefaults({ style, showRoleActions, runtimeEvolutionIntensity });
+      setChatDraftDefaults({ style, showRoleActions, includeUserAsMember, runtimeEvolutionIntensity });
       navigate(`/chats/${chat.id}`);
     } catch (error) {
       showError(getActionErrorMessage(error, editingChat

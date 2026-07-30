@@ -210,6 +210,12 @@ export default function HomeCommandLauncher() {
           <TextField
             value={input}
             onChange={(event) => setInput(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                void submit();
+              }
+            }}
             onFocus={preload}
             placeholder={placeholder}
             size="small"

@@ -62,6 +62,8 @@ export interface LocalActionPlan {
   groupName?: string;
   groupTopic?: string;
   groupStyle?: 'free' | 'debate' | 'brainstorm' | 'roleplay';
+  includeUserAsMember?: boolean;
+  showRoleActions?: boolean;
   roomTemplateKey?: string;
   scenarioId?: string;
   roomKind?: string;

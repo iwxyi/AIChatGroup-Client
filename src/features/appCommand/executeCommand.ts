@@ -2,6 +2,7 @@ import { api } from '../../services/api';
 import { generateResponse } from '../../services/aiClient';
 import { buildAssistantChatDraft, buildDirectChatDraft, buildGroupChatDraft } from '../../services/chatDraftBuilder';
 import { generateCharacterProfilesSafe } from '../../services/characterGenerator';
+import { resolveRoomTemplateCapabilityDefaults } from '../../services/conversationCapabilities';
 import { getRoomTemplate, ROOM_TEMPLATES, type RoomTemplateDefinition, type RoomTemplateKey } from '../../services/roomTemplates';
 import { useCharacterStore } from '../../stores/useCharacterStore';
 import { useChatStore } from '../../stores/useChatStore';
@@ -560,9 +561,20 @@ async function createGroupChat(plan: LocalActionPlan, context: AppCommandContext
   };
   const template = resolveRoomTemplate(plan);
   const defaults = template.defaults || {};
+  const chatDraftDefaults = useSettingsStore.getState().chatDraftDefaults;
+  const includeUserAsMember = typeof plan.includeUserAsMember === 'boolean'
+    ? plan.includeUserAsMember
+    : chatDraftDefaults.includeUserAsMember;
+  const capabilityDefaults = resolveRoomTemplateCapabilityDefaults(template, { showRoleActions: chatDraftDefaults.showRoleActions });
+  const showRoleActions = typeof plan.showRoleActions === 'boolean'
+    ? plan.showRoleActions
+    : capabilityDefaults.showRoleActions;
   const members = await ensureCharacters(plannedCharacters, context);
   const uniqueMembers = Array.from(new Map(members.map((item) => [item.id, item])).values());
-  const memberIds = normalizeMemberSet(['user', ...uniqueMembers.map((item) => item.id)]);
+  const memberIds = normalizeMemberSet([
+    ...(includeUserAsMember ? ['user'] : []),
+    ...uniqueMembers.map((item) => item.id),
+  ]);
   const title = clean(plan.groupName || plan.title) || `${plannedCharacters.slice(0, 3).map((item) => item.name).join('、')}的群聊`;
   const topic = clean(plan.groupTopic || plan.summary || context.input);
   const existing = findReusableGroupChat({
@@ -613,7 +625,7 @@ async function createGroupChat(plan: LocalActionPlan, context: AppCommandContext
     mysteryRoleMappingMode: clean(plan.mysteryRoleMappingMode) || defaults.mysteryRoleMappingMode,
     memberIds,
     operatorIds: [],
-    showRoleActions: template.sessionKind.scenarioId !== 'story-reader',
+    showRoleActions,
     seedMemoryText: '',
     seedArtifactText: '',
     ownerCharacterId: null,
