@@ -17,13 +17,15 @@ import type { AppCommandCandidate, AppCommandChoice, AppCommandContext, AppComma
 import { savePendingAppCommand } from './pendingCommandStore';
 import { resolveSecretRef } from './secretRedaction';
 import { parseAppLink, resolveAppLinkToWebPath, serializeAppLink } from '../../services/appLink';
+import { characterSearchText, normalizeResourceKey, rankCharacterResources, rankChatResources, scoreResourceText } from './resourceIndex';
+import { validateAppCommandPlan } from './toolRegistry';
 
 function clean(value?: string | null) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
 function normalizeName(value?: string | null) {
-  return clean(value).replace(/\s+/g, '').toLowerCase();
+  return normalizeResourceKey(value);
 }
 
 function buildCharacterDraft(input: PlannedCharacter, profile?: Awaited<ReturnType<typeof generateCharacterProfilesSafe>>['success'][number]['profile']) {
@@ -154,14 +156,6 @@ function shouldOpenSingleCharacterFromHome(plan: LocalActionPlan, context: AppCo
   return buildPlannedCharacters(plan, context.input).length === 1;
 }
 
-function scoreText(text: string, query: string) {
-  const source = text.toLowerCase();
-  const target = query.toLowerCase();
-  if (!target) return 0;
-  if (source.includes(target)) return 20 + target.length;
-  return target.split(/\s+/).filter((part) => part && source.includes(part)).length;
-}
-
 function normalizeLooseKey(value?: string | null) {
   return clean(value).replace(/[\s_-]+/g, '').toLowerCase();
 }
@@ -185,7 +179,7 @@ function scoreRoomTemplate(template: RoomTemplateDefinition, query: string) {
   const compact = normalizeLooseKey(fields);
   if (compact === normalized) return 100;
   if (compact.includes(normalized) || normalized.includes(compact)) return 50;
-  return scoreText(fields, query);
+  return scoreResourceText(fields, query);
 }
 
 function resolveRoomTemplate(plan: LocalActionPlan) {
@@ -215,62 +209,20 @@ function markdownCharacterLink(label: string, characterId: string) {
   return `[${label}](${characterAppLink(characterId)})`;
 }
 
-function characterSearchText(character: AICharacter) {
-  return [
-    character.name,
-    character.group,
-    character.background,
-    character.speakingStyle,
-    character.expertise?.join(' '),
-    character.voiceConfig?.role,
-    character.visualIdentity?.description,
-    character.visualIdentity?.styleHint,
-    character.coreProfile?.coreDesire,
-    character.coreProfile?.coreFear,
-    character.coreProfile?.values?.join(' '),
-    character.coreProfile?.valuePriority?.join(' '),
-    character.coreProfile?.socialMask,
-    character.coreProfile?.biases?.join(' '),
-    character.coreProfile?.sensitivities?.join(' '),
-    character.coreProfile?.interactionHabits?.join(' '),
-  ].filter(Boolean).join('\n');
-}
-
-function chatMessageSearchText(chatId: string) {
+function getChatSearchMessagesByChatId() {
   const state = useMessageStore.getState();
-  const cachedMessages = state.messageWindowsByChatId[chatId]?.messages;
-  const messages = cachedMessages?.length
-    ? cachedMessages
-    : state.messages.filter((message) => message.chatId === chatId);
-  return messages
-    .filter((message) => !message.isDeleted)
-    .slice(-30)
-    .map((message) => message.content)
-    .join('\n');
-}
-
-function rankChatsByQuery(params: {
-  chats: GroupChat[];
-  query: string;
-  includeMessages?: boolean;
-  chatTypePreference?: LocalActionPlan['chatTypePreference'];
-}) {
-  const normalizedQuery = normalizeName(params.query);
-  return params.chats
-    .map((chat) => {
-      const messageText = params.includeMessages ? chatMessageSearchText(chat.id) : '';
-      const searchableText = `${chat.name}\n${chat.topic}\n${chat.worldState?.recentEvent || ''}\n${messageText}`;
-      const score = scoreText(searchableText, params.query)
-        + (normalizeName(chat.name) === normalizedQuery ? 40 : 0)
-        + (params.chatTypePreference && params.chatTypePreference !== 'any' && chat.type === params.chatTypePreference ? 10 : 0);
-      return {
-        chat,
-        score,
-        fullMatch: Boolean(normalizedQuery && normalizeName(searchableText).includes(normalizedQuery)),
-      };
-    })
-    .filter((item) => item.score > 0)
-    .sort((a, b) => b.score - a.score);
+  const messagesByChatId = Object.entries(state.messageWindowsByChatId).reduce<Record<string, typeof state.messages>>((acc, [chatId, window]) => {
+    acc[chatId] = [...(window.messages || [])];
+    return acc;
+  }, {});
+  state.messages.forEach((message) => {
+    const current = messagesByChatId[message.chatId] || [];
+    const existingIndex = current.findIndex((item) => item.id === message.id);
+    if (existingIndex >= 0) current[existingIndex] = message;
+    else current.push(message);
+    messagesByChatId[message.chatId] = current;
+  });
+  return messagesByChatId;
 }
 
 function formatCharacterForAgent(character: AICharacter) {
@@ -404,22 +356,7 @@ function resolveCharacterMatches(plan: LocalActionPlan, input: string) {
     return characters.filter((character) => normalizeCharacterGroup(character.group) === sourceGroup);
   }
   const effectiveQueries = queries.length ? queries : [input];
-  const matches = new Map<string, { character: AICharacter; score: number; fullMatch: boolean }>();
-  for (const query of effectiveQueries) {
-    const normalizedQuery = normalizeName(query);
-    characters.forEach((character) => {
-      if (sourceGroup && normalizeCharacterGroup(character.group) !== sourceGroup) return;
-      const searchable = characterSearchText(character);
-      const score = scoreText(searchable, query) + (normalizeName(character.name) === normalizedQuery ? 40 : 0);
-      if (score <= 0) return;
-      const existing = matches.get(character.id);
-      const fullMatch = Boolean(normalizedQuery && normalizeName(character.name) === normalizedQuery);
-      if (!existing || score > existing.score) matches.set(character.id, { character, score, fullMatch });
-    });
-  }
-  return Array.from(matches.values())
-    .sort((a, b) => b.score - a.score)
-    .map((item) => item.character);
+  return rankCharacterResources({ characters, queries: effectiveQueries, sourceGroup });
 }
 
 function resolveDeletedCharacterMatches(plan: LocalActionPlan, input: string) {
@@ -434,7 +371,7 @@ function resolveDeletedCharacterMatches(plan: LocalActionPlan, input: string) {
   for (const query of effectiveQueries) {
     const normalizedQuery = normalizeName(query);
     characters.forEach((character) => {
-      const score = scoreText(characterSearchText(character), query) + (normalizeName(character.name) === normalizedQuery ? 40 : 0);
+      const score = scoreResourceText(characterSearchText(character), query) + (normalizeName(character.name) === normalizedQuery ? 40 : 0);
       if (score <= 0) return;
       const existing = matches.get(character.id);
       if (!existing || score > existing.score) matches.set(character.id, { character, score });
@@ -449,7 +386,7 @@ function resolveChatMatches(plan: LocalActionPlan, input: string, includeDeleted
     return chats.filter((chat) => chat.id === plan.chatId);
   }
   const query = clean(plan.chatName || plan.chatQuery || plan.groupName || plan.title || input);
-  const ranked = rankChatsByQuery({ chats, query, includeMessages: true, chatTypePreference: plan.chatTypePreference });
+  const ranked = rankChatResources({ chats, query, messagesByChatId: getChatSearchMessagesByChatId(), includeMessages: true, chatTypePreference: plan.chatTypePreference });
   return ranked.map((item) => item.chat);
 }
 
@@ -567,21 +504,8 @@ function savePendingRoute(context: AppCommandContext, route: AppCommandRoute, se
 
 async function openExistingChat(plan: LocalActionPlan, context: AppCommandContext): Promise<AppCommandExecutionResult> {
   const query = clean(plan.chatQuery || plan.groupTopic || plan.characterName || plan.title);
-  if (!query) {
-    return {
-      status: 'info',
-      title: '缺少检索条件',
-      message: '没有得到要打开的会话条件，请重新说明想找的会话。',
-      recoverable: true,
-      reasonType: 'missing_chat_query',
-      observation: {
-        attemptedAction: 'open_existing_chat',
-        possibleNextActions: ['search_chats', 'assistant_agent'],
-      },
-    };
-  }
   const chats = useChatStore.getState().chats.filter((chat) => !chat.deletedAt);
-  const ranked = rankChatsByQuery({ chats, query, includeMessages: true, chatTypePreference: plan.chatTypePreference });
+  const ranked = rankChatResources({ chats, query, messagesByChatId: getChatSearchMessagesByChatId(), includeMessages: true, chatTypePreference: plan.chatTypePreference });
   const top = ranked.slice(0, 5);
   const best = top[0]?.chat;
   if (!best) {
@@ -647,21 +571,8 @@ async function openExistingChat(plan: LocalActionPlan, context: AppCommandContex
 
 async function searchChats(plan: LocalActionPlan): Promise<AppCommandExecutionResult> {
   const query = clean(plan.chatQuery || plan.groupTopic || plan.characterName || plan.title);
-  if (!query) {
-    return {
-      status: 'info',
-      title: '缺少检索条件',
-      message: '没有得到聊天检索条件，请重新说明想找的聊天内容。',
-      recoverable: true,
-      reasonType: 'missing_chat_query',
-      observation: {
-        attemptedAction: 'search_chats',
-        possibleNextActions: ['assistant_agent'],
-      },
-    };
-  }
   const chats = useChatStore.getState().chats.filter((chat) => !chat.deletedAt);
-  const ranked = rankChatsByQuery({ chats, query, includeMessages: true, chatTypePreference: plan.chatTypePreference });
+  const ranked = rankChatResources({ chats, query, messagesByChatId: getChatSearchMessagesByChatId(), includeMessages: true, chatTypePreference: plan.chatTypePreference });
   const top = ranked.slice(0, 8);
   if (!top.length) {
     return {
@@ -868,20 +779,6 @@ async function createCharacters(plan: LocalActionPlan, context: AppCommandContex
 }
 
 async function readCharacterInfo(plan: LocalActionPlan, context: AppCommandContext): Promise<AppCommandExecutionResult> {
-  const requestedQuery = clean(plan.characterName || plan.characterQuery || plan.characters?.map((item) => item.name).join('、'));
-  if (!requestedQuery) {
-    return {
-      status: 'info',
-      title: '缺少检索条件',
-      message: '没有得到要查询的角色条件，请重新说明角色名称或筛选条件。',
-      recoverable: true,
-      reasonType: 'missing_character_query',
-      observation: {
-        attemptedAction: 'read_character_info',
-        possibleNextActions: ['assistant_agent'],
-      },
-    };
-  }
   const matches = resolveCharacterMatches(plan, context.input);
   if (!matches.length) return {
     status: 'info',
@@ -1469,6 +1366,17 @@ async function executeLocalActionPlan(route: Extract<AppCommandRoute, { mode: 'l
   const plan = route.plan;
   if (shouldOpenSingleCharacterFromHome(plan, context)) {
     return createDirectChat({ ...plan, characterName: buildPlannedCharacters(plan, context.input)[0]?.name }, context);
+  }
+  const validationIssue = validateAppCommandPlan(plan);
+  if (validationIssue) {
+    return {
+      status: 'info',
+      title: validationIssue.title,
+      message: validationIssue.message,
+      recoverable: validationIssue.recoverable,
+      reasonType: validationIssue.reasonType,
+      observation: validationIssue.observation,
+    };
   }
   const handler = LOCAL_ACTION_HANDLERS[plan.action];
   return handler ? handler(plan, context, secrets) : { status: 'info', title: '暂不支持', message: '这个动作暂时无法直接执行，已建议交给助手处理。' };

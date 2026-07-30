@@ -7,8 +7,25 @@ export interface AppCommandToolDefinition {
   defaultConfirmation?: Partial<Record<CommandSource, boolean>>;
   description: string;
   parameters: string[];
+  validation?: {
+    requiredAny?: Array<{
+      fields: string[];
+      title: string;
+      message: string;
+      reasonType: string;
+      possibleNextActions?: string[];
+    }>;
+  };
   examples: string[];
   sourcePolicy?: Partial<Record<CommandSource, string>>;
+}
+
+export interface AppCommandPlanValidationIssue {
+  title: string;
+  message: string;
+  reasonType: string;
+  recoverable: boolean;
+  observation: Record<string, unknown>;
 }
 
 export const APP_COMMAND_TOOLS: AppCommandToolDefinition[] = [
@@ -50,6 +67,15 @@ export const APP_COMMAND_TOOLS: AppCommandToolDefinition[] = [
     riskLevel: 'low',
     description: '按名称、主题或近期聊天内容查找已有单聊、群聊或助手会话。',
     parameters: ['chatQuery', 'chatTypePreference'],
+    validation: {
+      requiredAny: [{
+        fields: ['chatQuery', 'groupTopic', 'characterName', 'title'],
+        title: '缺少检索条件',
+        message: '没有得到要打开的会话条件，请重新说明想找的会话。',
+        reasonType: 'missing_chat_query',
+        possibleNextActions: ['search_chats', 'assistant_agent'],
+      }],
+    },
     examples: ['进入之前聊到中元节的群聊', '打开和秦始皇的聊天'],
   },
   {
@@ -58,6 +84,15 @@ export const APP_COMMAND_TOOLS: AppCommandToolDefinition[] = [
     riskLevel: 'low',
     description: '在会话名称、主题、最近事件和已加载聊天消息中检索，返回匹配会话列表；不自动打开会话。',
     parameters: ['chatQuery', 'chatTypePreference', 'summary'],
+    validation: {
+      requiredAny: [{
+        fields: ['chatQuery', 'groupTopic', 'characterName', 'title'],
+        title: '缺少检索条件',
+        message: '没有得到聊天检索条件，请重新说明想找的聊天内容。',
+        reasonType: 'missing_chat_query',
+        possibleNextActions: ['assistant_agent'],
+      }],
+    },
     examples: ['哪个聊天里提到皇帝', '搜索聊天记录里的世界杯', '哪些会话聊过秦始皇'],
   },
   {
@@ -66,6 +101,15 @@ export const APP_COMMAND_TOOLS: AppCommandToolDefinition[] = [
     riskLevel: 'low',
     description: '读取用户角色库中的角色资料，并基于资料回答问题；也可按身份、职业、专长、背景或设定筛选并列出多个角色。不要编造角色 ID。',
     parameters: ['characterName', 'characterQuery', 'characterQueryMode', 'characters[]', 'summary'],
+    validation: {
+      requiredAny: [{
+        fields: ['characterName', 'characterQuery', 'characters[].name'],
+        title: '缺少检索条件',
+        message: '没有得到要查询的角色条件，请重新说明角色名称或筛选条件。',
+        reasonType: 'missing_character_query',
+        possibleNextActions: ['assistant_agent'],
+      }],
+    },
     examples: ['我想看角色库中秦始皇的信息', '秦始皇的性格怎么样', '哪些角色是皇帝'],
   },
   {
@@ -227,11 +271,42 @@ export function shouldConfirmAppCommandTool(params: {
   return params.source === 'assistant' && params.riskLevel !== 'low';
 }
 
+function hasPlanValue(plan: LocalActionPlan, field: string) {
+  if (field === 'characters[].name') return Boolean(plan.characters?.some((character) => character.name?.trim()));
+  const value = plan[field as keyof LocalActionPlan];
+  if (typeof value === 'string') return Boolean(value.trim());
+  if (typeof value === 'number') return Number.isFinite(value);
+  if (typeof value === 'boolean') return true;
+  if (Array.isArray(value)) return value.length > 0;
+  return Boolean(value);
+}
+
+export function validateAppCommandPlan(plan: LocalActionPlan): AppCommandPlanValidationIssue | null {
+  const tool = getAppCommandToolDefinition(plan.action);
+  const requiredAny = tool?.validation?.requiredAny || [];
+  for (const requirement of requiredAny) {
+    if (requirement.fields.some((field) => hasPlanValue(plan, field))) continue;
+    return {
+      title: requirement.title,
+      message: requirement.message,
+      reasonType: requirement.reasonType,
+      recoverable: true,
+      observation: {
+        attemptedAction: plan.action,
+        missingFields: requirement.fields,
+        possibleNextActions: requirement.possibleNextActions || ['assistant_agent'],
+      },
+    };
+  }
+  return null;
+}
+
 export function getAppCommandToolPrompt(source: CommandSource) {
   return APP_COMMAND_TOOLS.map((tool) => [
     `- ${tool.action}: ${tool.title}。${tool.description}`,
     `  风险: ${tool.riskLevel}`,
     tool.parameters.length ? `  参数: ${tool.parameters.join(', ')}` : '  参数: 无',
+    tool.validation?.requiredAny?.length ? `  必填: ${tool.validation.requiredAny.map((item) => `至少一个(${item.fields.join(' | ')})`).join('；')}` : '',
     tool.examples.length ? `  示例: ${tool.examples.join('；')}` : '',
     tool.sourcePolicy?.[source] ? `  ${source}策略: ${tool.sourcePolicy[source]}` : '',
   ].filter(Boolean).join('\n')).join('\n');

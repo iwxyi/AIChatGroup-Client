@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   getAppCommandToolPrompt,
   normalizeAppCommandActionRisk,
+  validateAppCommandPlan,
   shouldConfirmAppCommandTool,
 } from './toolRegistry';
+import type { LocalActionPlan } from './commandTypes';
 
 describe('appCommand tool registry', () => {
   it('derives risk from registered tool definitions', () => {
@@ -38,5 +40,19 @@ describe('appCommand tool registry', () => {
     expect(getAppCommandToolPrompt('assistant')).toContain('restore_characters');
     expect(getAppCommandToolPrompt('assistant')).toContain('manage_group_members');
     expect(getAppCommandToolPrompt('assistant')).toContain('search_chats');
+  });
+
+  it('validates planner plans with tool-specific required fields', () => {
+    expect(validateAppCommandPlan({
+      action: 'search_chats',
+    } as LocalActionPlan)?.reasonType).toBe('missing_chat_query');
+    expect(validateAppCommandPlan({
+      action: 'read_character_info',
+      characterQuery: '皇帝',
+    } as LocalActionPlan)).toBeNull();
+    expect(validateAppCommandPlan({
+      action: 'open_existing_chat',
+      chatQuery: '世界杯',
+    } as LocalActionPlan)).toBeNull();
   });
 });

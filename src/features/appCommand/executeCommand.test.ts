@@ -316,6 +316,42 @@ describe('executeAppCommandRoute', () => {
     }
   });
 
+  it('merges active messages with cached windows so recently updated content remains searchable', async () => {
+    useChatStore.setState({
+      chats: [chat('chat-worldcup', '最新世界杯动态查询', 'assistant')],
+    });
+    useMessageStore.setState({
+      messages: [message('msg-worldcup', 'chat-worldcup', '已搜索到巴西队的最新世界杯消息。')],
+      messageWindowsByChatId: {
+        'chat-worldcup': {
+          messages: [message('msg-worldcup', 'chat-worldcup', '当前未开启搜索能力。')],
+          lastSyncedAt: 1000,
+          updatedAt: 1000,
+        },
+      },
+    });
+
+    try {
+      const result = await executeAppCommandRoute({
+        mode: 'local_action',
+        action: 'search_chats',
+        riskLevel: 'low',
+        requiresConfirmation: false,
+        plan: {
+          action: 'search_chats',
+          chatQuery: '巴西队',
+          chatTypePreference: 'any',
+        },
+      }, context());
+
+      expect(result.status).toBe('needs_confirmation');
+      expect(result.candidates?.map((candidate) => candidate.id)).toEqual(['chat-worldcup']);
+    } finally {
+      useChatStore.setState({ chats: [] });
+      useMessageStore.setState({ messages: [], messageWindowsByChatId: {} });
+    }
+  });
+
   it('deletes explicitly named characters through the character store', async () => {
     const originalDeleteCharacters = useCharacterStore.getState().deleteCharacters;
     const deleteCharacters = vi.fn(async (ids: string[]) => {
