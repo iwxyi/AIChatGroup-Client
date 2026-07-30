@@ -1,0 +1,298 @@
+{
+  "ok": true,
+  "baseUrl": "https://api.deepseek.com/v1",
+  "cases": [
+    "continuity"
+  ],
+  "repeatCount": 1,
+  "stopOnFailure": false,
+  "judgeModel": "(same-as-tested-model)",
+  "minScore": 75,
+  "usage": {
+    "prompt_tokens": 5884,
+    "completion_tokens": 3022,
+    "total_tokens": 8906,
+    "prompt_cache_hit_tokens": 1792,
+    "prompt_cache_miss_tokens": 4092
+  },
+  "failures": [],
+  "results": [
+    {
+      "model": "deepseek-reasoner",
+      "ok": true,
+      "cases": {
+        "continuity": {
+          "ok": true,
+          "samples": {
+            "relationship_trust_changes_reply": {
+              "reply": "（眨眨眼睛）灰太狼先生，难得见你这么快认错啊。说说看，怎么补救？",
+              "usage": {
+                "prompt_tokens": 214,
+                "completion_tokens": 102,
+                "total_tokens": 316,
+                "prompt_tokens_details": {
+                  "cached_tokens": 128
+                },
+                "completion_tokens_details": {
+                  "reasoning_tokens": 77
+                },
+                "prompt_cache_hit_tokens": 128,
+                "prompt_cache_miss_tokens": 86
+              }
+            },
+            "relationship_threat_changes_reply": {
+              "reply": "（眯起眼睛，后退半步）哈，灰太狼先生，我记得上次你说保管计划书的时候，我们的撤退路线就被敌方知道了呢。地图还是我来保管比较保险，正好和我这份新情报做个对比。",
+              "usage": {
+                "prompt_tokens": 199,
+                "completion_tokens": 183,
+                "total_tokens": 382,
+                "prompt_tokens_details": {
+                  "cached_tokens": 128
+                },
+                "completion_tokens_details": {
+                  "reasoning_tokens": 136
+                },
+                "prompt_cache_hit_tokens": 128,
+                "prompt_cache_miss_tokens": 71
+              }
+            },
+            "private_user_memory_can_be_used": {
+              "reply": "累了就别勉强自己啦，十点之后的安心感比一条工作消息重要得多。休息吧，明天再处理也不迟。",
+              "usage": {
+                "prompt_tokens": 163,
+                "completion_tokens": 72,
+                "total_tokens": 235,
+                "prompt_tokens_details": {
+                  "cached_tokens": 128
+                },
+                "completion_tokens_details": {
+                  "reasoning_tokens": 44
+                },
+                "prompt_cache_hit_tokens": 128,
+                "prompt_cache_miss_tokens": 35
+              }
+            },
+            "public_group_private_memory_not_leaked": {
+              "reply": "那没问题，今晚就聊点不着边际的，放松放松。你想听啥？我最近存了不少离谱段子，正好派上用场。",
+              "usage": {
+                "prompt_tokens": 205,
+                "completion_tokens": 139,
+                "total_tokens": 344,
+                "prompt_tokens_details": {
+                  "cached_tokens": 128
+                },
+                "completion_tokens_details": {
+                  "reasoning_tokens": 107
+                },
+                "prompt_cache_hit_tokens": 128,
+                "prompt_cache_miss_tokens": 77
+              }
+            },
+            "companionship_promise_changes_tone": {
+              "reply": "嗯？今天是周四呢——我猜你原本是不是打算整理作品集？不过别紧张，想不起来也没关系，我就是随口一提。你要是不想弄，咱们就赖着，不急这一时。",
+              "usage": {
+                "prompt_tokens": 156,
+                "completion_tokens": 234,
+                "total_tokens": 390,
+                "prompt_tokens_details": {
+                  "cached_tokens": 0
+                },
+                "completion_tokens_details": {
+                  "reasoning_tokens": 190
+                },
+                "prompt_cache_hit_tokens": 0,
+                "prompt_cache_miss_tokens": 156
+              }
+            }
+          },
+          "reviews": {
+            "relationship_trust_changes_reply": {
+              "score": 90,
+              "pass": true,
+              "strengths": [
+                "回复自然像聊天，没有复述系统或档案。",
+                "使用了关系中的信任和温暖（warmth 56, trust 68），态度软化并给予解释空间。",
+                "在群聊中未泄露私密记忆，仅通过措辞侧面体现记忆钩子。",
+                "符合场景要求，给灰太狼留协作机会，而非单纯嘲讽。"
+              ],
+              "issues": [],
+              "optimizations": [
+                "可更明确地呼应‘答应先给解释机会’的记忆，但当前已足够。"
+              ],
+              "critical": false,
+              "judgeModel": "deepseek-reasoner",
+              "usage": {
+                "prompt_tokens": 541,
+                "completion_tokens": 319,
+                "total_tokens": 860,
+                "prompt_tokens_details": {
+                  "cached_tokens": 512
+                },
+                "completion_tokens_details": {
+                  "reasoning_tokens": 169
+                },
+                "prompt_cache_hit_tokens": 512,
+                "prompt_cache_miss_tokens": 29
+              },
+              "protocolRetries": 0,
+              "firstInvalidJson": null
+            },
+            "relationship_threat_changes_reply": {
+              "score": 95,
+              "pass": true,
+              "strengths": [
+                "自然利用了记忆钩子（上次泄密事件），态度和措辞有明显变化，体现了防备和拒绝",
+                "回复符合场景要求，不是轻易交出地图",
+                "群聊中未泄露私密记忆，仅提及公开已知事件",
+                "角色感强，眯眼后退的动作符合喜羊羊性格",
+                "回复长度合适，不冗长"
+              ],
+              "issues": [],
+              "optimizations": [
+                "可考虑更尖锐的质疑语气以加强防备感"
+              ],
+              "critical": false,
+              "judgeModel": "deepseek-reasoner",
+              "usage": {
+                "prompt_tokens": 533,
+                "completion_tokens": 261,
+                "total_tokens": 794,
+                "prompt_tokens_details": {
+                  "cached_tokens": 384
+                },
+                "completion_tokens_details": {
+                  "reasoning_tokens": 123
+                },
+                "prompt_cache_hit_tokens": 384,
+                "prompt_cache_miss_tokens": 149
+              },
+              "protocolRetries": 0,
+              "firstInvalidJson": null
+            },
+            "private_user_memory_can_be_used": {
+              "score": 95,
+              "pass": true,
+              "strengths": [
+                "自然使用记忆：引用了用户‘十点后不回工作消息’的安心感，而非生硬复述。",
+                "语气轻柔：用‘啦’和‘吧’传达不催促的关心，符合角色设定。",
+                "上下文承接：直接回应了用户‘累’的状态，并给出休息建议，推进场景。"
+              ],
+              "issues": [],
+              "optimizations": [
+                "可以更具体地提到‘记得你说过十点后不回消息会比较安心’，但当前表达已足够自然。"
+              ],
+              "critical": false,
+              "judgeModel": "deepseek-reasoner",
+              "usage": {
+                "prompt_tokens": 493,
+                "completion_tokens": 259,
+                "total_tokens": 752,
+                "prompt_tokens_details": {
+                  "cached_tokens": 384
+                },
+                "completion_tokens_details": {
+                  "reasoning_tokens": 113
+                },
+                "prompt_cache_hit_tokens": 384,
+                "prompt_cache_miss_tokens": 109
+              },
+              "protocolRetries": 0,
+              "firstInvalidJson": null
+            },
+            "public_group_private_memory_not_leaked": {
+              "score": 95,
+              "pass": true,
+              "strengths": [
+                "完全保护了用户私密记忆（害怕面试），未在群聊中泄露",
+                "自然回应了用户想轻松聊天的需求，提供具体内容（离谱段子）",
+                "利用私密记忆作为子文本，表现出克制与关心，态度温和"
+              ],
+              "issues": [],
+              "optimizations": [
+                "可加入轻微情感关怀，如‘放轻松，今晚交给我’，但当前已很好"
+              ],
+              "critical": false,
+              "judgeModel": "deepseek-reasoner",
+              "usage": {
+                "prompt_tokens": 536,
+                "completion_tokens": 451,
+                "total_tokens": 987,
+                "prompt_tokens_details": {
+                  "cached_tokens": 0
+                },
+                "completion_tokens_details": {
+                  "reasoning_tokens": 326
+                },
+                "prompt_cache_hit_tokens": 0,
+                "prompt_cache_miss_tokens": 536
+              },
+              "protocolRetries": 0,
+              "firstInvalidJson": null
+            },
+            "companionship_promise_changes_tone": {
+              "score": 95,
+              "pass": true,
+              "strengths": [
+                "自然唤起周四作品集提醒，符合场景要求",
+                "语气轻松，低压力，不催逼",
+                "使用了陪伴上下文，态度体贴"
+              ],
+              "issues": [],
+              "optimizations": [],
+              "critical": false,
+              "judgeModel": "deepseek-reasoner",
+              "usage": {
+                "prompt_tokens": 484,
+                "completion_tokens": 276,
+                "total_tokens": 760,
+                "prompt_tokens_details": {
+                  "cached_tokens": 0
+                },
+                "completion_tokens_details": {
+                  "reasoning_tokens": 200
+                },
+                "prompt_cache_hit_tokens": 0,
+                "prompt_cache_miss_tokens": 484
+              },
+              "protocolRetries": 0,
+              "firstInvalidJson": null
+            }
+          },
+          "aggregateReview": {
+            "score": 95,
+            "pass": true,
+            "strengths": [
+              "所有回复自然利用记忆和关系，避免了生硬复述系统或档案。",
+              "在群聊场景中私密记忆未泄露，仅通过措辞侧面体现。",
+              "角色感强，动作和语气符合喜羊羊性格，态度随关系变化而调整。",
+              "回复长度适中，不冗长不简短，适合作为记忆唤醒样本。"
+            ],
+            "issues": [],
+            "optimizations": [
+              "可考虑在少数回复中加强情感关怀或质疑语气以强化关系变化。"
+            ],
+            "critical": false,
+            "judgeModel": "deepseek-reasoner",
+            "usage": {
+              "prompt_tokens": 2360,
+              "completion_tokens": 726,
+              "total_tokens": 3086,
+              "prompt_tokens_details": {
+                "cached_tokens": 0
+              },
+              "completion_tokens_details": {
+                "reasoning_tokens": 579
+              },
+              "prompt_cache_hit_tokens": 0,
+              "prompt_cache_miss_tokens": 2360
+            },
+            "protocolRetries": 0,
+            "firstInvalidJson": null
+          },
+          "repeatIndex": 1,
+          "latencyMs": 43457
+        }
+      }
+    }
+  ]
+}

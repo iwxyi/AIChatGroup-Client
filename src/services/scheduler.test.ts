@@ -389,4 +389,68 @@ describe('scheduler speaker scoring', () => {
     );
     expect(candidates.map((candidate) => candidate.characterId)).toEqual(['b']);
   });
+
+  it('removes the previous AI speaker from normal rotation when another member can speak', () => {
+    const candidates = calculateWeights(
+      [buildCharacter('a', '甲'), buildCharacter('b', '乙'), buildCharacter('c', '丙')],
+      [buildMessage({ senderId: 'a', senderName: '甲', content: '我刚说完，看看别人怎么想。' })],
+      {},
+      1,
+      0,
+      null,
+      { ...buildChat(), memberIds: ['a', 'b', 'c'] },
+    );
+
+    expect(candidates.map((candidate) => candidate.characterId)).toEqual(['b', 'c']);
+  });
+
+  it('keeps the previous AI speaker when explicit user guidance targets that speaker', () => {
+    const intent: DirectorIntent = {
+      source: 'user_message',
+      beatType: 'answer',
+      targetActorIds: ['a'],
+      pressure: 0.95,
+      reason: '用户明确要求甲继续回答',
+      userGuidance: {
+        kind: 'direct_reply',
+        rawText: '甲继续说',
+        actorIds: ['a'],
+        mentionedActorIds: ['a'],
+        focusText: '甲继续说',
+        beatType: 'answer',
+        pressure: 0.95,
+        maxTurns: 1,
+        reason: '用户明确要求甲继续回答',
+      },
+    };
+    const candidates = calculateWeights(
+      [buildCharacter('a', '甲'), buildCharacter('b', '乙')],
+      [
+        buildMessage({ senderId: 'a', senderName: '甲', content: '我先说一句。' }),
+        buildMessage({ type: 'user', senderId: 'user', senderName: '用户', content: '甲继续说。' }),
+      ],
+      {},
+      1,
+      0,
+      null,
+      buildChat(),
+      intent,
+    );
+
+    expect(candidates.map((candidate) => candidate.characterId)).toEqual(['a']);
+  });
+
+  it('keeps the previous AI speaker when no other member can speak', () => {
+    const candidates = calculateWeights(
+      [buildCharacter('a', '甲')],
+      [buildMessage({ senderId: 'a', senderName: '甲', content: '这里只有我。' })],
+      {},
+      1,
+      0,
+      null,
+      { ...buildChat(), memberIds: ['a'] },
+    );
+
+    expect(candidates.map((candidate) => candidate.characterId)).toEqual(['a']);
+  });
 });

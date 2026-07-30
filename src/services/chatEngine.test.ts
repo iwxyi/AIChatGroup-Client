@@ -1887,10 +1887,15 @@ describe('chatEngine streaming preview', () => {
     expect(message.extraMessages).toEqual(['二', '三']);
   });
 
-  it('keeps and reports a draft that exactly repeats a recent room line', async () => {
+  it('retries a draft that exactly repeats a recent room line', async () => {
     generateResponseMock.mockReset();
     generateResponseMock.mockResolvedValueOnce(JSON.stringify({
       content: '行行行，你俩一唱一和的，我投降。那件夹克改好了记得喊我去捡漏，二手还能省一笔呢～',
+      interactionHints: null,
+      socialEventHints: null,
+      conflictFocus: null,
+    })).mockResolvedValueOnce(JSON.stringify({
+      content: '那我换个说法：夹克改完先别急着下手，叫我过去看一眼，能省就省。',
       interactionHints: null,
       socialEventHints: null,
       conflictFocus: null,
@@ -1910,21 +1915,21 @@ describe('chatEngine streaming preview', () => {
       onLocalInterception,
     });
 
-    expect(generateResponseMock).toHaveBeenCalledTimes(1);
+    expect(generateResponseMock).toHaveBeenCalledTimes(2);
     expect(onLocalInterception).toHaveBeenCalledWith(expect.objectContaining({
-      kind: 'surface_echo_warning',
+      kind: 'surface_echo_retry',
       speakerId: 'mei',
       speakerName: '美羊羊',
       draft: expect.stringContaining('捡漏'),
       reason: expect.stringContaining('exactly repeats'),
       attempt: 1,
     }));
-    expect(message.content).toContain('夹克改好了');
+    expect(message.content).toContain('换个说法');
   });
 
-  it('keeps and reports exact room-line repeats on professional discussion surfaces too', async () => {
+  it('skips exact room-line repeats after retry budget is exhausted', async () => {
     generateResponseMock.mockReset();
-    generateResponseMock.mockResolvedValueOnce(JSON.stringify({
+    generateResponseMock.mockResolvedValue(JSON.stringify({
       content: '财富伦理师，你这句话其实比我之前那个功能模块的拆解更狠。',
       interactionHints: null,
       socialEventHints: null,
@@ -1934,7 +1939,7 @@ describe('chatEngine streaming preview', () => {
     const ethicist = buildCharacter('ethicist', '财富伦理师', { expertise: ['伦理'] });
     const onLocalInterception = vi.fn();
 
-    const message = await generateSpeakerMessage({
+    await expect(generateSpeakerMessage({
       chat: buildChat({ mode: 'group_discussion', memberIds: ['analyst', 'ethicist'] }),
       speaker: analyst,
       characters: [analyst, ethicist],
@@ -1943,15 +1948,19 @@ describe('chatEngine streaming preview', () => {
       ],
       apiConfig: buildProfiles(),
       onLocalInterception,
-    });
+    })).rejects.toMatchObject({ name: 'EmptyGeneratedResponseError', reason: 'duplicate_content' });
 
-    expect(generateResponseMock).toHaveBeenCalledTimes(1);
+    expect(generateResponseMock).toHaveBeenCalledTimes(3);
     expect(onLocalInterception).toHaveBeenCalledWith(expect.objectContaining({
-      kind: 'surface_echo_warning',
+      kind: 'surface_echo_retry',
       reason: expect.stringContaining('exactly repeats'),
       attempt: 1,
     }));
-    expect(message.content).toBe('财富伦理师，你这句话其实比我之前那个功能模块的拆解更狠。');
+    expect(onLocalInterception).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'surface_echo_skip',
+      reason: expect.stringContaining('exactly repeats'),
+      attempt: 3,
+    }));
   });
 
   it('requests strict JSON for analysis rooms so deliberation artifacts are stable', async () => {
@@ -2595,6 +2604,66 @@ describe('chatEngine streaming preview', () => {
     expect(prompt).not.toContain('你这个问题问到了实务中的另一个关键点');
     expect(prompt).not.toContain('你这个问题问到了实务中的核心困境');
     expect(message.content).toBe('赔偿金额可以先从合同约定的定额违约金入手，再让法院按传播范围、过错程度和工资水平去调减。');
+  });
+
+  it('builds a focused situational contract for same-speaker unresolved pressure', () => {
+    const laoli = buildCharacter('laoli', '老李');
+    const prompt = __chatEngineTestUtils.buildFocusedSituationalJobContract([
+      buildUserMessage('等一下，瑟瑟刚说她可能加班，这件事别跳过去，先确认她到底还能不能去。', 1),
+      buildAiMessage('laoli', '老李', '行，那就先定这个。瑟瑟，加班的事到底有没有定数？', 2),
+    ], laoli, { kind: 'chat', allowMarkdown: false, preserveParagraphs: false, roleFit: 'ordinary', basis: [] });
+
+    expect(prompt).toContain('## Focused Situational Job Contract');
+    expect(prompt).toContain('The previous visible speaker was also this speaker');
+    expect(prompt).toContain('Preserve the current unresolved need');
+    expect(prompt).toContain('Do not switch to a fresh logistical action');
+    expect(prompt).toContain('1 recent own visible line');
+    expect(prompt).not.toContain('瑟瑟，加班的事到底有没有定数');
+  });
+
+  it('warns selected non-target speakers to hand off when the user names someone else', () => {
+    const zhou = buildCharacter('zhou', '周策');
+    const prompt = __chatEngineTestUtils.buildFocusedSituationalJobContract([
+      buildAiMessage('zhou', '周策', '这个方案不用讨论太久，今天先定第一版。', 1),
+      buildUserMessage('安安，你怎么看？我想听你的意见。', 2),
+    ], zhou, { kind: 'chat', allowMarkdown: false, preserveParagraphs: false, roleFit: 'ordinary', basis: [] });
+
+    expect(prompt).toContain('appears to name someone else');
+    expect(prompt).toContain('use a short clean handoff');
+    expect(prompt).toContain('do not hijack');
+  });
+
+  it('keeps intentional repeat contexts available for chants and fixed answers', () => {
+    const awan = buildCharacter('awan', '阿晚');
+    const prompt = __chatEngineTestUtils.buildFocusedSituationalJobContract([
+      buildUserMessage('我数三二一，大家一起说“出发！”', 1),
+      buildAiMessage('sese', '瑟瑟', '出发！', 2),
+    ], awan, { kind: 'chat', allowMarkdown: false, preserveParagraphs: false, roleFit: 'ordinary', basis: [] });
+
+    expect(prompt).toContain('deliberate repeat, quote, chant, fixed answer, or call-and-response');
+    expect(prompt).toContain('a concise intentional repeat is valid');
+  });
+
+  it('builds a natural chat surface contract for long-form and action drift', () => {
+    const prompt = __chatEngineTestUtils.buildNaturalChatSurfaceContract([
+      buildAiMessage('kangxi', '康熙帝', longStorySection('朕若得闲，'), 1),
+      buildAiMessage('peter', '彼得大帝', longStorySection('落灰的东西就是废物。'), 2),
+      buildAiMessage('napoleon', '拿破仑', longStorySection('彼得，'), 3),
+    ], { kind: 'chat', allowMarkdown: false, preserveParagraphs: false, roleFit: 'ordinary', basis: [] }, true);
+
+    expect(prompt).toContain('## Natural Chat Surface Contract');
+    expect(prompt).toContain('not an essay, speech, report, script page, or narrator prose');
+    expect(prompt).toContain('Recent room replies are getting long');
+    expect(prompt).toContain('use at most one brief beat');
+    expect(prompt).toContain('Never use an action + speech + action + speech wrapper');
+  });
+
+  it('keeps natural chat surface contract out of non-chat surfaces', () => {
+    const prompt = __chatEngineTestUtils.buildNaturalChatSurfaceContract([
+      buildUserMessage('写一篇完整说明', 1),
+    ], { kind: 'longform', allowMarkdown: true, preserveParagraphs: true, roleFit: 'capable', basis: [] }, true);
+
+    expect(prompt).toBe('');
   });
 
   it('allows intentional repeated tone or format when the model marks intentionalRepeat', async () => {

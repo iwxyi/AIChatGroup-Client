@@ -276,7 +276,7 @@ describe('buildSystemPromptWithContext', () => {
     expect(prompt).not.toContain('你这个问题问到了实务中的痛点');
   });
 
-  it('does not target the latest AI speaker in group prompts without explicit address evidence', () => {
+  it('targets the latest AI speaker in group prompts as the default local relationship target', () => {
     const speaker = buildCharacter({ id: 'char-a', name: '喜羊羊' });
     const latestAi = buildCharacter({ id: 'char-b', name: '灰太狼' });
     const trace = buildPromptMemoryTrace(speaker, { ...buildChat(), memberIds: ['char-a', 'char-b'] }, [
@@ -286,8 +286,8 @@ describe('buildSystemPromptWithContext', () => {
       [latestAi.id, latestAi],
     ]));
 
-    expect(trace.targetActorId).toBeUndefined();
-    expect(trace.targetReason).toBeUndefined();
+    expect(trace.targetActorId).toBe('char-b');
+    expect(trace.targetReason).toBe('来自上一条消息的最近发言者');
   });
 
   it('targets the latest AI speaker in group prompts when that message explicitly addresses the current speaker', () => {
@@ -307,6 +307,73 @@ describe('buildSystemPromptWithContext', () => {
 
     expect(trace.targetActorId).toBe('char-b');
     expect(trace.targetReason).toBe('来自上一条消息的明确指向');
+  });
+
+  it('turns a current relationship ledger into an active continuity pull', () => {
+    const speaker = buildCharacter({ id: 'char-a', name: '喜羊羊' });
+    const target = buildCharacter({ id: 'char-b', name: '灰太狼' });
+    const chat = {
+      ...buildChat(),
+      memberIds: ['char-a', 'char-b'],
+      relationshipLedger: [{
+        pairKey: 'char-a->char-b',
+        actorId: 'char-a',
+        targetId: 'char-b',
+        current: { warmth: 56, competence: 0, trust: 68, threat: 4 },
+        derived: {
+          semantic: {
+            stage: '互相信任',
+            labels: ['默契'],
+            summary: '互相信任：会替对方留余地',
+            intensity: 64,
+          },
+        },
+        trend: 'up' as const,
+        recentEvents: [],
+        lastUpdatedAt: 40,
+      }],
+    };
+
+    const prompt = buildSystemPromptWithContext(speaker, chat, 0, [
+      buildMessage({ senderId: target.id, senderName: target.name, content: '这次方案我可能做错了。' }),
+    ], new Map([
+      [speaker.id, speaker],
+      [target.id, target],
+    ]));
+
+    expect(prompt).toContain('## Active Continuity Pull');
+    expect(prompt).toContain('Active target: 灰太狼');
+    expect(prompt).toContain('warmth 56');
+    expect(prompt).toContain('trust 68');
+    expect(prompt).toContain('When the current line touches an active hook');
+  });
+
+  it('adds a group-specific user boundary reminder when user continuity is present', () => {
+    const speaker = buildCharacter({
+      id: 'char-a',
+      name: '阿晚',
+      memory: {
+        longTerm: [],
+        shortTermSummary: '',
+        secrets: [],
+        obsessions: [],
+        tabooTopics: [],
+        userMemories: ['用户私下说自己很怕明天面试，别在群里提。'],
+      },
+    });
+
+    const prompt = buildSystemPromptWithContext(speaker, {
+      ...buildChat(),
+      memberIds: ['char-a', 'user'],
+    }, 0, [
+      buildMessage({ type: 'user', senderId: 'user', senderName: '用户', content: '大家随便聊吧，我听着。' }),
+    ], new Map([
+      [speaker.id, speaker],
+    ]));
+
+    expect(prompt).toContain('If the current human line is the user');
+    expect(prompt).toContain('remembered boundaries and care topics');
+    expect(prompt).toContain('Do not expose private facts');
   });
 
   it('does not let stale human guidance retarget prompt memory after a newer user turn', () => {

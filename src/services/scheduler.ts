@@ -248,6 +248,16 @@ export function calculateWeights(
   const forcedUserGuidanceActorIds = directorIntent?.source === 'user_message' && directorIntent.userGuidance?.actorIds.length
     ? (directorIntent.targetActorIds.length ? directorIntent.targetActorIds : directorIntent.userGuidance.actorIds)
     : [];
+  const shouldKeepLastSpeaker = (characterId: string) => {
+    if (characterId !== lastSpeakerId) return true;
+    if (!lastSpeakerId) return true;
+    if (forcedUserGuidanceActorIds.includes(characterId)) return true;
+    if (directorIntent?.source === 'user_message' && directorIntent.targetActorIds.includes(characterId)) return true;
+    if (pendingReplyContext?.targetIds.includes(characterId)) return true;
+    return false;
+  };
+  const rotationCandidates = speakableCharacters.filter((character) => shouldKeepLastSpeaker(character.id));
+  const candidatePool = rotationCandidates.length ? rotationCandidates : speakableCharacters;
   const attentionStateBiasByActor = new Map<string, number>();
   if (chat) {
     projectWorldAttentionStates([chat], speakableCharacters, { now })
@@ -261,7 +271,7 @@ export function calculateWeights(
       });
   }
 
-  return speakableCharacters
+  return candidatePool
     .filter((char) => {
       if (forcedUserGuidanceActorIds.length && !forcedUserGuidanceActorIds.includes(char.id)) return false;
       if (forcedUserGuidanceActorIds.includes(char.id)) return true;

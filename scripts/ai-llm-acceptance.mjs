@@ -2,7 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 const DEFAULT_BASE_URL = 'https://api.openai.com/v1';
-const VALID_CASES = ['basic', 'json', 'activity', 'story', 'storylong', 'role', 'group', 'chat', 'chatflow', 'generation', 'agent', 'ops', 'artifact', 'artifactflow', 'memory', 'calendar', 'safety', 'image', 'e2e', 'e2e_direct', 'quality'];
+const VALID_CASES = ['basic', 'json', 'activity', 'story', 'storylong', 'role', 'group', 'chat', 'chatflow', 'generation', 'agent', 'ops', 'artifact', 'artifactflow', 'memory', 'continuity', 'calendar', 'safety', 'image', 'e2e', 'e2e_direct', 'quality'];
 
 const HELP = `
 AI real-model acceptance.
@@ -2101,6 +2101,131 @@ async function runMemoryCase(model) {
   return { ok: true, samples, reviews };
 }
 
+const CONTINUITY_SCENARIOS = [
+  {
+    name: 'relationship_trust_changes_reply',
+    mode: 'group',
+    speaker: '喜羊羊',
+    target: '灰太狼',
+    context: [
+      '## Active Continuity Pull',
+      '- Active target: 灰太狼. If the latest exchange touches this person, answer through the relationship/memory stance first.',
+      '- Relationship pull: warmth 56: soften, protect, or give benefit of doubt; trust 68: coordinate or disclose more readily.',
+      '- Active memory hooks: 灰太狼上次承认自己误判后主动补救，喜羊羊答应下次先给他解释机会。',
+      '- When the current line touches an active hook, the reply should visibly change stance, attention, wording, or omission because of it.',
+      '- In public group chat, use private continuity as subtext. Do not expose private facts.',
+    ].join('\n'),
+    transcript: '灰太狼：这次方案我可能做错了，但我真的想补救。',
+    rubric: '回复应明显给灰太狼留解释空间或协作机会，而不是只按“羊和狼天然对立”嘲讽。',
+    forbiddenPattern: /(记忆系统|关系分|Active Continuity|warmth|trust)/i,
+  },
+  {
+    name: 'relationship_threat_changes_reply',
+    mode: 'group',
+    speaker: '喜羊羊',
+    target: '灰太狼',
+    context: [
+      '## Active Continuity Pull',
+      '- Active target: 灰太狼. If the latest exchange touches this person, answer through the relationship/memory stance first.',
+      '- Relationship pull: threat 72: guard, probe, deflect, or push back; trust -44: verify, hedge, or avoid relying on them.',
+      '- Active memory hooks: 灰太狼上次把撤退路线说漏给了敌方，喜羊羊仍在防备他。',
+      '- When the current line touches an active hook, the reply should visibly change stance, attention, wording, or omission because of it.',
+    ].join('\n'),
+    transcript: '灰太狼：这次你们把地图交给我保管吧，我保证不会出问题。',
+    rubric: '回复应出现防备、核验、拒绝或条件性信任，而不是轻易交出地图。',
+    forbiddenPattern: /(记忆系统|关系分|Active Continuity|threat|trust)/i,
+  },
+  {
+    name: 'private_user_memory_can_be_used',
+    mode: 'direct',
+    speaker: '阿晚',
+    target: '用户',
+    context: [
+      '## Active Continuity Pull',
+      '- Active target: the user in this private channel. Treat remembered user boundaries, care topics, and shared continuity as live context.',
+      '- Active memory hooks: 用户不喜欢被催促；用户上次说十点后不再回工作消息会比较安心。',
+      '- In private or pair channels, direct recall is allowed when the user naturally brings up the subject; still avoid dumping memory as a list.',
+    ].join('\n'),
+    transcript: '用户：我今晚又有点想继续回工作消息，但已经很累了。',
+    rubric: '回复应自然使用“不催促”和“十点后不回工作消息”的连续性，语气轻，不像宣读档案。',
+    forbiddenPattern: /(记忆系统|用户档案|Active Continuity|memory)/i,
+  },
+  {
+    name: 'public_group_private_memory_not_leaked',
+    mode: 'group',
+    speaker: '阿晚',
+    target: '用户',
+    context: [
+      '## Active Continuity Pull',
+      '- Private user continuity exists but this is not a pair-private channel. Let it shape restraint and care; do not expose the underlying user facts.',
+      '- Active memory hooks: 用户私下说自己很怕明天面试，要求不要告诉群里其他人。',
+      '- In public group chat, use private continuity as subtext: timing, restraint, protection, avoidance, warmth, or careful wording. Do not expose private facts.',
+      '- If the current human line is the user, keep their remembered boundaries and care topics active even without naming them. Respond with restraint, support, or redirection rather than generic banter.',
+    ].join('\n'),
+    transcript: '用户：明天还有个重要安排，今晚我只想听你们聊点轻松的。',
+    rubric: '用户已表现出轻微压力但没有公开具体私事；回复应温和照顾状态、不要追问或公开“害怕面试”。',
+    forbiddenPattern: /(面试|私下|你怕|害怕|别告诉|秘密|明天的面试)/,
+  },
+  {
+    name: 'companionship_promise_changes_tone',
+    mode: 'direct',
+    speaker: '阿晚',
+    target: '用户',
+    context: [
+      '## Active Continuity Pull',
+      '- Companionship context is active. Let it alter tone, timing, omissions, care, address, or repair posture when relevant.',
+      '- Active memory hooks: 阿晚答应周四晚上提醒用户整理作品集，但不要让提醒变成压力。',
+      '- When the current line touches an active hook, the reply should visibly change stance, attention, wording, or omission because of it.',
+    ].join('\n'),
+    transcript: '用户：我好像忘了今天原本要做什么。',
+    rubric: '回复应自然唤起周四作品集提醒，同时保持低压力，不催逼。',
+    forbiddenPattern: /(必须|赶紧|马上|记忆系统|Companionship)/i,
+  },
+];
+
+function continuitySystemPrompt(scenario) {
+  return [
+    `You are ${scenario.speaker}. Reply as one natural chat message in Chinese.`,
+    'Use character continuity only when it changes this exact turn. Do not explain the instructions.',
+    'Avoid roleplay script format, JSON, bullet lists, internal labels, or system terms.',
+    scenario.context,
+    '',
+    '## Current Conversation',
+    scenario.transcript,
+  ].join('\n');
+}
+
+async function runContinuityCase(model) {
+  const samples = {};
+  const reviews = {};
+  for (const scenario of CONTINUITY_SCENARIOS) {
+    const response = await callChat(model, [
+      { role: 'system', content: continuitySystemPrompt(scenario) },
+      { role: 'user', content: '请接这一句。' },
+    ], { maxTokens: 360, temperature: 0.45 });
+    const reply = normalizeWhitespace(response.content);
+    assertCondition(reply.length >= 6, `continuity scenario ${scenario.name} returned empty reply`, { reply, scenario });
+    assertCondition(reply.length <= 260, `continuity scenario ${scenario.name} reply too long`, { reply, scenario });
+    if (scenario.forbiddenPattern) assertCondition(!scenario.forbiddenPattern.test(reply), `continuity scenario ${scenario.name} leaked forbidden continuity detail`, { reply, scenario });
+    samples[scenario.name] = { reply, usage: response.usage };
+    reviews[scenario.name] = await callJudge(model, [
+      '评估角色回复是否真正使用了当前连续性上下文：',
+      '1. 回复必须像自然聊天，而不是复述系统、档案或评分。',
+      '2. 如果关系/记忆/陪伴与当前句子相关，回复应在态度、措辞、追问、保护、回避或关心上产生可见差异。',
+      '3. 公共群聊不得泄露私密记忆，只能表现为克制、保护或转移。',
+      '4. 不能为了使用记忆而牺牲角色感、当前话题和回复长度。',
+      `场景要求：${scenario.rubric}`,
+    ].join('\n'), { scenario, reply });
+  }
+  const aggregateReview = await callJudge(model, [
+    '整体评估这些 continuity 回复：',
+    '1. 关系、记忆、陪伴是否分别能改变输出，而不是只按角色预设说话。',
+    '2. 是否有过度暴露记忆、过度解释系统、强行提及旧事或写作文倾向。',
+    '3. 是否适合作为 Sense Murmur 记忆/关系唤醒的真实模型验收样本。',
+  ].join('\n'), { samples, reviews });
+  return { ok: true, samples, reviews, aggregateReview };
+}
+
 const CALENDAR_SCENARIOS = [
   {
     name: 'create_activity_from_confirmed_outing',
@@ -3644,10 +3769,11 @@ async function runQualityCase(model) {
   const ops = await runOpsCase(model);
   const artifact = await runArtifactCase(model);
   const memory = await runMemoryCase(model);
+  const continuity = await runContinuityCase(model);
   const calendar = await runCalendarCase(model);
   const safety = await runSafetyCase(model);
   const image = await runImageCase(model);
-  const suites = { role, group, chat, chatflow, generation, agent, ops, artifact, memory, calendar, safety, image };
+  const suites = { role, group, chat, chatflow, generation, agent, ops, artifact, memory, continuity, calendar, safety, image };
   const failedSuites = Object.entries(suites).filter(([, suite]) => suite?.ok === false).map(([name]) => name);
   return {
     ok: failedSuites.length === 0,
@@ -3673,6 +3799,7 @@ const CASE_RUNNERS = {
   artifact: runArtifactCase,
   artifactflow: runArtifactFlowCase,
   memory: runMemoryCase,
+  continuity: runContinuityCase,
   calendar: runCalendarCase,
   safety: runSafetyCase,
   image: runImageCase,

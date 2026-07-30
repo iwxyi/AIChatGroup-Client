@@ -1100,7 +1100,7 @@ function buildRecentEchoProfile(messages: Message[]) {
 }
 
 function isExplicitRepeatOrAnswerRequest(text: string) {
-  return /(复读|重复|原话|照着说|照读|引用|引述|背|默写|接龙|下一句|下句|上一句|上句|补全|填空|标准答案|正确答案|答案是|口令|暗号|古诗|诗词|诗句|成语|台词|歌词|对联|上联|下联)/i.test(text);
+  return /(复读|重复|原话|照着说|照读|引用|引述|背|默写|接龙|下一句|下句|上一句|上句|补全|填空|标准答案|正确答案|答案是|口令|暗号|古诗|诗词|诗句|成语|台词|歌词|对联|上联|下联|一起说|一起喊|跟着说|跟着喊|齐声|应和)/i.test(text);
 }
 
 function hasLegitimateRepeatContext(messages: Message[]) {
@@ -1152,6 +1152,71 @@ function collectRecentConstraintLines(messages: Message[], speakerId: string) {
     sameSpeakerCount ? `- Your previous AI turns in the transcript: ${sameSpeakerCount} recent item(s).` : '',
     roomLineCount ? `- Other AI turns in the transcript: ${roomLineCount} recent item(s).` : '',
   ].filter(Boolean);
+}
+
+function latestHumanPressure(messages: Message[], speakerName: string) {
+  const latestHuman = [...messages]
+    .reverse()
+    .find((message) => !message.isDeleted && (message.type === 'user' || message.type === 'god') && message.content.trim());
+  const text = latestHuman?.content || '';
+  return {
+    text,
+    asksDecision: /帮我选|替我选|你们帮我选|直接选|别再问|不用问|给个结论|推荐一个|定一个|怎么选|怎么办/.test(text),
+    namesCurrent: Boolean(speakerName && text.includes(speakerName)),
+    namesSomeone: /[^\s，。！？、]{1,12}[，,、 ]*(你怎么看|你来说|你说|想听你|直接说)/.test(text) || /我想听/.test(text),
+    allowsIntentionalRepeat: isExplicitRepeatOrAnswerRequest(text),
+  };
+}
+
+function buildFocusedSituationalJobContract(messages: Message[], speaker: AICharacter, surface: ResponseSurface) {
+  if (surface.kind !== 'chat') return '';
+  const visible = messages.filter((message) => !message.isDeleted && message.type !== 'system' && message.type !== 'event');
+  const previous = visible.at(-1);
+  const previousSpeakerSame = previous?.type === 'ai' && previous.senderId === speaker.id;
+  const recentOwn = visible
+    .filter((message) => message.type === 'ai' && message.senderId === speaker.id)
+    .slice(-3);
+  const latestHuman = latestHumanPressure(visible, speaker.name);
+  const signals = [
+    previousSpeakerSame ? '- The previous visible speaker was also this speaker: continue only if the situation has moved; do not restate the same ask, pressure, summary, or closing.' : '',
+    latestHuman.asksDecision ? '- The latest user pressure asks for a decision or recommendation: prefer one recommendation or a conditional decision instead of another broad preference question.' : '',
+    latestHuman.namesSomeone && !latestHuman.namesCurrent ? '- The latest user pressure appears to name someone else: if this speaker is not that person, use a short clean handoff and do not hijack with this speaker’s own plan.' : '',
+    latestHuman.allowsIntentionalRepeat ? '- The latest user pressure allows a deliberate repeat, quote, chant, fixed answer, or call-and-response: a concise intentional repeat is valid when it is the natural social move.' : '',
+    recentOwn.length ? `- This speaker has ${recentOwn.length} recent own visible line(s). Treat them as no-repeat evidence from the transcript, not assistant history or style samples.` : '',
+  ].filter(Boolean);
+  if (!signals.length) return '';
+  return `\n## Focused Situational Job Contract
+${signals.join('\n')}
+- Preserve the current unresolved need. Do not switch to a fresh logistical action, new fact, deadline, or softening move merely to be different.
+- If answering is needed, answer first; optional detail comes after the answer.
+- If pressure has become harsh, soften the temperature while keeping the practical ask visible.
+- If a handoff is needed, keep it short and clean; do not attach this speaker's own stance.
+- Avoid exact wording, copied opener, copied closing, same sentence frame, and the same pressure shape from recent lines.
+- Good reply test: the room can tell what changed, and the reply still solves the latest user or room pressure.`;
+}
+
+function buildNaturalChatSurfaceContract(messages: Message[], surface: ResponseSurface, showRoleActions?: boolean) {
+  if (surface.kind !== 'chat') return '';
+  const recentAiLengths = messages
+    .filter((message) => message.type === 'ai' && !message.isDeleted)
+    .slice(-6)
+    .map((message) => getVisibleCharLength(message.content))
+    .filter((length) => length > 0);
+  const longCount = recentAiLengths.filter((length) => length >= 120).length;
+  const longRunRisk = recentAiLengths.length >= 3 && longCount >= Math.ceil(recentAiLengths.length * 0.5);
+  const lengthLine = longRunRisk
+    ? `\n- Recent room replies are getting long (${recentAiLengths.join(' / ')} chars). It is natural for the next turn to cool back down with one concrete line.`
+    : '';
+  const roleActionLine = showRoleActions
+    ? '- Physical actions are usually omitted in ordinary group chat. If one truly changes meaning or social temperature, use at most one brief beat.'
+    : '- Role actions are disabled here; keep the visible content as spoken chat.';
+  return `\n## Natural Chat Surface Contract
+- This contract controls surface shape only. It must not override a focused job, handoff, direct answer, or decision/recommendation required above.
+- This is live chat, not an essay, speech, report, script page, or narrator prose.
+- Reply to one live point instead of recapping the whole debate or making a personal manifesto.
+- Heat may make a reply sharper or slightly longer, but it should not force every next speaker to write longer.${lengthLine}
+${roleActionLine}
+- Never use an action + speech + action + speech wrapper. Do not solve repetition by adding backstory, extra examples, or decorative actions.`;
 }
 
 function inferResponseSurfaceFromText(text: string, style: GroupChat['style']): { kind: ResponseSurfaceKind | null; basis: string[] } {
@@ -3105,13 +3170,29 @@ async function generateNonDuplicateResponse(params: {
         Boolean(generated.parsedEnvelope?.intentionalRepeat),
       );
       if (echoReason) {
+        if (attempt < 2) {
+          await params.onLocalInterception?.({
+            kind: 'surface_echo_retry',
+            speakerId: params.speaker.id,
+            speakerName: params.speaker.name,
+            draft: evaluationResponse,
+            reason: echoReason,
+            attempt: attempt + 1,
+          });
+          prompt = buildSurfaceEchoRetryPrompt(params.systemPrompt, evaluationResponse, echoReason);
+          continue;
+        }
         await params.onLocalInterception?.({
-          kind: 'surface_echo_warning',
+          kind: 'surface_echo_skip',
           speakerId: params.speaker.id,
           speakerName: params.speaker.name,
           draft: evaluationResponse,
           reason: echoReason,
           attempt: attempt + 1,
+        });
+        throw new EmptyGeneratedResponseError(params.speaker.name, {
+          localInterceptionReported: true,
+          reason: 'duplicate_content',
         });
       }
       const conversationMovePlan = params.conversationMovePlan;
@@ -3559,6 +3640,8 @@ export async function generateSpeakerMessage(params: {
     { id: 'response_surface', layer: 'style', priority: 50, content: buildResponseSurfacePrompt(responseSurface) },
     { id: 'style_quarantine', layer: 'style', priority: 60, content: buildStyleQuarantinePrompt(responseSurface) },
     { id: 'visible_message_surface_contract', layer: 'output', priority: 0, content: buildVisibleMessageSurfaceContractPrompt(params.chat, showRoleActions) },
+    { id: 'focused_situational_job_contract', layer: 'output', priority: 5, content: buildFocusedSituationalJobContract(activeMessages, params.speaker, responseSurface) },
+    { id: 'natural_chat_surface_contract', layer: 'output', priority: 7, content: buildNaturalChatSurfaceContract(activeMessages, responseSurface, showRoleActions) },
     { id: 'generation_constraints', layer: 'output', priority: 10, content: buildGenerationConstraints(activeMessages, params.speaker.id, responseSurface) },
     { id: 'inline_interaction_contract', layer: 'output', priority: 20, content: buildInlineInteractionContract({ chat: params.chat, speaker: params.speaker, characters: effectiveMembers, recentMessages: activeMessages, turnPlan, mediaCapabilities, mediaRequested: Boolean(userGuidance?.mediaRequest), webSearchEnabled }) },
     { id: 'engine_suffix', layer: 'suffix', priority: 100, content: promptSuffix },
@@ -4092,6 +4175,8 @@ export const __chatEngineTestUtils = {
   shouldApplyInnerLifeTypingDelay,
   resolveMediaProfiles,
   evaluateHiddenEchoDraft,
+  buildFocusedSituationalJobContract,
+  buildNaturalChatSurfaceContract,
   buildWorldEventContextPrompt,
   buildWorldEventInfluenceRulesPrompt,
 };
