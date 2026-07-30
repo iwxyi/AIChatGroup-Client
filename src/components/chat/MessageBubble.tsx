@@ -20,7 +20,8 @@ import DebugChip from '../common/DebugChip';
 import AppSnackbar from '../common/AppSnackbar';
 import { EXPRESSION_FEEDBACK_MENU_GROUPS, type ExpressionFeedbackKind } from '../../services/characterExpressionFeedback';
 import { copyTextToClipboard } from '../../utils/clipboard';
-import { getNarrativeDisplayBlocks, hasNarrativeReaderBlocks, isNarrativeParagraphMessage, shouldUseCompactMessageBubble } from './messageBubblePresentation';
+import { getNarrativeDisplayBlocks, hasNarrativeReaderBlocks, isNarrativeParagraphMessage, shouldUseCompactMediaBubble, shouldUseCompactMessageBubble } from './messageBubblePresentation';
+import { DefaultUserAvatarIcon, TopicGuideAvatarIcon } from '../common/IdentityIcons';
 
 interface MessageBubbleProps {
   message: Message;
@@ -49,7 +50,6 @@ interface MenuPosition {
 }
 
 const LONG_PRESS_MOVE_THRESHOLD = 12;
-const SHORT_MEDIA_MESSAGE_LENGTH = 120;
 
 function buildWithdrawalDebugTitle(withdrawal: NonNullable<Message['metadata']>['withdrawal'] | null) {
   if (!withdrawal?.originalContent) return '';
@@ -66,19 +66,6 @@ function buildWithdrawalDebugTitle(withdrawal: NonNullable<Message['metadata']>[
       ) : null}
     </Box>
   );
-}
-
-export function shouldUseCompactMediaBubble(message: Message) {
-  const attachments = message.metadata?.attachments || [];
-  const hasRenderableMedia = attachments.some((attachment) => attachment.kind === 'image' || attachment.kind === 'audio');
-  if (!hasRenderableMedia) return false;
-  const rawContent = message.content.trim();
-  const normalizedContent = rawContent.replace(/\s+/g, '').trim();
-  if (!normalizedContent) return true;
-  if (['图片已生成', '图片已生成。', '已生成', '已生成。'].includes(normalizedContent)) return true;
-  if (/正在生成图片|图片已生成/.test(normalizedContent)) return true;
-  if (/```|(^|\n)\s{0,3}#{1,6}\s|(^|\n)\s{0,3}\|.*\|/.test(rawContent)) return false;
-  return normalizedContent.length <= SHORT_MEDIA_MESSAGE_LENGTH;
 }
 
 function MessageBubble({ message, character, characters = [], onDelete, onAnalyze, onExpressionFeedback, onRetryMedia, onOpenImage, onOpenDiagram, onCharacterAvatarClick, pending = false, currentUser, selfMemberId = null, privateConversation = false, branchVersionInfo, onCreateRevision, onSwitchRevision, onOpenArtifact }: MessageBubbleProps) {
@@ -250,10 +237,12 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
     : (resolvedStyle ? buildBubblePreview(resolvedStyle, isUser) : (resolvedUserStyle ? buildBubblePreview(resolvedUserStyle, true) : null));
   const avatar = effectiveCharacter?.avatar;
   const wrapperJustify = isUser ? 'flex-end' : 'flex-start';
-  const selfAvatarValue = isPerspectiveSelf ? effectiveCharacter?.avatar?.trim() : (isManualSpeaker ? manualSpeaker?.avatar?.trim() : currentUser?.avatar?.trim());
-  const selfAvatarText = (isPerspectiveSelf ? effectiveCharacter?.name : (isManualSpeaker ? manualSpeaker?.actorName : currentUser?.nickname))?.trim() || message.senderName;
+  const normalizedCurrentUserAvatar = currentUser?.avatar?.trim() === '🍵' ? '' : currentUser?.avatar?.trim();
+  const selfAvatarValue = isGuidanceBubble ? '' : (isPerspectiveSelf ? effectiveCharacter?.avatar?.trim() : (isManualSpeaker ? manualSpeaker?.avatar?.trim() : normalizedCurrentUserAvatar));
+  const selfAvatarText = isGuidanceBubble ? message.senderName : ((isPerspectiveSelf ? effectiveCharacter?.name : (isManualSpeaker ? manualSpeaker?.actorName : currentUser?.nickname))?.trim() || message.senderName);
   const selfAvatar = selfAvatarValue || selfAvatarText.slice(0, 1);
   const selfAvatarAlt = selfAvatarText || message.senderName;
+  const useDefaultUserAvatar = !isGuidanceBubble && !isPerspectiveSelf && !isManualSpeaker && !selfAvatarValue;
   const withdrawal = message.metadata?.withdrawal;
   const isFinalWithdrawn = Boolean(withdrawal?.withdrawn && !withdrawal.visiblePending);
   const finalWithdrawal = isFinalWithdrawn ? withdrawal : null;
@@ -427,7 +416,9 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
             {selfAvatarValue && isImageAvatar(selfAvatarValue) ? (
               <Avatar src={resolveSafeAvatarSrc(selfAvatarValue)} alt={selfAvatarAlt} slotProps={{ img: { loading: 'lazy', decoding: 'async', onError: () => rememberFailedAvatarUrl(selfAvatarValue) } }} sx={{ width: 38, height: 38 }} />
             ) : (
-              <Avatar sx={{ width: 38, height: 38, bgcolor: 'primary.dark' }}>{selfAvatar}</Avatar>
+              <Avatar sx={{ width: 38, height: 38, bgcolor: isGuidanceBubble || useDefaultUserAvatar ? 'transparent' : 'primary.dark' }}>
+                {isGuidanceBubble ? <TopicGuideAvatarIcon title={message.senderName} /> : useDefaultUserAvatar ? <DefaultUserAvatarIcon title={selfAvatarAlt} /> : selfAvatar}
+              </Avatar>
             )}
           </Box>
         ) : null}

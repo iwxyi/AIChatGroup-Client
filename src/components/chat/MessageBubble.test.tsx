@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { Message } from '../../types/message';
 import { getAttachmentErrorText, getAttachmentStatusDetail, getAttachmentStatusLabel } from '../../services/messageAttachmentDisplay';
-import { getNarrativeDisplayBlocks, getNarrativeParagraphBlocks, hasNarrativeReaderBlocks, isNarrativeParagraphMessage, shouldUseCompactMessageBubble } from './messageBubblePresentation';
+import { getNarrativeDisplayBlocks, getNarrativeParagraphBlocks, hasNarrativeReaderBlocks, isNarrativeParagraphMessage, shouldUseCompactMediaBubble, shouldUseCompactMessageBubble } from './messageBubblePresentation';
 import { buildEventDisplayText, buildMemoryDistillationMeta, shouldHideEmptyConflictEvent } from './messageBubbleEventHelpers';
-import { shouldUseCompactMediaBubble } from './MessageBubble';
 
 describe('MessageBubble event rendering', () => {
   it('formats memory distillation titles with readable source and owner labels', () => {

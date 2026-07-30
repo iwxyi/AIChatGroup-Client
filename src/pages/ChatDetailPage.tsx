@@ -2265,7 +2265,7 @@ export default function ChatDetailPage() {
         chatId: id,
         type: 'god',
         senderId: 'user',
-        senderName: '导演安排',
+        senderName: '话题引导',
         content,
         emotion: 0,
         timestamp: getNextMessageTimestamp(),

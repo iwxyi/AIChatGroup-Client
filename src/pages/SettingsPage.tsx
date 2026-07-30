@@ -54,6 +54,7 @@ import type { AppSettingsWithMemory } from '../types/settings';
 import type { CompanionshipRitualKind } from '../types/settings';
 import { migrateLegacyBrandStorageKeys } from '../constants/brand';
 import BubbleStylePickerDialog from '../components/bubble/BubbleStylePickerDialog';
+import { DefaultUserAvatarIcon } from '../components/common/IdentityIcons';
 import { DEFAULT_AI_BUBBLE_STYLE_ID } from '../constants/bubbleStyles';
 import { buildBubblePreview, resolveCharacterBubbleStyle } from '../utils/bubbleStyle';
 import { isImageAvatar } from '../utils/avatar';
@@ -1681,7 +1682,8 @@ export default function SettingsPage() {
     [settings.customBubbleStyles, settings.userBubbleStyle, settings.userBubbleStyleId]
   );
   const userBubblePreview = useMemo(() => buildBubblePreview(userBubbleStyle, true), [userBubbleStyle]);
-  const selfAvatarValue = user?.avatar?.trim() || (user?.nickname?.trim() || '我').slice(0, 1);
+  const normalizedSelfAvatar = user?.avatar?.trim() === '🍵' ? '' : user?.avatar?.trim() || '';
+  const selfAvatarValue = normalizedSelfAvatar || (user?.nickname?.trim() || '我').slice(0, 1);
   const selfAvatarIsImage = isImageAvatar(selfAvatarValue);
   const selfBubblePreviewText = i18n.language.startsWith('zh') ? '这是我发送消息时的气泡' : 'This is my chat bubble';
   const selectedThemePreset = resolveThemePreset(settings.themePreset, settings.themeColor);
@@ -2099,7 +2101,7 @@ export default function SettingsPage() {
           </Box>
           <Box sx={buildAccountBubblePreviewSx()} onClick={() => setUserBubblePickerOpen(true)}>
             <Box sx={{ flexShrink: 0, width: 34, height: 34, borderRadius: '50%', bgcolor: 'action.hover', display: 'grid', placeItems: 'center', overflow: 'hidden' }}>
-              {selfAvatarIsImage ? <Box component="img" src={selfAvatarValue} alt={user?.nickname || 'me'} sx={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : selfAvatarValue}
+              {selfAvatarIsImage ? <Box component="img" src={selfAvatarValue} alt={user?.nickname || 'me'} sx={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : normalizedSelfAvatar ? selfAvatarValue : <DefaultUserAvatarIcon title={user?.nickname || 'User'} />}
             </Box>
             <Box sx={{ flex: 1, minWidth: 0 }}>
               <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 0.5 }}>{i18n.language.startsWith('zh') ? '我的气泡' : 'My bubble'}</Typography>

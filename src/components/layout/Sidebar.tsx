@@ -12,7 +12,6 @@ import {
   Avatar,
 } from '@mui/material';
 import { Fragment, useEffect, useState } from 'react';
-import AccountIcon from '@mui/icons-material/AccountCircle';
 import CollapseIcon from '@mui/icons-material/ChevronLeft';
 import ExpandIcon from '@mui/icons-material/ChevronRight';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -25,6 +24,7 @@ import { motion, transition } from '../../styles/motion';
 import { isImageAvatar } from '../../utils/avatar';
 import AnimatedNavIcon, { type AnimatedNavIconKind } from './AnimatedNavIcon';
 import { buildSettingsPath } from '../../routes/settingsRoute';
+import { DefaultUserAvatarIcon } from '../common/IdentityIcons';
 
 interface SidebarProps {
   collapsed: boolean;
@@ -102,7 +102,7 @@ export default function Sidebar({ collapsed }: SidebarProps) {
   const unreadLetterCount = useDeferredUnreadLetterCount(location.pathname.startsWith('/letters'));
   const accountTitle = user?.nickname || (authMode === 'cloud' ? t('nav.account') : t('nav.localMode'));
   const accountSubtitle = user?.phone || (authMode === 'cloud' ? t('nav.account') : t('nav.signInSync'));
-  const accountAvatar = user?.avatar;
+  const accountAvatar = user?.avatar?.trim() === '🍵' ? '' : user?.avatar;
   const visibleNavSections = navSections
     .map((section) => section.filter((item) => {
       if (item.path === '/ai-proxy') return user?.aiProxyEntitled === true;
@@ -288,14 +288,14 @@ export default function Sidebar({ collapsed }: SidebarProps) {
           width: 36,
           height: 36,
           borderRadius: 1,
-          bgcolor: isAccountActive ? 'primary.main' : 'action.hover',
+          bgcolor: isImageAvatar(accountAvatar) || !accountAvatar?.trim() ? 'transparent' : isAccountActive ? 'primary.main' : 'action.hover',
           color: isAccountActive ? 'primary.contrastText' : 'text.secondary',
           fontWeight: 820,
           fontSize: 16,
           flex: '0 0 auto',
         }}
       >
-        {isImageAvatar(accountAvatar) ? undefined : (accountAvatar?.trim().slice(0, 2) || accountTitle.trim().slice(0, 1) || <AccountIcon fontSize="small" />)}
+        {isImageAvatar(accountAvatar) ? undefined : (accountAvatar?.trim().slice(0, 2) || <DefaultUserAvatarIcon title={accountTitle || 'User'} />)}
       </Avatar>
       {!collapsed ? (
         <Box sx={{ minWidth: 0, flex: 1 }}>

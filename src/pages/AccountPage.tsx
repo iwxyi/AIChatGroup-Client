@@ -12,6 +12,7 @@ import { useMessageStore } from '../stores/useMessageStore';
 import { ensureCharacterArtifactStoreHydrated, useCharacterArtifactStore } from '../stores/useCharacterArtifactStore';
 import { scheduleSyncWorkersByPriority } from '../stores/storeSyncScheduler';
 import AppSnackbar from '../components/common/AppSnackbar';
+import { DefaultUserAvatarIcon } from '../components/common/IdentityIcons';
 import LogoutIcon from '@mui/icons-material/Logout';
 import WorkspacePremiumIcon from '@mui/icons-material/WorkspacePremium';
 import { isCloudSyncEnabled, setCloudSyncEnabled } from '../services/cloudSyncPreference';
@@ -26,6 +27,12 @@ const MAX_AVATAR_FILE_SIZE = 2 * 1024 * 1024;
 const MAX_AVATAR_DIMENSION = 512;
 const AVATAR_OUTPUT_SIZE = 256;
 const AVATAR_OUTPUT_QUALITY = 0.82;
+const LEGACY_DEFAULT_USER_AVATAR = '🍵';
+
+function normalizeAccountAvatar(value?: string | null) {
+  const trimmed = value?.trim() || '';
+  return trimmed === LEGACY_DEFAULT_USER_AVATAR ? '' : trimmed;
+}
 
 function formatSyncTime(value?: number, fallback?: string) {
   if (!value) return fallback || '未同步';
@@ -114,7 +121,7 @@ export default function AccountPage() {
   const resumeArtifactProcessing = useCharacterArtifactStore((state) => state.resumeProcessing);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [nickname, setNickname] = useState(user?.nickname || '');
-  const [avatar, setAvatar] = useState(user?.avatar || '🍵');
+  const [avatar, setAvatar] = useState(() => normalizeAccountAvatar(user?.avatar));
   const [saving, setSaving] = useState(false);
   const [processingAvatar, setProcessingAvatar] = useState(false);
   const [avatarDialogOpen, setAvatarDialogOpen] = useState(false);
@@ -145,7 +152,7 @@ export default function AccountPage() {
   useEffect(() => {
     setNickname(user?.nickname || '');
     setDraftNickname(user?.nickname || '');
-    setAvatar(user?.avatar || '🍵');
+    setAvatar(normalizeAccountAvatar(user?.avatar));
   }, [user]);
 
   useEffect(() => {
@@ -328,7 +335,7 @@ export default function AccountPage() {
   const handleSaveAvatar = async (nextAvatar: string) => {
     setSaving(true);
     try {
-      await updateProfile({ avatar: nextAvatar.trim() || '🍵' });
+      await updateProfile({ avatar: normalizeAccountAvatar(nextAvatar) });
       setSnackbar({ open: true, message: t('common.success'), severity: 'success' });
     } catch (error) {
       setSnackbar({ open: true, message: error instanceof Error ? error.message : t('common.error'), severity: 'error' });
@@ -545,8 +552,8 @@ export default function AccountPage() {
                     openAvatarDialog();
                   }}
                 >
-                  <Avatar src={isImageAvatar ? avatar : undefined} sx={{ width: 52, height: 52, fontSize: '1.5rem' }}>
-                    {isImageAvatar ? undefined : avatar}
+                  <Avatar src={isImageAvatar ? avatar : undefined} sx={{ width: 52, height: 52, fontSize: '1.5rem', bgcolor: 'transparent' }}>
+                    {isImageAvatar ? undefined : avatar || <DefaultUserAvatarIcon title={nickname || 'User'} />}
                   </Avatar>
                 </Box>
                 <Box sx={{ minWidth: 0 }}>
@@ -802,8 +809,8 @@ export default function AccountPage() {
         <DialogTitle>{i18n.language.startsWith('zh') ? '头像预览' : 'Avatar preview'}</DialogTitle>
         <DialogContent>
           <Box sx={{ display: 'flex', justifyContent: 'center', py: 1 }}>
-            <Avatar src={isImageAvatar ? avatar : undefined} sx={{ width: 220, height: 220, fontSize: '5rem' }}>
-              {isImageAvatar ? undefined : avatar}
+            <Avatar src={isImageAvatar ? avatar : undefined} sx={{ width: 220, height: 220, fontSize: '5rem', bgcolor: 'transparent' }}>
+              {isImageAvatar ? undefined : avatar || <DefaultUserAvatarIcon title={nickname || 'User'} />}
             </Avatar>
           </Box>
         </DialogContent>

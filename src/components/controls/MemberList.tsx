@@ -191,7 +191,7 @@ export default function MemberList({ members, thinkingId, chat, onRemove, onSpea
       } : null,
       chat?.type !== 'direct' && onGuideMember ? {
         key: 'guide-member',
-        label: i18n.language.startsWith('zh') ? '话题引导' : 'Topic guide',
+        label: i18n.language.startsWith('zh') ? '引导回应' : 'Guide reply',
         run: () => onGuideMember(memberId),
       } : null,
       canRun && onStartDirectChat ? {

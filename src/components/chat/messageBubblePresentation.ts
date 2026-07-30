@@ -100,3 +100,18 @@ export function shouldUseCompactMessageBubble(options: {
   return (options.compactBubbleMode && !options.isUser && !options.isGuidanceBubble)
     || (options.compactPrivateBubbleMode && isPrivateConversation && !options.isUser && !options.isGuidanceBubble);
 }
+
+const SHORT_MEDIA_MESSAGE_LENGTH = 120;
+
+export function shouldUseCompactMediaBubble(message: Message) {
+  const attachments = message.metadata?.attachments || [];
+  const hasRenderableMedia = attachments.some((attachment) => attachment.kind === 'image' || attachment.kind === 'audio');
+  if (!hasRenderableMedia) return false;
+  const rawContent = message.content.trim();
+  const normalizedContent = rawContent.replace(/\s+/g, '').trim();
+  if (!normalizedContent) return true;
+  if (['图片已生成', '图片已生成。', '已生成', '已生成。'].includes(normalizedContent)) return true;
+  if (/正在生成图片|图片已生成/.test(normalizedContent)) return true;
+  if (/```|(^|\n)\s{0,3}#{1,6}\s|(^|\n)\s{0,3}\|.*\|/.test(rawContent)) return false;
+  return normalizedContent.length <= SHORT_MEDIA_MESSAGE_LENGTH;
+}
