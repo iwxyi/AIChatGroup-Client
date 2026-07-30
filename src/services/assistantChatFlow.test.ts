@@ -4,6 +4,56 @@ import type { Message } from '../types/message';
 import { buildAgentArtifactReplyContent, markAssistantMediaAttachmentsFailed } from './assistantChatFlow';
 
 describe('assistantChatFlow media artifacts', () => {
+  it('does not append the same Mermaid artifact twice when the writer already included it inline', () => {
+    const mermaid = [
+      'flowchart TD',
+      '    A[父亲] -->|夫妻| B[母亲]',
+      '    A -->|父子| C[儿子]',
+      '    B -->|母子| C',
+      '    C -->|夫妻| D[儿媳]',
+      '    C -->|父子| E[孙子]',
+      '    D -->|母子| E',
+    ].join('\n');
+    const patchSet: AssistantAgentPatchSet = {
+      assistantMessage: [
+        '这是一个简单的角色关系图示例。',
+        '',
+        '```mermaid',
+        mermaid,
+        '```',
+      ].join('\n'),
+      patches: [{
+        action: 'create',
+        kind: 'diagram',
+        title: '角色关系图 (Mermaid)',
+        language: 'mermaid',
+        content: mermaid,
+      }],
+      mediaTasks: [],
+    };
+
+    const content = buildAgentArtifactReplyContent(patchSet);
+
+    expect(content.match(/```mermaid/g)?.length).toBe(1);
+    expect(content).not.toContain('## 角色关系图 (Mermaid)');
+  });
+
+  it('appends artifact content when the assistant message only contains a short summary', () => {
+    const patchSet: AssistantAgentPatchSet = {
+      assistantMessage: '已为你整理好角色关系图。',
+      patches: [{
+        action: 'create',
+        kind: 'diagram',
+        title: '角色关系图',
+        language: 'mermaid',
+        content: 'flowchart TD\n    A[秦始皇] -->|任用| B[李斯]\n    A -->|防范| C[赵高]',
+      }],
+      mediaTasks: [],
+    };
+
+    expect(buildAgentArtifactReplyContent(patchSet)).toContain('```mermaid');
+  });
+
   it('keeps the user-facing assistant message separate from image prompts', () => {
     const patchSet: AssistantAgentPatchSet = {
       assistantMessage: '我为你生成一张红烧肉照片，肥瘦相间、酱色油亮，适合直接查看。',

@@ -111,6 +111,7 @@ export async function runPendingAssistantAppCommandChoice(params: {
 export async function tryRunAssistantAppCommand(params: {
   chatId: string;
   input: string;
+  recentMessages?: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>;
   apiConfig: APIConfig;
   aiProfiles: AIModelProfile[];
 }) {
@@ -173,6 +174,7 @@ export async function tryRunAssistantAppCommand(params: {
     source: 'assistant',
     chatId: params.chatId,
     input: params.input,
+    recentMessages: params.recentMessages,
     apiConfig: params.apiConfig,
     aiProfiles: params.aiProfiles,
   });

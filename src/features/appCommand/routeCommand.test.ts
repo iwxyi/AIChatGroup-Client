@@ -69,4 +69,62 @@ describe('routeAppCommand', () => {
     expect(route.requiresConfirmation).toBe(true);
     expect(route.steps[1]?.riskLevel).toBe('high');
   });
+
+  it('supports deleting explicitly referenced characters with recent assistant context', async () => {
+    generateResponseMock.mockResolvedValueOnce(JSON.stringify({
+      mode: 'local_action',
+      action: 'delete_characters',
+      riskLevel: 'low',
+      requiresConfirmation: false,
+      plan: {
+        action: 'delete_characters',
+        characters: [{ name: '掌柜老陈' }, { name: 'AI茶博士' }, { name: '机械跑堂小铁' }],
+      },
+    }));
+
+    const { route } = await routeAppCommand({
+      ...context('删除这三个角色吧'),
+      recentMessages: [
+        { role: 'assistant', content: '已准备角色：掌柜老陈、AI茶博士、机械跑堂小铁。可以在角色库查看。' },
+        { role: 'user', content: '删除这三个角色吧' },
+      ],
+    });
+
+    expect(generateResponseMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.any(String),
+      [expect.objectContaining({
+        content: expect.stringContaining('已准备角色：掌柜老陈、AI茶博士、机械跑堂小铁'),
+      })],
+      undefined,
+      expect.anything(),
+    );
+    expect(route.mode).toBe('local_action');
+    if (route.mode !== 'local_action') return;
+    expect(route.action).toBe('delete_characters');
+    expect(route.riskLevel).toBe('medium');
+    expect(route.requiresConfirmation).toBe(false);
+  });
+
+  it('routes incomplete model setup requests to the model settings page', async () => {
+    generateResponseMock.mockResolvedValueOnce(JSON.stringify({
+      mode: 'local_action',
+      action: 'navigate',
+      riskLevel: 'low',
+      requiresConfirmation: false,
+      plan: {
+        action: 'navigate',
+        routePath: 'ssmm://settings?action=open&tab=models&card=models',
+        title: '打开模型设置',
+        summary: '需要在模型设置中选择或配置 DeepSeek。',
+      },
+    }));
+
+    const { route } = await routeAppCommand(context('设置模型为 deepseek'));
+
+    expect(route.mode).toBe('local_action');
+    if (route.mode !== 'local_action') return;
+    expect(route.action).toBe('navigate');
+    expect(route.plan.routePath).toBe('ssmm://settings?action=open&tab=models&card=models');
+  });
 });

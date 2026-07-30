@@ -12,6 +12,15 @@ export type AppCommandAction =
   | 'read_character_info'
   | 'compare_characters'
   | 'update_characters'
+  | 'delete_characters'
+  | 'restore_characters'
+  | 'open_character'
+  | 'rename_character'
+  | 'delete_chats'
+  | 'restore_chats'
+  | 'rename_chat'
+  | 'create_assistant_chat'
+  | 'manage_group_members'
   | 'query_ai_balance'
   | 'update_theme'
   | 'set_ai_model_key'
@@ -70,12 +79,16 @@ export interface LocalActionPlan {
   deductionFactionCount?: number;
   mysteryClueCount?: number;
   chatQuery?: string;
+  chatId?: string;
   chatTypePreference?: 'group' | 'direct' | 'assistant' | 'any';
   characterQuery?: string;
   sourceGroup?: string;
   targetGroup?: string;
   updateInstruction?: string;
   compareQuestion?: string;
+  chatName?: string;
+  newName?: string;
+  memberOperation?: 'add' | 'remove' | 'set';
   theme?: 'light' | 'dark' | 'system';
   providerHint?: string;
   modelHint?: string;
@@ -152,6 +165,7 @@ export interface AppCommandContext {
   source: CommandSource;
   input: string;
   chatId?: string;
+  recentMessages?: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>;
   navigate?: NavigateFunction;
   apiConfig: APIConfig;
   aiProfiles: AIModelProfile[];

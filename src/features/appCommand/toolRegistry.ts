@@ -4,6 +4,7 @@ export interface AppCommandToolDefinition {
   action: Exclude<AppCommandAction, 'assistant_chat'>;
   title: string;
   riskLevel: AppCommandRiskLevel;
+  defaultConfirmation?: Partial<Record<CommandSource, boolean>>;
   description: string;
   parameters: string[];
   examples: string[];
@@ -76,6 +77,78 @@ export const APP_COMMAND_TOOLS: AppCommandToolDefinition[] = [
     examples: ['把喜羊羊相关的角色都移动到喜羊羊分组中', '把武侠分组下所有角色的说话风格改得更古风', '小明性格太懦弱了，需要调外向一点'],
   },
   {
+    action: 'delete_characters',
+    title: '删除角色',
+    riskLevel: 'medium',
+    description: '把一个或一批明确匹配的角色移入回收站。只在用户明确要求删除、移除、清理角色时使用；执行器会按本地角色库匹配，匹配不明确时要求用户选择。',
+    parameters: ['characterQuery', 'characters[].name', 'sourceGroup', 'summary'],
+    examples: ['删除秦始皇角色', '把刚才创建的三个角色删掉', '清理赛博茶馆分组里的角色'],
+  },
+  {
+    action: 'restore_characters',
+    title: '恢复角色',
+    riskLevel: 'medium',
+    description: '从回收站恢复一个或一批明确匹配的角色。只在用户明确要求恢复、找回、撤销删除角色时使用。',
+    parameters: ['characterQuery', 'characters[].name', 'sourceGroup', 'summary'],
+    examples: ['恢复刚才删除的角色', '把秦始皇从回收站找回来'],
+  },
+  {
+    action: 'open_character',
+    title: '打开角色资料',
+    riskLevel: 'low',
+    description: '打开明确匹配的角色资料或编辑页。用于“打开某个角色设置/资料/编辑页”。',
+    parameters: ['characterName', 'characterQuery', 'characters[]'],
+    examples: ['打开秦始皇角色设置', '进入小明的角色资料'],
+  },
+  {
+    action: 'rename_character',
+    title: '重命名角色',
+    riskLevel: 'medium',
+    description: '修改明确匹配角色的名称。执行器会检查重名；目标不明确时要求选择。',
+    parameters: ['characterName', 'characterQuery', 'characters[]', 'newName', 'summary'],
+    examples: ['把小明改名为林明', '秦始皇角色改名为始皇帝'],
+  },
+  {
+    action: 'delete_chats',
+    title: '删除会话',
+    riskLevel: 'medium',
+    description: '把明确匹配的会话移入回收站。用于删除助手、单聊或群聊；匹配不明确时展示候选。',
+    parameters: ['chatQuery', 'chatTypePreference', 'summary'],
+    examples: ['删除刚才创建的群聊', '把世界杯动态查询这个助手会话删掉'],
+  },
+  {
+    action: 'restore_chats',
+    title: '恢复会话',
+    riskLevel: 'medium',
+    description: '从回收站恢复明确匹配的会话。',
+    parameters: ['chatQuery', 'chatTypePreference', 'summary'],
+    examples: ['恢复刚才删除的群聊', '把世界杯动态查询会话找回来'],
+  },
+  {
+    action: 'rename_chat',
+    title: '重命名会话',
+    riskLevel: 'medium',
+    description: '修改明确匹配的助手、单聊或群聊名称。目标不明确时展示候选。',
+    parameters: ['chatQuery', 'chatName', 'chatTypePreference', 'newName', 'summary'],
+    examples: ['把这个群聊改名为赛博茶馆', '把最新世界杯动态查询改名为世界杯消息'],
+  },
+  {
+    action: 'create_assistant_chat',
+    title: '创建助手会话',
+    riskLevel: 'medium',
+    description: '创建一个普通助手会话，可指定标题；是否默认开启 Agent 由用户偏好决定。',
+    parameters: ['chatName', 'title', 'summary'],
+    examples: ['创建一个新的助手会话', '新建助手叫资料查询'],
+  },
+  {
+    action: 'manage_group_members',
+    title: '管理群聊成员',
+    riskLevel: 'medium',
+    description: '给明确匹配的群聊添加、移除或设置角色成员。memberOperation 为 add/remove/set；角色由 characters 定位或创建。',
+    parameters: ['chatQuery', 'groupName', 'memberOperation', 'characters[]', 'summary'],
+    examples: ['把秦始皇加入这个群聊', '从赛博茶馆里移除机械跑堂小铁'],
+  },
+  {
     action: 'query_ai_balance',
     title: '查询 AI 点数',
     riskLevel: 'low',
@@ -103,16 +176,47 @@ export const APP_COMMAND_TOOLS: AppCommandToolDefinition[] = [
     action: 'navigate',
     title: '打开站内页面',
     riskLevel: 'low',
-    description: '打开明确的站内页面，例如角色库、账号、会员、AI模型、聊天列表。',
+    description: '打开明确的站内页面，例如角色库、账号、会员、模型设置、聊天列表。用户要求配置模型、设置 DeepSeek/OpenAI/图片模型但没有给出秘钥或具体可执行参数时，应跳转到 settings 模型页。',
     parameters: ['routePath', 'title', 'summary'],
-    examples: ['打开角色库', '进入账号页面'],
+    examples: ['打开角色库', '进入账号页面', '设置模型为 deepseek', '配置图片模型'],
   },
 ];
 
 const SUPPORTED_ACTIONS = new Set<LocalActionPlan['action']>(APP_COMMAND_TOOLS.map((tool) => tool.action));
+const TOOL_BY_ACTION = new Map<LocalActionPlan['action'], AppCommandToolDefinition>(APP_COMMAND_TOOLS.map((tool) => [tool.action, tool]));
+const RISK_RANK: Record<AppCommandRiskLevel, number> = { low: 1, medium: 2, high: 3 };
 
 export function isSupportedAppCommandAction(action: LocalActionPlan['action']) {
   return SUPPORTED_ACTIONS.has(action);
+}
+
+export function getAppCommandToolDefinition(action: LocalActionPlan['action']) {
+  return TOOL_BY_ACTION.get(action) || null;
+}
+
+export function maxAppCommandRiskLevel(left: AppCommandRiskLevel, right: AppCommandRiskLevel): AppCommandRiskLevel {
+  return RISK_RANK[left] >= RISK_RANK[right] ? left : right;
+}
+
+export function normalizeAppCommandActionRisk(action: LocalActionPlan['action'], plannerRiskLevel: AppCommandRiskLevel): AppCommandRiskLevel {
+  const tool = getAppCommandToolDefinition(action);
+  return tool ? maxAppCommandRiskLevel(plannerRiskLevel, tool.riskLevel) : plannerRiskLevel;
+}
+
+export function shouldConfirmAppCommandTool(params: {
+  action: LocalActionPlan['action'];
+  source: CommandSource;
+  riskLevel: AppCommandRiskLevel;
+  hasChoices?: boolean;
+  requestedConfirmation?: boolean;
+}) {
+  if (params.hasChoices) return true;
+  if (params.riskLevel === 'high') return true;
+  const tool = getAppCommandToolDefinition(params.action);
+  const toolDefault = tool?.defaultConfirmation?.[params.source];
+  if (typeof params.requestedConfirmation === 'boolean') return params.requestedConfirmation || toolDefault === true;
+  if (typeof toolDefault === 'boolean') return toolDefault;
+  return params.source === 'assistant' && params.riskLevel !== 'low';
 }
 
 export function getAppCommandToolPrompt(source: CommandSource) {

@@ -319,6 +319,7 @@ function buildWriterPrompt() {
     '5. 多文件产物可以输出 files；单文件/文档可以只输出 content。',
     '6. 不确定时 assistantMessage 说明无法安全修改，patches 为空。',
     '6.1 如果 targetArtifacts 中 currentVersionContentTruncated 或 currentVersionFiles[].contentTruncated 为 true，说明完整正文未发送给你；任何 update patch 仍然必须输出完整新版本。若无法基于已发送内容安全重建完整版本，必须返回 patches=[] 并要求用户缩小修改范围或打开具体文件后重试，禁止编造缺失正文。',
+    '6.2 assistantMessage 不要重复输出 patches[].content 或 files[].content 的完整正文/源码。产物正文只放在 patch content/files 中；assistantMessage 只写简短说明、必要的前言或图片槽位。',
     '7. 如需生成图片，不要把图片当作 markdown 文档或代码块，必须输出 mediaTasks；图片提示词由文本模型生成，图片由独立图片模型执行。',
     '7.1 assistantMessage 是展示给用户看的自然回复，必须直接回应用户请求；如果回复是一篇文章、报告、教程或多图说明，可以用 Markdown 把图片槽位自然插入正文中。',
     '7.2 mediaTasks.prompt 是给图片模型的完整提示词；aspectRatio、imageSize、referenceImageIds 等图片要求只能放在 mediaTasks 中，不要混入聊天正文。',

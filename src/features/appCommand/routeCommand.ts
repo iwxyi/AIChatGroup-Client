@@ -2,7 +2,13 @@ import { generateResponse } from '../../services/aiClient';
 import { getUsablePreferredAIProfile } from '../../types/settings';
 import type { AppCommandChoice, AppCommandContext, AppCommandRiskLevel, AppCommandRoute, LocalActionPlan, PlannedCharacter } from './commandTypes';
 import { redactCommandSecrets } from './secretRedaction';
-import { getAppCommandToolPrompt, isSupportedAppCommandAction } from './toolRegistry';
+import {
+  getAppCommandToolPrompt,
+  isSupportedAppCommandAction,
+  maxAppCommandRiskLevel,
+  normalizeAppCommandActionRisk,
+  shouldConfirmAppCommandTool,
+} from './toolRegistry';
 
 function extractJsonObject(text: string) {
   const trimmed = text.trim();
@@ -77,11 +83,19 @@ function normalizePlan(raw: Record<string, unknown>): LocalActionPlan {
     deductionFactionCount: positiveInteger(rawPlan.deductionFactionCount ?? rawPlan.deduction_faction_count, 12),
     mysteryClueCount: positiveInteger(rawPlan.mysteryClueCount ?? rawPlan.mystery_clue_count, 50),
     chatQuery: shortText(rawPlan.chatQuery ?? rawPlan.chat_query, 120),
+    chatId: shortText(rawPlan.chatId ?? rawPlan.chat_id, 160),
     chatTypePreference: rawPlan.chatTypePreference === 'group' || rawPlan.chatTypePreference === 'direct' || rawPlan.chatTypePreference === 'assistant' ? rawPlan.chatTypePreference : 'any',
     sourceGroup: shortText(rawPlan.sourceGroup ?? rawPlan.source_group, 80),
     targetGroup: shortText(rawPlan.targetGroup ?? rawPlan.target_group ?? rawUpdates.group, 80),
     updateInstruction: shortText(rawPlan.updateInstruction ?? rawPlan.update_instruction, 260),
     compareQuestion: shortText(rawPlan.compareQuestion ?? rawPlan.compare_question, 260),
+    chatName: shortText(rawPlan.chatName ?? rawPlan.chat_name, 80),
+    newName: shortText(rawPlan.newName ?? rawPlan.new_name, 80),
+    memberOperation: rawPlan.memberOperation === 'add' || rawPlan.memberOperation === 'remove' || rawPlan.memberOperation === 'set'
+      ? rawPlan.memberOperation
+      : rawPlan.member_operation === 'add' || rawPlan.member_operation === 'remove' || rawPlan.member_operation === 'set'
+        ? rawPlan.member_operation
+        : undefined,
     theme: rawPlan.theme === 'light' || rawPlan.theme === 'dark' || rawPlan.theme === 'system' ? rawPlan.theme : undefined,
     providerHint: shortText(rawPlan.providerHint ?? rawPlan.provider_hint, 80),
     modelHint: shortText(rawPlan.modelHint ?? rawPlan.model_hint, 80),
@@ -117,39 +131,57 @@ function normalizeChoices(value: unknown): AppCommandChoice[] {
   }).slice(0, 10);
 }
 
-function normalizeLocalActionStep(raw: unknown): AppCommandRoute['mode'] extends never ? never : Extract<AppCommandRoute, { mode: 'workflow' }>['steps'][number] | null {
+function normalizeLocalActionStep(raw: unknown, source: AppCommandContext['source']): AppCommandRoute['mode'] extends never ? never : Extract<AppCommandRoute, { mode: 'workflow' }>['steps'][number] | null {
   if (!raw || typeof raw !== 'object') return null;
   const record = raw as Record<string, unknown>;
   const plan = normalizePlan(record);
   if (!isSupportedAppCommandAction(plan.action)) return null;
   const rawRisk = record.riskLevel ?? record.risk_level;
-  const riskLevel = normalizeActionRisk(plan.action, rawRisk === 'high' || rawRisk === 'medium' ? rawRisk : 'low');
+  const plannerRiskLevel = rawRisk === 'high' || rawRisk === 'medium' ? rawRisk : 'low';
+  const riskLevel = normalizeAppCommandActionRisk(plan.action, plannerRiskLevel);
+  const requestedConfirmation = record.requiresConfirmation ?? record.requires_confirmation;
   return {
     action: plan.action,
     plan,
     riskLevel,
-    requiresConfirmation: Boolean(record.requiresConfirmation ?? record.requires_confirmation ?? riskLevel !== 'low'),
+    requiresConfirmation: shouldConfirmAppCommandTool({
+      action: plan.action,
+      source,
+      riskLevel,
+      requestedConfirmation: typeof requestedConfirmation === 'boolean' ? requestedConfirmation : undefined,
+    }),
     confirmationText: shortText(record.confirmationText ?? record.confirmation_text, 260),
   };
 }
 
-function normalizeActionRisk(action: LocalActionPlan['action'], riskLevel: AppCommandRiskLevel): AppCommandRiskLevel {
-  if (action === 'update_characters' || action === 'set_ai_model_key') return 'high';
-  if ((action === 'create_character' || action === 'create_characters' || action === 'create_group_chat' || action === 'create_direct_chat') && riskLevel === 'low') return 'medium';
-  return riskLevel;
+function buildRecentConversationContext(context: AppCommandContext) {
+  const recent = (context.recentMessages || [])
+    .map((message) => ({
+      role: message.role,
+      content: shortText(redactCommandSecrets(message.content).text, 700),
+    }))
+    .filter((message) => message.content);
+  if (!recent.length) return '';
+  return [
+    '近期对话上下文如下。它只用于解析“这三个角色”“刚才那个群聊”等指代，不代表用户最新输入已经改变：',
+    JSON.stringify(recent.slice(-8)),
+    '',
+    `用户最新输入：${context.input}`,
+  ].join('\n');
 }
 
-function maxRiskLevel(left: AppCommandRiskLevel, right: AppCommandRiskLevel): AppCommandRiskLevel {
-  const rank: Record<AppCommandRiskLevel, number> = { low: 1, medium: 2, high: 3 };
-  return rank[left] >= rank[right] ? left : right;
+function requiresConfirmationForRoute(record: Record<string, unknown>, action: LocalActionPlan['action'], source: AppCommandContext['source'], riskLevel: AppCommandRiskLevel, choices: AppCommandChoice[]) {
+  const requestedConfirmation = record.requiresConfirmation ?? record.requires_confirmation;
+  return shouldConfirmAppCommandTool({
+    action,
+    source,
+    riskLevel,
+    hasChoices: choices.length > 0,
+    requestedConfirmation: typeof requestedConfirmation === 'boolean' ? requestedConfirmation : undefined,
+  });
 }
 
-function requiresConfirmationForRoute(record: Record<string, unknown>, riskLevel: AppCommandRiskLevel, choices: AppCommandChoice[]) {
-  if (choices.length || riskLevel === 'high') return true;
-  return Boolean(record.requiresConfirmation ?? record.requires_confirmation ?? riskLevel !== 'low');
-}
-
-function normalizeRoute(raw: unknown, fallbackInput: string): AppCommandRoute {
+function normalizeRoute(raw: unknown, fallbackInput: string, source: AppCommandContext['source']): AppCommandRoute {
   if (!raw || typeof raw !== 'object') {
     return { mode: 'assistant_agent', initialMessage: fallbackInput, reason: 'planner_empty' };
   }
@@ -161,13 +193,13 @@ function normalizeRoute(raw: unknown, fallbackInput: string): AppCommandRoute {
     if (isSupportedAppCommandAction(plan.action)) {
       const rawRisk = record.riskLevel ?? record.risk_level;
       const rawRiskLevel = rawRisk === 'high' || rawRisk === 'medium' ? rawRisk : 'low';
-      const riskLevel = normalizeActionRisk(plan.action, rawRiskLevel);
+      const riskLevel = normalizeAppCommandActionRisk(plan.action, rawRiskLevel);
       return {
         mode: 'local_action',
         action: plan.action,
         plan,
         riskLevel,
-        requiresConfirmation: requiresConfirmationForRoute(record, riskLevel, choices),
+        requiresConfirmation: requiresConfirmationForRoute(record, plan.action, source, riskLevel, choices),
         confirmationText: shortText(record.confirmationText ?? record.confirmation_text, 260),
         choices,
         choicePresentation: record.choicePresentation === 'list' || record.choicePresentation === 'select' ? record.choicePresentation : undefined,
@@ -189,12 +221,12 @@ function normalizeRoute(raw: unknown, fallbackInput: string): AppCommandRoute {
   }
   if (record.mode === 'workflow' || (record.mode === 'final_response' && Array.isArray(record.steps))) {
     const steps = Array.isArray(record.steps)
-      ? record.steps.map(normalizeLocalActionStep).filter((step): step is NonNullable<typeof step> => Boolean(step)).slice(0, 6)
+      ? record.steps.map((step) => normalizeLocalActionStep(step, source)).filter((step): step is NonNullable<typeof step> => Boolean(step)).slice(0, 6)
       : [];
     const rawRisk = record.riskLevel ?? record.risk_level;
     const maxStepRisk = steps.some((step) => step.riskLevel === 'high') ? 'high' : steps.some((step) => step.riskLevel === 'medium') ? 'medium' : 'low';
     const rawRiskLevel = rawRisk === 'high' || rawRisk === 'medium' || rawRisk === 'low' ? rawRisk : maxStepRisk;
-    const riskLevel = maxRiskLevel(rawRiskLevel, maxStepRisk);
+    const riskLevel = maxAppCommandRiskLevel(rawRiskLevel, maxStepRisk);
     const choices = normalizeChoices(record.choices);
     if (!steps.length) {
       const directPlan = normalizePlan(record);
@@ -216,7 +248,7 @@ function normalizeRoute(raw: unknown, fallbackInput: string): AppCommandRoute {
           action,
           plan,
           riskLevel,
-          requiresConfirmation: true,
+          requiresConfirmation: requiresConfirmationForRoute(record, action, source, riskLevel, choices),
           confirmationText: shortText(record.confirmationText ?? record.confirmation_text, 260),
           choices,
           choicePresentation: record.choicePresentation === 'list' || record.choicePresentation === 'select' ? record.choicePresentation : undefined,
@@ -230,7 +262,15 @@ function normalizeRoute(raw: unknown, fallbackInput: string): AppCommandRoute {
       summary: shortText(record.summary, 260),
       steps,
       riskLevel,
-      requiresConfirmation: requiresConfirmationForRoute(record, riskLevel, choices),
+      requiresConfirmation: shouldConfirmAppCommandTool({
+        action: steps[0]?.action || 'navigate',
+        source,
+        riskLevel,
+        hasChoices: choices.length > 0,
+        requestedConfirmation: typeof (record.requiresConfirmation ?? record.requires_confirmation) === 'boolean'
+          ? Boolean(record.requiresConfirmation ?? record.requires_confirmation)
+          : undefined,
+      }),
       confirmationText: shortText(record.confirmationText ?? record.confirmation_text, 260),
       choices,
       choicePresentation: record.choicePresentation === 'list' || record.choicePresentation === 'select' ? record.choicePresentation : undefined,
@@ -242,14 +282,14 @@ function normalizeRoute(raw: unknown, fallbackInput: string): AppCommandRoute {
   }
   const rawRisk = record.riskLevel ?? record.risk_level;
   const rawRiskLevel = rawRisk === 'high' || rawRisk === 'medium' ? rawRisk : 'low';
-  const riskLevel = normalizeActionRisk(plan.action, rawRiskLevel);
+  const riskLevel = normalizeAppCommandActionRisk(plan.action, rawRiskLevel);
   const choices = normalizeChoices(record.choices);
   return {
     mode: 'local_action',
     action: plan.action,
     plan,
     riskLevel,
-    requiresConfirmation: requiresConfirmationForRoute(record, riskLevel, choices),
+    requiresConfirmation: requiresConfirmationForRoute(record, plan.action, source, riskLevel, choices),
     confirmationText: shortText(record.confirmationText ?? record.confirmation_text, 260),
     choices,
     choicePresentation: record.choicePresentation === 'list' || record.choicePresentation === 'select' ? record.choicePresentation : undefined,
@@ -288,6 +328,12 @@ function buildPlannerPrompt(source: AppCommandContext['source']) {
     '- 同名或多候选角色需要 choices；每个 choice 的 label 必须带分组或摘要差异，choice.plan 里也要带 characterQuery、characterName、characters[].group 等可用于本地消歧的信息。',
     '- 对“秦始皇的性格怎么样”“A 和 B 谁更擅长做菜”“结合角色库信息回答”这类请求，必须使用 read_character_info 或 compare_characters；不要直接 final_response，不要退回 assistant_agent，也不要只凭摘要自由回答。',
     '- 对“把某分组下角色都改成...”“把喜羊羊相关的角色都移动到喜羊羊分组中”“把小明调外向一点”这类请求，输出 update_characters，并设置 riskLevel=high、requiresConfirmation=true。',
+    '- 对“删除/移除/清理某些角色”“删掉刚才创建的角色”“删除这三个角色”这类请求，输出 delete_characters；若近期上下文能明确指向角色名，必须写入 characters[].name，不要改成 create_characters、update_characters 或 final_response。',
+    '- delete_characters 是移入回收站，不是永久清空；当角色名称或范围明确时可以 requiresConfirmation=false，范围不明确或多候选时由执行器继续让用户选择。',
+    '- 对“恢复/找回/撤销删除某角色”输出 restore_characters；对“打开某角色资料/设置/编辑页”输出 open_character；对“把某角色改名为 X”输出 rename_character。',
+    '- 对“删除/恢复/重命名某会话/群聊/助手”分别输出 delete_chats、restore_chats、rename_chat；目标不明确时让执行器返回候选。',
+    '- 对“新建助手会话”输出 create_assistant_chat；对“给群聊添加/移除/替换成员”输出 manage_group_members，并写 memberOperation=add/remove/set。',
+    '- 对“设置模型为 deepseek / 配置 OpenAI / 配置图片模型 / 模型怎么设置”这类没有提供真实 key 或完整配置的请求，输出 navigate，routePath 使用 ssmm://settings?action=open&tab=models&card=models，不要假装已经设置完成。',
     '- 需要跳转页面时，routePath 优先使用跨平台 AppLink，例如 ssmm://settings?action=open&tab=models&card=models、ssmm://characters?action=open、ssmm://chats?action=open；不要输出 hash 路由或平台私有路径。',
     '- sourceGroup 表示源分组筛选；targetGroup 表示写入目标分组。不要把“移动到 X 分组”里的 X 放到 sourceGroup。',
     '- “相关的角色”“包含某关键词的角色”应放到 characterQuery，而不是 sourceGroup。',
@@ -307,6 +353,7 @@ function buildPlannerPrompt(source: AppCommandContext['source']) {
 export async function routeAppCommand(context: AppCommandContext) {
   const profile = getUsablePreferredAIProfile(context.aiProfiles, 'text') || context.apiConfig;
   const redacted = redactCommandSecrets(context.input);
+  const userPrompt = buildRecentConversationContext({ ...context, input: redacted.text }) || redacted.text;
   const response = await generateResponse(
     {
       provider: profile.provider,
@@ -315,7 +362,7 @@ export async function routeAppCommand(context: AppCommandContext) {
       model: profile.model,
     },
     buildPlannerPrompt(context.source),
-    [{ role: 'user', content: redacted.text }],
+    [{ role: 'user', content: userPrompt }],
     undefined,
     {
       responseFormat: 'json',
@@ -324,7 +371,7 @@ export async function routeAppCommand(context: AppCommandContext) {
     },
   );
   return {
-    route: normalizeRoute(parsePlannerJson(response), context.input),
+    route: normalizeRoute(parsePlannerJson(response), context.input, context.source),
     secrets: redacted.secrets,
   };
 }

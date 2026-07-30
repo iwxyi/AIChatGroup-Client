@@ -42,6 +42,16 @@ function buildAssistantSystemPrompt() {
   ].join('\n');
 }
 
+function buildAppCommandRecentMessages(messages: Message[]) {
+  return messages
+    .filter((message) => !message.isDeleted && message.type !== 'event' && message.type !== 'system' && message.content.trim())
+    .slice(-8)
+    .map((message) => ({
+      role: message.type === 'ai' ? 'assistant' as const : 'user' as const,
+      content: message.content.trim().slice(0, 1200),
+    }));
+}
+
 function isAssistantAgentArtifactEnabled(chat: GroupChat) {
   return Boolean(chat.modeState.assistantCapabilities?.agent && chat.modeState.assistantCapabilities?.artifacts);
 }
@@ -474,9 +484,31 @@ function formatPatchForBubble(patch: AssistantAgentPatchSet['patches'][number]) 
   ].join('\n');
 }
 
+function normalizeArtifactContentForCompare(value: string) {
+  return value
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map((line) => line.trimEnd())
+    .join('\n')
+    .trim();
+}
+
+function hasInlineArtifactContent(intro: string, patch: AssistantAgentPatchSet['patches'][number]) {
+  const normalizedIntro = normalizeArtifactContentForCompare(intro);
+  const candidates = [
+    patch.content,
+    ...(patch.files || []).map((file) => file.content),
+  ]
+    .map(normalizeArtifactContentForCompare)
+    .filter((content) => content.length >= 80);
+  return candidates.some((content) => normalizedIntro.includes(content));
+}
+
 export function buildAgentArtifactReplyContent(patchSet: AssistantAgentPatchSet) {
   const intro = patchSet.assistantMessage.trim() || '已完成产物变更。';
-  const visiblePatches = patchSet.patches.filter((patch) => patch.content || patch.files?.length).slice(0, 3);
+  const visiblePatches = patchSet.patches
+    .filter((patch) => (patch.content || patch.files?.length) && !hasInlineArtifactContent(intro, patch))
+    .slice(0, 3);
   const hasImageTasks = Boolean(patchSet.mediaTasks?.length);
   const imageTaskNotice = hasImageTasks ? '正在生成图片，完成后会自动显示。' : '';
   if (!visiblePatches.length && hasImageTasks) return intro || imageTaskNotice;
@@ -714,6 +746,7 @@ export async function runAssistantChatReplyFlow(params: {
         const appCommandResult = await tryRunAssistantAppCommand({
           chatId: params.chatId,
           input: userMessage.content,
+          recentMessages: buildAppCommandRecentMessages(params.currentMessages),
           apiConfig: resolvedApi,
           aiProfiles: params.aiProfiles,
         });

@@ -1,13 +1,13 @@
-import type { NavigateFunction } from 'react-router-dom';
 import { api } from '../../services/api';
 import { generateResponse } from '../../services/aiClient';
-import { buildDirectChatDraft, buildGroupChatDraft } from '../../services/chatDraftBuilder';
+import { buildAssistantChatDraft, buildDirectChatDraft, buildGroupChatDraft } from '../../services/chatDraftBuilder';
 import { generateCharacterProfilesSafe } from '../../services/characterGenerator';
 import { getRoomTemplate, ROOM_TEMPLATES, type RoomTemplateDefinition, type RoomTemplateKey } from '../../services/roomTemplates';
 import { useCharacterStore } from '../../stores/useCharacterStore';
 import { useChatStore } from '../../stores/useChatStore';
 import { useMessageStore } from '../../stores/useMessageStore';
 import { useSettingsStore } from '../../stores/useSettingsStore';
+import type { GroupChat } from '../../types/chat';
 import type { AICharacter } from '../../types/character';
 import { DEFAULT_CHARACTER_BEHAVIOR, DEFAULT_CHARACTER_INTERVENTION, DEFAULT_CHARACTER_MEMORY, DEFAULT_PERSONALITY, normalizeCharacterGroup } from '../../types/character';
 import { getUsablePreferredAIProfile } from '../../types/settings';
@@ -47,8 +47,39 @@ function buildCharacterDraft(input: PlannedCharacter, profile?: Awaited<ReturnTy
 
 function findCharacterByName(characters: AICharacter[], name: string) {
   const target = normalizeName(name);
-  return characters.find((character) => normalizeName(character.name) === target)
-    || characters.find((character) => normalizeName(character.name).includes(target) || target.includes(normalizeName(character.name)));
+  return characters.find((character) => normalizeName(character.name) === target);
+}
+
+function normalizeMemberSet(memberIds: string[]) {
+  return Array.from(new Set(memberIds.filter(Boolean))).sort();
+}
+
+export function findReusableGroupChat(params: {
+  chats: Array<{
+    id: string;
+    type: string;
+    deletedAt?: number | null;
+    name: string;
+    topic?: string;
+    sessionKind?: { scenarioId?: string };
+    memberIds: string[];
+  }>;
+  title: string;
+  topic: string;
+  memberIds: string[];
+  scenarioId?: string;
+}) {
+  const expectedMembers = normalizeMemberSet(params.memberIds);
+  const scenarioId = clean(params.scenarioId);
+  return params.chats.find((chat) => {
+    if (chat.type !== 'group' || chat.deletedAt) return false;
+    if (clean(chat.name) !== clean(params.title)) return false;
+    if (clean(chat.topic) !== clean(params.topic)) return false;
+    if (scenarioId && chat.sessionKind?.scenarioId !== scenarioId) return false;
+    const actualMembers = normalizeMemberSet(chat.memberIds);
+    return actualMembers.length === expectedMembers.length
+      && actualMembers.every((memberId, index) => memberId === expectedMembers[index]);
+  }) || null;
 }
 
 async function ensureCharacters(planCharacters: PlannedCharacter[], context: AppCommandContext) {
@@ -196,6 +227,15 @@ function characterSearchText(character: AICharacter) {
   ].filter(Boolean).join('\n');
 }
 
+function chatSearchText(chat: Pick<GroupChat, 'name' | 'topic' | 'worldState' | 'type'>) {
+  return [
+    chat.name,
+    chat.topic,
+    chat.worldState?.recentEvent,
+    chat.type === 'group' ? '群聊' : chat.type === 'direct' ? '单聊' : chat.type === 'assistant' ? '助手' : '',
+  ].filter(Boolean).join('\n');
+}
+
 function formatCharacterForAgent(character: AICharacter) {
   return [
     `名称：${character.name}`,
@@ -239,6 +279,46 @@ function resolveCharacterMatches(plan: LocalActionPlan, input: string) {
     .map((item) => item.character);
 }
 
+function resolveDeletedCharacterMatches(plan: LocalActionPlan, input: string) {
+  const characters = useCharacterStore.getState().characters.filter((character) => character.deletedAt);
+  const queries = [
+    ...(plan.characters?.map((item) => item.name) || []),
+    plan.characterName,
+    plan.characterQuery,
+  ].map((item) => clean(item)).filter(Boolean);
+  const effectiveQueries = queries.length ? queries : [input];
+  const matches = new Map<string, { character: AICharacter; score: number }>();
+  for (const query of effectiveQueries) {
+    const normalizedQuery = normalizeName(query);
+    characters.forEach((character) => {
+      const score = scoreText(characterSearchText(character), query) + (normalizeName(character.name) === normalizedQuery ? 40 : 0);
+      if (score <= 0) return;
+      const existing = matches.get(character.id);
+      if (!existing || score > existing.score) matches.set(character.id, { character, score });
+    });
+  }
+  return Array.from(matches.values()).sort((a, b) => b.score - a.score).map((item) => item.character);
+}
+
+function resolveChatMatches(plan: LocalActionPlan, input: string, includeDeleted = false) {
+  const chats = useChatStore.getState().chats.filter((chat) => includeDeleted ? chat.deletedAt : !chat.deletedAt);
+  if (plan.chatId) {
+    return chats.filter((chat) => chat.id === plan.chatId);
+  }
+  const query = clean(plan.chatName || plan.chatQuery || plan.groupName || plan.title || input);
+  const normalizedQuery = normalizeName(query);
+  const ranked = chats
+    .map((chat) => {
+      const score = scoreText(chatSearchText(chat), query)
+        + (normalizeName(chat.name) === normalizedQuery ? 40 : 0)
+        + (plan.chatTypePreference && plan.chatTypePreference !== 'any' && chat.type === plan.chatTypePreference ? 10 : 0);
+      return { chat, score };
+    })
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score);
+  return ranked.map((item) => item.chat);
+}
+
 function characterCandidates(characters: AICharacter[]): AppCommandCandidate[] {
   return characters.slice(0, 8).map((character) => ({
     id: character.id,
@@ -247,6 +327,45 @@ function characterCandidates(characters: AICharacter[]): AppCommandCandidate[] {
     url: characterAppLink(character.id),
     kind: 'character',
   }));
+}
+
+function chatCandidates(chats: GroupChat[]): AppCommandCandidate[] {
+  return chats.slice(0, 8).map((chat) => {
+    const tab = chat.type === 'assistant' ? 3 : chat.type === 'direct' ? 1 : 0;
+    return {
+      id: chat.id,
+      label: chat.name,
+      description: [chat.type === 'group' ? '群聊' : chat.type === 'direct' ? '单聊' : '助手', chat.topic || ''].filter(Boolean).join(' · '),
+      url: chatAppLink(chat.id, tab),
+      kind: chat.type,
+    };
+  });
+}
+
+function chatActionChoices(chats: GroupChat[], plan: LocalActionPlan): AppCommandChoice[] {
+  return chats.slice(0, 8).map((chat) => ({
+    id: chat.id,
+    label: chat.name,
+    description: [chat.type === 'group' ? '群聊' : chat.type === 'direct' ? '单聊' : '助手', chat.topic || ''].filter(Boolean).join(' · '),
+    kind: 'execute' as const,
+    plan: {
+      action: plan.action,
+      plan: {
+        ...plan,
+        chatId: chat.id,
+        chatName: chat.name,
+        chatQuery: chat.name,
+        chatTypePreference: chat.type === 'group' || chat.type === 'direct' || chat.type === 'assistant' ? chat.type : 'any',
+      },
+    },
+  }));
+}
+
+function explicitCharacterNames(plan: LocalActionPlan) {
+  return Array.from(new Set([
+    ...(plan.characters?.map((item) => item.name) || []),
+    plan.characterName,
+  ].map((item) => clean(item)).filter(Boolean)));
 }
 
 function characterActionChoices(characters: AICharacter[], plan: LocalActionPlan): AppCommandChoice[] {
@@ -394,42 +513,6 @@ async function openExistingChat(plan: LocalActionPlan, context: AppCommandContex
   };
 }
 
-async function executeChoice(plan: LocalActionPlan, choice: AppCommandChoice, context: AppCommandContext, secrets: Record<string, string>): Promise<AppCommandExecutionResult> {
-  if (choice.kind === 'cancel') {
-    return { status: 'info', title: '已取消', message: '已取消本次操作。' };
-  }
-  if (choice.kind === 'confirm' && !choice.plan) {
-    return executeAppCommandRoute(contextToRoute(plan), context, secrets);
-  }
-  if (choice.url && !choice.plan) {
-    const webPath = resolveCommandUrlForWeb(choice.url);
-    context.navigate?.(webPath);
-    return { status: 'success', title: '已打开', message: '已打开对应页面。', navigateTo: webPath };
-  }
-  const nextPlan = choice.plan?.plan
-    ? { ...plan, ...choice.plan.plan, action: choice.plan.action || plan.action }
-    : plan;
-  const nextRoute: AppCommandRoute = {
-    mode: 'local_action',
-    action: nextPlan.action,
-    plan: nextPlan,
-    riskLevel: 'medium',
-    requiresConfirmation: choice.kind === 'confirm' ? false : true,
-    confirmationText: choice.plan?.confirmationText,
-  };
-  return executeAppCommandRoute(nextRoute, context, secrets);
-}
-
-function contextToRoute(plan: LocalActionPlan): AppCommandRoute {
-  return {
-    mode: 'local_action',
-    action: plan.action,
-    plan,
-    riskLevel: 'medium',
-    requiresConfirmation: false,
-  };
-}
-
 function localActionRouteFromStep(step: Extract<AppCommandRoute, { mode: 'workflow' }>['steps'][number], confirmed = false): AppCommandRoute {
   return {
     mode: 'local_action',
@@ -478,9 +561,35 @@ async function createGroupChat(plan: LocalActionPlan, context: AppCommandContext
   const template = resolveRoomTemplate(plan);
   const defaults = template.defaults || {};
   const members = await ensureCharacters(plannedCharacters, context);
-  const memberIds = ['user', ...members.map((item) => item.id)];
+  const uniqueMembers = Array.from(new Map(members.map((item) => [item.id, item])).values());
+  const memberIds = normalizeMemberSet(['user', ...uniqueMembers.map((item) => item.id)]);
   const title = clean(plan.groupName || plan.title) || `${plannedCharacters.slice(0, 3).map((item) => item.name).join('、')}的群聊`;
   const topic = clean(plan.groupTopic || plan.summary || context.input);
+  const existing = findReusableGroupChat({
+    chats: useChatStore.getState().chats,
+    title,
+    topic,
+    memberIds,
+    scenarioId: template.sessionKind.scenarioId,
+  });
+  if (existing) {
+    const url = chatWebPath(existing.id, 0);
+    context.navigate?.(url);
+    return {
+      status: 'success',
+      title: '已打开已有群聊',
+      message: `已找到已有的“${existing.name}”，没有重复创建。`,
+      markdown: `已打开已有群聊：${markdownChatLink(existing.name, existing.id, 0)}`,
+      navigateTo: url,
+      observation: {
+        completedGoal: true,
+        reusedChatId: existing.id,
+        roomTemplateKey: template.key,
+        scenarioId: template.sessionKind.scenarioId,
+        family: template.sessionKind.family,
+      },
+    };
+  }
   const chat = await useChatStore.getState().addChat(buildGroupChatDraft({
     type: 'group',
     name: title,
@@ -527,7 +636,7 @@ async function createGroupChat(plan: LocalActionPlan, context: AppCommandContext
   return {
     status: 'success',
     title: `已创建${template.label}`,
-    message: `已创建“${chat.name}”，玩法为${template.label}，包含 ${members.length} 个角色。`,
+    message: `已创建“${chat.name}”，玩法为${template.label}，包含 ${uniqueMembers.length} 个角色。`,
     markdown: `已创建${template.label}：${markdownChatLink(chat.name, chat.id, 0)}`,
     navigateTo: url,
     observation: {
@@ -784,6 +893,262 @@ async function updateCharactersByInstruction(plan: LocalActionPlan, context: App
   };
 }
 
+async function deleteCharactersByInstruction(plan: LocalActionPlan, context: AppCommandContext): Promise<AppCommandExecutionResult> {
+  const activeCharacters = useCharacterStore.getState().characters.filter((character) => !character.deletedAt);
+  const names = explicitCharacterNames(plan);
+  const exactMatches = names.length
+    ? names.flatMap((name) => {
+        const matched = findCharacterByName(activeCharacters, name);
+        return matched ? [matched] : [];
+      })
+    : [];
+  const uniqueExactMatches = Array.from(new Map(exactMatches.map((character) => [character.id, character])).values());
+  const matches = uniqueExactMatches.length === names.length && names.length > 0
+    ? uniqueExactMatches
+    : resolveCharacterMatches(plan, context.input);
+
+  if (!matches.length) {
+    return {
+      status: 'info',
+      title: '没有找到角色',
+      message: '没有找到要删除的角色。',
+      recoverable: true,
+      reasonType: 'character_not_found',
+      observation: {
+        attemptedAction: 'delete_characters',
+        query: names.join('、') || plan.characterQuery || plan.sourceGroup || context.input,
+        foundCount: 0,
+        possibleNextActions: ['read_character_info', 'create_characters', 'navigate'],
+      },
+    };
+  }
+
+  const deletingExplicitNames = names.length > 0 && uniqueExactMatches.length === names.length;
+  const deletingSourceGroup = Boolean(plan.sourceGroup && !names.length && !plan.characterQuery);
+  if (!deletingExplicitNames && !deletingSourceGroup && matches.length > 1) {
+    const candidates = characterCandidates(matches);
+    return {
+      status: 'needs_confirmation',
+      title: '找到多个角色',
+      message: '找到多个可能要删除的角色，请选择要删除哪一个，或明确角色名称/分组。',
+      candidates,
+      choices: characterActionChoices(matches, plan),
+      choicePresentation: candidates.length > 4 ? 'select' : 'chips',
+    };
+  }
+
+  const targets = matches.slice(0, 30);
+  await useCharacterStore.getState().deleteCharacters(targets.map((character) => character.id));
+  const namesText = targets.map((character) => character.name).join('、');
+  return {
+    status: 'success',
+    title: '已删除角色',
+    message: `已将 ${targets.length} 个角色移入回收站：${namesText}。`,
+    markdown: `已删除角色：${namesText}。这些角色已移入回收站，可在[角色库](${serializeAppLink({ target: 'characters', action: 'open' })})中查看。`,
+  };
+}
+
+async function restoreCharactersByInstruction(plan: LocalActionPlan, context: AppCommandContext): Promise<AppCommandExecutionResult> {
+  const matches = resolveDeletedCharacterMatches(plan, context.input);
+  if (!matches.length) return { status: 'info', title: '没有找到角色', message: '回收站里没有找到要恢复的角色。' };
+  if (matches.length > 1 && !explicitCharacterNames(plan).length && !plan.characterQuery) {
+    const candidates = characterCandidates(matches);
+    return {
+      status: 'needs_confirmation',
+      title: '找到多个角色',
+      message: '回收站里找到多个可能匹配的角色，请选择要恢复哪一个。',
+      candidates,
+      choices: characterActionChoices(matches, plan),
+      choicePresentation: candidates.length > 4 ? 'select' : 'chips',
+    };
+  }
+  const targets = matches.slice(0, 30);
+  await useCharacterStore.getState().restoreCharacters(targets.map((character) => character.id));
+  const namesText = targets.map((character) => character.name).join('、');
+  return {
+    status: 'success',
+    title: '已恢复角色',
+    message: `已恢复 ${targets.length} 个角色：${namesText}。`,
+    markdown: `已恢复角色：${namesText}。可以在[角色库](${serializeAppLink({ target: 'characters', action: 'open' })})查看。`,
+  };
+}
+
+async function openCharacter(plan: LocalActionPlan, context: AppCommandContext): Promise<AppCommandExecutionResult> {
+  const matches = resolveCharacterMatches(plan, context.input);
+  if (!matches.length) return { status: 'info', title: '没有找到角色', message: '没有找到要打开的角色。', recoverable: true, reasonType: 'character_not_found' };
+  if (shouldAskCharacterMatch(plan, context, matches)) {
+    const candidates = characterCandidates(matches);
+    return {
+      status: 'needs_confirmation',
+      title: '找到多个角色',
+      message: '找到多个可能匹配的角色，请选择要打开哪一个。',
+      candidates,
+      choices: characterActionChoices(matches, plan),
+      choicePresentation: candidates.length > 4 ? 'select' : 'chips',
+    };
+  }
+  const target = matches[0];
+  const webPath = resolveCommandUrlForWeb(characterAppLink(target.id));
+  context.navigate?.(webPath);
+  return {
+    status: 'success',
+    title: '已打开角色',
+    message: `已打开 ${target.name} 的角色资料。`,
+    markdown: `已打开角色资料：${markdownCharacterLink(target.name, target.id)}`,
+    navigateTo: webPath,
+  };
+}
+
+async function renameCharacter(plan: LocalActionPlan, context: AppCommandContext): Promise<AppCommandExecutionResult> {
+  const newName = clean(plan.newName || plan.summary);
+  if (!newName) return { status: 'info', title: '缺少新名称', message: '请告诉我要把角色改成什么名字。' };
+  const matches = resolveCharacterMatches(plan, context.input);
+  if (!matches.length) return { status: 'info', title: '没有找到角色', message: '没有找到要重命名的角色。' };
+  if (matches.length > 1) {
+    const candidates = characterCandidates(matches);
+    return {
+      status: 'needs_confirmation',
+      title: '找到多个角色',
+      message: '找到多个可能要重命名的角色，请选择一个。',
+      candidates,
+      choices: characterActionChoices(matches, plan),
+      choicePresentation: candidates.length > 4 ? 'select' : 'chips',
+    };
+  }
+  const target = matches[0];
+  await useCharacterStore.getState().updateCharacter(target.id, { name: newName });
+  return {
+    status: 'success',
+    title: '已重命名角色',
+    message: `已将 ${target.name} 重命名为 ${newName}。`,
+    markdown: `已重命名角色：${markdownCharacterLink(newName, target.id)}`,
+  };
+}
+
+async function deleteChats(plan: LocalActionPlan, context: AppCommandContext): Promise<AppCommandExecutionResult> {
+  const matches = resolveChatMatches(plan, context.input).slice(0, 8);
+  if (!matches.length) return { status: 'info', title: '没有找到会话', message: '没有找到要删除的会话。', recoverable: true, reasonType: 'chat_not_found' };
+  if (matches.length > 1) {
+    const candidates = chatCandidates(matches);
+    return {
+      status: 'needs_confirmation',
+      title: '找到多个会话',
+      message: '找到多个可能要删除的会话，请选择目标。',
+      candidates,
+      choices: chatActionChoices(matches, plan),
+      choicePresentation: candidates.length > 4 ? 'select' : 'chips',
+    };
+  }
+  const target = matches[0];
+  await useChatStore.getState().deleteChat(target.id);
+  return { status: 'success', title: '已删除会话', message: `已将“${target.name}”移入回收站。` };
+}
+
+async function restoreChats(plan: LocalActionPlan, context: AppCommandContext): Promise<AppCommandExecutionResult> {
+  const matches = resolveChatMatches(plan, context.input, true).slice(0, 8);
+  if (!matches.length) return { status: 'info', title: '没有找到会话', message: '回收站里没有找到要恢复的会话。' };
+  if (matches.length > 1) {
+    const candidates = chatCandidates(matches);
+    return {
+      status: 'needs_confirmation',
+      title: '找到多个会话',
+      message: '回收站里找到多个可能匹配的会话，请选择要恢复哪一个。',
+      candidates,
+      choices: chatActionChoices(matches, plan),
+      choicePresentation: candidates.length > 4 ? 'select' : 'chips',
+    };
+  }
+  const target = matches[0];
+  await useChatStore.getState().restoreChats([target.id]);
+  return {
+    status: 'success',
+    title: '已恢复会话',
+    message: `已恢复“${target.name}”。`,
+    markdown: `已恢复会话：${markdownChatLink(target.name, target.id, target.type === 'assistant' ? 3 : target.type === 'direct' ? 1 : 0)}`,
+  };
+}
+
+async function renameChat(plan: LocalActionPlan, context: AppCommandContext): Promise<AppCommandExecutionResult> {
+  const newName = clean(plan.newName || plan.chatName || plan.title);
+  if (!newName) return { status: 'info', title: '缺少新名称', message: '请告诉我要把会话改成什么名字。' };
+  const matches = resolveChatMatches({ ...plan, chatName: undefined, title: undefined }, context.input).slice(0, 8);
+  if (!matches.length) return { status: 'info', title: '没有找到会话', message: '没有找到要重命名的会话。' };
+  if (matches.length > 1) {
+    const candidates = chatCandidates(matches);
+    return {
+      status: 'needs_confirmation',
+      title: '找到多个会话',
+      message: '找到多个可能要重命名的会话，请选择一个。',
+      candidates,
+      choices: chatActionChoices(matches, plan),
+      choicePresentation: candidates.length > 4 ? 'select' : 'chips',
+    };
+  }
+  const target = matches[0];
+  await useChatStore.getState().updateChat(target.id, { name: newName });
+  return {
+    status: 'success',
+    title: '已重命名会话',
+    message: `已将“${target.name}”重命名为“${newName}”。`,
+    markdown: `已重命名会话：${markdownChatLink(newName, target.id, target.type === 'assistant' ? 3 : target.type === 'direct' ? 1 : 0)}`,
+  };
+}
+
+async function createAssistantChat(plan: LocalActionPlan, context: AppCommandContext): Promise<AppCommandExecutionResult> {
+  const chat = await useChatStore.getState().addChat({
+    ...buildAssistantChatDraft(),
+    name: clean(plan.chatName || plan.title) || '新助手会话',
+    topic: clean(plan.summary) || '通用助手聊天',
+  });
+  const url = chatWebPath(chat.id, 3);
+  context.navigate?.(url);
+  return {
+    status: 'success',
+    title: '已创建助手会话',
+    message: `已创建助手会话“${chat.name}”。`,
+    markdown: `已创建助手会话：${markdownChatLink(chat.name, chat.id, 3)}`,
+    navigateTo: url,
+  };
+}
+
+async function manageGroupMembers(plan: LocalActionPlan, context: AppCommandContext): Promise<AppCommandExecutionResult> {
+  const operation = plan.memberOperation || 'add';
+  const chats = resolveChatMatches({ ...plan, chatTypePreference: 'group' }, context.input).filter((chat) => chat.type === 'group').slice(0, 8);
+  if (!chats.length) return { status: 'info', title: '没有找到群聊', message: '没有找到要管理成员的群聊。' };
+  if (chats.length > 1) {
+    const candidates = chatCandidates(chats);
+    return {
+      status: 'needs_confirmation',
+      title: '找到多个群聊',
+      message: '找到多个可能的群聊，请选择要管理哪一个。',
+      candidates,
+      choices: chatActionChoices(chats, plan),
+      choicePresentation: candidates.length > 4 ? 'select' : 'chips',
+    };
+  }
+  const targetChat = chats[0];
+  const plannedCharacters = buildPlannedCharacters(plan, context.input);
+  if (!plannedCharacters.length) return { status: 'info', title: '缺少角色', message: '请告诉我要添加或移除哪些角色。' };
+  const characters = operation === 'remove'
+    ? resolveCharacterMatches(plan, context.input)
+    : await ensureCharacters(plannedCharacters, context);
+  if (!characters.length) return { status: 'info', title: '没有找到角色', message: '没有找到要管理的角色。' };
+  const characterIds = characters.map((character) => character.id);
+  const currentWithoutTargets = targetChat.memberIds.filter((id) => !characterIds.includes(id));
+  const memberIds = operation === 'remove'
+    ? currentWithoutTargets
+    : operation === 'set'
+      ? normalizeMemberSet(['user', ...characterIds])
+      : normalizeMemberSet([...targetChat.memberIds, ...characterIds]);
+  await useChatStore.getState().updateChat(targetChat.id, { memberIds });
+  return {
+    status: 'success',
+    title: '已更新群聊成员',
+    message: `${operation === 'remove' ? '已移除' : operation === 'set' ? '已设置' : '已添加'}：${characters.map((character) => character.name).join('、')}。`,
+    markdown: `已更新群聊成员：${markdownChatLink(targetChat.name, targetChat.id, 0)}`,
+  };
+}
+
 async function queryAiBalance(): Promise<AppCommandExecutionResult> {
   const balance = await api.getAiBalance(undefined, { force: true });
   return {
@@ -824,6 +1189,15 @@ const LOCAL_ACTION_HANDLERS: Record<LocalActionPlan['action'], LocalActionHandle
   read_character_info: readCharacterInfo,
   compare_characters: compareCharacters,
   update_characters: updateCharactersByInstruction,
+  delete_characters: deleteCharactersByInstruction,
+  restore_characters: restoreCharactersByInstruction,
+  open_character: openCharacter,
+  rename_character: renameCharacter,
+  delete_chats: deleteChats,
+  restore_chats: restoreChats,
+  rename_chat: renameChat,
+  create_assistant_chat: createAssistantChat,
+  manage_group_members: manageGroupMembers,
   query_ai_balance: () => queryAiBalance(),
   update_theme: (plan) => updateTheme(plan),
   set_ai_model_key: (plan, _context, secrets) => setAiModelKey(plan, secrets),
