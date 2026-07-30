@@ -37,5 +37,6 @@ describe('appCommand tool registry', () => {
     expect(getAppCommandToolPrompt('assistant')).toContain('delete_characters');
     expect(getAppCommandToolPrompt('assistant')).toContain('restore_characters');
     expect(getAppCommandToolPrompt('assistant')).toContain('manage_group_members');
+    expect(getAppCommandToolPrompt('assistant')).toContain('search_chats');
   });
 });

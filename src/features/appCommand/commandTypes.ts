@@ -9,6 +9,7 @@ export type AppCommandAction =
   | 'create_group_chat'
   | 'create_direct_chat'
   | 'open_existing_chat'
+  | 'search_chats'
   | 'read_character_info'
   | 'compare_characters'
   | 'update_characters'
@@ -84,6 +85,7 @@ export interface LocalActionPlan {
   chatId?: string;
   chatTypePreference?: 'group' | 'direct' | 'assistant' | 'any';
   characterQuery?: string;
+  characterQueryMode?: 'single' | 'collection';
   sourceGroup?: string;
   targetGroup?: string;
   updateInstruction?: string;

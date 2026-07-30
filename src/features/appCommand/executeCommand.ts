@@ -222,19 +222,55 @@ function characterSearchText(character: AICharacter) {
     character.background,
     character.speakingStyle,
     character.expertise?.join(' '),
+    character.voiceConfig?.role,
+    character.visualIdentity?.description,
+    character.visualIdentity?.styleHint,
     character.coreProfile?.coreDesire,
     character.coreProfile?.coreFear,
     character.coreProfile?.values?.join(' '),
+    character.coreProfile?.valuePriority?.join(' '),
+    character.coreProfile?.socialMask,
+    character.coreProfile?.biases?.join(' '),
+    character.coreProfile?.sensitivities?.join(' '),
+    character.coreProfile?.interactionHabits?.join(' '),
   ].filter(Boolean).join('\n');
 }
 
-function chatSearchText(chat: Pick<GroupChat, 'name' | 'topic' | 'worldState' | 'type'>) {
-  return [
-    chat.name,
-    chat.topic,
-    chat.worldState?.recentEvent,
-    chat.type === 'group' ? '群聊' : chat.type === 'direct' ? '单聊' : chat.type === 'assistant' ? '助手' : '',
-  ].filter(Boolean).join('\n');
+function chatMessageSearchText(chatId: string) {
+  const state = useMessageStore.getState();
+  const cachedMessages = state.messageWindowsByChatId[chatId]?.messages;
+  const messages = cachedMessages?.length
+    ? cachedMessages
+    : state.messages.filter((message) => message.chatId === chatId);
+  return messages
+    .filter((message) => !message.isDeleted)
+    .slice(-30)
+    .map((message) => message.content)
+    .join('\n');
+}
+
+function rankChatsByQuery(params: {
+  chats: GroupChat[];
+  query: string;
+  includeMessages?: boolean;
+  chatTypePreference?: LocalActionPlan['chatTypePreference'];
+}) {
+  const normalizedQuery = normalizeName(params.query);
+  return params.chats
+    .map((chat) => {
+      const messageText = params.includeMessages ? chatMessageSearchText(chat.id) : '';
+      const searchableText = `${chat.name}\n${chat.topic}\n${chat.worldState?.recentEvent || ''}\n${messageText}`;
+      const score = scoreText(searchableText, params.query)
+        + (normalizeName(chat.name) === normalizedQuery ? 40 : 0)
+        + (params.chatTypePreference && params.chatTypePreference !== 'any' && chat.type === params.chatTypePreference ? 10 : 0);
+      return {
+        chat,
+        score,
+        fullMatch: Boolean(normalizedQuery && normalizeName(searchableText).includes(normalizedQuery)),
+      };
+    })
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score);
 }
 
 function formatCharacterForAgent(character: AICharacter) {
@@ -248,6 +284,112 @@ function formatCharacterForAgent(character: AICharacter) {
     `背景：${character.background || '未设置'}`,
     character.coreProfile ? `核心画像：${JSON.stringify(character.coreProfile)}` : '',
   ].filter(Boolean).join('\n');
+}
+
+function characterCollectionQuery(plan: LocalActionPlan) {
+  return clean(plan.characterQuery || plan.characterName);
+}
+
+function parseJsonObject(text: string): Record<string, unknown> | null {
+  const trimmed = text.trim();
+  const start = trimmed.indexOf('{');
+  const end = trimmed.lastIndexOf('}');
+  if (start < 0 || end <= start) return null;
+  try {
+    const parsed = JSON.parse(trimmed.slice(start, end + 1));
+    return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : null;
+  } catch {
+    return null;
+  }
+}
+
+async function filterCharacterCollectionWithAI(params: {
+  query: string;
+  candidates: AICharacter[];
+  context: AppCommandContext;
+}) {
+  const candidates = params.candidates.slice(0, 24);
+  if (!candidates.length) return { matches: candidates, classified: true };
+  const profile = getUsablePreferredAIProfile(params.context.aiProfiles, 'text') || params.context.apiConfig;
+  try {
+    const raw = await generateResponse(
+      {
+        provider: profile.provider,
+        apiKey: profile.apiKey,
+        baseUrl: profile.baseUrl,
+        model: profile.model,
+      },
+      [
+        '你是 Sense Murmur 的角色库筛选器。',
+        '根据用户问题，从候选角色中筛选角色自身身份、职业、头衔、能力或设定符合条件的对象。',
+        '不能因为候选资料仅提及目标人物、服务于目标人物、研究目标人物或与目标人物有关，就把它选中。',
+        '只能返回候选中给出的 id；拿不准时不选。',
+        '只输出严格 JSON：{"matchingIds":["..."]}。',
+      ].join('\n'),
+      [{
+        role: 'user',
+        content: JSON.stringify({
+          question: params.context.input,
+          query: params.query,
+          candidates: candidates.map((character) => ({
+            id: character.id,
+            name: character.name,
+            group: character.group || '',
+            expertise: character.expertise || [],
+            speakingStyle: character.speakingStyle || '',
+            background: character.background || '',
+            voiceRole: character.voiceConfig?.role || '',
+            coreProfile: character.coreProfile || null,
+          })),
+        }),
+      }],
+      undefined,
+      {
+        responseFormat: 'json',
+        maxTokens: 320,
+        aiUsage: {
+          type: 'other',
+          label: '角色集合筛选',
+          scope: 'app-command',
+        },
+      },
+    );
+    const parsed = parseJsonObject(raw);
+    if (!Array.isArray(parsed?.matchingIds)) return { matches: candidates, classified: false };
+    const matchingIds = new Set(
+      parsed.matchingIds
+        .filter((id): id is string => typeof id === 'string')
+        .filter((id) => candidates.some((character) => character.id === id)),
+    );
+    return {
+      matches: candidates.filter((character) => matchingIds.has(character.id)),
+      classified: true,
+    };
+  } catch (error) {
+    console.warn('[app-command:character-collection-filter-failed]', error);
+    return { matches: candidates, classified: false };
+  }
+}
+
+function formatCharacterCollection(params: {
+  query: string;
+  characters: AICharacter[];
+  classified: boolean;
+}) {
+  const visibleCharacters = params.characters.slice(0, 16);
+  const lines = visibleCharacters.map((character) => {
+    const description = [
+      character.group || '',
+      character.expertise?.slice(0, 3).join('、') || '',
+      character.background?.replace(/\s+/g, ' ').slice(0, 84) || '',
+    ].filter(Boolean).join(' · ');
+    return `- ${markdownCharacterLink(character.name, character.id)}${description ? `：${description}` : ''}`;
+  });
+  const suffix = params.characters.length > visibleCharacters.length
+    ? `\n\n其余 ${params.characters.length - visibleCharacters.length} 个匹配角色未展开。`
+    : '';
+  const fallbackHint = params.classified ? '' : '\n\nAI 筛选暂不可用，以下为关键词召回的候选角色。';
+  return `找到 ${params.characters.length} 个与“${params.query}”匹配的角色：\n${lines.join('\n')}${suffix}${fallbackHint}`;
 }
 
 function resolveCharacterMatches(plan: LocalActionPlan, input: string) {
@@ -307,16 +449,7 @@ function resolveChatMatches(plan: LocalActionPlan, input: string, includeDeleted
     return chats.filter((chat) => chat.id === plan.chatId);
   }
   const query = clean(plan.chatName || plan.chatQuery || plan.groupName || plan.title || input);
-  const normalizedQuery = normalizeName(query);
-  const ranked = chats
-    .map((chat) => {
-      const score = scoreText(chatSearchText(chat), query)
-        + (normalizeName(chat.name) === normalizedQuery ? 40 : 0)
-        + (plan.chatTypePreference && plan.chatTypePreference !== 'any' && chat.type === plan.chatTypePreference ? 10 : 0);
-      return { chat, score };
-    })
-    .filter((item) => item.score > 0)
-    .sort((a, b) => b.score - a.score);
+  const ranked = rankChatsByQuery({ chats, query, includeMessages: true, chatTypePreference: plan.chatTypePreference });
   return ranked.map((item) => item.chat);
 }
 
@@ -434,23 +567,21 @@ function savePendingRoute(context: AppCommandContext, route: AppCommandRoute, se
 
 async function openExistingChat(plan: LocalActionPlan, context: AppCommandContext): Promise<AppCommandExecutionResult> {
   const query = clean(plan.chatQuery || plan.groupTopic || plan.characterName || plan.title);
-  const normalizedQuery = normalizeName(query);
-  const chats = useChatStore.getState().chats;
-  const messages = useMessageStore.getState().messages;
-  const ranked = chats
-    .map((chat) => {
-      const messageText = messages
-        .filter((message) => message.chatId === chat.id)
-        .slice(-30)
-        .map((message) => message.content)
-        .join('\n');
-      const score = scoreText(`${chat.name}\n${chat.topic}\n${chat.worldState?.recentEvent || ''}\n${messageText}`, query)
-        + (plan.chatTypePreference && plan.chatTypePreference !== 'any' && chat.type === plan.chatTypePreference ? 10 : 0);
-      const searchable = normalizeName(`${chat.name}\n${chat.topic}\n${chat.worldState?.recentEvent || ''}\n${messageText}`);
-      return { chat, score, fullMatch: Boolean(normalizedQuery && searchable.includes(normalizedQuery)) };
-    })
-    .filter((item) => item.score > 0)
-    .sort((a, b) => b.score - a.score);
+  if (!query) {
+    return {
+      status: 'info',
+      title: '缺少检索条件',
+      message: '没有得到要打开的会话条件，请重新说明想找的会话。',
+      recoverable: true,
+      reasonType: 'missing_chat_query',
+      observation: {
+        attemptedAction: 'open_existing_chat',
+        possibleNextActions: ['search_chats', 'assistant_agent'],
+      },
+    };
+  }
+  const chats = useChatStore.getState().chats.filter((chat) => !chat.deletedAt);
+  const ranked = rankChatsByQuery({ chats, query, includeMessages: true, chatTypePreference: plan.chatTypePreference });
   const top = ranked.slice(0, 5);
   const best = top[0]?.chat;
   if (!best) {
@@ -511,6 +642,61 @@ async function openExistingChat(plan: LocalActionPlan, context: AppCommandContex
     markdown: `已找到会话：${markdownChatLink(best.name, best.id, tab)}`,
     navigateTo: url,
     candidates,
+  };
+}
+
+async function searchChats(plan: LocalActionPlan): Promise<AppCommandExecutionResult> {
+  const query = clean(plan.chatQuery || plan.groupTopic || plan.characterName || plan.title);
+  if (!query) {
+    return {
+      status: 'info',
+      title: '缺少检索条件',
+      message: '没有得到聊天检索条件，请重新说明想找的聊天内容。',
+      recoverable: true,
+      reasonType: 'missing_chat_query',
+      observation: {
+        attemptedAction: 'search_chats',
+        possibleNextActions: ['assistant_agent'],
+      },
+    };
+  }
+  const chats = useChatStore.getState().chats.filter((chat) => !chat.deletedAt);
+  const ranked = rankChatsByQuery({ chats, query, includeMessages: true, chatTypePreference: plan.chatTypePreference });
+  const top = ranked.slice(0, 8);
+  if (!top.length) {
+    return {
+      status: 'info',
+      title: '没有找到会话',
+      message: query ? `没有找到和“${query}”相关的会话。` : '没有找到可检索的会话。',
+      recoverable: true,
+      reasonType: 'chat_not_found',
+      observation: {
+        attemptedAction: 'search_chats',
+        query,
+        chatTypePreference: plan.chatTypePreference || 'any',
+        foundCount: 0,
+        possibleNextActions: ['open_existing_chat', 'create_direct_chat', 'create_group_chat', 'assistant_agent'],
+      },
+    };
+  }
+  const candidates = top.map(({ chat, score }) => {
+    const tab = chat.type === 'assistant' ? 3 : chat.type === 'direct' ? 1 : 0;
+    return {
+      id: chat.id,
+      label: chat.name,
+      description: [chat.type === 'group' ? '群聊' : chat.type === 'direct' ? '单聊' : '助手', chat.topic || ''].filter(Boolean).join(' · '),
+      url: chatAppLink(chat.id, tab),
+      score,
+      kind: chat.type,
+    };
+  });
+  return {
+    status: 'needs_confirmation',
+    title: `找到 ${top.length} 个会话`,
+    message: `找到 ${top.length} 个和“${query}”相关的会话，请选择要打开的会话。`,
+    candidates,
+    choices: candidateChoices(candidates),
+    choicePresentation: candidates.length > 4 ? 'select' : 'chips',
   };
 }
 
@@ -682,6 +868,20 @@ async function createCharacters(plan: LocalActionPlan, context: AppCommandContex
 }
 
 async function readCharacterInfo(plan: LocalActionPlan, context: AppCommandContext): Promise<AppCommandExecutionResult> {
+  const requestedQuery = clean(plan.characterName || plan.characterQuery || plan.characters?.map((item) => item.name).join('、'));
+  if (!requestedQuery) {
+    return {
+      status: 'info',
+      title: '缺少检索条件',
+      message: '没有得到要查询的角色条件，请重新说明角色名称或筛选条件。',
+      recoverable: true,
+      reasonType: 'missing_character_query',
+      observation: {
+        attemptedAction: 'read_character_info',
+        possibleNextActions: ['assistant_agent'],
+      },
+    };
+  }
   const matches = resolveCharacterMatches(plan, context.input);
   if (!matches.length) return {
     status: 'info',
@@ -696,6 +896,40 @@ async function readCharacterInfo(plan: LocalActionPlan, context: AppCommandConte
       possibleNextActions: ['create_character', 'create_direct_chat', 'assistant_agent'],
     },
   };
+  if (plan.characterQueryMode === 'collection') {
+    const query = characterCollectionQuery(plan);
+    const selection = await filterCharacterCollectionWithAI({ query, candidates: matches, context });
+    if (!selection.matches.length) {
+      return {
+        status: 'info',
+        title: '没有找到角色',
+        message: `角色库中没有找到身份或设定符合“${query}”的角色。`,
+        recoverable: true,
+        reasonType: 'character_not_found',
+        observation: {
+          attemptedAction: 'read_character_info',
+          query,
+          foundCount: 0,
+          candidateCount: matches.length,
+          possibleNextActions: ['create_character', 'assistant_agent'],
+        },
+      };
+    }
+    return {
+      status: 'success',
+      title: `找到 ${selection.matches.length} 个角色`,
+      message: formatCharacterCollection({
+        query,
+        characters: selection.matches,
+        classified: selection.classified,
+      }),
+      markdown: formatCharacterCollection({
+        query,
+        characters: selection.matches,
+        classified: selection.classified,
+      }),
+    };
+  }
   if (shouldAskCharacterMatch(plan, context, matches)) {
     const candidates = characterCandidates(matches);
     return {
@@ -1198,6 +1432,7 @@ const LOCAL_ACTION_HANDLERS: Record<LocalActionPlan['action'], LocalActionHandle
   create_group_chat: createGroupChat,
   create_direct_chat: createDirectChat,
   open_existing_chat: openExistingChat,
+  search_chats: searchChats,
   read_character_info: readCharacterInfo,
   compare_characters: compareCharacters,
   update_characters: updateCharactersByInstruction,

@@ -53,12 +53,20 @@ export const APP_COMMAND_TOOLS: AppCommandToolDefinition[] = [
     examples: ['进入之前聊到中元节的群聊', '打开和秦始皇的聊天'],
   },
   {
+    action: 'search_chats',
+    title: '搜索聊天记录',
+    riskLevel: 'low',
+    description: '在会话名称、主题、最近事件和已加载聊天消息中检索，返回匹配会话列表；不自动打开会话。',
+    parameters: ['chatQuery', 'chatTypePreference', 'summary'],
+    examples: ['哪个聊天里提到皇帝', '搜索聊天记录里的世界杯', '哪些会话聊过秦始皇'],
+  },
+  {
     action: 'read_character_info',
     title: '读取角色信息',
     riskLevel: 'low',
-    description: '读取用户角色库中的角色资料，并基于资料回答问题。不要编造角色 ID。',
-    parameters: ['characterName', 'characterQuery', 'characters[]', 'summary'],
-    examples: ['我想看角色库中秦始皇的信息', '秦始皇的性格怎么样'],
+    description: '读取用户角色库中的角色资料，并基于资料回答问题；也可按身份、职业、专长、背景或设定筛选并列出多个角色。不要编造角色 ID。',
+    parameters: ['characterName', 'characterQuery', 'characterQueryMode', 'characters[]', 'summary'],
+    examples: ['我想看角色库中秦始皇的信息', '秦始皇的性格怎么样', '哪些角色是皇帝'],
   },
   {
     action: 'compare_characters',

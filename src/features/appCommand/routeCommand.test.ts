@@ -106,6 +106,48 @@ describe('routeAppCommand', () => {
     expect(route.requiresConfirmation).toBe(false);
   });
 
+  it('keeps collection-style role queries as a read_character_info tool with collection mode', async () => {
+    generateResponseMock.mockResolvedValueOnce(JSON.stringify({
+      mode: 'local_action',
+      action: 'read_character_info',
+      riskLevel: 'low',
+      requiresConfirmation: false,
+      plan: {
+        action: 'read_character_info',
+        characterQuery: '皇帝',
+        characterQueryMode: 'collection',
+      },
+    }));
+
+    const { route } = await routeAppCommand(context('哪些角色是皇帝'));
+
+    expect(route.mode).toBe('local_action');
+    if (route.mode !== 'local_action') return;
+    expect(route.action).toBe('read_character_info');
+    expect(route.plan.characterQuery).toBe('皇帝');
+    expect(route.plan.characterQueryMode).toBe('collection');
+  });
+
+  it('routes chat-record search requests to search_chats', async () => {
+    generateResponseMock.mockResolvedValueOnce(JSON.stringify({
+      mode: 'local_action',
+      action: 'search_chats',
+      riskLevel: 'low',
+      requiresConfirmation: false,
+      plan: {
+        action: 'search_chats',
+        chatQuery: '世界杯',
+      },
+    }));
+
+    const { route } = await routeAppCommand(context('搜索聊天记录里的世界杯'));
+
+    expect(route.mode).toBe('local_action');
+    if (route.mode !== 'local_action') return;
+    expect(route.action).toBe('search_chats');
+    expect(route.plan.chatQuery).toBe('世界杯');
+  });
+
   it('routes incomplete model setup requests to the model settings page', async () => {
     generateResponseMock.mockResolvedValueOnce(JSON.stringify({
       mode: 'local_action',

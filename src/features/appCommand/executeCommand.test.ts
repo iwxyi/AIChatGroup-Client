@@ -3,12 +3,22 @@ import type { AppCommandContext, AppCommandRoute } from './commandTypes';
 import { executeAppCommandRoute, findReusableGroupChat } from './executeCommand';
 import { useCharacterStore } from '../../stores/useCharacterStore';
 import { useChatStore } from '../../stores/useChatStore';
+import { useMessageStore } from '../../stores/useMessageStore';
 import { useSettingsStore } from '../../stores/useSettingsStore';
 import type { GroupChat } from '../../types/chat';
 import { DEFAULT_CONVERSATION_DIRECTOR_CONTROLS, DEFAULT_CONVERSATION_DRAMA_RULES, DEFAULT_CONVERSATION_GOVERNANCE, DEFAULT_CONVERSATION_WORLD_STATE, DEFAULT_OPEN_CHAT_MODE_CONFIG, DEFAULT_OPEN_CHAT_MODE_STATE, createDefaultSessionKind } from '../../types/chat';
 import type { AICharacter } from '../../types/character';
 import { DEFAULT_CHARACTER_BEHAVIOR, DEFAULT_CHARACTER_INTERVENTION, DEFAULT_CHARACTER_MEMORY, DEFAULT_PERSONALITY } from '../../types/character';
+import type { Message } from '../../types/message';
 import { DEFAULT_CHAT_DRAFT_DEFAULTS } from '../../types/settings';
+
+const { generateResponseMock } = vi.hoisted(() => ({
+  generateResponseMock: vi.fn(),
+}));
+
+vi.mock('../../services/aiClient', () => ({
+  generateResponse: (...args: unknown[]) => generateResponseMock(...args),
+}));
 
 function context(): AppCommandContext {
   return {
@@ -68,6 +78,20 @@ function chat(id: string, name: string, type: GroupChat['type'] = 'group'): Grou
     updatedAt: 1000,
     lastMessageAt: 1000,
     deletedAt: null,
+  };
+}
+
+function message(id: string, chatId: string, content: string): Message {
+  return {
+    id,
+    chatId,
+    type: 'ai',
+    senderId: 'assistant',
+    senderName: '助手',
+    content,
+    emotion: 0,
+    timestamp: 1000,
+    isDeleted: false,
   };
 }
 
@@ -191,6 +215,104 @@ describe('executeAppCommandRoute', () => {
       useCharacterStore.setState({ characters: [] });
       useChatStore.setState({ chats: [], addChat: originalAddChat });
       useSettingsStore.setState({ chatDraftDefaults: originalChatDraftDefaults });
+    }
+  });
+
+  it('finds role collections from natural-language Chinese queries without selecting related non-role characters', async () => {
+    const qin = {
+      ...character('char-qin', '秦始皇'),
+      group: '帝王',
+      expertise: ['统一六国', '法家治国'],
+      background: '嬴政，中国第一位皇帝。',
+    };
+    const han = {
+      ...character('char-han', '汉武帝'),
+      group: '帝王',
+      expertise: ['汉武盛世', '开疆拓土'],
+      background: '刘彻，西汉皇帝。',
+    };
+    const scholar = {
+      ...character('char-scholar', '史官小周'),
+      group: '学者',
+      expertise: ['帝王史研究'],
+      background: '研究中国古代皇帝制度的历史学者，不是皇帝。',
+    };
+    useCharacterStore.setState({ characters: [qin, han, scholar] });
+    generateResponseMock.mockResolvedValueOnce(JSON.stringify({
+      matchingIds: ['char-qin', 'char-han'],
+    }));
+
+    try {
+      const result = await executeAppCommandRoute({
+        mode: 'local_action',
+        action: 'read_character_info',
+        riskLevel: 'low',
+        requiresConfirmation: false,
+        plan: {
+          action: 'read_character_info',
+          characterQuery: '皇帝',
+          characterQueryMode: 'collection',
+        },
+      }, {
+        ...context(),
+        input: '哪些是皇帝的角色',
+      });
+
+      expect(result.status).toBe('success');
+      expect(result.markdown).toContain('秦始皇');
+      expect(result.markdown).toContain('汉武帝');
+      expect(result.markdown).not.toContain('史官小周');
+      expect(generateResponseMock).toHaveBeenCalledTimes(1);
+      expect(String((generateResponseMock.mock.calls[0]?.[2] as Array<{ content: string }>)[0]?.content || '')).toContain('研究中国古代皇帝制度的历史学者');
+    } finally {
+      useCharacterStore.setState({ characters: [] });
+      generateResponseMock.mockReset();
+    }
+  });
+
+  it('searches chats without opening one when planner routes to search_chats', async () => {
+    useChatStore.setState({
+      chats: [
+        chat('chat-worldcup', '最新世界杯动态查询', 'assistant'),
+        chat('chat-qin', '秦始皇讨论', 'group'),
+      ],
+    });
+    useMessageStore.setState({
+      messages: [],
+      messageWindowsByChatId: {
+        'chat-worldcup': {
+          messages: [message('msg-1', 'chat-worldcup', '当前未开启搜索能力，无法联网查询最新的世界杯消息。')],
+          lastSyncedAt: 1000,
+          updatedAt: 1000,
+        },
+        'chat-qin': {
+          messages: [message('msg-2', 'chat-qin', '我们聊过秦始皇的统一六国。')],
+          lastSyncedAt: 1000,
+          updatedAt: 1000,
+        },
+      },
+    });
+
+    try {
+      const result = await executeAppCommandRoute({
+        mode: 'local_action',
+        action: 'search_chats',
+        riskLevel: 'low',
+        requiresConfirmation: false,
+        plan: {
+          action: 'search_chats',
+          chatQuery: '秦始皇',
+          chatTypePreference: 'any',
+        },
+      }, context('搜索聊天记录里的秦始皇'));
+
+      expect(result.status).toBe('needs_confirmation');
+      expect(result.candidates?.map((candidate) => candidate.label)).toEqual(['秦始皇讨论']);
+      expect(result.choices?.[0]?.url).toContain('ssmm://chat/chat-qin');
+      expect(result.navigateTo).toBeUndefined();
+    } finally {
+      useChatStore.setState({ chats: [] });
+      useMessageStore.setState({ messages: [], messageWindowsByChatId: {} });
     }
   });
 
