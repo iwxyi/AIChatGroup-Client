@@ -8,7 +8,7 @@ import type {
   AssistantArtifactItem,
   AssistantArtifactKind,
 } from '../types/assistantArtifact';
-import type { Message } from '../types/message';
+import type { Message, MessageAttachment } from '../types/message';
 import type { APIConfig } from '../types/settings';
 import { generateResponse } from './aiClient';
 import { enhanceImagePrompt } from './imagePromptComposer';
@@ -34,9 +34,11 @@ export interface CompactImageAttachmentRef {
   id: string;
   messageId: string;
   refId: string;
+  artifactId?: string;
   mimeType?: string;
   altText: string;
   caption?: string;
+  promptText?: string;
   width?: number;
   height?: number;
   sizeBytes?: number;
@@ -45,6 +47,11 @@ export interface CompactImageAttachmentRef {
 
 interface ImageAttachmentRef extends CompactImageAttachmentRef {
   url: string;
+}
+
+function imageArtifactIdForAttachment(message: Message, attachment: MessageAttachment) {
+  if (attachment.targetArtifactId) return attachment.targetArtifactId;
+  return message.type === 'ai' ? `assistant-image-artifact-${message.id}-${attachment.id}` : undefined;
 }
 
 function safeJsonParse(value: string): unknown {
@@ -149,6 +156,12 @@ function recentConversation(messages: Message[]) {
     }));
 }
 
+function withLatestUserMessage(messages: Message[], userMessage: Message) {
+  return messages.some((message) => message.id === userMessage.id)
+    ? messages
+    : [...messages, userMessage];
+}
+
 function getImageUrlKind(url: string): CompactImageAttachmentRef['urlKind'] {
   if (url.startsWith('data:image/')) return 'data';
   if (/^https?:\/\//i.test(url)) return 'remote';
@@ -161,9 +174,11 @@ function compactImageAttachmentRef(ref: ImageAttachmentRef): CompactImageAttachm
     id: ref.id,
     messageId: ref.messageId,
     refId: ref.refId,
+    artifactId: ref.artifactId,
     mimeType: ref.mimeType,
     altText: ref.altText,
     caption: ref.caption,
+    ...(ref.promptText ? { promptText: ref.promptText } : {}),
     width: ref.width,
     height: ref.height,
     sizeBytes: ref.sizeBytes,
@@ -179,10 +194,12 @@ function imageAttachmentRefsWithUrls(message: Message): ImageAttachmentRef[] {
       id: attachment.id,
       messageId: message.id,
       refId: `${message.id}:${attachment.id}`,
+      artifactId: imageArtifactIdForAttachment(message, attachment),
       url: attachment.url as string,
       mimeType: attachment.mimeType,
       altText: attachment.altText,
       caption: attachment.caption,
+      promptText: attachment.promptText?.trim().slice(0, 800),
       width: attachment.width,
       height: attachment.height,
       sizeBytes: attachment.sizeBytes,
@@ -327,15 +344,18 @@ function buildWriterPrompt() {
     '7.4 mediaTasks.userCaption 是该图片在正文中的用户可见说明，应和 Markdown 图片占位符的 alt 文本一致或高度接近；不得写图片模型提示词。',
     '7.5 一次最多输出 9 个 mediaTasks。复合指令应拆成多张独立图片任务，例如封面、步骤图、风格 A/B/C，而不是把多张图塞进一个 prompt。',
     '7.6 mediaTasks.prompt 必须是完整、专业的图片生成提示词。用户只给出一个很短的主题时，要自动扩写成包含主体、构图、光线、风格、质感与禁用项的完整提示词，不要只复述主题词本身。',
-    '8. 用户消息、最近对话或 imageReferenceRegistry 里的图片可作为参考图。必须使用 imageAttachments[].refId 或 imageReferenceRegistry[].refId 写入 mediaTasks[].referenceImageIds，不要输出 URL，不要虚构 URL。',
-    '8.1 用户说“刚才那张图”“上一张图”“这张图”时，优先选择 imageReferenceRegistry 中最近且语义最匹配的图片；如果多个候选都合理且会影响结果，assistantMessage 提问澄清，mediaTasks 为空。',
-    '9. 当前只支持新建图片任务。用户要求局部修改、蒙版编辑或指定区域编辑时，如果没有明确可用的编辑能力和区域标注，assistantMessage 说明当前只能参考原图重新生成，mediaTasks 为空或生成整体变体。',
+    '8. imageReferenceRegistry 是最近聊天图片的轻量注册表；不要默认把所有历史图片当参考图。只有当用户当前指令、最近上下文、图片说明、消息顺序或显式选择能明确定位时，才选择其中的图片。',
+    '8.1 用户本轮手动上传或通过“放到参考图”加入的 userMessage.imageAttachments 优先级最高，通常作为 referenceImageIds 或 targetImageIds 使用。',
+    '8.2 用户说“上一张/刚才那张/这张/把它/标题大一点/杯子改成这个样式”等相对指代时，必须先从 imageReferenceRegistry 结合 messageRole、messageContentPreview、altText、caption、artifactId 判断目标图。能唯一判断则使用；多候选或无法一一对应时 assistantMessage 提出澄清，mediaTasks 为空。',
+    '8.3 图片编辑或变体任务必须区分 targetImageIds、referenceImageIds、styleImageIds：target 是要被修改的图；reference 是要借鉴内容/局部元素的图；style 是要借鉴风格的图。输出 ID 必须来自 imageReferenceRegistry[].refId，不要输出 URL，不要虚构 ID。',
+    '8.4 如果 target 图对应 imageReferenceRegistry[].artifactId，且用户是在修改同一张图或同一组图，必须把 mediaTasks[].targetArtifactId 设置为该 artifactId；这样图片完成后会追加为同一产物的新版本。批量修改多张图时，每个 mediaTask 对应一个 targetArtifactId。',
+    '9. 当前没有可靠蒙版/区域标注能力时，局部修改只能作为“参考原图重新生成整体变体”。必须在 assistantMessage 中说明是整体变体；如果用户明确要求精确局部编辑且缺少区域信息，先澄清。',
     '10. 图片任务可按用户自然语言要求输出 aspectRatio 和 imageSize。aspectRatio 仅可为 1:1、2:3、3:2、3:4、4:3、4:5、5:4、9:16、16:9、21:9；imageSize 仅可为 1K、2K、4K。用户没有要求时省略。',
     '11. 如果 assistantMessage、patch content 或 files 中需要写应用内链接，必须使用跨平台 AppLink：ssmm://character/{id}?action=edit、ssmm://chat/{id}?action=open、ssmm://settings?action=open&tab=models&card=models。禁止输出 /characters/...、/chats/...、#/...、http://localhost/... 或任何平台私有路由。',
     '11.1 只有当 ID 来自用户输入、recentConversation、artifactRegistry、targetArtifacts、localFiles 或其他明确上下文时，才能写入 AppLink；禁止编造角色、会话、产物或文件 ID。外部网页来源继续使用 https:// 链接。',
     '',
     '输出格式：',
-    '{"assistantMessage":"面向用户的自然回复文案，可包含图片槽位，例如：下面是一份红烧肉图文介绍。\\n\\n![红烧肉成品图](attachment:image-1)\\n\\n这张图突出肥瘦相间和酱汁光泽。","patches":[{"action":"create|update","artifactId":"...","kind":"document|code|diagram|html|table|json|text","title":"...","summary":"...","language":"...","content":"完整内容","files":[{"id":"...","path":"...","language":"...","content":"完整文件内容"}],"baseVersionId":"...","changeSummary":"..."}],"mediaTasks":[{"kind":"image","slotId":"image-1","userCaption":"红烧肉成品图","prompt":"给图片模型的完整提示词","altText":"图片标题或替代文本","aspectRatio":"16:9","imageSize":"2K","referenceImageIds":["message-id:attachment-id"]}]}',
+    '{"assistantMessage":"面向用户的自然回复文案，可包含图片槽位，例如：下面是一份红烧肉图文介绍。\\n\\n![红烧肉成品图](attachment:image-1)\\n\\n这张图突出肥瘦相间和酱汁光泽。","patches":[{"action":"create|update","artifactId":"...","kind":"document|code|diagram|html|table|json|text","title":"...","summary":"...","language":"...","content":"完整内容","files":[{"id":"...","path":"...","language":"...","content":"完整文件内容"}],"baseVersionId":"...","changeSummary":"..."}],"mediaTasks":[{"kind":"image","slotId":"image-1","userCaption":"红烧肉成品图","prompt":"给图片模型的完整提示词","altText":"图片标题或替代文本","aspectRatio":"16:9","imageSize":"2K","targetArtifactId":"已有图片产物ID，可省略","targetImageIds":["message-id:attachment-id"],"referenceImageIds":["message-id:attachment-id"],"styleImageIds":["message-id:attachment-id"]}]}',
   ].join('\n');
 }
 
@@ -391,19 +411,27 @@ function normalizeMediaTasks(value: unknown, imageReferenceRegistry = new Map<st
     const aspectRatio = text(item.aspectRatio, 16);
     const imageSize = text(item.imageSize, 8).toUpperCase();
     if (!prompt) return [];
-    const referenceImageIds = Array.isArray(item.referenceImageIds)
-      ? item.referenceImageIds.flatMap((entry): string[] => {
+    const imageIdsFrom = (input: unknown) => Array.isArray(input)
+      ? input.flatMap((entry): string[] => {
           const refId = text(entry, 240);
           return refId && imageReferenceRegistry.has(refId) ? [refId] : [];
         }).slice(0, 8)
       : [];
-    const referenceImagesFromIds = referenceImageIds.flatMap((refId): NonNullable<AssistantAgentMediaTask['referenceImages']> => {
+    const targetImageIds = imageIdsFrom(item.targetImageIds);
+    const referenceImageIds = imageIdsFrom(item.referenceImageIds);
+    const styleImageIds = imageIdsFrom(item.styleImageIds);
+    const selectedImageIds = Array.from(new Set([...targetImageIds, ...referenceImageIds, ...styleImageIds])).slice(0, 8);
+    const targetArtifactId = text(item.targetArtifactId, 180);
+    const inferredTargetArtifactId = targetArtifactId || targetImageIds
+      .map((refId) => imageReferenceRegistry.get(refId)?.artifactId)
+      .find((artifactId): artifactId is string => Boolean(artifactId));
+    const referenceImagesFromIds = selectedImageIds.flatMap((refId): NonNullable<AssistantAgentMediaTask['referenceImages']> => {
       const ref = imageReferenceRegistry.get(refId);
       if (!ref) return [];
       return [{
         url: ref.url,
         mimeType: ref.mimeType,
-        label: ref.caption || ref.altText || '参考图',
+        label: ref.caption || ref.altText || (targetImageIds.includes(refId) ? '待修改图片' : '参考图'),
       }];
     });
     const resolvedReferenceImages = referenceImagesFromIds.slice(0, 8);
@@ -415,14 +443,23 @@ function normalizeMediaTasks(value: unknown, imageReferenceRegistry = new Map<st
       userCaption,
       aspectRatio: SUPPORTED_IMAGE_ASPECT_RATIOS.has(aspectRatio) ? aspectRatio : undefined,
       imageSize: SUPPORTED_IMAGE_SIZES.has(imageSize) ? imageSize : undefined,
+      targetArtifactId: inferredTargetArtifactId,
+      targetImageIds: targetImageIds.length ? targetImageIds : undefined,
       referenceImageIds: referenceImageIds.length ? referenceImageIds : undefined,
+      styleImageIds: styleImageIds.length ? styleImageIds : undefined,
       referenceImages: resolvedReferenceImages.length ? resolvedReferenceImages : undefined,
     }];
   });
 }
 
 function markdownAltText(value: string) {
-  return value.replace(/[\[\]\n\r]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120) || 'AI 图片';
+  return value
+    .replaceAll('[', ' ')
+    .replaceAll(']', ' ')
+    .replace(/[\n\r]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 120) || 'AI 图片';
 }
 
 function ensureMediaTaskPlaceholders(assistantMessage: string, mediaTasks: AssistantAgentMediaTask[]) {
@@ -550,7 +587,7 @@ export async function planAssistantAgentChange(params: {
     chatId: params.chatId,
     userMessage: { id: params.userMessage.id, content: params.userMessage.content, imageAttachments: buildCompactImageAttachmentRefs(params.userMessage) },
     recentConversation: recentConversation(params.messages),
-    imageReferenceRegistry: buildCompactImageReferenceRegistry([...params.messages, params.userMessage]),
+    imageReferenceRegistry: buildCompactImageReferenceRegistry(withLatestUserMessage(params.messages, params.userMessage)),
     artifactRegistry: artifactRegistry(params.existingArtifacts),
     toolCapabilities: {
       webSearch: Boolean(params.toolCapabilities?.webSearch),
@@ -590,7 +627,8 @@ export async function writeAssistantAgentPatchSet(params: {
   localFiles?: AssistantAgentLocalFileContext[];
   signal?: AbortSignal;
 }) {
-  const imageReferenceRegistry = buildImageReferenceRegistry([...params.messages, params.userMessage]);
+  const registryMessages = withLatestUserMessage(params.messages, params.userMessage);
+  const imageReferenceRegistry = buildImageReferenceRegistry(registryMessages);
   const blockedUpdateArtifactIds = new Set<string>();
   const activeTargetArtifacts = params.existingArtifacts
     .filter((artifact) => params.plan.scope.artifactIds.includes(artifact.id));
@@ -630,7 +668,7 @@ export async function writeAssistantAgentPatchSet(params: {
     chatId: params.chatId,
     userMessage: { id: params.userMessage.id, content: params.userMessage.content, imageAttachments: buildCompactImageAttachmentRefs(params.userMessage) },
     recentConversation: recentConversation(params.messages),
-    imageReferenceRegistry: buildCompactImageReferenceRegistry([...params.messages, params.userMessage]),
+    imageReferenceRegistry: buildCompactImageReferenceRegistry(registryMessages),
     changePlan: params.plan,
     artifactRegistry: artifactRegistry(params.existingArtifacts),
     targetArtifacts,

@@ -122,7 +122,10 @@ export interface AssistantAgentMediaTask {
   userCaption?: string;
   aspectRatio?: string;
   imageSize?: string;
+  targetArtifactId?: string;
+  targetImageIds?: string[];
   referenceImageIds?: string[];
+  styleImageIds?: string[];
   referenceImages?: Array<{
     url: string;
     mimeType?: string;

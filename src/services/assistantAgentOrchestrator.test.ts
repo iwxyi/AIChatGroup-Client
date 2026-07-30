@@ -105,6 +105,7 @@ describe('assistantAgentOrchestrator validation', () => {
           kind: 'image',
           status: 'ready',
           altText: '上一张生成图',
+          promptText: '赛博茶馆里的红铜茶壶，霓虹灯反射，电影感构图',
           url: `data:image/png;base64,${'B'.repeat(4096)}`,
           mimeType: 'image/png',
           createdAt: 20,
@@ -140,6 +141,7 @@ describe('assistantAgentOrchestrator validation', () => {
     expect(registry[0]).toMatchObject({
       messageRole: 'assistant',
       messageContentPreview: '',
+      promptText: '赛博茶馆里的红铜茶壶，霓虹灯反射，电影感构图',
       urlKind: 'data',
     });
     expect(JSON.stringify(registry)).not.toContain('data:image');

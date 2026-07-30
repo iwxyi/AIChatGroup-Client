@@ -363,9 +363,20 @@ export const useAssistantArtifactStore = create<AssistantArtifactStore>()(
       createImageArtifactFromAttachment: ({ chatId, message, attachment, timestamp }) => {
         if (attachment.kind !== 'image' || attachment.status !== 'ready' || !attachment.assetId) return null;
         const now = timestamp || Date.now();
-        const artifactId = `assistant-image-artifact-${message.id}-${attachment.id}`;
+        const requestedTarget = attachment.targetArtifactId
+          ? get().items.find((item) => item.id === attachment.targetArtifactId && item.chatId === chatId && item.kind === 'image' && item.deletedAt == null)
+          : null;
+        const artifactId = requestedTarget?.id || `assistant-image-artifact-${message.id}-${attachment.id}`;
         const existing = get().items.find((item) => item.id === artifactId && item.chatId === chatId) || null;
-        const versionId = existing?.currentVersionId || createVersionId(artifactId, now);
+        const currentVersion = existing?.versions.find((version) => version.id === existing.currentVersionId) || existing?.versions.at(-1);
+        const currentMedia = currentVersion?.media?.[0];
+        if (existing && currentMedia && (
+          (attachment.assetId && currentMedia.assetId === attachment.assetId)
+          || (attachment.checksum && currentMedia.checksum === attachment.checksum)
+        )) {
+          return existing;
+        }
+        const versionId = createVersionId(artifactId, now);
         const media = [{
           assetId: attachment.assetId,
           thumbnailAssetId: attachment.thumbnailAssetId,
@@ -386,7 +397,7 @@ export const useAssistantArtifactStore = create<AssistantArtifactStore>()(
           language: 'json',
           sourceMessageId: message.id,
           baseVersionId: existing?.currentVersionId || null,
-          changeSummary: existing ? '更新图片资产引用' : '创建图片产物',
+          changeSummary: existing ? '根据对话生成新图片版本' : '创建图片产物',
           createdAt: now,
         };
         const item: AssistantArtifactItem = existing ? {
@@ -394,7 +405,7 @@ export const useAssistantArtifactStore = create<AssistantArtifactStore>()(
           title: attachment.altText || existing.title || '图片产物',
           summary: attachment.promptText || existing.summary,
           currentVersionId: versionId,
-          versions: [imageVersion],
+          versions: [...existing.versions, imageVersion].slice(-MAX_VERSIONS_PER_ARTIFACT),
           sourceMessageId: message.id,
           updatedAt: now,
           deletedAt: null,

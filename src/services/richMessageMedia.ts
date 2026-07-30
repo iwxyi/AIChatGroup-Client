@@ -249,6 +249,11 @@ async function attachAssistantImageArtifact(params: {
   if (existingRefs.some((ref) => ref.id === artifact.id)) return params.message;
   const metadata: MessageMetadata = {
     ...(params.message.metadata || {}),
+    attachments: (params.message.metadata?.attachments || []).map((item) => (
+      item.id === attachment.id
+        ? { ...item, targetArtifactId: artifact.id }
+        : item
+    )),
     assistant: {
       ...(params.message.metadata?.assistant || {}),
       mode: 'general',

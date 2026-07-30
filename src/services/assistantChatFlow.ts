@@ -200,6 +200,8 @@ function createAssistantMediaAttachments(patchSet: AssistantAgentPatchSet, times
     caption: task.userCaption || task.altText,
     aspectRatio: task.aspectRatio,
     imageSize: task.imageSize,
+    targetArtifactId: task.targetArtifactId,
+    targetImageIds: task.targetImageIds,
     referenceImages: task.referenceImages,
     createdAt: timestamp + index,
     updatedAt: timestamp + index,
@@ -602,7 +604,10 @@ function latestUserMessage(messages: Message[]) {
     .find((message) => (
       !message.isDeleted
       && (message.type === 'user' || message.type === 'god')
-      && message.content.trim()
+      && (
+        message.content.trim()
+        || message.metadata?.attachments?.some((attachment) => attachment.kind === 'image' && attachment.status === 'ready' && Boolean(attachment.url))
+      )
     )) || null;
 }
 
@@ -655,7 +660,7 @@ function sanitizeGeneratedTitle(value: string) {
     .slice(0, MAX_GENERATED_TITLE_LENGTH);
 }
 
-async function maybeGenerateAssistantChatTitle(params: {
+export async function maybeGenerateAssistantChatTitle(params: {
   api: APIConfig;
   chat: GroupChat;
   chatId: string;
@@ -731,13 +736,6 @@ export async function runAssistantChatReplyFlow(params: {
 }) {
   ensureAssistantReplyStillCurrent(params);
   const resolvedApi = resolveTextApiConfig(params.api, params.aiProfiles);
-  void maybeGenerateAssistantChatTitle({
-    api: resolvedApi,
-    chat: params.chat,
-    chatId: params.chatId,
-    currentMessages: params.currentMessages,
-    updateChat: params.updateChat,
-  });
   if (params.chat.modeState.assistantCapabilities?.agent) {
     const userMessage = latestUserMessage(params.currentMessages);
     if (userMessage) {
@@ -768,6 +766,13 @@ export async function runAssistantChatReplyFlow(params: {
             lastMessageAt: persisted.timestamp,
             latestMessage: persisted,
           });
+          void maybeGenerateAssistantChatTitle({
+            api: resolvedApi,
+            chat: params.chat,
+            chatId: params.chatId,
+            currentMessages: [...params.currentMessages, persisted],
+            updateChat: params.updateChat,
+          });
           return persisted;
         }
       } catch (error) {
@@ -791,7 +796,16 @@ export async function runAssistantChatReplyFlow(params: {
         aiProfiles: params.aiProfiles,
         signal: params.signal,
       });
-      if (agentResult?.message) return agentResult.message;
+      if (agentResult?.message) {
+        void maybeGenerateAssistantChatTitle({
+          api: resolvedApi,
+          chat: params.chat,
+          chatId: params.chatId,
+          currentMessages: [...params.currentMessages, agentResult.message],
+          updateChat: params.updateChat,
+        });
+        return agentResult.message;
+      }
     }
   }
   const assistantDraft: Omit<Message, 'id' | 'timestamp' | 'isDeleted'> = {
@@ -849,6 +863,13 @@ export async function runAssistantChatReplyFlow(params: {
   await params.updateChat(params.chatId, {
     lastMessageAt: persisted.timestamp,
     latestMessage: persisted,
+  });
+  void maybeGenerateAssistantChatTitle({
+    api: resolvedApi,
+    chat: params.chat,
+    chatId: params.chatId,
+    currentMessages: [...params.currentMessages, persisted],
+    updateChat: params.updateChat,
   });
   return persisted;
 }

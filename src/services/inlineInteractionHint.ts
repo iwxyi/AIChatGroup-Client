@@ -252,10 +252,6 @@ function hasVisibleEnvelopeContent(envelope: InlineInteractionEnvelope) {
   return hasVisibleStoryEvents(envelope.storyEvents);
 }
 
-function buildCharacterReference(characters: AICharacter[]) {
-  return characters.map((character) => `- id=${character.id}; name=${character.name}; aliases=${[character.name, character.group || ''].filter(Boolean).join(', ')}`).join('\n');
-}
-
 function buildMemberReference(params: { chat: GroupChat; characters: AICharacter[]; speakerId?: string }) {
   const memberIds = new Set(params.chat.memberIds);
   const characterLines = params.characters
@@ -304,6 +300,27 @@ function buildRecentTranscriptScope(messages: Message[]) {
   ].join('\n');
 }
 
+function buildImageReferenceRegistry(messages: Message[]) {
+  return messages
+    .filter((message) => !message.isDeleted && message.type !== 'system' && message.type !== 'event')
+    .sort((left, right) => right.timestamp - left.timestamp)
+    .flatMap((message) => (message.metadata?.attachments || [])
+      .filter((attachment) => attachment.kind === 'image' && attachment.status === 'ready' && Boolean(attachment.url))
+      .slice(0, 6)
+      .map((attachment) => ({
+        refId: `${message.id}:${attachment.id}`,
+        messageId: message.id,
+        messageRole: message.type === 'ai' ? 'assistant' : message.type === 'user' || message.type === 'god' ? 'user' : 'other',
+        senderName: message.senderName,
+        altText: attachment.altText,
+        caption: attachment.caption || '',
+        promptText: attachment.promptText?.trim().slice(0, 800) || '',
+        messageContentPreview: message.content.trim().slice(0, 180),
+        messageTimestamp: message.timestamp,
+      })))
+    .slice(0, 36);
+}
+
 export function buildInlineInteractionContract(params: {
   chat: GroupChat;
   speaker: AICharacter;
@@ -323,12 +340,15 @@ export function buildInlineInteractionContract(params: {
   const mediaCapabilities = params.mediaCapabilities || { image: false, audio: false };
   const shouldIncludeMediaDecision = Boolean(params.mediaRequested && !isStoryReader && (mediaCapabilities.image || mediaCapabilities.audio));
   const transcriptScope = buildRecentTranscriptScope(params.recentMessages);
+  const imageReferenceRegistry = shouldIncludeMediaDecision && mediaCapabilities.image
+    ? buildImageReferenceRegistry(params.recentMessages)
+    : [];
   const recentSocialEvents = buildRecentSocialEventContext(params.chat)
     .map((event) => `- ${event.eventKind}${event.title ? ` / ${event.title}` : ''}${event.activityType ? ` / ${event.activityType}` : ''}: ${event.summary}`)
     .join('\n');
 
   const mediaExample = shouldIncludeMediaDecision
-    ? `,\n  "mediaDecision": {${mediaCapabilities.image ? `\n    "image": {\n      "shouldGenerate": false,\n      "reason": "只有当这条消息确实需要视觉补充时才为 true",\n      "prompt": null,\n      "altText": null,\n      "aspectRatio": null,\n      "imageSize": null\n    }` : ''}${mediaCapabilities.image && mediaCapabilities.audio ? ',' : ''}${mediaCapabilities.audio ? `\n    "audio": {\n      "shouldGenerate": false,\n      "reason": "只有当这条消息特别适合语音播放时才为 true",\n      "text": null,\n      "voiceProfileId": null\n    }` : ''}\n  }`
+    ? `,\n  "mediaDecision": {${mediaCapabilities.image ? `\n    "image": {\n      "shouldGenerate": false,\n      "reason": "只有当这条消息确实需要视觉补充时才为 true",\n      "prompt": null,\n      "altText": null,\n      "aspectRatio": null,\n      "imageSize": null,\n      "targetImageIds": [],\n      "referenceImageIds": [],\n      "styleImageIds": []\n    }` : ''}${mediaCapabilities.image && mediaCapabilities.audio ? ',' : ''}${mediaCapabilities.audio ? `\n    "audio": {\n      "shouldGenerate": false,\n      "reason": "只有当这条消息特别适合语音播放时才为 true",\n      "text": null,\n      "voiceProfileId": null\n    }` : ''}\n  }`
     : '';
   const deliberationExample = isAnalysisRoom
     ? `,\n  "deliberationArtifacts": {"claims":[{"text":"从本条可见回复中抽取的论点","stance":"review","reason":"这条可见回复为什么支持该论点","confidence":0.8}]}`
@@ -344,7 +364,7 @@ export function buildInlineInteractionContract(params: {
 4. Do not use intentionalRepeat=true for accidental template drift. If you are merely falling back into the same opener, explanation scaffold, punctuation habit, or generic answer shape, set false and rewrite with a different discourse move.`;
 
   const mediaRules = (shouldIncludeMediaDecision
-    ? `\n\nRules for mediaDecision:\n1. mediaDecision is included because this turn has an explicit media request. If the request is not actually for media, set shouldGenerate=false.\n${mediaCapabilities.image ? '2. For image requests, set image.shouldGenerate=true only when the visible reply is sending/showing/generating an image. Write a concrete prompt centered on the requested subject, grounded in speaker identity and current context; avoid generic stock-photo wording, impossible anatomy, watermarks, URLs, and text overlays.\n3. If the user asks for image shape or quality in natural language, output aspectRatio as one of 1:1, 2:3, 3:2, 3:4, 4:3, 4:5, 5:4, 9:16, 16:9, 21:9, and imageSize as one of 1K, 2K, 4K. Leave them null when the user did not ask.\n4. Do not pretend an image exists unless image.shouldGenerate=true. altText should be concise and specific.\n' : ''}${mediaCapabilities.audio ? '5. For audio requests, set audio.shouldGenerate=true only when this exact text should be spoken. audio.text must not add new facts.\n' : ''}6. Never output URLs, base64, markdown image links, or binary data.`
+    ? `\n\nRules for mediaDecision:\n1. mediaDecision is included because this turn has an explicit media request. If the request is not actually for media, set shouldGenerate=false.\n${mediaCapabilities.image ? `2. For image requests, set image.shouldGenerate=true only when the visible reply is sending/showing/generating an image. Write a concrete prompt centered on the requested subject, grounded in speaker identity and current context; avoid generic stock-photo wording, impossible anatomy, watermarks, URLs, and text overlays.\n3. If the user asks for image shape or quality in natural language, output aspectRatio as one of 1:1, 2:3, 3:2, 3:4, 4:3, 4:5, 5:4, 9:16, 16:9, 21:9, and imageSize as one of 1K, 2K, 4K. Leave them null when the user did not ask.\n4. Do not pretend an image exists unless image.shouldGenerate=true. altText should be concise and specific.\n5. imageReferenceRegistry below is a lightweight list of recent chat images. Do not use every image by default. Select targetImageIds/referenceImageIds/styleImageIds only when the user instruction, latest turn, caption/alt text, or message order clearly identifies them. If several images could be meant and the difference matters, ask a short clarifying question in content and set image.shouldGenerate=false.\n6. targetImageIds means images to edit or vary; referenceImageIds means content/object references; styleImageIds means style references. IDs must come from imageReferenceRegistry.refId. Never output URLs, base64, markdown image links, or binary data.\nImage reference registry:\n${JSON.stringify(imageReferenceRegistry)}\n` : ''}${mediaCapabilities.audio ? '7. For audio requests, set audio.shouldGenerate=true only when this exact text should be spoken. audio.text must not add new facts.\n' : ''}8. Never output URLs, base64, markdown image links, or binary data.`
     : '') + intentionalRepeatRules;
 
   const turnPlanRules = params.turnPlan

@@ -240,4 +240,46 @@ describe('useAssistantArtifactStore', () => {
     expect(item?.versions[0]?.media?.[0]).toMatchObject({ assetId: 'asset-1', mimeType: 'image/png' });
     expect(useAssistantArtifactStore.getState().getArtifactsForChat('chat-a')).toHaveLength(1);
   });
+
+  it('does not append duplicate image artifact versions for the same asset', () => {
+    const message = {
+      id: 'message-image',
+      chatId: 'chat-a',
+      type: 'ai',
+      senderId: 'assistant',
+      senderName: '助手',
+      content: '图片已生成',
+      emotion: 0,
+      timestamp: 100,
+      isDeleted: false,
+    } as const;
+    const attachment = {
+      id: 'image-1',
+      kind: 'image' as const,
+      status: 'ready' as const,
+      altText: '图片产物',
+      assetId: 'asset-1',
+      url: '/uploads/media/u/chat/image.png',
+      mimeType: 'image/png',
+      sizeBytes: 1234,
+      createdAt: 100,
+      updatedAt: 120,
+    };
+
+    const first = useAssistantArtifactStore.getState().createImageArtifactFromAttachment({
+      chatId: 'chat-a',
+      message,
+      attachment,
+      timestamp: 130,
+    });
+    const second = useAssistantArtifactStore.getState().createImageArtifactFromAttachment({
+      chatId: 'chat-a',
+      message,
+      attachment,
+      timestamp: 140,
+    });
+
+    expect(second?.id).toBe(first?.id);
+    expect(second?.versions).toHaveLength(1);
+  });
 });

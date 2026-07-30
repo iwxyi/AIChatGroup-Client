@@ -119,6 +119,51 @@ describe('buildInlineInteractionContract analysis room detection', () => {
     expect(contract).not.toContain('"extraMessages":null');
   });
 
+  it('includes generated image prompts as lightweight image reference summaries', () => {
+    const contract = buildInlineInteractionContract({
+      chat: {
+        id: 'chat-1',
+        type: 'group',
+        memberIds: ['speaker'],
+        runtimeEventsV2: [],
+      } as unknown as GroupChat,
+      speaker: { id: 'speaker', name: '说话人' } as AICharacter,
+      characters: [{ id: 'speaker', name: '说话人' } as AICharacter],
+      recentMessages: [{
+        id: 'message-image',
+        chatId: 'chat-1',
+        type: 'ai',
+        senderId: 'speaker',
+        senderName: '说话人',
+        content: '这张红烧肉照片可以用作封面。',
+        emotion: 0,
+        timestamp: 10,
+        isDeleted: false,
+        metadata: {
+          attachments: [{
+            id: 'image-1',
+            kind: 'image',
+            status: 'ready',
+            altText: '红烧肉照片',
+            caption: '红烧肉成品图',
+            promptText: 'A realistic braised pork belly dish, glossy sauce, warm restaurant lighting',
+            url: 'data:image/png;base64,AAA',
+            mimeType: 'image/png',
+            createdAt: 10,
+            updatedAt: 10,
+          }],
+        },
+      }],
+      mediaCapabilities: { image: true, audio: false },
+      mediaRequested: true,
+    });
+
+    expect(contract).toContain('imageReferenceRegistry');
+    expect(contract).toContain('"refId":"message-image:image-1"');
+    expect(contract).toContain('"promptText":"A realistic braised pork belly dish');
+    expect(contract).not.toContain('data:image/png;base64,AAA');
+  });
+
   it('still allows paragraph breaks inside one-bubble turns', () => {
     const contract = buildInlineInteractionContract({
       chat: {

@@ -6,12 +6,12 @@ import type { Message, MessageAttachment, NarrativeBlock, NarrativeTurnMetadata 
 import type { AICharacter } from '../../types/character';
 import MessageBubble from './MessageBubble';
 import EventMessageItem from './EventMessageItem';
-import { shouldRenderEventMessage, type EventRenderFlags } from './eventMessagePresentation';
+import type { EventRenderFlags } from './eventMessagePresentation';
 import type { NarrativeStoryChoiceOption } from './messageBubblePresentation';
 import SystemMessageItem from './SystemMessageItem';
 import { resolveCharacterOrDeleted } from '../../utils/deletedEntity';
-import { buildChatRenderItems, type ChatRenderItem } from './chatRenderModel';
-import { getVisibleNarrativeDisplayBlocks, isNarrativeRevealAllowed } from './messageListPresentation';
+import type { ChatRenderItem } from './chatRenderModel';
+import { isNarrativeRevealAllowed } from './messageListPresentation';
 import type { ExpressionFeedbackKind } from '../../services/characterExpressionFeedback';
 import ImageLightbox, { type LightboxImageItem } from '../common/ImageLightbox';
 import { useSettingsStore } from '../../stores/useSettingsStore';
@@ -19,7 +19,8 @@ import { logDeveloperDiagnostic } from '../../services/developerDiagnostics';
 import { buildStoryNodeProgress, type StoryNodeProgressChip } from '../../services/storyNodeProgress';
 import type { MessageBranchVersionInfo } from '../../services/messageBranching';
 import { buildBubblePreview, resolveCharacterBubbleStyle } from '../../utils/bubbleStyle';
-import { prefersReducedMotion } from '../../styles/motion';
+import { motion, prefersReducedMotion, transition } from '../../styles/motion';
+import { buildMessageListRenderItems, type MessageListRenderItem } from './messageListRenderItems';
 
 const TOP_PREFETCH_THRESHOLD = 520;
 const BOTTOM_STICKY_THRESHOLD = 96;
@@ -86,6 +87,7 @@ interface MessageListProps {
   onAnalyzeMessage?: (message: Message) => void;
   onExpressionFeedback?: (message: Message, kind: ExpressionFeedbackKind) => void;
   onRetryMedia?: (message: Message, attachmentId: string) => void | Promise<void>;
+  onAddImagesToReference?: (message: Message, attachments: MessageAttachment[]) => void;
   onCharacterAvatarClick?: (character: AICharacter, anchorEl: HTMLElement) => void;
   onCreateRevision?: (message: Message, content: string) => void | Promise<void>;
   onSwitchRevision?: (message: Message, direction: -1 | 1) => void | Promise<void>;
@@ -119,23 +121,6 @@ interface MessageListProps {
   narrativeRevealMessageKeys?: ReadonlySet<string>;
   onNarrativeRevealComplete?: (message: Message) => void;
   autoStickToBottom?: boolean;
-}
-
-type MessageListRenderKind =
-  | ChatRenderItem['renderKind']
-  | 'narrative-block'
-  | 'narrative-progress'
-  | 'story-choice';
-
-interface MessageListRenderItem {
-  key: string;
-  message: Message;
-  sourceItem: ChatRenderItem;
-  pending: boolean;
-  renderKind: MessageListRenderKind;
-  block?: NarrativeBlock;
-  blockIndex?: number;
-  completeNarrativeReveal?: boolean;
 }
 
 function buildChatImageTimeline(messages: Message[]) {
@@ -376,7 +361,6 @@ function getHistoricalBubbleShadow(shadow: string | undefined) {
 const LightweightNarrativeBlock = memo(function LightweightNarrativeBlock({
   block,
   character,
-  characters,
   maxContentWidth,
   storyReaderFontFamily,
   storyReaderFontSize,
@@ -386,7 +370,6 @@ const LightweightNarrativeBlock = memo(function LightweightNarrativeBlock({
 }: {
   block: NarrativeBlock;
   character?: AICharacter | null;
-  characters: AICharacter[];
   maxContentWidth: string | number;
   storyReaderFontFamily?: string;
   storyReaderFontSize: number;
@@ -517,81 +500,6 @@ const LightweightNarrativeBlock = memo(function LightweightNarrativeBlock({
   );
 });
 
-export function buildMessageListRenderItems(params: {
-  messages: Message[];
-  eventRenderFlags: EventRenderFlags;
-  showDeveloperDetails: boolean;
-  storyChoiceMessageId?: string | null;
-  storyChoiceOptions?: NarrativeStoryChoiceOption[];
-}): MessageListRenderItem[] {
-  const baseItems = buildChatRenderItems(params.messages)
-    .filter((item) => item.renderKind !== 'event' || shouldRenderEventMessage(item.message, params.eventRenderFlags));
-  const flattened: MessageListRenderItem[] = [];
-
-  for (const item of baseItems) {
-    if (item.renderKind !== 'narrative') {
-      flattened.push({
-        key: item.key,
-        message: item.message,
-        sourceItem: item,
-        pending: item.pending,
-        renderKind: item.renderKind,
-      });
-      continue;
-    }
-
-    const showStoryChoices = item.message.id === params.storyChoiceMessageId
-      && (params.storyChoiceOptions?.length ?? 0) > 0;
-    const blocks = getVisibleNarrativeDisplayBlocks(item.message, params.showDeveloperDetails);
-    if (!blocks.length) {
-      if (showStoryChoices) {
-        flattened.push({
-          key: `${item.key}:story-choice`,
-          message: item.message,
-          sourceItem: item,
-          pending: item.pending,
-          renderKind: 'story-choice',
-        });
-      }
-      continue;
-    }
-
-    blocks.forEach((block, index) => {
-      const blockKey = `${item.key}:block:${block.id || index}`;
-      flattened.push({
-        key: blockKey,
-        message: item.message,
-        sourceItem: item,
-        pending: item.pending,
-        renderKind: 'narrative-block',
-        block,
-        blockIndex: index,
-        completeNarrativeReveal: index === 0,
-      });
-    });
-    if (buildStoryNodeProgress(item.message)) {
-      flattened.push({
-        key: `${item.key}:story-progress`,
-        message: item.message,
-        sourceItem: item,
-        pending: item.pending,
-        renderKind: 'narrative-progress',
-      });
-    }
-    if (showStoryChoices) {
-      flattened.push({
-        key: `${item.key}:story-choice`,
-        message: item.message,
-        sourceItem: item,
-        pending: item.pending,
-        renderKind: 'story-choice',
-      });
-    }
-  }
-
-  return flattened;
-}
-
 export default function MessageList({
   messages,
   characters,
@@ -600,6 +508,7 @@ export default function MessageList({
   onAnalyzeMessage,
   onExpressionFeedback,
   onRetryMedia,
+  onAddImagesToReference,
   onCharacterAvatarClick,
   onCreateRevision,
   onSwitchRevision,
@@ -770,6 +679,7 @@ export default function MessageList({
       onExpressionFeedback={item.pending || (options?.message || item.message).type !== 'ai' ? undefined : onExpressionFeedback}
       onRetryMedia={item.pending ? undefined : onRetryMedia}
       onOpenImage={item.pending ? undefined : openChatImage}
+      onAddImagesToReference={item.pending ? undefined : onAddImagesToReference}
       onOpenDiagram={item.pending ? undefined : openChatDiagram}
       onCharacterAvatarClick={item.pending ? undefined : onCharacterAvatarClick}
       onCreateRevision={item.pending ? undefined : onCreateRevision}
@@ -780,7 +690,7 @@ export default function MessageList({
       selfMemberId={selfMemberId}
       privateConversation={privateConversation}
     />
-  ), [branchVersionInfoByMessageId, characters, currentUser, onAnalyzeMessage, onCharacterAvatarClick, onCreateRevision, onDeleteMessage, onExpressionFeedback, onOpenArtifact, onRetryMedia, onSwitchRevision, openChatDiagram, openChatImage, privateConversation, selfMemberId]);
+  ), [branchVersionInfoByMessageId, characters, currentUser, onAddImagesToReference, onAnalyzeMessage, onCharacterAvatarClick, onCreateRevision, onDeleteMessage, onExpressionFeedback, onOpenArtifact, onRetryMedia, onSwitchRevision, openChatDiagram, openChatImage, privateConversation, selfMemberId]);
 
   const renderMessageItem = useCallback((item: MessageListRenderItem) => {
     const anchorProps = {
@@ -831,7 +741,6 @@ export default function MessageList({
             <LightweightNarrativeBlock
               block={block}
               character={character}
-              characters={characters}
               maxContentWidth={contentMaxWidth}
               storyReaderFontFamily={storyReaderFontFamily}
               storyReaderFontSize={chatAppearance.storyReader.fontSize}
@@ -1910,9 +1819,13 @@ export default function MessageList({
         bgcolor: 'transparent',
         scrollPaddingTop: topInset || 16,
         scrollPaddingBottom: bottomInset || 16,
+        transition: transition(['padding-bottom', 'scroll-padding-bottom'], motion.durations.slow, motion.emphasized),
         overflowAnchor: 'none',
         scrollbarGutter: 'stable',
         visibility: hideUntilInitialViewportPositioned ? 'hidden' : 'visible',
+        '@media (prefers-reduced-motion: reduce)': {
+          transition: 'none',
+        },
       }}
     >
       {messages.length > 0 ? (

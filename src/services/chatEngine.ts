@@ -5,7 +5,7 @@ import type { APIConfig, AIModelProfile } from '../types/settings';
 import type { MediaGenerationDecision, MessageAttachment, MessageMetadata, NarrativeBlock } from '../types/message';
 import type { SessionEngineDefinition, SessionGenerationPromptContext, SessionGenerationRuntimeBundle } from '../types/sessionEngine';
 import type { MemoryItem } from './memoryTypes';
-import { getPreferredAIProfile, isAIProfileUsable } from '../types/settings';
+import { getPreferredAIProfile, inferTextInputCapabilities, isAIProfileUsable } from '../types/settings';
 import type { ConflictFocusPayload, InteractionEventPayload, SocialEventHintEnvelope } from '../types/runtimeEvent';
 import { normalizeInteractionHintCollection, normalizeSocialEventHints } from '../types/runtimeEvent';
 import { generateResponse } from './aiClient';
@@ -33,7 +33,6 @@ import { buildInnerLifeMetadata, buildInnerLifePromptBlock, projectInnerLife, ty
 import { maybeAutoWithdrawMessage } from './messageWithdrawal';
 import { BASE_COOLDOWN_MS, MAX_HISTORY_FOR_PROMPT } from '../constants/defaults';
 import { buildInlineInteractionContract, parseInlineInteractionEnvelope } from './inlineInteractionHint';
-import { resolveCommittedStreamContent } from './streamingMessageLifecycle';
 import { getExpressionFeedbackCategoryLabel, summarizeExpressionFeedbackInfluence } from './expressionFeedbackInfluence';
 import type { UserGuidanceIntent } from './userGuidanceIntent';
 import { evaluateGuidanceGeneratedContent, type GuidanceExecutionReason, type GuidanceRejectionReason } from './guidanceExecution';
@@ -769,16 +768,6 @@ function buildSurfaceEchoRetryPrompt(basePrompt: string, priorAttempt: string, r
 - Return a fresh valid JSON object only.`;
 }
 
-function buildSurfaceContractRetryPrompt(basePrompt: string, priorAttempt: string, reason: string) {
-  return `${basePrompt}\n\nVisible-surface retry:
-- The previous draft was rejected because it violated this room's visible-message surface: ${reason}
-- Keep the same substantive intent, but return a spoken chat message only.
-- Do not include stage directions, narrated actions, camera-like descriptions, parenthesized scene beats, or multiple speakers inside one content field.
-- If the transcript contains those forms, treat them as invalid old surface drift, not as a style to continue.
-- Rejected draft: ${priorAttempt.slice(0, 180)}
-- Return one fresh valid JSON object only.`;
-}
-
 function buildStoryProtocolPrompt(basePrompt: string) {
   return `${basePrompt}
 
@@ -1255,84 +1244,12 @@ function resolveResponseSurfaceBasis(chat: GroupChat) {
   };
 }
 
-function buildLegacyCompatibilityNotice() {
-  return 'Legacy compatibility remains only as a fallback path; scenario, family, channel, style, and runtime bundle are now the primary control chain.';
-}
-
-function buildGenerationRuntimeLegacyNotice() {
-  return buildLegacyCompatibilityNotice();
-}
-
-function buildLegacyRuntimeHint() {
-  return buildLegacyCompatibilityNotice();
-}
-
-function buildCompatibilityGuard() {
-  return buildLegacyCompatibilityNotice();
-}
-
-function buildLegacySurfaceFallback(chat: GroupChat) {
-  return resolveSurfaceFromMode(chat);
-}
-
-function buildScenarioBasisTag(chat: GroupChat) {
-  return resolveResponseSurfaceBasis(chat).basisTag;
-}
-
-function buildModeSurface(chat: GroupChat) {
-  return resolveResponseSurfaceBasis(chat).modeSurface;
-}
-
-function buildLegacyModeFallback(chat: GroupChat) {
-  return buildModeSurface(chat);
-}
-
-function resolveSurfaceFromScenario(chat: GroupChat) {
-  return buildModeSurface(chat);
-}
-
-function buildPrimarySurfaceFromScenario(chat: GroupChat) {
-  return resolveSurfaceFromScenario(chat);
-}
-
-function buildScenarioSurface(chat: GroupChat) {
-  return buildPrimarySurfaceFromScenario(chat);
-}
-
 function buildScenarioSurfaceBasis(chat: GroupChat) {
   return resolveResponseSurfaceBasis(chat);
 }
 
-function buildSurfaceBasisTag(chat: GroupChat) {
-  return buildScenarioSurfaceBasis(chat).basisTag;
-}
-
-function buildScenarioSurfaceMode(chat: GroupChat) {
-  return buildScenarioSurfaceBasis(chat).modeSurface;
-}
-
-function buildScenarioFamilySurface(chat: GroupChat) {
-  return buildScenarioSurfaceMode(chat);
-}
-
-function buildPrimarySurface(chat: GroupChat) {
-  return buildScenarioFamilySurface(chat);
-}
-
-function buildSurfaceMode(chat: GroupChat) {
-  return buildPrimarySurface(chat);
-}
-
-function resolveScenarioSurface(chat: GroupChat) {
-  return buildSurfaceMode(chat);
-}
-
 function resolveScenarioSurfaceBasis(chat: GroupChat) {
   return buildScenarioSurfaceBasis(chat);
-}
-
-function resolveRuntimeSurface(chat: GroupChat) {
-  return resolveScenarioSurface(chat);
 }
 
 function resolveRuntimeSurfaceBasis(chat: GroupChat) {
@@ -1379,10 +1296,6 @@ function resolveSurfaceCompatibility(chat: GroupChat) {
     modeSurface: readSurfaceCompatibilityMode(chat),
     basisTag: readSurfaceCompatibilityTag(chat),
   };
-}
-
-function buildScenarioCompatibilityNotice() {
-  return buildLegacyCompatibilityNotice();
 }
 
 function buildScenarioCompatibilityFallback(chat: GroupChat) {
@@ -1500,40 +1413,20 @@ function resolveGenerationCompatibility(chat: GroupChat) {
   return { modeSurface: resolveGenerationModeSurface(chat), basisTag: resolveGenerationBasisTag(chat) };
 }
 
-function resolveGenerationMode(chat: GroupChat) {
-  return resolveGenerationCompatibility(chat).modeSurface;
-}
-
 function resolveGenerationBasis(chat: GroupChat) {
   return resolveGenerationCompatibility(chat).basisTag;
-}
-
-function resolveGenerationSurface(chat: GroupChat) {
-  return resolveGenerationMode(chat);
 }
 
 function resolveGenerationSurfaceTag(chat: GroupChat) {
   return resolveGenerationBasis(chat);
 }
 
-function resolvePrimaryGenerationSurface(chat: GroupChat) {
-  return resolveGenerationSurface(chat);
-}
-
 function resolvePrimaryGenerationBasis(chat: GroupChat) {
   return resolveGenerationSurfaceTag(chat);
 }
 
-function resolveEngineSurface(chat: GroupChat) {
-  return resolvePrimaryGenerationSurface(chat);
-}
-
 function resolveEngineBasis(chat: GroupChat) {
   return resolvePrimaryGenerationBasis(chat);
-}
-
-function resolveModeSurfaceRuntime(chat: GroupChat) {
-  return resolveEngineSurface(chat);
 }
 
 function resolveModeBasisRuntime(chat: GroupChat) {
@@ -1541,27 +1434,15 @@ function resolveModeBasisRuntime(chat: GroupChat) {
 }
 
 function resolveSurfaceRuntimeBundle(chat: GroupChat) {
-  return { modeSurface: resolveModeSurfaceRuntime(chat), basisTag: resolveModeBasisRuntime(chat) };
-}
-
-function resolveSurfaceRuntimeMode(chat: GroupChat) {
-  return resolveSurfaceRuntimeBundle(chat).modeSurface;
+  return { basisTag: resolveModeBasisRuntime(chat) };
 }
 
 function resolveSurfaceRuntimeBasis(chat: GroupChat) {
   return resolveSurfaceRuntimeBundle(chat).basisTag;
 }
 
-function resolveScenarioDrivenSurface(chat: GroupChat) {
-  return resolveSurfaceRuntimeMode(chat);
-}
-
 function resolveScenarioDrivenBasis(chat: GroupChat) {
   return resolveSurfaceRuntimeBasis(chat);
-}
-
-function resolveFinalSurface(chat: GroupChat) {
-  return resolveScenarioDrivenSurface(chat);
 }
 
 function resolveFinalBasis(chat: GroupChat) {
@@ -2078,9 +1959,16 @@ function buildUserGuidancePrompt(guidance: UserGuidanceIntent | null | undefined
   const directLine = guidance.kind === 'direct_reply'
     ? '\n- Direct reply guidance: answer the user-requested point first, then optionally react socially. Do not dodge into room banter before answering. If a specific actor was requested, that actor should treat this as a direct task, not a casual mention.\n- Honor explicit output form, quantity, and length requirements in the user guidance. If the user asks for an essay, article, analysis, list, answer, or other deliverable, produce that deliverable in this speaker’s own voice instead of merely discussing the topic.\n- For article/essay/longform deliverables, preserve readable paragraphs in the content string with escaped newline sequences, for example \\n\\n between paragraphs. Do not put a heading marker, separator, and the whole article on one line.\n- When multiple requested actors are listed, each requested actor must provide their own substantive response for the same task. Do not summarize what the group thinks and do not pass the task to someone else.'
     : '';
+  const constraintLine = guidance.hasHardConstraints
+    ? `\n- Constraint guidance: the user gave a live constraint or boundary. Keep it active in the next room move, especially for named people, budget, limits, exclusions, priority, or “do not ignore” wording. Do not treat it as background trivia.${guidance.hardConstraintActorIds?.length ? ` Constraint anchor(s): ${guidance.hardConstraintActorIds.map((id) => getCharacterNameById(characters, id)).join('、')}.` : ''}\n- A constraint anchor is not automatically the required next speaker. Other characters may speak if they actively protect, apply, or ask about that constraint instead of ignoring it.`
+    : '';
+  const suppressedNames = guidance.suppressedActorIds?.map((id) => getCharacterNameById(characters, id)).filter(Boolean) || [];
+  const suppressionLine = suppressedNames.length
+    ? `\n- Speaker suppression: the user just pushed back against ${suppressedNames.join('、')} taking over or speaking for someone else. During this guidance window, ${suppressedNames.join('、')} should not regain control of the thread unless the user explicitly redirects to them or no other character can speak.`
+    : '';
   return `\n## User Guidance Override
 - Latest user guidance: ${guidance.rawText}
-- Function: ${guidance.kind}.${actorLine}${mediaLine}${topicLine}${directLine}
+- Function: ${guidance.kind}.${actorLine}${mediaLine}${topicLine}${directLine}${constraintLine}${suppressionLine}
 - Treat this as the current room instruction, above narrative pressure, conflict pressure, and recent banter.
 - If the room has been drifting, pull the next line back to this guidance immediately.`;
 }
@@ -2268,6 +2156,9 @@ function normalizeMediaDecision(decision: MediaGenerationDecision | null | undef
       aspectRatio: decision.image.aspectRatio,
       imageSize: decision.image.imageSize,
       referenceCharacterIds: decision.image.referenceCharacterIds?.filter(Boolean),
+      targetImageIds: decision.image.targetImageIds?.filter(Boolean),
+      referenceImageIds: decision.image.referenceImageIds?.filter(Boolean),
+      styleImageIds: decision.image.styleImageIds?.filter(Boolean),
     };
   }
   if (capabilities.audio && decision?.audio?.shouldGenerate) {
@@ -2281,10 +2172,61 @@ function normalizeMediaDecision(decision: MediaGenerationDecision | null | undef
   return normalized.image || normalized.audio ? normalized : null;
 }
 
+function latestUserReferenceImages(messages: Message[]) {
+  const latest = [...messages]
+    .reverse()
+    .find((message) => (
+      !message.isDeleted
+      && (message.type === 'user' || message.type === 'god')
+      && message.metadata?.attachments?.some((attachment) => attachment.kind === 'image' && attachment.status === 'ready' && Boolean(attachment.url))
+    ));
+  return (latest?.metadata?.attachments || [])
+    .filter((attachment) => attachment.kind === 'image' && attachment.status === 'ready' && Boolean(attachment.url))
+    .map((attachment) => ({
+      url: attachment.url as string,
+      mimeType: attachment.mimeType,
+      label: attachment.caption || attachment.altText || '用户参考图',
+    }))
+    .slice(0, 9);
+}
+
+function imageReferenceMap(messages: Message[]) {
+  const refs = new Map<string, { url: string; mimeType?: string; label?: string }>();
+  for (const message of messages) {
+    if (message.isDeleted) continue;
+    for (const attachment of message.metadata?.attachments || []) {
+      if (attachment.kind !== 'image' || attachment.status !== 'ready' || !attachment.url) continue;
+      const value = {
+        url: attachment.url,
+        mimeType: attachment.mimeType,
+        label: attachment.caption || attachment.altText || '参考图',
+      };
+      refs.set(`${message.id}:${attachment.id}`, value);
+      refs.set(attachment.id, value);
+    }
+  }
+  return refs;
+}
+
+function selectedDecisionReferenceImages(decision: MediaGenerationDecision['image'], messages: Message[]) {
+  const selectedIds = Array.from(new Set([
+    ...(decision?.targetImageIds || []),
+    ...(decision?.referenceImageIds || []),
+    ...(decision?.styleImageIds || []),
+  ].filter(Boolean))).slice(0, 9);
+  if (!selectedIds.length) return [];
+  const refs = imageReferenceMap(messages);
+  return selectedIds.flatMap((id) => {
+    const ref = refs.get(id);
+    return ref ? [ref] : [];
+  });
+}
+
 function buildMessageMetadata(params: {
   decision: MediaGenerationDecision | null | undefined;
   capabilities: { image: boolean; audio: boolean };
   content: string;
+  activeMessages?: Message[];
   runtimeDecision?: MessageMetadata['runtimeDecision'];
   deliberationArtifacts?: MessageMetadata['deliberationArtifacts'] | null;
   presenceUpdate?: MessageMetadata['presenceUpdate'] | null;
@@ -2305,10 +2247,13 @@ function buildMessageMetadata(params: {
   const contextText = params.narrativeTurn?.blocks.map((block) => block.text).filter(Boolean).join('\n\n') || params.content;
   const attachments: MessageAttachment[] = [];
   if (decision?.image?.shouldGenerate && decision.image.prompt && decision.image.altText) {
+    const selectedReferenceImages = selectedDecisionReferenceImages(decision.image, params.activeMessages || []);
+    const referenceImages = selectedReferenceImages.length ? selectedReferenceImages : latestUserReferenceImages(params.activeMessages || []);
     const imageSeedParts = [
       decision.image.prompt,
       decision.image.altText,
       (decision.image.referenceCharacterIds || []).join(','),
+      referenceImages.map((image) => image.url).join(','),
       params.content,
     ];
     attachments.push({
@@ -2319,7 +2264,9 @@ function buildMessageMetadata(params: {
       promptText: enhanceImagePrompt(decision.image.prompt, { subject: decision.image.altText, caption: decision.image.altText }),
       aspectRatio: decision.image.aspectRatio,
       imageSize: decision.image.imageSize,
+      targetImageIds: decision.image.targetImageIds?.filter(Boolean),
       referenceCharacterIds: decision.image.referenceCharacterIds?.filter(Boolean),
+      referenceImages: referenceImages.length ? referenceImages : undefined,
       createdAt: now,
       updatedAt: now,
     });
@@ -3084,9 +3031,12 @@ async function generateNonDuplicateResponse(params: {
             ...('details' in storyProtocolIssue ? storyProtocolIssue.details : {}),
           },
         });
+        const modelSafeStoryProtocolReason = storyProtocolIssue.code === 'story_section_too_short'
+          ? `${toModelSafeStoryProtocolReason(storyProtocolIssue)}; ${storyProtocolIssue.message}`
+          : toModelSafeStoryProtocolReason(storyProtocolIssue);
         prompt = storyProtocolIssue.code === 'story_continuity_invalid'
           ? buildStoryContinuityQualityRetryPrompt(params.systemPrompt, storyProtocolIssue.message, storyContinuationState)
-          : buildStoryProtocolQualityRetryPrompt(params.systemPrompt, toModelSafeStoryProtocolReason(storyProtocolIssue));
+          : buildStoryProtocolQualityRetryPrompt(params.systemPrompt, modelSafeStoryProtocolReason);
         continue;
       }
       logAiGenerationFailure({
@@ -3411,7 +3361,8 @@ function resolveSpeakerFromCandidates(chatMembers: AICharacter[], candidates: Re
 function resolveUserGuidanceLockedSpeaker(chatMembers: AICharacter[], directorIntent?: DirectorIntent | null) {
   const guidance = directorIntent?.source === 'user_message' ? directorIntent.userGuidance : null;
   if (!guidance?.actorIds.length) return null;
-  const targetIds = directorIntent?.targetActorIds.length ? directorIntent.targetActorIds : guidance.actorIds;
+  const targetIds = directorIntent?.targetActorIds || [];
+  if (!targetIds.length) return null;
   for (const actorId of targetIds) {
     const speaker = chatMembers.find((member) => member.id === actorId);
     if (speaker) return speaker;
@@ -3658,11 +3609,13 @@ export async function generateSpeakerMessage(params: {
     })
     : composePromptBlocks(promptBlocks, promptPlayMode);
   const systemPrompt = baseSystemPrompt;
+  const resolvedApi = resolveApiConfigForCharacter(params.speaker, params.apiConfig, params.profiles);
+  const textInputCapabilities = inferTextInputCapabilities(resolvedApi.provider, resolvedApi.model);
   const chatMessages = buildChatMessages(activeMessages, characterMap, MAX_HISTORY_FOR_PROMPT, {
     currentSpeakerId: isStoryReader ? undefined : params.speaker.id,
     chatType: params.chat.type,
+    imageAttachmentMode: textInputCapabilities.imageInput ? 'latest-user' : 'none',
   });
-  const resolvedApi = resolveApiConfigForCharacter(params.speaker, params.apiConfig, params.profiles);
   const promptPrepElapsedMs = Number((nowMs() - promptPrepStartedAt).toFixed(2));
   logDeveloperDiagnostic('chat-run:prompt-prep-ready', {
     chatId: params.chat.id,
@@ -3827,6 +3780,7 @@ export async function generateSpeakerMessage(params: {
 	      decision: mergedMediaDecision,
 	      capabilities: mediaCapabilities,
 	      content: generatedStoryResponse,
+        activeMessages,
         surface: responseSurface,
         storyEvents,
         storyEventsNormalized: true,
@@ -3963,7 +3917,7 @@ export const runOneRound = async (
       bypassNotice: null,
       policy: {
         source: 'user_guidance_lock',
-        lockedActorIds: directorIntent?.targetActorIds || directorIntent?.userGuidance?.actorIds || [lockedGuidanceSpeaker.id],
+        lockedActorIds: directorIntent?.targetActorIds || [lockedGuidanceSpeaker.id],
       },
     }
     : roundtableTurnSpeaker

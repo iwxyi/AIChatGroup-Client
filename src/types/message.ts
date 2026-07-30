@@ -23,6 +23,8 @@ export interface MessageAttachment {
   promptText?: string;
   aspectRatio?: string;
   imageSize?: string;
+  targetArtifactId?: string;
+  targetImageIds?: string[];
   referenceCharacterIds?: string[];
   referenceImages?: Array<{
     url: string;
@@ -45,6 +47,9 @@ export interface MediaGenerationDecision {
     aspectRatio?: string;
     imageSize?: string;
     referenceCharacterIds?: string[];
+    targetImageIds?: string[];
+    referenceImageIds?: string[];
+    styleImageIds?: string[];
   } | null;
   audio?: {
     shouldGenerate: boolean;

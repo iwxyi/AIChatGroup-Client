@@ -5,6 +5,7 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
+import AddPhotoAlternateIcon from '@mui/icons-material/AddPhotoAlternate';
 import InsightsIcon from '@mui/icons-material/Insights';
 import RateReviewIcon from '@mui/icons-material/RateReview';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -32,6 +33,7 @@ interface MessageBubbleProps {
   onExpressionFeedback?: (message: Message, kind: ExpressionFeedbackKind) => void;
   onRetryMedia?: (message: Message, attachmentId: string) => void | Promise<void>;
   onOpenImage?: (message: Message, attachment: MessageAttachment) => void;
+  onAddImagesToReference?: (message: Message, attachments: MessageAttachment[]) => void;
   onOpenDiagram?: (message: Message, diagram: { source: string; svg: string; dataUrl: string }) => void;
   onCharacterAvatarClick?: (character: AICharacter, anchorEl: HTMLElement) => void;
   pending?: boolean;
@@ -68,7 +70,7 @@ function buildWithdrawalDebugTitle(withdrawal: NonNullable<Message['metadata']>[
   );
 }
 
-function MessageBubble({ message, character, characters = [], onDelete, onAnalyze, onExpressionFeedback, onRetryMedia, onOpenImage, onOpenDiagram, onCharacterAvatarClick, pending = false, currentUser, selfMemberId = null, privateConversation = false, branchVersionInfo, onCreateRevision, onSwitchRevision, onOpenArtifact }: MessageBubbleProps) {
+function MessageBubble({ message, character, characters = [], onDelete, onAnalyze, onExpressionFeedback, onRetryMedia, onOpenImage, onAddImagesToReference, onOpenDiagram, onCharacterAvatarClick, pending = false, currentUser, selfMemberId = null, privateConversation = false, branchVersionInfo, onCreateRevision, onSwitchRevision, onOpenArtifact }: MessageBubbleProps) {
   const customBubbleStyles = useSettingsStore((state) => state.customBubbleStyles);
   const userBubbleStyleId = useSettingsStore((state) => state.userBubbleStyleId);
   const userBubbleStyle = useSettingsStore((state) => state.userBubbleStyle);
@@ -90,6 +92,9 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
   const canDelete = useMemo(() => !pending && message.type !== 'system' && Boolean(onDelete), [message.type, onDelete, pending]);
   const canFeedback = useMemo(() => !pending && message.type === 'ai' && Boolean(onExpressionFeedback), [message.type, onExpressionFeedback, pending]);
   const canEditRevision = Boolean(onCreateRevision) && !pending && message.type !== 'system' && message.type !== 'event';
+  const readyImageAttachments = useMemo(() => (message.metadata?.attachments || [])
+    .filter((attachment) => attachment.kind === 'image' && attachment.status === 'ready' && Boolean(attachment.url)), [message.metadata?.attachments]);
+  const canAddImagesToReference = !pending && readyImageAttachments.length > 0 && Boolean(onAddImagesToReference);
   const artifactRefs = message.metadata?.assistant?.artifacts || [];
 
   const clearPressTimer = () => {
@@ -144,6 +149,11 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
 
   const handleAnalyze = () => {
     if (onAnalyze) onAnalyze(message);
+    closeMenus();
+  };
+
+  const handleAddImagesToReference = () => {
+    if (onAddImagesToReference && readyImageAttachments.length) onAddImagesToReference(message, readyImageAttachments);
     closeMenus();
   };
 
@@ -462,6 +472,12 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
             AI分析
           </MenuItem>
         ) : null}
+        {canAddImagesToReference ? (
+          <MenuItem onClick={handleAddImagesToReference}>
+            <ListItemIcon sx={{ minWidth: 32 }}><AddPhotoAlternateIcon fontSize="small" /></ListItemIcon>
+            放到参考图
+          </MenuItem>
+        ) : null}
         {canFeedback ? (
           <MenuItem onClick={openFeedbackDialog}>
             <ListItemIcon sx={{ minWidth: 32 }}><RateReviewIcon fontSize="small" /></ListItemIcon>
@@ -540,6 +556,7 @@ function areMessageBubblePropsEqual(previous: MessageBubbleProps, next: MessageB
     && previous.onExpressionFeedback === next.onExpressionFeedback
     && previous.onRetryMedia === next.onRetryMedia
     && previous.onOpenImage === next.onOpenImage
+    && previous.onAddImagesToReference === next.onAddImagesToReference
     && previous.onOpenDiagram === next.onOpenDiagram
     && previous.onCharacterAvatarClick === next.onCharacterAvatarClick
     && previous.pending === next.pending

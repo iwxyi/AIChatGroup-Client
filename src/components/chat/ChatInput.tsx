@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import { Box, TextField, IconButton, Chip, CircularProgress, Tooltip, Alert } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
 import CloseIcon from '@mui/icons-material/Close';
@@ -25,6 +25,9 @@ interface ChatInputProps {
   inputCapabilities?: Partial<AIModelInputCapabilities> | null;
   inputCapabilityWarning?: string;
   autoFocus?: boolean;
+  topContent?: ReactNode;
+  injectedAttachments?: MessageAttachment[];
+  onInjectedAttachmentsConsumed?: () => void;
 }
 
 function getMobilePanelTravelDistance() {
@@ -64,7 +67,7 @@ function buildAttachmentId() {
   return `att_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-export default function ChatInput({ mode, characterName, onSend, onClose, placeholderOverride, sendingLabel, hideSpeakAsChip, onSendError, onOpenPanel, onDraftActivity, inputCapabilities, inputCapabilityWarning, autoFocus }: ChatInputProps) {
+export default function ChatInput({ mode, characterName, onSend, onClose, placeholderOverride, sendingLabel, hideSpeakAsChip, onSendError, onOpenPanel, onDraftActivity, inputCapabilities, inputCapabilityWarning, autoFocus, topContent, injectedAttachments, onInjectedAttachmentsConsumed }: ChatInputProps) {
   const [text, setText] = useState('');
   const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
   const [isSending, setIsSending] = useState(false);
@@ -94,6 +97,26 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
     });
     return () => window.cancelAnimationFrame(frame);
   }, [autoFocus]);
+
+  useEffect(() => {
+    if (!injectedAttachments?.length) return;
+    setAttachments((current) => {
+      const existingKeys = new Set(current.map((item) => item.url || item.assetId || item.id));
+      const next = [...current];
+      for (const attachment of injectedAttachments) {
+        const key = attachment.url || attachment.assetId || attachment.id;
+        if (existingKeys.has(key)) continue;
+        existingKeys.add(key);
+        next.push(attachment);
+        if (next.length >= maxAttachments) break;
+      }
+      return next.slice(0, maxAttachments);
+    });
+    onInjectedAttachmentsConsumed?.();
+    window.requestAnimationFrame(() => {
+      textInputRef.current?.focus({ preventScroll: true });
+    });
+  }, [injectedAttachments, maxAttachments, onInjectedAttachmentsConsumed]);
 
   const cleanupPanelHandleListeners = useCallback(() => {
     panelHandleCleanupRef.current?.();
@@ -243,7 +266,6 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
     if (!state) return;
     cleanupPanelHandleListeners();
     const travelDistance = getMobilePanelTravelDistance();
-    const deltaY = state.startY - state.latestY;
     const shouldOpen = state.moved && state.lastDirection === 'up';
     if (state.moved) {
       panelHandleClickSuppressedRef.current = true;
@@ -376,6 +398,11 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
             : '0 18px 44px rgba(0,0,0,0.30), 0 1px 0 rgba(255,255,255,0.10) inset',
         }}
       >
+        {topContent ? (
+        <Box>
+          {topContent}
+        </Box>
+        ) : null}
         {attachments.length ? (
         <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap', mb: 0.75 }}>
           {attachments.map((attachment) => (

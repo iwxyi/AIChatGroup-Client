@@ -1,5 +1,5 @@
 import { Box, Button, MenuItem, Stack, TextField, Typography } from '@mui/material';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import ChatInput from '../chat/ChatInput';
 import type { SessionInputSurfaceDefinition } from '../../types/chat';
 import type { SessionBoardComposerSubmission, SessionFormComposerSubmission, SessionTextComposerSubmission } from '../../types/sessionEngine';
@@ -22,6 +22,9 @@ interface SessionComposerHostProps {
   inputCapabilities?: Partial<AIModelInputCapabilities> | null;
   inputCapabilityWarning?: string;
   autoFocus?: boolean;
+  topContent?: ReactNode;
+  injectedAttachments?: MessageAttachment[];
+  onInjectedAttachmentsConsumed?: () => void;
 }
 
 function buildInitialFieldState(surfaces: SessionInputSurfaceDefinition[]) {
@@ -33,17 +36,11 @@ function buildInitialFieldState(surfaces: SessionInputSurfaceDefinition[]) {
   ) as Record<string, Record<string, string>>;
 }
 
-export default function SessionComposerHost({ surfaces, onSubmitText, onSubmitForm, onSubmitBoard, speakAsCharacterName, onCloseSpeakAs, sendingLabel, hideSpeakAsChip, onSendError, onOpenPanel, onDraftActivity, inputCapabilities, inputCapabilityWarning, autoFocus }: SessionComposerHostProps) {
+export default function SessionComposerHost({ surfaces, onSubmitText, onSubmitForm, onSubmitBoard, speakAsCharacterName, onCloseSpeakAs, sendingLabel, hideSpeakAsChip, onSendError, onOpenPanel, onDraftActivity, inputCapabilities, inputCapabilityWarning, autoFocus, topContent, injectedAttachments, onInjectedAttachmentsConsumed }: SessionComposerHostProps) {
   const primarySurface = surfaces.find((surface) => surface.type === 'text') || surfaces[0];
   const secondarySurfaces = surfaces.filter((surface) => surface !== primarySurface && (surface.type === 'board' || surface.type === 'form' || surface.type === 'hybrid'));
   const [fieldState, setFieldState] = useState<Record<string, Record<string, string>>>(() => buildInitialFieldState(surfaces));
   const boardSurface = useMemo(() => secondarySurfaces.find((surface) => surface.type === 'board'), [secondarySurfaces]);
-  const buildSubmitButtonLabel = (surface: SessionInputSurfaceDefinition) => {
-    if (surface.type === 'board') return '提交棋盘动作';
-    if ((surface.label || '').toLowerCase().includes('workflow')) return '提交流程动作';
-    if ((surface.label || '').toLowerCase().includes('timeline')) return '提交剧情动作';
-    return '提交表单动作';
-  };
 
   return (
     <Stack spacing={1}>
@@ -154,6 +151,9 @@ export default function SessionComposerHost({ surfaces, onSubmitText, onSubmitFo
           inputCapabilities={inputCapabilities}
           inputCapabilityWarning={inputCapabilityWarning}
           autoFocus={autoFocus}
+          topContent={topContent}
+          injectedAttachments={injectedAttachments}
+          onInjectedAttachmentsConsumed={onInjectedAttachmentsConsumed}
         />
       ) : (() => {
         const mode = speakAsCharacterName
@@ -181,6 +181,9 @@ export default function SessionComposerHost({ surfaces, onSubmitText, onSubmitFo
             inputCapabilities={inputCapabilities}
             inputCapabilityWarning={inputCapabilityWarning}
             autoFocus={autoFocus}
+            topContent={topContent}
+            injectedAttachments={injectedAttachments}
+            onInjectedAttachmentsConsumed={onInjectedAttachmentsConsumed}
           />
         );
       })()}

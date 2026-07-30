@@ -989,6 +989,63 @@ describe('chatEngine streaming preview', () => {
     });
   });
 
+  it('uses model-selected historical image refs for generated image attachments', () => {
+    const parsed = parseInlineInteractionEnvelope(JSON.stringify({
+      content: '我按上一张图重新做一个标题更大的版本。',
+      mediaDecision: {
+        image: {
+          shouldGenerate: true,
+          reason: '用户要求修改上一张图',
+          prompt: 'Create a revised poster with a larger title while preserving the original layout',
+          altText: '标题更大的海报版本',
+          targetImageIds: ['message-image:image-1'],
+        },
+      },
+      interactionHints: null,
+      socialEventHints: null,
+      conflictFocus: null,
+    }));
+    const metadata = __chatEngineTestUtils.buildMessageMetadata({
+      decision: parsed?.mediaDecision,
+      capabilities: { image: true, audio: false },
+      content: parsed?.content || '',
+      activeMessages: [{
+        id: 'message-image',
+        chatId: 'chat-1',
+        type: 'ai',
+        senderId: 'char-1',
+        senderName: '美羊羊',
+        content: '上一张海报',
+        emotion: 0,
+        timestamp: 1,
+        isDeleted: false,
+        metadata: {
+          attachments: [{
+            id: 'image-1',
+            kind: 'image',
+            status: 'ready',
+            altText: '原始海报',
+            promptText: 'Original pastel poster with small title',
+            url: 'data:image/png;base64,POSTER',
+            mimeType: 'image/png',
+            createdAt: 1,
+            updatedAt: 1,
+          }],
+        },
+      }],
+    });
+
+    expect(metadata?.attachments?.[0]).toMatchObject({
+      kind: 'image',
+      targetImageIds: ['message-image:image-1'],
+      referenceImages: [{
+        url: 'data:image/png;base64,POSTER',
+        mimeType: 'image/png',
+        label: '原始海报',
+      }],
+    });
+  });
+
   it('normalizes singleton social event hints from model envelopes', () => {
     const parsed = parseInlineInteractionEnvelope(JSON.stringify({
       content: '这事别在这里说，回头我单独找你。',
@@ -3304,6 +3361,78 @@ describe('chatEngine streaming preview', () => {
     expect(completed).toHaveLength(0);
     expect(errors[0]?.message).toContain('美羊羊');
     expect(generateResponseMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not keep locking the requested actor after corrective guidance switches to suppression only', async () => {
+    generateResponseMock.mockReset();
+    generateResponseMock.mockResolvedValue(JSON.stringify({
+      content: '我先帮安安把话留住，周策这轮别急着接管。',
+      interactionHints: null,
+      socialEventHints: null,
+      conflictFocus: null,
+    }));
+    const anan = buildCharacter('anan', '安安');
+    const zhou = buildCharacter('zhou', '周策', {
+      personality: { openness: 50, extroversion: 95, agreeableness: 50, neuroticism: 50, humor: 50, creativity: 50, assertiveness: 95, empathy: 50 },
+      behavior: { proactivity: 95, aggressiveness: 50, humorIntensity: 50, empathyLevel: 50, summarizing: 50, offTopic: 50 },
+    });
+    const mei = buildCharacter('mei', '梅青');
+    const selected: string[] = [];
+    const completed: unknown[] = [];
+    const now = Date.now();
+
+    await runOneRound(
+      buildChat({ memberIds: ['anan', 'zhou', 'mei'] }),
+      [anan, zhou, mei],
+      [
+        {
+          id: 'guide',
+          chatId: 'chat-1',
+          type: 'user',
+          senderId: 'user',
+          senderName: '我',
+          content: '我刚才是想听安安说，不是让周策替她做决定。',
+          emotion: 0,
+          timestamp: now - 3000,
+          isDeleted: false,
+        },
+        {
+          id: 'answer-1',
+          chatId: 'chat-1',
+          type: 'ai',
+          senderId: 'anan',
+          senderName: '安安',
+          content: '我先说一部分，访谈里用户主要卡在承诺没有兑现。',
+          emotion: 0,
+          timestamp: now - 2000,
+          isDeleted: false,
+        },
+        {
+          id: 'answer-2',
+          chatId: 'chat-1',
+          type: 'ai',
+          senderId: 'anan',
+          senderName: '安安',
+          content: '还有一点是客服跟进太慢，他们不是不需要产品，是不再信任我们。',
+          emotion: 0,
+          timestamp: now - 1000,
+          isDeleted: false,
+        },
+      ],
+      buildProfiles(),
+      {
+        onSpeakerSelected: (characterId) => selected.push(characterId),
+        onMessageChunk: () => undefined,
+        onMessageComplete: (message) => { completed.push(message); },
+        onError: (error) => { throw error; },
+      },
+      undefined,
+      undefined,
+      {},
+    );
+
+    expect(selected).toEqual(['mei']);
+    expect(completed[0]).toMatchObject({ senderId: 'mei' });
   });
 
   it('generates a group round without recursive surface resolution for open chat', async () => {
