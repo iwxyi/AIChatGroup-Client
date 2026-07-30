@@ -100,6 +100,22 @@ export interface LocalActionPlan {
   routePath?: string;
 }
 
+export type AppCommandObservationNextAction = LocalActionPlan['action'] | 'assistant_agent';
+
+export interface AppCommandObservation {
+  attemptedAction?: LocalActionPlan['action'];
+  completedGoal?: boolean;
+  query?: string;
+  foundCount?: number;
+  candidateCount?: number;
+  expectedCount?: number;
+  missingFields?: string[];
+  possibleNextActions?: AppCommandObservationNextAction[];
+  workflowStepIndex?: number;
+  workflowStepAction?: LocalActionPlan['action'];
+  [key: string]: unknown;
+}
+
 export type AppCommandRoute =
   | {
       mode: 'local_action';
@@ -162,7 +178,7 @@ export interface AppCommandExecutionResult {
   choicePresentation?: 'chips' | 'list' | 'select';
   recoverable?: boolean;
   reasonType?: string;
-  observation?: Record<string, unknown>;
+  observation?: AppCommandObservation;
 }
 
 export interface AppCommandContext {

@@ -1,4 +1,4 @@
-import type { AppCommandAction, AppCommandRiskLevel, CommandSource, LocalActionPlan } from './commandTypes';
+import type { AppCommandAction, AppCommandObservation, AppCommandObservationNextAction, AppCommandRiskLevel, CommandSource, LocalActionPlan } from './commandTypes';
 
 export interface AppCommandToolDefinition {
   action: Exclude<AppCommandAction, 'assistant_chat'>;
@@ -13,7 +13,7 @@ export interface AppCommandToolDefinition {
       title: string;
       message: string;
       reasonType: string;
-      possibleNextActions?: string[];
+      possibleNextActions?: AppCommandObservationNextAction[];
     }>;
   };
   examples: string[];
@@ -25,7 +25,7 @@ export interface AppCommandPlanValidationIssue {
   message: string;
   reasonType: string;
   recoverable: boolean;
-  observation: Record<string, unknown>;
+  observation: AppCommandObservation;
 }
 
 export const APP_COMMAND_TOOLS: AppCommandToolDefinition[] = [

@@ -316,6 +316,43 @@ describe('executeAppCommandRoute', () => {
     }
   });
 
+  it('stops workflow execution when an early step returns a recoverable info result', async () => {
+    useChatStore.setState({ chats: [] });
+    try {
+      const result = await executeAppCommandRoute({
+        mode: 'workflow',
+        riskLevel: 'low',
+        requiresConfirmation: false,
+        steps: [
+          {
+            action: 'open_existing_chat',
+            riskLevel: 'low',
+            requiresConfirmation: false,
+            plan: {
+              action: 'open_existing_chat',
+            },
+          },
+          {
+            action: 'create_assistant_chat',
+            riskLevel: 'low',
+            requiresConfirmation: false,
+            plan: {
+              action: 'create_assistant_chat',
+              chatName: '不应被创建',
+            },
+          },
+        ],
+      }, context('打开聊天然后新建助手'));
+
+      expect(result.status).toBe('info');
+      expect(result.reasonType).toBe('missing_chat_query');
+      expect(result.observation?.workflowStepIndex).toBe(0);
+      expect(useChatStore.getState().chats).toHaveLength(0);
+    } finally {
+      useChatStore.setState({ chats: [] });
+    }
+  });
+
   it('merges active messages with cached windows so recently updated content remains searchable', async () => {
     useChatStore.setState({
       chats: [chat('chat-worldcup', '最新世界杯动态查询', 'assistant')],

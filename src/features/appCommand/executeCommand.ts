@@ -622,6 +622,14 @@ function localActionRouteFromStep(step: Extract<AppCommandRoute, { mode: 'workfl
   };
 }
 
+function workflowStepObservation(step: Extract<AppCommandRoute, { mode: 'workflow' }>['steps'][number], stepIndex: number, observation?: Record<string, unknown>) {
+  return {
+    ...(observation || {}),
+    workflowStepIndex: stepIndex,
+    workflowStepAction: step.action,
+  };
+}
+
 async function createDirectChat(plan: LocalActionPlan, context: AppCommandContext): Promise<AppCommandExecutionResult> {
   const name = clean(plan.characterName || plan.characters?.[0]?.name || plan.title);
   if (!name) return {
@@ -1384,9 +1392,15 @@ async function executeLocalActionPlan(route: Extract<AppCommandRoute, { mode: 'l
 
 async function executeWorkflowRoute(route: Extract<AppCommandRoute, { mode: 'workflow' }>, context: AppCommandContext, secrets: Record<string, string>): Promise<AppCommandExecutionResult> {
   const completed: AppCommandExecutionResult[] = [];
-  for (const step of route.steps) {
+  for (const [stepIndex, step] of route.steps.entries()) {
     const stepResult = await executeAppCommandRoute(localActionRouteFromStep(step, true), context, secrets);
     if (stepResult.status === 'needs_confirmation') return stepResult;
+    if (stepResult.status !== 'success') {
+      return {
+        ...stepResult,
+        observation: workflowStepObservation(step, stepIndex, stepResult.observation),
+      };
+    }
     completed.push(stepResult);
   }
   const last = completed.at(-1);
