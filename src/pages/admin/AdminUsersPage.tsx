@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Box, Button, Chip, Dialog, DialogContent, DialogTitle, Divider, FormControlLabel, Grid, Paper, Stack, Switch, Tab, Table, TableBody, TableCell, TableHead, TableRow, Tabs, TextField, Typography, useMediaQuery, useTheme } from '@mui/material';
 import AdminAiUserUsageDialog from '../../components/admin/AdminAiUserUsageDialog';
 import AdminRequestState, { getAdminErrorMessage } from '../../components/admin/AdminRequestState';
@@ -35,6 +35,18 @@ type OfficialProviderOption = {
 };
 
 type UserDetailTab = 'overview' | 'ai' | 'entitlements';
+
+type UserUsageSessionItem = {
+  id: string;
+  startedAt: number;
+  lastHeartbeatAt: number;
+  endedAt: number | null;
+  durationMs: number;
+  heartbeatCount: number;
+  status: string;
+  entryPath: string;
+  lastPath: string;
+};
 
 type AccountEntitlementDraft = {
   developerModeEnabled: boolean;
@@ -132,6 +144,23 @@ function updateRetentionLimitText(currentText: string, key: string, field: 'stor
 function formatTime(value: unknown) {
   const parsed = Number(value || 0);
   return parsed > 0 ? new Date(parsed).toLocaleString() : '-';
+}
+
+function formatDuration(value: unknown) {
+  const totalSeconds = Math.max(0, Math.round(Number(value || 0) / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (hours > 0) return `${hours}小时${minutes}分钟`;
+  if (minutes > 0) return `${minutes}分钟${seconds}秒`;
+  return `${seconds}秒`;
+}
+
+function usageStatusChip(status: string) {
+  if (status === 'online') return <Chip size="small" color="success" label="在线" />;
+  if (status === 'timeout') return <Chip size="small" color="warning" label="无心跳" />;
+  if (status === 'ended') return <Chip size="small" label="已关闭" />;
+  return <Chip size="small" label={status || '未知'} />;
 }
 
 function parseMetadata(value: unknown): Record<string, unknown> {
@@ -296,6 +325,46 @@ function WorkspaceTable({ title, rows, columns }: { title: string; rows: Array<R
   );
 }
 
+function UserUsageSessionTable({ rows }: { rows: UserUsageSessionItem[] }) {
+  return (
+    <AdminSection title="最近使用记录" bodySx={{ p: rows.length ? 0 : undefined }}>
+      {!rows.length ? <Alert severity="info">暂无使用记录</Alert> : null}
+      {rows.length ? (
+        <AdminTableFrame minWidth={820}>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>状态</TableCell>
+                <TableCell>启动时间</TableCell>
+                <TableCell>最后心跳</TableCell>
+                <TableCell>关闭时间</TableCell>
+                <TableCell align="right">使用时长</TableCell>
+                <TableCell align="right">心跳</TableCell>
+                <TableCell>入口</TableCell>
+                <TableCell>最后页面</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {rows.map((row) => (
+                <TableRow key={row.id} hover>
+                  <TableCell>{usageStatusChip(row.status)}</TableCell>
+                  <TableCell>{formatTime(row.startedAt)}</TableCell>
+                  <TableCell>{formatTime(row.lastHeartbeatAt)}</TableCell>
+                  <TableCell>{formatTime(row.endedAt)}</TableCell>
+                  <TableCell align="right">{formatDuration(row.durationMs)}</TableCell>
+                  <TableCell align="right">{Math.round(Number(row.heartbeatCount || 0))}</TableCell>
+                  <TableCell>{row.entryPath || '-'}</TableCell>
+                  <TableCell>{row.lastPath || '-'}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </AdminTableFrame>
+      ) : null}
+    </AdminSection>
+  );
+}
+
 function AccountRetentionLimitsTable({
   value,
   onChange,
@@ -396,7 +465,7 @@ export default function AdminUsersPage() {
     [officialProviderOptions],
   );
 
-  const loadUsers = async () => {
+  const loadUsers = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -407,7 +476,7 @@ export default function AdminUsersPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [search]);
 
   const loadOfficialProviderOptions = async () => {
     try {
@@ -731,7 +800,7 @@ export default function AdminUsersPage() {
 
   useEffect(() => {
     void loadUsers();
-  }, [search]);
+  }, [loadUsers]);
 
   useEffect(() => {
     void loadOfficialProviderOptions();
@@ -754,6 +823,7 @@ export default function AdminUsersPage() {
   }, [selectedUserId]);
 
   const workspace = selectedUser?.workspace as { recentOrders?: Array<Record<string, unknown>>; recentChats?: Array<Record<string, unknown>>; recentCharacters?: Array<Record<string, unknown>> } | undefined;
+  const recentUsageSessions = Array.isArray(selectedUser?.recentUsageSessions) ? selectedUser.recentUsageSessions as UserUsageSessionItem[] : [];
   const aiKeys = (selectedUser?.aiKeys || []) as Array<Record<string, unknown>>;
   const aiKey = aiKeys.find((key) => String(key.provider_code || '') === 'api2d') || null;
   const selectedListItem = selectedUserId ? items.find((item) => item.id === selectedUserId) : null;
@@ -856,6 +926,8 @@ export default function AdminUsersPage() {
                 </AdminSection>
 
                 <AdminMetricGrid items={statCards} compact minWidth={132} />
+
+                <UserUsageSessionTable rows={recentUsageSessions} />
 
                 <Grid container spacing={2}>
                   <Grid size={{ xs: 12, xl: 4 }}>

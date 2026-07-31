@@ -1344,15 +1344,18 @@ export const generateResponse = async (
   onChunk?: (chunk: string) => void,
   options: GenerateResponseOptions = {},
 ): Promise<string> => {
-  assertTextInputWithinBudget(systemPrompt, messages, options);
+  const effectiveSystemPrompt = options.responseFormat === 'json'
+    ? `${systemPrompt}\n\nReturn exactly one valid json object. Do not wrap it in markdown.`
+    : systemPrompt;
+  assertTextInputWithinBudget(effectiveSystemPrompt, messages, options);
   if (usesOfficialProxy(config)) {
-    return generateOfficialResponse(config, systemPrompt, messages, onChunk, options);
+    return generateOfficialResponse(config, effectiveSystemPrompt, messages, onChunk, options);
   }
   if (isOpenAICompatibleEndpoint(config)) {
-    return generateOpenAICompatibleResponse(config, systemPrompt, messages, onChunk, options);
+    return generateOpenAICompatibleResponse(config, effectiveSystemPrompt, messages, onChunk, options);
   }
   const handler = providerHandlers[config.provider] || generateOpenAICompatibleResponse;
-  return handler(config, systemPrompt, messages, onChunk, options);
+  return handler(config, effectiveSystemPrompt, messages, onChunk, options);
 };
 
 export const generateJsonResponse = async (

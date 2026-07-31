@@ -65,9 +65,9 @@ export function normalizeInputCapabilities(input?: Partial<AIModelInputCapabilit
 }
 
 export function inferTextInputCapabilities(provider: AIProvider, model: string): AIModelInputCapabilities {
+  const normalizedProvider = String(provider || '').trim().toLowerCase();
   const normalizedModel = model.trim().toLowerCase();
   const base = normalizeInputCapabilities();
-  if (!normalizedModel) return base;
   const multiImage = { ...base, imageInput: true, multiImageInput: true, maxAttachments: 10 };
   const multiImageWithFiles = {
     ...multiImage,
@@ -75,6 +75,16 @@ export function inferTextInputCapabilities(provider: AIProvider, model: string):
     supportedMimeTypes: [...DEFAULT_INPUT_CAPABILITIES.supportedMimeTypes, 'application/pdf', 'text/plain', 'text/markdown'],
   };
 
+  if (
+    normalizedProvider === 'official'
+    || normalizedProvider === 'official-2'
+    || normalizedProvider === 'official-moacode'
+    || normalizedProvider === 'official-gpt'
+    || normalizedProvider === 'official-4'
+  ) {
+    return multiImage;
+  }
+  if (!normalizedModel) return base;
   if (normalizedModel.includes('gemini')) return multiImageWithFiles;
   if (
     normalizedModel.includes('claude-3')

@@ -16,6 +16,7 @@ import EmptyState from '../components/common/EmptyState';
 import NoCharactersDialog from '../components/common/NoCharactersDialog';
 import ListSkeletonGrid from '../components/common/ListSkeletonGrid';
 import ConfirmDialog from '../components/common/ConfirmDialog';
+import AppSnackbar from '../components/common/AppSnackbar';
 import FloatingSegmentedTabs, { buildFloatingTabContainerSx } from '../components/common/FloatingSegmentedTabs';
 import ExpandableFab from '../components/common/ExpandableFab';
 import { usePaneLayout } from '../components/layout/PaneLayoutContext';
@@ -29,6 +30,13 @@ const CHAT_LIST_TAB_KEY = 'chat-list-tab';
 const ASSISTANT_TAB = 3;
 const isChatListTab = (value: unknown): value is number => Number.isInteger(value) && Number(value) >= 0 && Number(value) <= ASSISTANT_TAB;
 
+type ChatListLocationState = {
+  deletedAssistantChat?: {
+    id?: string;
+    name?: string;
+  };
+} | null;
+
 function getActiveChatId(pathname: string) {
   return pathname.match(/^\/chats\/([^/]+)(?:\/edit)?$/)?.[1] || null;
 }
@@ -41,10 +49,11 @@ export default function ChatListPage() {
   const isThreeColumn = useMediaQuery('(min-width:1280px)');
   const pane = usePaneLayout();
   const isMasterPane = pane.role === 'master';
-  const { chats, addChat, deleteChat, prefetchChats, restoreLocalChats, markChatsWarm, isLoading } = useChatStore(useShallow((state) => ({
+  const { chats, addChat, deleteChat, restoreChats, prefetchChats, restoreLocalChats, markChatsWarm, isLoading } = useChatStore(useShallow((state) => ({
     chats: state.chats,
     addChat: state.addChat,
     deleteChat: state.deleteChat,
+    restoreChats: state.restoreChats,
     prefetchChats: state.prefetchChats,
     restoreLocalChats: state.restoreLocalChats,
     markChatsWarm: state.markChatsWarm,
@@ -69,6 +78,8 @@ export default function ChatListPage() {
   }, [location.search]);
   const [tab, setTab] = useState(initialTab);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deletedAssistantNotice, setDeletedAssistantNotice] = useState<{ id: string; name: string } | null>(null);
+  const [assistantDeleteError, setAssistantDeleteError] = useState('');
   const activeChatId = isMasterPane ? getActiveChatId(location.pathname) : null;
 
 
@@ -190,6 +201,17 @@ export default function ChatListPage() {
   }, [initialTab]);
 
   useEffect(() => {
+    const state = location.state as ChatListLocationState;
+    const deleted = state?.deletedAssistantChat;
+    if (!deleted?.id) return;
+    setDeletedAssistantNotice({
+      id: deleted.id,
+      name: deleted.name?.trim() || '助手会话',
+    });
+    navigate({ pathname: location.pathname, search: location.search }, { replace: true, state: null });
+  }, [location.pathname, location.search, location.state, navigate]);
+
+  useEffect(() => {
     const params = new URLSearchParams(location.search);
     writePersistentUiValue(CHAT_LIST_TAB_KEY, tab);
     if (String(tab) === params.get('tab')) return;
@@ -230,6 +252,16 @@ export default function ChatListPage() {
       navigate(`/chats/${chat.id}?fromTab=${ASSISTANT_TAB}`);
     } finally {
       setCreatingAssistant(false);
+    }
+  };
+  const handleUndoAssistantDelete = async () => {
+    if (!deletedAssistantNotice?.id) return;
+    const targetId = deletedAssistantNotice.id;
+    setDeletedAssistantNotice(null);
+    try {
+      await restoreChats([targetId]);
+    } catch (error) {
+      setAssistantDeleteError(error instanceof Error ? error.message : '撤销删除失败');
     }
   };
   const floatingActionPositionSx = isMasterPane ? {
@@ -371,6 +403,29 @@ export default function ChatListPage() {
         open={noCharactersDialogOpen}
         onClose={() => setNoCharactersDialogOpen(false)}
         returnTo={noCharactersReturnTo}
+      />
+      <AppSnackbar
+        open={Boolean(deletedAssistantNotice)}
+        message={deletedAssistantNotice ? `已删除「${deletedAssistantNotice.name}」` : ''}
+        severity="success"
+        onClose={() => setDeletedAssistantNotice(null)}
+        offset="navigation"
+        action={(
+          <Button
+            color="inherit"
+            size="small"
+            onClick={() => void handleUndoAssistantDelete()}
+          >
+            撤销
+          </Button>
+        )}
+      />
+      <AppSnackbar
+        open={Boolean(assistantDeleteError)}
+        message={assistantDeleteError}
+        severity="error"
+        onClose={() => setAssistantDeleteError('')}
+        offset="navigation"
       />
     </Box>
   );

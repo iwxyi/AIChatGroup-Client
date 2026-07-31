@@ -10,6 +10,7 @@ import PlayIcon from '@mui/icons-material/PlayArrow';
 import PauseIcon from '@mui/icons-material/Pause';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import SettingsIcon from '@mui/icons-material/Settings';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutlineOutlined';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -758,6 +759,7 @@ export default function ChatDetailPage() {
 
   const chats = useChatStore((state) => state.chats);
   const updateChat = useChatStore((state) => state.updateChat);
+  const deleteChat = useChatStore((state) => state.deleteChat);
   const applyChatRuntimeDelta = useChatStore((state) => state.applyChatRuntimeDelta);
   const loadChat = useChatStore((state) => state.loadChat);
   const restoreLocalChats = useChatStore((state) => state.restoreLocalChats);
@@ -826,6 +828,7 @@ export default function ChatDetailPage() {
   const [pendingAppCommandChoiceId, setPendingAppCommandChoiceId] = useState<string | null>(null);
   const [composerDockHeight, setComposerDockHeight] = useState(0);
   const [composerInjectedAttachments, setComposerInjectedAttachments] = useState<MessageAttachment[]>([]);
+  const [isDirectReplyPending, setIsDirectReplyPending] = useState(false);
 
   const loopTokenRef = useRef<string | null>(null);
   const isRunningRef = useRef(false);
@@ -1749,6 +1752,7 @@ export default function ChatDetailPage() {
       if (chat.type === 'direct' && createdRevision.type === 'user') {
         const directReplyAbortController = new AbortController();
         directReplyAbortRef.current = directReplyAbortController;
+        setIsDirectReplyPending(true);
         const shouldContinueDirectRevision = () => {
           if (directReplyAbortController.signal.aborted) return false;
           if (directReplyEpochRef.current !== directReplyEpoch) return false;
@@ -1792,12 +1796,16 @@ export default function ChatDetailPage() {
               showErrorToast(error instanceof Error ? error.message : String(error));
             }
           } finally {
-            if (directReplyAbortRef.current === directReplyAbortController) directReplyAbortRef.current = null;
+            if (directReplyAbortRef.current === directReplyAbortController) {
+              directReplyAbortRef.current = null;
+              setIsDirectReplyPending(false);
+            }
           }
         })();
       } else if (chat.type === 'assistant' && createdRevision.type === 'user') {
         const assistantReplyAbortController = new AbortController();
         directReplyAbortRef.current = assistantReplyAbortController;
+        setIsDirectReplyPending(true);
         const shouldContinueAssistantRevision = () => {
           if (assistantReplyAbortController.signal.aborted) return false;
           if (directReplyEpochRef.current !== directReplyEpoch) return false;
@@ -1833,7 +1841,10 @@ export default function ChatDetailPage() {
               showErrorToast(error instanceof Error ? error.message : String(error));
             }
           } finally {
-            if (directReplyAbortRef.current === assistantReplyAbortController) directReplyAbortRef.current = null;
+            if (directReplyAbortRef.current === assistantReplyAbortController) {
+              directReplyAbortRef.current = null;
+              setIsDirectReplyPending(false);
+            }
           }
         })();
       } else if (createdRevision.type === 'user' || createdRevision.type === 'god') {
@@ -2031,9 +2042,17 @@ export default function ChatDetailPage() {
       directReplyAbortRef.current?.abort();
       directReplyAbortRef.current = null;
       directReplyEpochRef.current += 1;
+      setIsDirectReplyPending(false);
       stop();
     };
   }, [closeChatWindow, discardStreamingMessage, id, resetRunLoopUiState, stop]);
+
+  const handleStopDirectReply = useCallback(() => {
+    directReplyAbortRef.current?.abort();
+    directReplyAbortRef.current = null;
+    directReplyEpochRef.current += 1;
+    setIsDirectReplyPending(false);
+  }, []);
 
   const handleMemberSpeakSend = useCallback(async (content: string, attachments: MessageAttachment[] = []) => {
     if (!chat || !id) return;
@@ -2057,6 +2076,7 @@ export default function ChatDetailPage() {
         directReplyEpochRef.current = directReplyEpoch;
         const directReplyAbortController = new AbortController();
         directReplyAbortRef.current = directReplyAbortController;
+        setIsDirectReplyPending(true);
         void (async () => {
           const { runDirectUserReplyFlow } = await import('../services/directUserReplyFlow');
           try {
@@ -2086,7 +2106,10 @@ export default function ChatDetailPage() {
               showErrorToast(error instanceof Error ? error.message : String(error));
             }
           } finally {
-            if (directReplyAbortRef.current === directReplyAbortController) directReplyAbortRef.current = null;
+            if (directReplyAbortRef.current === directReplyAbortController) {
+              directReplyAbortRef.current = null;
+              setIsDirectReplyPending(false);
+            }
           }
         })();
         return;
@@ -2097,6 +2120,7 @@ export default function ChatDetailPage() {
         directReplyEpochRef.current = assistantReplyEpoch;
         const assistantReplyAbortController = new AbortController();
         directReplyAbortRef.current = assistantReplyAbortController;
+        setIsDirectReplyPending(true);
         void (async () => {
           const { runAssistantChatReplyFlow } = await import('../services/assistantChatFlow');
           try {
@@ -2119,7 +2143,10 @@ export default function ChatDetailPage() {
               showErrorToast(error instanceof Error ? error.message : String(error));
             }
           } finally {
-            if (directReplyAbortRef.current === assistantReplyAbortController) directReplyAbortRef.current = null;
+            if (directReplyAbortRef.current === assistantReplyAbortController) {
+              directReplyAbortRef.current = null;
+              setIsDirectReplyPending(false);
+            }
           }
         })();
         return;
@@ -2879,6 +2906,23 @@ export default function ChatDetailPage() {
     navigate(fromTab ? `/chats?tab=${fromTab}` : '/chats');
   }, [fromTab, navigate]);
 
+  const handleDeleteAssistantChat = useCallback(async () => {
+    if (!chat || chat.type !== 'assistant') return;
+    const deletedChat = { id: chat.id, name: chat.name || '助手会话' };
+    try {
+      await deleteChat(chat.id);
+      navigate(fromTab ? `/chats?tab=${fromTab}` : `/chats?tab=3`, {
+        state: { deletedAssistantChat: deletedChat },
+      });
+    } catch (error) {
+      setSnackbar({
+        open: true,
+        message: error instanceof Error ? error.message : '删除助手失败',
+        severity: 'error',
+      });
+    }
+  }, [chat, deleteChat, fromTab, navigate]);
+
   const handleStoryChapterClick = useCallback(async (chapter: StoryChapterState) => {
     const messageId = chapter.startMessageId;
     if (!id || !messageId) return;
@@ -3319,6 +3363,8 @@ export default function ChatDetailPage() {
             topContent={composerTopContent}
             injectedAttachments={composerInjectedAttachments}
             onInjectedAttachmentsConsumed={() => setComposerInjectedAttachments([])}
+            isReplyPending={Boolean((chat.type === 'assistant' || chat.type === 'direct') && isDirectReplyPending)}
+            onStopReply={chat.type === 'assistant' || chat.type === 'direct' ? handleStopDirectReply : undefined}
             onOpenPanel={isMobile ? () => setRightPanelOpen(true) : undefined}
             onDraftActivity={(activity) => {
               userDraftActivityRef.current = activity;
@@ -3359,9 +3405,16 @@ export default function ChatDetailPage() {
         desktopMaxWidth={isSplitDetailPane ? 340 : 420}
         desktopViewportRatio={isSplitDetailPane ? 0.28 : 0.34}
         titleActions={(
-          <IconButton size="small" aria-label="聊天页设置" onClick={() => setChatPageSettingsOpen(true)}>
-            <SettingsIcon fontSize="small" />
-          </IconButton>
+          <>
+            <IconButton size="small" aria-label="聊天页设置" onClick={() => setChatPageSettingsOpen(true)}>
+              <SettingsIcon fontSize="small" />
+            </IconButton>
+            {isAssistantChat ? (
+              <IconButton size="small" aria-label="删除助手" color="error" onClick={() => void handleDeleteAssistantChat()}>
+                <DeleteOutlineIcon fontSize="small" />
+              </IconButton>
+            ) : null}
+          </>
         )}
       >
         <PageSection spacing={2} fill animate={false}>

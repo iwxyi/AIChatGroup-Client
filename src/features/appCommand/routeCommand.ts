@@ -20,7 +20,9 @@ function extractJsonObject(text: string) {
 }
 
 function parsePlannerJson(text: string): unknown {
-  return JSON.parse(extractJsonObject(text));
+  const jsonText = extractJsonObject(text);
+  if (!jsonText) return null;
+  return JSON.parse(jsonText);
 }
 
 function shortText(value: unknown, limit: number) {

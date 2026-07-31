@@ -102,4 +102,24 @@ describe('aiClient multimodal requests', () => {
     )).rejects.toThrow(/too large/i);
     expect(called).toBe(false);
   });
+
+  it('adds a lowercase json instruction for json_object requests', async () => {
+    const calls: RequestInit[] = [];
+    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push(init || {});
+      return new Response(JSON.stringify({ choices: [{ message: { content: '{"ok":true}' } }] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }) as typeof fetch;
+
+    await generateResponse(
+      { provider: 'openai', apiKey: 'k', baseUrl: 'https://api.openai.com/v1', model: 'gpt-5.4-mini' },
+      '你是结构化规划器。',
+      [{ role: 'user', content: '输出对象' }],
+      undefined,
+      { responseFormat: 'json' },
+    );
+
+    const body = JSON.parse(String(calls[0]?.body || '{}'));
+    expect(body.response_format).toEqual({ type: 'json_object' });
+    expect(String(body.messages[0]?.content || '')).toContain('json');
+  });
 });

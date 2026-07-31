@@ -65,6 +65,7 @@ const routePreloaders = [
   () => import('./pages/admin/AdminRiskPage'),
   () => import('./pages/admin/AdminAuditPage'),
   () => import('./pages/admin/AdminNotificationsPage'),
+  () => import('./pages/admin/AdminUsagePage'),
   () => import('./pages/admin/AdminSendRecordsPage'),
   () => import('./pages/admin/AdminProfilePage'),
 ];
@@ -105,6 +106,7 @@ const [
   loadAdminRiskPage,
   loadAdminAuditPage,
   loadAdminNotificationsPage,
+  loadAdminUsagePage,
   loadAdminSendRecordsPage,
   loadAdminProfilePage,
 ] = routePreloaders;
@@ -145,6 +147,7 @@ const AdminMarketPage = lazy(loadAdminMarketPage);
 const AdminRiskPage = lazy(loadAdminRiskPage);
 const AdminAuditPage = lazy(loadAdminAuditPage);
 const AdminNotificationsPage = lazy(loadAdminNotificationsPage);
+const AdminUsagePage = lazy(loadAdminUsagePage);
 const AdminSendRecordsPage = lazy(loadAdminSendRecordsPage);
 const AdminProfilePage = lazy(loadAdminProfilePage);
 
@@ -427,11 +430,12 @@ function InAppNotificationBootstrap() {
           if (cancelled) return;
           const activeItems = (result.items || []).filter((item) => item.pinnedEnabled || item.popupEnabled);
           setNotificationItems(activeItems);
-          const seenIds = readSeenInAppNotificationIds();
+          const seenScope = authUserId || 'guest';
+          const seenIds = readSeenInAppNotificationIds(seenScope);
           const nextPopup = activeItems.find((item) => item.popupEnabled && !seenIds.has(item.id));
           if (nextPopup) {
             seenIds.add(nextPopup.id);
-            writeSeenInAppNotificationIds(seenIds);
+            writeSeenInAppNotificationIds(seenIds, seenScope);
             setPopupNotification(nextPopup);
           }
         })
@@ -549,6 +553,7 @@ function RoutedApp() {
           <Route path="moderation" element={<RouteElement><AdminPermissionGate permissions={[ADMIN_PERMISSION_CODES.sharesReview]}><AdminModerationPage /></AdminPermissionGate></RouteElement>} />
           <Route path="market" element={<RouteElement><AdminPermissionGate permissions={[ADMIN_PERMISSION_CODES.marketRead]}><AdminMarketPage /></AdminPermissionGate></RouteElement>} />
           <Route path="notifications" element={<RouteElement><AdminPermissionGate permissions={[ADMIN_PERMISSION_CODES.notificationsRead]}><AdminNotificationsPage /></AdminPermissionGate></RouteElement>} />
+          <Route path="usage" element={<RouteElement><AdminPermissionGate permissions={[ADMIN_PERMISSION_CODES.usersRead]}><AdminUsagePage /></AdminPermissionGate></RouteElement>} />
           <Route path="send-records" element={<RouteElement><AdminPermissionGate permissions={[ADMIN_PERMISSION_CODES.notificationsRead]}><AdminSendRecordsPage /></AdminPermissionGate></RouteElement>} />
           <Route path="config-migration" element={<Navigate to="/admin/global-config" replace />} />
           <Route path="risk" element={<RouteElement><AdminPermissionGate permissions={[ADMIN_PERMISSION_CODES.riskRead]}><AdminRiskPage /></AdminPermissionGate></RouteElement>} />

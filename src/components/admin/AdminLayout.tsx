@@ -11,6 +11,7 @@ const drawerWidth = 248;
 const navItems = [
   { path: '/admin', label: '总览', permissions: ADMIN_DASHBOARD_PERMISSIONS },
   { path: '/admin/users', label: '用户列表', permissions: [ADMIN_PERMISSION_CODES.usersRead] },
+  { path: '/admin/usage', label: '使用记录', permissions: [ADMIN_PERMISSION_CODES.usersRead] },
   { path: '/admin/admins', label: '管理员', permissions: [ADMIN_PERMISSION_CODES.adminAll] },
   { path: '/admin/global-config', label: '全局配置', permissions: [ADMIN_PERMISSION_CODES.platformRead] },
   { path: '/admin/platform', label: '平台配置', permissions: [ADMIN_PERMISSION_CODES.platformRead, ADMIN_PERMISSION_CODES.aiRead] },

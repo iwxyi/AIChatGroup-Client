@@ -86,6 +86,116 @@ describe('assistantChatFlow media artifacts', () => {
     });
   });
 
+  it('passes uploaded images through the official GPT provider even when the model alias is provider-like', async () => {
+    const chat = assistantChat();
+    const userMessage: Message = {
+      id: 'message-user-official-image',
+      chatId: chat.id,
+      type: 'user',
+      senderId: 'user',
+      senderName: '我',
+      content: '解释这张参考图',
+      emotion: 0,
+      timestamp: 1001,
+      isDeleted: false,
+      metadata: {
+        attachments: [{
+          id: 'uploaded-image',
+          kind: 'image',
+          status: 'ready',
+          altText: '参考图',
+          mimeType: 'image/png',
+          url: 'data:image/png;base64,AAA',
+          createdAt: 1001,
+          updatedAt: 1001,
+        }],
+      },
+    };
+    generateResponseMock.mockResolvedValue('我看到了图片内容。');
+
+    await runAssistantChatReplyFlow({
+      api: { provider: 'official-2', apiKey: '', baseUrl: '/api/ai', model: 'official-2' },
+      aiProfiles: [{
+        id: 'official-gpt',
+        name: '官方2',
+        type: 'text',
+        provider: 'official-2',
+        apiKey: '',
+        baseUrl: '/api/ai',
+        model: 'official-2',
+        isDefault: true,
+      }],
+      chat,
+      chatId: chat.id,
+      currentMessages: [userMessage],
+      upsertMessage: vi.fn(),
+      updateChat: vi.fn(async () => undefined),
+    });
+
+    const projected = generateResponseMock.mock.calls[0]?.[2] as Array<{
+      attachments?: Array<{ url: string; mimeType?: string }>;
+    }>;
+    expect(projected[0]?.attachments).toEqual([{ url: 'data:image/png;base64,AAA', mimeType: 'image/png' }]);
+  });
+
+  it('does not pretend to see uploaded images when text image input is disabled', async () => {
+    const chat = assistantChat();
+    const userMessage: Message = {
+      id: 'message-user-image-disabled',
+      chatId: chat.id,
+      type: 'user',
+      senderId: 'user',
+      senderName: '我',
+      content: '请解释这张图片',
+      emotion: 0,
+      timestamp: 1001,
+      isDeleted: false,
+      metadata: {
+        attachments: [{
+          id: 'uploaded-image',
+          kind: 'image',
+          status: 'ready',
+          altText: '捕获.PNG',
+          mimeType: 'image/png',
+          url: 'data:image/png;base64,AAA',
+          sizeBytes: 3000,
+          createdAt: 1001,
+          updatedAt: 1001,
+        }],
+      },
+    };
+    generateResponseMock.mockResolvedValue('当前模型未收到可解析的图片输入。');
+
+    await runAssistantChatReplyFlow({
+      api: { provider: 'openai', apiKey: 'k', baseUrl: 'https://api.openai.com/v1', model: 'gpt-5.4-mini' },
+      aiProfiles: [{
+        id: 'gpt-text',
+        name: 'GPT',
+        type: 'text',
+        provider: 'openai',
+        apiKey: 'k',
+        baseUrl: 'https://api.openai.com/v1',
+        model: 'gpt-5.4-mini',
+        isDefault: true,
+        inputCapabilities: { imageInput: false, multiImageInput: false },
+      }],
+      chat,
+      chatId: chat.id,
+      currentMessages: [userMessage],
+      upsertMessage: vi.fn(),
+      updateChat: vi.fn(async () => undefined),
+    });
+
+    const systemPrompt = String(generateResponseMock.mock.calls[0]?.[1] || '');
+    const projected = generateResponseMock.mock.calls[0]?.[2] as Array<{
+      content: string;
+      attachments?: Array<{ url: string; mimeType?: string }>;
+    }>;
+    expect(systemPrompt).toContain('当前文本模型请求没有携带可视觉解析的图片输入');
+    expect(projected[0]?.content).toContain('[图片附件：捕获.PNG]');
+    expect(projected[0]?.attachments).toBeUndefined();
+  });
+
   it('does not append the same Mermaid artifact twice when the writer already included it inline', () => {
     const mermaid = [
       'flowchart TD',

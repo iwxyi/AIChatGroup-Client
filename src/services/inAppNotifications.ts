@@ -3,17 +3,21 @@ import type { SystemAnnouncementItem } from './api';
 
 export const IN_APP_NOTIFICATION_POPUP_SEEN_KEY = 'pneumata.systemAnnouncement.popupSeenIds';
 
-export function readSeenInAppNotificationIds() {
+function scopedSeenKey(scope = 'guest') {
+  return `${IN_APP_NOTIFICATION_POPUP_SEEN_KEY}:${scope || 'guest'}`;
+}
+
+export function readSeenInAppNotificationIds(scope = 'guest') {
   try {
-    const parsed = JSON.parse(localStorage.getItem(IN_APP_NOTIFICATION_POPUP_SEEN_KEY) || '[]') as unknown;
+    const parsed = JSON.parse(localStorage.getItem(scopedSeenKey(scope)) || '[]') as unknown;
     return new Set(Array.isArray(parsed) ? parsed.map((item) => String(item)).filter(Boolean) : []);
   } catch {
     return new Set<string>();
   }
 }
 
-export function writeSeenInAppNotificationIds(ids: Set<string>) {
-  localStorage.setItem(IN_APP_NOTIFICATION_POPUP_SEEN_KEY, JSON.stringify(Array.from(ids).slice(-200)));
+export function writeSeenInAppNotificationIds(ids: Set<string>, scope = 'guest') {
+  localStorage.setItem(scopedSeenKey(scope), JSON.stringify(Array.from(ids).slice(-200)));
 }
 
 export function notificationAlertSeverity(severity: string): 'info' | 'warning' | 'error' | 'success' {

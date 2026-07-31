@@ -38,8 +38,8 @@ const metricMeta: Record<string, MetricMeta> = {
   todayAppUsageMinutes: { title: '今日使用时长', format: 'minutes' },
   avgAppSessionMinutes: { title: '平均会话时长', format: 'minutes' },
   appActiveUsers7d: { title: '7日活跃用户' },
-  currentAppOnlineUsers: { title: '当前在线用户' },
-  currentAppOpenSessions: { title: '当前打开会话' },
+  currentAppOnlineUsers: { title: '当前在线用户', route: '/admin/usage' },
+  currentAppOpenSessions: { title: '当前打开会话', route: '/admin/usage' },
   appRetentionD1: { title: 'D1留存', format: 'percent' },
   appRetentionD7: { title: 'D7留存', format: 'percent' },
 };

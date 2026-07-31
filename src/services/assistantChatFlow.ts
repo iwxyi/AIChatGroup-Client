@@ -48,6 +48,18 @@ function buildAssistantSystemPrompt() {
   ].join('\n');
 }
 
+function buildAssistantImageInputPromptBlock(params: { hasImageAttachments: boolean; projectedImageAttachments: boolean }) {
+  if (!params.hasImageAttachments) return '';
+  if (params.projectedImageAttachments) {
+    return '本轮用户上传的图片已作为多模态图片输入提供给你。可以基于图片像素内容回答，但不要编造看不到的细节。';
+  }
+  return [
+    '本轮用户上传了图片，但当前文本模型请求没有携带可视觉解析的图片输入；你只能看到附件文件名、格式、大小或说明。',
+    '不要声称“看起来像”“图中有”等视觉判断，不要根据文件名猜测图片内容。',
+    '如果用户要求解释图片内容，请明确说明当前模型未收到可解析的图片输入，并提示切换/开启支持图片输入的文本模型后重试。',
+  ].join('\n');
+}
+
 function buildAssistantImageAttachmentText(message: Message) {
   const attachments = (message.metadata?.attachments || [])
     .filter((attachment) => attachment.kind === 'image' && attachment.status !== 'deleted' && attachment.status !== 'failed');
@@ -137,14 +149,16 @@ async function generateAssistantLocalFileAnswer(params: {
   localFiles: AssistantAgentLocalFileContext[];
   signal?: AbortSignal;
 }) {
+  const promptImageState = getAssistantPromptImageState(withLatestUserMessage(params.messages, params.userMessage), params.inputCapabilities);
   return generateResponse(
     params.api,
     [
       buildAssistantSystemPrompt(),
+      buildAssistantImageInputPromptBlock(promptImageState),
       buildLocalFilePromptBlock(params.localFiles),
       'Answer the latest user request using the authorized local file content above. If the provided file content is insufficient or truncated, say what is missing instead of guessing.',
-    ].join('\n\n'),
-    toAssistantPromptMessages(withLatestUserMessage(params.messages, params.userMessage), params.inputCapabilities),
+    ].filter(Boolean).join('\n\n'),
+    promptImageState.messages,
     undefined,
     {
       responseFormat: 'text',
@@ -196,14 +210,16 @@ async function generateAssistantSearchAnswer(params: {
         : 'Tell the user the search failed and answer only from stable knowledge if possible. Do not invent current facts.',
     ].join('\n');
   }
+  const promptImageState = getAssistantPromptImageState(withLatestUserMessage(params.messages, params.userMessage), params.inputCapabilities);
   return generateResponse(
     params.api,
     [
       buildAssistantSystemPrompt(),
+      buildAssistantImageInputPromptBlock(promptImageState),
       searchPromptBlock,
       'Answer the latest user request using the search result above. Keep the answer objective and cite URLs when useful.',
-    ].join('\n\n'),
-    toAssistantPromptMessages(withLatestUserMessage(params.messages, params.userMessage), params.inputCapabilities),
+    ].filter(Boolean).join('\n\n'),
+    promptImageState.messages,
     undefined,
     {
       responseFormat: 'text',
@@ -642,6 +658,20 @@ function toAssistantPromptMessages(messages: Message[], inputCapabilities?: AIMo
     .filter((message) => message.content.trim() || message.attachments?.length);
 }
 
+function getAssistantPromptImageState(messages: Message[], inputCapabilities?: AIModelInputCapabilities) {
+  const promptMessages = toAssistantPromptMessages(messages, inputCapabilities);
+  return {
+    messages: promptMessages,
+    hasImageAttachments: messages.some((message) => (
+      !message.isDeleted
+      && message.type !== 'system'
+      && message.type !== 'event'
+      && message.metadata?.attachments?.some((attachment) => attachment.kind === 'image' && attachment.status !== 'deleted' && attachment.status !== 'failed')
+    )),
+    projectedImageAttachments: promptMessages.some((message) => Boolean(message.attachments?.length)),
+  };
+}
+
 function withLatestUserMessage(messages: Message[], userMessage: Message) {
   if (messages.some((message) => message.id === userMessage.id)) return messages;
   return [...messages, userMessage];
@@ -658,6 +688,14 @@ function latestUserMessage(messages: Message[]) {
         || message.metadata?.attachments?.some((attachment) => attachment.kind === 'image' && attachment.status === 'ready' && Boolean(attachment.url))
       )
     )) || null;
+}
+
+function hasReadyImageAttachments(message: Message | null | undefined) {
+  return Boolean(message?.metadata?.attachments?.some((attachment) => (
+    attachment.kind === 'image'
+    && attachment.status === 'ready'
+    && Boolean(attachment.url)
+  )));
 }
 
 function getTitleSource(chat: GroupChat) {
@@ -787,7 +825,7 @@ export async function runAssistantChatReplyFlow(params: {
   const { api: resolvedApi, inputCapabilities } = resolveTextProfile(params.api, params.aiProfiles);
   if (params.chat.modeState.assistantCapabilities?.agent) {
     const userMessage = latestUserMessage(params.currentMessages);
-    if (userMessage) {
+    if (userMessage && !hasReadyImageAttachments(userMessage)) {
       try {
         const { tryRunAssistantAppCommand } = await import('../features/assistantAppTools/assistantAppToolBridge');
         const appCommandResult = await tryRunAssistantAppCommand({
@@ -878,10 +916,14 @@ export async function runAssistantChatReplyFlow(params: {
   );
   let streamingMessage = { ...placeholder, isStreaming: true };
   params.upsertMessage(streamingMessage);
+  const promptImageState = getAssistantPromptImageState(params.currentMessages, inputCapabilities);
   const generated = await generateResponse(
     resolvedApi,
-    buildAssistantSystemPrompt(),
-    toAssistantPromptMessages(params.currentMessages, inputCapabilities),
+    [
+      buildAssistantSystemPrompt(),
+      buildAssistantImageInputPromptBlock(promptImageState),
+    ].filter(Boolean).join('\n\n'),
+    promptImageState.messages,
     (content) => {
       ensureAssistantReplyStillCurrent(params);
       streamingMessage = { ...streamingMessage, content, isStreaming: true };

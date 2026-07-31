@@ -19,6 +19,17 @@ function context(input = '把小明调外向一点'): AppCommandContext {
 }
 
 describe('routeAppCommand', () => {
+  it('falls back to assistant agent when planner returns an empty response', async () => {
+    generateResponseMock.mockResolvedValueOnce('');
+
+    const { route } = await routeAppCommand(context('解释这张图片'));
+
+    expect(route).toEqual(expect.objectContaining({
+      mode: 'assistant_agent',
+      initialMessage: '解释这张图片',
+    }));
+  });
+
   it('promotes character updates to high risk even when the planner underestimates risk', async () => {
     generateResponseMock.mockResolvedValueOnce(JSON.stringify({
       mode: 'local_action',

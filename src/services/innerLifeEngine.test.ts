@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AICharacter } from '../types/character';
 import type { Message } from '../types/message';
-import { getInnerLifeSpeakerBias, projectInnerLife } from './innerLifeEngine';
+import { buildInnerLifePromptBlock, getInnerLifeSpeakerBias, projectInnerLife } from './innerLifeEngine';
 
 function character(patch: Partial<AICharacter> = {}): AICharacter {
   return {
@@ -278,5 +278,32 @@ describe('innerLifeEngine', () => {
       now: 0,
     });
     expect(projection.state.updatedAt).toBe(0);
+  });
+
+  it('keeps inner-life prompt pressure behavioral instead of generic confession or aphorism', () => {
+    const projection = projectInnerLife({
+      character: character({
+        emotionalState: { affection: 10, irritation: 10, insecurity: 90, excitement: 10, embarrassment: 90 },
+        soulState: {
+          mood: { pleasure: -30, arousal: 50, dominance: 35 },
+          energy: 48,
+          attention: 45,
+          loneliness: 0,
+          repression: 80,
+          shame: 85,
+          envy: 0,
+          trustInRoom: 55,
+          ignoredStreak: 0,
+        },
+      }),
+      messages: [message({ content: '我倒觉得这个方案还有得商量。', senderId: 'b' })],
+      now: 20,
+    });
+
+    const prompt = buildInnerLifePromptBlock(projection);
+    expect(prompt).toContain('keep the character’s social mask and habits alive');
+    expect(prompt).toContain('Do not turn the pressure into a clean apology');
+    expect(prompt).toContain('prefer concrete risk judgment, practical care, changed priority');
+    expect(prompt).toContain('Avoid farewell tone, death monologue, and polished aphorisms');
   });
 });

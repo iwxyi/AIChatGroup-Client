@@ -86,6 +86,21 @@ export type AdminNotificationJobPayload = {
   purpose?: string;
 };
 
+export type AdminUsageSessionItem = {
+  id: string;
+  userId: string | null;
+  userLabel: string;
+  anonymous: boolean;
+  startedAt: number;
+  lastHeartbeatAt: number;
+  endedAt: number | null;
+  durationMs: number;
+  heartbeatCount: number;
+  status: 'online' | 'timeout' | 'ended' | string;
+  entryPath: string;
+  lastPath: string;
+};
+
 class AdminApiClient {
   getToken() {
     return localStorage.getItem(ADMIN_TOKEN_KEY);
@@ -239,6 +254,10 @@ class AdminApiClient {
       recentReviews: Array<Record<string, unknown>>;
       recentAudits: Array<Record<string, unknown>>;
     }>('GET', '/dashboard/stats');
+  }
+
+  getUsageSessions(params?: { page?: number; limit?: number; search?: string }) {
+    return this.request<{ items: AdminUsageSessionItem[]; page: number; limit: number; total: number; serverTime: number; heartbeatTimeoutMs: number }>('GET', `/usage/sessions${this.buildQuery({ page: params?.page, limit: params?.limit, search: params?.search })}`);
   }
 
   getUsers(search = '') {

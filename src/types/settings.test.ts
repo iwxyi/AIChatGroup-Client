@@ -1,7 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_IMAGE_AI_PROFILE, normalizeAIProfiles } from './settings';
+import { DEFAULT_IMAGE_AI_PROFILE, inferTextInputCapabilities, normalizeAIProfiles } from './settings';
 
 describe('normalizeAIProfiles', () => {
+  it('treats official GPT text providers as vision-capable even without a GPT model alias', () => {
+    expect(inferTextInputCapabilities('official-2', 'official-2')).toMatchObject({
+      imageInput: true,
+      multiImageInput: true,
+    });
+    expect(inferTextInputCapabilities('official-deepseek', 'deepseek-v4-flash')).toMatchObject({
+      imageInput: false,
+    });
+  });
+
   it('provides official text and image profiles by default', () => {
     const profiles = normalizeAIProfiles();
 

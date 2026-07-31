@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import { Box, TextField, IconButton, Chip, CircularProgress, Tooltip, Alert } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
+import StopRoundedIcon from '@mui/icons-material/StopRounded';
 import CloseIcon from '@mui/icons-material/Close';
 import ImageIcon from '@mui/icons-material/ImageOutlined';
 import { useTranslation } from 'react-i18next';
@@ -28,6 +29,8 @@ interface ChatInputProps {
   topContent?: ReactNode;
   injectedAttachments?: MessageAttachment[];
   onInjectedAttachmentsConsumed?: () => void;
+  isReplyPending?: boolean;
+  onStopReply?: () => void;
 }
 
 function getMobilePanelTravelDistance() {
@@ -67,7 +70,7 @@ function buildAttachmentId() {
   return `att_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-export default function ChatInput({ mode, characterName, onSend, onClose, placeholderOverride, sendingLabel, hideSpeakAsChip, onSendError, onOpenPanel, onDraftActivity, inputCapabilities, inputCapabilityWarning, autoFocus, topContent, injectedAttachments, onInjectedAttachmentsConsumed }: ChatInputProps) {
+export default function ChatInput({ mode, characterName, onSend, onClose, placeholderOverride, sendingLabel, hideSpeakAsChip, onSendError, onOpenPanel, onDraftActivity, inputCapabilities, inputCapabilityWarning, autoFocus, topContent, injectedAttachments, onInjectedAttachmentsConsumed, isReplyPending = false, onStopReply }: ChatInputProps) {
   const [text, setText] = useState('');
   const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
   const [isSending, setIsSending] = useState(false);
@@ -81,6 +84,8 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
   const canAttachImages = capabilities.imageInput;
   const maxAttachments = capabilities.multiImageInput ? capabilities.maxAttachments : 1;
   const acceptMimeTypes = capabilities.supportedMimeTypes.join(',');
+  const hasDraftContent = Boolean(text.trim() || attachments.length > 0);
+  const showStopReply = Boolean(isReplyPending && onStopReply);
   const panelHandleDragRef = useRef<{ startY: number; latestY: number; moved: boolean; lastDirection: 'up' | 'down' | null } | null>(null);
   const textInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -134,7 +139,7 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
   const handleSend = async () => {
     const content = text.trim();
     const outgoingAttachments = attachments;
-    if ((!content && outgoingAttachments.length === 0) || isSending) return;
+    if ((!content && outgoingAttachments.length === 0) || isSending || showStopReply) return;
     setIsSending(true);
     setText('');
     setAttachments([]);
@@ -490,26 +495,43 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
             },
           }}
         />
-        <Tooltip title={isSending ? (sendingLabel || '等待角色发言结束') : ''} disableHoverListener={!isSending} arrow>
+        <Tooltip title={showStopReply ? '停止回答' : isSending ? (sendingLabel || '发送中') : ''} disableHoverListener={!showStopReply && !isSending} arrow>
           <span>
             <IconButton
               color="primary"
-              onClick={() => void handleSend()}
+              aria-label={showStopReply ? '停止回答' : '发送'}
+              onClick={() => {
+                if (showStopReply) {
+                  onStopReply?.();
+                  return;
+                }
+                void handleSend();
+              }}
               onMouseDown={(event) => event.preventDefault()}
-              disabled={(!text.trim() && attachments.length === 0) || isSending}
+              disabled={(!hasDraftContent && !showStopReply) || isSending}
               sx={{
                 flexShrink: 0,
                 width: 42,
                 height: 42,
-                bgcolor: (text.trim() || attachments.length > 0) && !isSending ? 'primary.main' : 'action.hover',
-                color: (text.trim() || attachments.length > 0) && !isSending ? 'primary.contrastText' : 'text.disabled',
-                boxShadow: (text.trim() || attachments.length > 0) && !isSending ? '0 10px 24px rgba(15,23,42,0.18)' : 'none',
+                position: 'relative',
+                bgcolor: (hasDraftContent && !isSending) || showStopReply ? 'primary.main' : 'action.hover',
+                color: (hasDraftContent && !isSending) || showStopReply ? 'primary.contrastText' : 'text.disabled',
+                boxShadow: (hasDraftContent && !isSending) || showStopReply ? '0 10px 24px rgba(15,23,42,0.18)' : 'none',
                 '&:hover': {
-                  bgcolor: (text.trim() || attachments.length > 0) && !isSending ? 'primary.dark' : 'action.hover',
+                  bgcolor: (hasDraftContent && !isSending) || showStopReply ? 'primary.dark' : 'action.hover',
                 },
               }}
             >
-              {isSending ? <CircularProgress size={22} /> : <SendIcon />}
+              {showStopReply ? (
+                <>
+                  <CircularProgress
+                    size={34}
+                    thickness={3.4}
+                    sx={{ position: 'absolute', color: 'currentColor', opacity: 0.82 }}
+                  />
+                  <StopRoundedIcon fontSize="small" />
+                </>
+              ) : isSending ? <CircularProgress size={22} /> : <SendIcon />}
             </IconButton>
           </span>
         </Tooltip>
