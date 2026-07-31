@@ -159,6 +159,8 @@ describe('buildInlineInteractionContract analysis room detection', () => {
     });
 
     expect(contract).toContain('imageReferenceRegistry');
+    expect(contract).toContain('infer the user\'s actual image goal from the latest message plus recent conversation');
+    expect(contract).toContain('image.prompt must be the final prompt for the image model');
     expect(contract).toContain('"refId":"message-image:image-1"');
     expect(contract).toContain('"promptText":"A realistic braised pork belly dish');
     expect(contract).not.toContain('data:image/png;base64,AAA');

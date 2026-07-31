@@ -147,7 +147,7 @@ describe('assistantAgentOrchestrator validation', () => {
     expect(JSON.stringify(registry)).not.toContain('data:image');
   });
 
-  it('expands terse image media prompts before dispatching image generation', async () => {
+  it('keeps terse image media prompts model-guided before dispatching image generation', async () => {
     generateResponseMock.mockResolvedValue(JSON.stringify({
       assistantMessage: '下面是三张图。',
       patches: [],
@@ -187,7 +187,12 @@ describe('assistantAgentOrchestrator validation', () => {
       existingArtifacts: [],
     });
 
-    expect(patchSet.mediaTasks?.[0]?.prompt).toContain('premium food photography');
+    const writerPrompt = String(generateResponseMock.mock.calls[0]?.[1] || '');
+    expect(writerPrompt).toContain('先在内部梳理');
+    expect(writerPrompt).toContain('最近对话中已经确定的主题/角色/风格/禁忌/数量/用途');
+    expect(writerPrompt).toContain('给图片模型执行的最终提示词，不是对图片模型说“请你再写提示词”');
+    expect(patchSet.mediaTasks?.[0]?.prompt).toContain('Original user image request: 番茄炒蛋');
+    expect(patchSet.mediaTasks?.[0]?.prompt).toContain('Do not infer a fixed category from local keywords');
     expect(patchSet.mediaTasks?.[0]?.prompt).toContain('番茄炒蛋');
     expect(patchSet.mediaTasks?.[0]?.prompt).not.toBe('番茄炒蛋');
   });

@@ -389,7 +389,8 @@ describe('chatEngine streaming preview', () => {
     expect(contract).toContain('"mediaDecision"');
     expect(contract).toContain('this turn has an explicit media request');
     expect(contract).toContain('image.shouldGenerate=true only when the visible reply is sending/showing/generating an image');
-    expect(contract).toContain('Write a concrete prompt centered on the requested subject');
+    expect(contract).toContain('infer the user\'s actual image goal from the latest message plus recent conversation');
+    expect(contract).toContain('image.prompt must be the final prompt for the image model');
     expect(contract).toContain('Do not pretend an image exists unless image.shouldGenerate=true');
     expect(contract).toContain('visible first bubble');
     expect(contract).toContain('deliberate repeated tone, keyword, rhythm, format');
