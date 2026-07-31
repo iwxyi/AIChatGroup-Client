@@ -234,6 +234,29 @@ describe('buildSystemPromptWithContext', () => {
     expect(prompt).toContain('Even when the topic overlaps your job or expertise');
   });
 
+  it('injects core desire and fear as private deeper motivation instead of loose profile data', () => {
+    const character = buildCharacter({
+      coreProfile: {
+        coreDesire: '想被当作真正可靠的人，而不是只会活跃气氛的人。',
+        coreFear: '害怕别人发现自己其实经常没有把握。',
+        socialMask: '先开玩笑，避免太快暴露认真。',
+        valuePriority: ['可靠', '体面'],
+        biases: [],
+        interactionHabits: ['先试探对方是否愿意认真听'],
+      },
+    });
+
+    const prompt = buildSystemPromptWithContext(character, buildChat(), 0, [], new Map([[character.id, character]]));
+
+    expect(prompt).toContain('## Deeper Motivation');
+    expect(prompt).toContain('Core desire: 想被当作真正可靠的人');
+    expect(prompt).toContain('Core fear: 害怕别人发现自己其实经常没有把握');
+    expect(prompt).toContain('Social mask: 先开玩笑');
+    expect(prompt).toContain('Values: 可靠, 体面');
+    expect(prompt).toContain('Interaction habits: 先试探对方是否愿意认真听');
+    expect(prompt).toContain('Use this profile as private context');
+  });
+
   it('projects AI private thread counterpart turns as named user-side context', () => {
     const rendered = buildChatMessages([
       buildMessage({

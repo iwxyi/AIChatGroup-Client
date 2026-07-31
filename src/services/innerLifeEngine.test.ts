@@ -67,6 +67,102 @@ describe('innerLifeEngine', () => {
     expect(getInnerLifeSpeakerBias(projection).reason).toMatch(/^inner:/);
   });
 
+  it('turns a sustained ignored streak into an observable attention-seeking impulse', () => {
+    const projection = projectInnerLife({
+      character: character(),
+      messages: [
+        message({ id: 'own', senderId: 'a', senderName: '小甲', content: '我其实很想把这件事说完。', timestamp: 1 }),
+        message({ id: 'b1', senderId: 'b', content: '先不聊这个。', timestamp: 2 }),
+        message({ id: 'b2', senderId: 'c', content: '换个话题吧。', timestamp: 3 }),
+        message({ id: 'b3', senderId: 'b', content: '有人看球吗？', timestamp: 4 }),
+        message({ id: 'b4', senderId: 'c', content: '看了，挺精彩。', timestamp: 5 }),
+      ],
+      now: 20,
+    });
+
+    expect(projection.state.ignoredStreak).toBe(4);
+    expect(projection.state.loneliness).toBeGreaterThanOrEqual(62);
+    expect(projection.impulse).toBe('seek_attention');
+    expect(projection.expressionPlan.length).toBe('short');
+    expect(getInnerLifeSpeakerBias(projection).bias).toBeGreaterThan(0);
+  });
+
+  it('lets direct address override competing inner pressures', () => {
+    const projection = projectInnerLife({
+      character: character({
+        emotionalState: { affection: 10, irritation: 90, insecurity: 80, excitement: 5, embarrassment: 90 },
+        soulState: {
+          mood: { pleasure: -80, arousal: 70, dominance: 20 },
+          energy: 18,
+          attention: 10,
+          loneliness: 90,
+          repression: 90,
+          shame: 90,
+          envy: 30,
+          trustInRoom: 15,
+          ignoredStreak: 4,
+        },
+      }),
+      messages: [message({ content: '小甲，你必须回答这个问题。', senderId: 'b' })],
+      now: 20,
+    });
+
+    expect(projection.impulse).toBe('answer');
+    expect(projection.pressure).toBeGreaterThan(0.8);
+    expect(projection.expressionPlan.allowWithdraw).toBe(true);
+  });
+
+  it('uses low energy and low room trust to produce a short avoidance plan', () => {
+    const projection = projectInnerLife({
+      character: character({
+        behavior: { proactivity: 20, aggressiveness: 20, humorIntensity: 20, empathyLevel: 30, summarizing: 20, offTopic: 5 },
+        soulState: {
+          mood: { pleasure: -50, arousal: 10, dominance: 25 },
+          energy: 8,
+          attention: 20,
+          loneliness: 10,
+          repression: 20,
+          shame: 10,
+          envy: 0,
+          trustInRoom: 12,
+          ignoredStreak: 0,
+        },
+      }),
+      messages: [message({ content: '你怎么看？', senderId: 'b' })],
+      now: 20,
+    });
+
+    expect(projection.impulse).toBe('avoid');
+    expect(projection.expressionPlan.length).toBe('micro');
+    expect(projection.expressionPlan.tone).toBe('tired');
+    expect(projection.expressionPlan.allowWithdraw).toBe(false);
+  });
+
+  it('uses shame and repression to make an unaddressed character protect face', () => {
+    const projection = projectInnerLife({
+      character: character({
+        emotionalState: { affection: 10, irritation: 10, insecurity: 90, excitement: 10, embarrassment: 90 },
+        soulState: {
+          mood: { pleasure: -30, arousal: 50, dominance: 35 },
+          energy: 48,
+          attention: 45,
+          loneliness: 0,
+          repression: 80,
+          shame: 85,
+          envy: 0,
+          trustInRoom: 55,
+          ignoredStreak: 0,
+        },
+      }),
+      messages: [message({ content: '我倒觉得这个方案还有得商量。', senderId: 'b' })],
+      now: 20,
+    });
+
+    expect(projection.impulse).toBe('defend_face');
+    expect(projection.expressionPlan.tone).toBe('defensive');
+    expect(projection.expressionPlan.allowWithdraw).toBe(true);
+  });
+
   it('projects repair impulse after a sharp previous message leaves residue', () => {
     const projection = projectInnerLife({
       character: character({

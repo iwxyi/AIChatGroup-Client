@@ -132,6 +132,33 @@ describe('scheduler speaker scoring', () => {
     expect(b?.scoreBreakdown?.reasons).toContain('emotion:tension');
   });
 
+  it('surfaces inner-life pressure when a character has been ignored for several turns', () => {
+    const now = Date.now();
+    const candidates = calculateWeights(
+      [
+        buildCharacter('a', '甲', { behavior: { proactivity: 22, aggressiveness: 20, humorIntensity: 20, empathyLevel: 40, summarizing: 20, offTopic: 5 } }),
+        buildCharacter('b', '乙', { behavior: { proactivity: 70, aggressiveness: 20, humorIntensity: 30, empathyLevel: 60, summarizing: 20, offTopic: 5 } }),
+        buildCharacter('c', '丙', { behavior: { proactivity: 28, aggressiveness: 20, humorIntensity: 20, empathyLevel: 40, summarizing: 20, offTopic: 5 } }),
+      ],
+      [
+        buildMessage({ id: 'b0', senderId: 'b', senderName: '乙', content: '我刚才那个线索其实还没说完。', timestamp: now - 50_000 }),
+        buildMessage({ id: 'a1', senderId: 'a', senderName: '甲', content: '先聊别的吧。', timestamp: now - 40_000 }),
+        buildMessage({ id: 'c1', senderId: 'c', senderName: '丙', content: '我也想换个话题。', timestamp: now - 30_000 }),
+        buildMessage({ id: 'a2', senderId: 'a', senderName: '甲', content: '天气倒是不错。', timestamp: now - 20_000 }),
+        buildMessage({ id: 'c2', senderId: 'c', senderName: '丙', content: '嗯，出去走走也行。', timestamp: now - 10_000 }),
+      ],
+      {},
+      1,
+      0,
+      null,
+      { ...buildChat(), memberIds: ['a', 'b', 'c'] },
+    );
+
+    const b = candidates.find((candidate) => candidate.characterId === 'b');
+    expect(b?.scoreBreakdown?.innerLifePressure).toBeGreaterThan(0);
+    expect(b?.scoreBreakdown?.reasons.some((reason) => reason.startsWith('inner:seek_attention'))).toBe(true);
+  });
+
   it('does not treat generic second-person wording as an explicit direct cue', () => {
     const candidates = calculateWeights(
       [buildCharacter('a', '甲'), buildCharacter('b', '乙')],
