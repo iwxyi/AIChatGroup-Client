@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { SystemAnnouncementItem } from './api';
 
 export const IN_APP_NOTIFICATION_POPUP_SEEN_KEY = 'pneumata.systemAnnouncement.popupSeenIds';
+export const IN_APP_NOTIFICATION_EXPOSURE_REPORTED_KEY = 'pneumata.systemAnnouncement.exposureReportedIds';
 
 function scopedSeenKey(scope = 'guest') {
   return `${IN_APP_NOTIFICATION_POPUP_SEEN_KEY}:${scope || 'guest'}`;
@@ -18,6 +19,19 @@ export function readSeenInAppNotificationIds(scope = 'guest') {
 
 export function writeSeenInAppNotificationIds(ids: Set<string>, scope = 'guest') {
   localStorage.setItem(scopedSeenKey(scope), JSON.stringify(Array.from(ids).slice(-200)));
+}
+
+export function readSessionReportedInAppNotificationExposureIds(scope = 'guest') {
+  try {
+    const parsed = JSON.parse(sessionStorage.getItem(`${IN_APP_NOTIFICATION_EXPOSURE_REPORTED_KEY}:${scope || 'guest'}`) || '[]') as unknown;
+    return new Set(Array.isArray(parsed) ? parsed.map((item) => String(item)).filter(Boolean) : []);
+  } catch {
+    return new Set<string>();
+  }
+}
+
+export function writeSessionReportedInAppNotificationExposureIds(ids: Set<string>, scope = 'guest') {
+  sessionStorage.setItem(`${IN_APP_NOTIFICATION_EXPOSURE_REPORTED_KEY}:${scope || 'guest'}`, JSON.stringify(Array.from(ids).slice(-200)));
 }
 
 export function notificationAlertSeverity(severity: string): 'info' | 'warning' | 'error' | 'success' {

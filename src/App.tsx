@@ -23,10 +23,12 @@ import { useCharacterStore } from './stores/useCharacterStore';
 import {
   formatInAppNotificationWindow,
   readSeenInAppNotificationIds,
+  readSessionReportedInAppNotificationExposureIds,
   useInAppNotificationStore,
   writeSeenInAppNotificationIds,
+  writeSessionReportedInAppNotificationExposureIds,
 } from './services/inAppNotifications';
-import { AppUsageSessionClient, currentUsagePath } from './services/appUsageSession';
+import { AppUsageSessionClient, currentUsagePath, getAppUsageAnonymousId } from './services/appUsageSession';
 import './i18n';
 
 const routePreloaders = [
@@ -414,6 +416,18 @@ function InAppNotificationBootstrap() {
   const authUserId = useAuthStore((state) => state.user?.id || '');
   const setNotificationItems = useInAppNotificationStore((state) => state.setItems);
   const [popupNotification, setPopupNotification] = useState<SystemAnnouncementItem | null>(null);
+  const closePopupNotification = () => {
+    const notificationId = popupNotification?.id;
+    setPopupNotification(null);
+    if (!notificationId) return;
+    void api.recordSystemAnnouncementReceipts({
+      announcementIds: [notificationId],
+      eventType: 'popup_ack',
+      anonymousId: getAppUsageAnonymousId(),
+    }).catch((error) => {
+      console.warn('[notifications] failed to record in-app message popup ack', error);
+    });
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -431,6 +445,19 @@ function InAppNotificationBootstrap() {
           const activeItems = (result.items || []).filter((item) => item.pinnedEnabled || item.popupEnabled);
           setNotificationItems(activeItems);
           const seenScope = authUserId || 'guest';
+          const reportedExposureIds = readSessionReportedInAppNotificationExposureIds(seenScope);
+          const exposureIds = activeItems.map((item) => item.id).filter((id) => !reportedExposureIds.has(id));
+          if (exposureIds.length) {
+            exposureIds.forEach((id) => reportedExposureIds.add(id));
+            writeSessionReportedInAppNotificationExposureIds(reportedExposureIds, seenScope);
+            void api.recordSystemAnnouncementReceipts({
+              announcementIds: exposureIds,
+              eventType: 'exposure',
+              anonymousId: getAppUsageAnonymousId(),
+            }).catch((error) => {
+              console.warn('[notifications] failed to record in-app message exposure', error);
+            });
+          }
           const seenIds = readSeenInAppNotificationIds(seenScope);
           const nextPopup = activeItems.find((item) => item.popupEnabled && !seenIds.has(item.id));
           if (nextPopup) {
@@ -464,7 +491,7 @@ function InAppNotificationBootstrap() {
   }, [authUserId, setNotificationItems]);
 
   return (
-    <Dialog open={Boolean(popupNotification)} onClose={() => setPopupNotification(null)} maxWidth="sm" fullWidth>
+    <Dialog open={Boolean(popupNotification)} onClose={closePopupNotification} maxWidth="sm" fullWidth>
       <DialogTitle>{popupNotification?.title || '站内信'}</DialogTitle>
       <DialogContent>
         {popupNotification ? (
@@ -479,7 +506,7 @@ function InAppNotificationBootstrap() {
         ) : null}
       </DialogContent>
       <DialogActions>
-        <Button onClick={() => setPopupNotification(null)}>知道了</Button>
+        <Button onClick={closePopupNotification}>知道了</Button>
       </DialogActions>
     </Dialog>
   );

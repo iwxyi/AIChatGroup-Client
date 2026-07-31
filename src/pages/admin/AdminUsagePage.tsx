@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Box, Button, Chip, Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography } from '@mui/material';
 import AdminRequestState, { getAdminErrorMessage } from '../../components/admin/AdminRequestState';
-import { AdminSection, AdminTableFrame } from '../../components/admin/AdminSurface';
-import { adminApi, type AdminUsageSessionItem } from '../../services/adminApi';
+import { AdminMetricGrid, AdminSection, AdminTableFrame, type AdminMetricItem } from '../../components/admin/AdminSurface';
+import { ADMIN_PERMISSION_CODES, adminHasPermission } from '../../constants/adminPermissions';
+import { adminApi, type AdminUsageMaintenanceStatus, type AdminUsageSessionItem } from '../../services/adminApi';
+import { useAdminAuthStore } from '../../stores/useAdminAuthStore';
 
 const statusLabels: Record<string, { label: string; color: 'success' | 'warning' | 'default' }> = {
   online: { label: '在线', color: 'success' },
@@ -23,6 +25,12 @@ function formatDuration(ms: number) {
   if (hours > 0) return `${hours}小时${minutes}分钟`;
   if (minutes > 0) return `${minutes}分钟${seconds}秒`;
   return `${seconds}秒`;
+}
+
+function formatInterval(ms: number) {
+  const minutes = Math.round(Number(ms || 0) / 60000);
+  if (minutes >= 60) return `${Math.round(minutes / 60)} 小时`;
+  return `${minutes} 分钟`;
 }
 
 function statusChip(status: string) {
@@ -74,16 +82,43 @@ function SessionTable({ rows }: { rows: AdminUsageSessionItem[] }) {
 }
 
 export default function AdminUsagePage() {
+  const admin = useAdminAuthStore((state) => state.admin);
   const [items, setItems] = useState<AdminUsageSessionItem[]>([]);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [heartbeatTimeoutMs, setHeartbeatTimeoutMs] = useState(90_000);
+  const [maintenance, setMaintenance] = useState<AdminUsageMaintenanceStatus | null>(null);
   const [loading, setLoading] = useState(false);
+  const [maintenanceLoading, setMaintenanceLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [maintenanceError, setMaintenanceError] = useState<string | null>(null);
   const limit = 30;
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / limit)), [total]);
+  const canRunMaintenance = adminHasPermission(admin, ADMIN_PERMISSION_CODES.usersManage);
+  const maintenanceMetrics = useMemo<AdminMetricItem[]>(() => {
+    if (!maintenance) return [];
+    return [
+      { key: 'rawSessionCount', label: '原始会话', value: String(maintenance.rawSessionCount || 0), helper: `保留 ${maintenance.rawSessionRetentionDays || 180} 天` },
+      { key: 'dailyStatCount', label: '日汇总', value: String(maintenance.dailyStatCount || 0), helper: maintenance.latestSummaryDate ? `最近 ${maintenance.latestSummaryDate}` : '暂无汇总' },
+      { key: 'onlineSessionCount', label: '在线会话', value: String(maintenance.onlineSessionCount || 0), tone: maintenance.onlineSessionCount > 0 ? 'success' : 'default' },
+      { key: 'latestSummarizedAt', label: '最近汇总', value: formatTime(maintenance.latestSummarizedAt), helper: `每 ${formatInterval(maintenance.maintenanceIntervalMs)}维护` },
+      { key: 'oldestSessionStartedAt', label: '最早原始记录', value: formatTime(maintenance.oldestSessionStartedAt) },
+    ];
+  }, [maintenance]);
+
+  const loadMaintenance = useCallback(async () => {
+    setMaintenanceLoading(true);
+    setMaintenanceError(null);
+    try {
+      setMaintenance(await adminApi.getUsageMaintenanceStatus());
+    } catch (loadError) {
+      setMaintenanceError(getAdminErrorMessage(loadError));
+    } finally {
+      setMaintenanceLoading(false);
+    }
+  }, []);
 
   const loadPage = useCallback(async (nextPage: number) => {
     setLoading(true);
@@ -105,6 +140,24 @@ export default function AdminUsagePage() {
     void loadPage(1);
   }, [loadPage]);
 
+  useEffect(() => {
+    void loadMaintenance();
+  }, [loadMaintenance]);
+
+  const runMaintenance = async () => {
+    setMaintenanceLoading(true);
+    setMaintenanceError(null);
+    try {
+      const result = await adminApi.runUsageMaintenance();
+      setMaintenance(result.status);
+      await loadPage(page);
+    } catch (runError) {
+      setMaintenanceError(getAdminErrorMessage(runError));
+    } finally {
+      setMaintenanceLoading(false);
+    }
+  };
+
   const submitSearch = () => {
     setPage(1);
     setSearch(searchInput.trim());
@@ -113,6 +166,21 @@ export default function AdminUsagePage() {
   return (
     <Stack spacing={1.5}>
       <AdminRequestState loading={loading} error={error} onRetry={() => void loadPage(page)} />
+      <AdminSection
+        title="统计维护"
+        subtitle="日汇总用于趋势统计，原始会话用于最近记录和在线判断。"
+        action={(
+          <Stack direction="row" spacing={1}>
+            <Button size="small" variant="outlined" onClick={() => void loadMaintenance()} disabled={maintenanceLoading}>刷新状态</Button>
+            {canRunMaintenance ? <Button size="small" variant="contained" onClick={() => void runMaintenance()} disabled={maintenanceLoading}>立即维护</Button> : null}
+          </Stack>
+        )}
+      >
+        <Stack spacing={1}>
+          <AdminRequestState loading={maintenanceLoading} error={maintenanceError} onRetry={() => void loadMaintenance()} />
+          {maintenance ? <AdminMetricGrid items={maintenanceMetrics} minWidth={132} compact /> : <Alert severity="info">暂无维护状态。</Alert>}
+        </Stack>
+      </AdminSection>
       <AdminSection
         title="使用记录"
         subtitle={`最近启动和心跳记录；超过 ${Math.round(heartbeatTimeoutMs / 1000)} 秒未心跳视为无心跳`}

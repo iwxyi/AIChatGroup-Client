@@ -56,6 +56,10 @@ export type AdminSystemAnnouncement = {
   pinnedEnabled: boolean;
   popupEnabled: boolean;
   sortOrder: number;
+  exposureUsers?: number;
+  exposureCount?: number;
+  popupAckUsers?: number;
+  popupAckCount?: number;
   createdAt: number;
   updatedAt: number;
 };
@@ -99,6 +103,18 @@ export type AdminUsageSessionItem = {
   status: 'online' | 'timeout' | 'ended' | string;
   entryPath: string;
   lastPath: string;
+};
+
+export type AdminUsageMaintenanceStatus = {
+  generatedAt: number;
+  rawSessionCount: number;
+  dailyStatCount: number;
+  onlineSessionCount: number;
+  latestSummaryDate: string | null;
+  latestSummarizedAt: number | null;
+  oldestSessionStartedAt: number | null;
+  rawSessionRetentionDays: number;
+  maintenanceIntervalMs: number;
 };
 
 class AdminApiClient {
@@ -258,6 +274,14 @@ class AdminApiClient {
 
   getUsageSessions(params?: { page?: number; limit?: number; search?: string }) {
     return this.request<{ items: AdminUsageSessionItem[]; page: number; limit: number; total: number; serverTime: number; heartbeatTimeoutMs: number }>('GET', `/usage/sessions${this.buildQuery({ page: params?.page, limit: params?.limit, search: params?.search })}`);
+  }
+
+  getUsageMaintenanceStatus() {
+    return this.request<AdminUsageMaintenanceStatus>('GET', '/usage/maintenance');
+  }
+
+  runUsageMaintenance() {
+    return this.request<{ result: Record<string, unknown>; status: AdminUsageMaintenanceStatus }>('POST', '/usage/maintenance/run', {});
   }
 
   getUsers(search = '') {

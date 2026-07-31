@@ -17,7 +17,7 @@ function randomId() {
   return `anon-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
 }
 
-function getAnonymousId() {
+export function getAppUsageAnonymousId() {
   try {
     const existing = localStorage.getItem(ANONYMOUS_ID_KEY);
     if (existing) return existing;
@@ -83,7 +83,7 @@ export class AppUsageSessionClient {
   async start(path = currentUsagePath()) {
     this.stopped = false;
     const result = await postJson<UsageSessionStartResponse>('/usage/sessions/start', {
-      anonymousId: getAnonymousId(),
+      anonymousId: getAppUsageAnonymousId(),
       path,
     });
     if (this.stopped) return;
@@ -97,7 +97,7 @@ export class AppUsageSessionClient {
     if (!this.sessionId || this.stopped) return Promise.resolve();
     this.lastHeartbeatPath = path;
     return postJson<{ ok: boolean }>(`/usage/sessions/${encodeURIComponent(this.sessionId)}/heartbeat`, {
-      anonymousId: getAnonymousId(),
+      anonymousId: getAppUsageAnonymousId(),
       path,
     }).catch(() => undefined);
   }
@@ -109,7 +109,7 @@ export class AppUsageSessionClient {
     this.heartbeatTimer = null;
     const sessionId = this.sessionId;
     this.sessionId = null;
-    const body = JSON.stringify({ anonymousId: getAnonymousId(), path });
+    const body = JSON.stringify({ anonymousId: getAppUsageAnonymousId(), path });
     const url = `${API_BASE}/usage/sessions/${encodeURIComponent(sessionId)}/end`;
     if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
       const blob = new Blob([body], { type: 'application/json' });

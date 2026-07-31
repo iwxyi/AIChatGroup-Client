@@ -565,6 +565,7 @@ export default function AdminNotificationsPage() {
                 <TableCell>范围</TableCell>
                 <TableCell>生效时间段</TableCell>
                 <TableCell>展示</TableCell>
+                <TableCell>触达统计</TableCell>
                 <TableCell align="right">操作</TableCell>
               </TableRow>
             </TableHead>
@@ -579,6 +580,16 @@ export default function AdminNotificationsPage() {
                   <TableCell>{announcementAudienceLabel(item)}</TableCell>
                   <TableCell>{item.startsAt ? formatTime(item.startsAt) : '立即'} - {item.endsAt ? formatTime(item.endsAt) : '长期'}</TableCell>
                   <TableCell>{[item.pinnedEnabled ? '置顶' : '', item.popupEnabled ? '弹窗' : ''].filter(Boolean).join('、') || '不展示'}</TableCell>
+                  <TableCell>
+                    <Stack spacing={0.25}>
+                      <Typography variant="caption" color="text.secondary">
+                        曝光 {Math.round(Number(item.exposureUsers || 0))} 人 / {Math.round(Number(item.exposureCount || 0))} 次
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        确认 {Math.round(Number(item.popupAckUsers || 0))} 人 / {Math.round(Number(item.popupAckCount || 0))} 次
+                      </Typography>
+                    </Stack>
+                  </TableCell>
                   <TableCell align="right">
                     <Stack direction="row" spacing={0.5} sx={{ justifyContent: 'flex-end' }}>
                       <Button size="small" onClick={() => openEditInAppDialog(item)}>编辑</Button>

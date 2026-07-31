@@ -601,6 +601,10 @@ class ApiClient {
     return this.request<{ items: SystemAnnouncementItem[]; serverTime: number }>('GET', '/notifications/announcements');
   }
 
+  async recordSystemAnnouncementReceipts(payload: { announcementIds: string[]; eventType: 'exposure' | 'popup_ack'; anonymousId?: string }) {
+    return this.request<{ ok: boolean; accepted: number; serverTime: number }>('POST', '/notifications/announcements/receipts', payload);
+  }
+
   async searchWeb(query: string, options?: { count?: number; freshness?: string; include?: string; exclude?: string; source?: string; resourceId?: string }) {
     return this.request<AiSearchResponse>('POST', '/search/web', {
       query,
