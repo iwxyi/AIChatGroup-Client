@@ -39,6 +39,7 @@ export interface CompactImageAttachmentRef {
   altText: string;
   caption?: string;
   promptText?: string;
+  semanticSummary?: string;
   width?: number;
   height?: number;
   sizeBytes?: number;
@@ -179,6 +180,7 @@ function compactImageAttachmentRef(ref: ImageAttachmentRef): CompactImageAttachm
     altText: ref.altText,
     caption: ref.caption,
     ...(ref.promptText ? { promptText: ref.promptText } : {}),
+    ...(ref.semanticSummary ? { semanticSummary: ref.semanticSummary } : {}),
     width: ref.width,
     height: ref.height,
     sizeBytes: ref.sizeBytes,
@@ -200,6 +202,7 @@ function imageAttachmentRefsWithUrls(message: Message): ImageAttachmentRef[] {
       altText: attachment.altText,
       caption: attachment.caption,
       promptText: attachment.promptText?.trim().slice(0, 800),
+      semanticSummary: attachment.semanticSummary?.trim().slice(0, 800),
       width: attachment.width,
       height: attachment.height,
       sizeBytes: attachment.sizeBytes,

@@ -315,6 +315,7 @@ function buildImageReferenceRegistry(messages: Message[]) {
         altText: attachment.altText,
         caption: attachment.caption || '',
         promptText: attachment.promptText?.trim().slice(0, 800) || '',
+        semanticSummary: attachment.semanticSummary?.trim().slice(0, 800) || '',
         messageContentPreview: message.content.trim().slice(0, 180),
         messageTimestamp: message.timestamp,
       })))

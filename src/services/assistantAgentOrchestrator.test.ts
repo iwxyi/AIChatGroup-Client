@@ -106,6 +106,7 @@ describe('assistantAgentOrchestrator validation', () => {
           status: 'ready',
           altText: '上一张生成图',
           promptText: '赛博茶馆里的红铜茶壶，霓虹灯反射，电影感构图',
+          semanticSummary: '模型识别：红铜茶壶在赛博茶馆中，霓虹反射明显。',
           url: `data:image/png;base64,${'B'.repeat(4096)}`,
           mimeType: 'image/png',
           createdAt: 20,
@@ -142,6 +143,7 @@ describe('assistantAgentOrchestrator validation', () => {
       messageRole: 'assistant',
       messageContentPreview: '',
       promptText: '赛博茶馆里的红铜茶壶，霓虹灯反射，电影感构图',
+      semanticSummary: '模型识别：红铜茶壶在赛博茶馆中，霓虹反射明显。',
       urlKind: 'data',
     });
     expect(JSON.stringify(registry)).not.toContain('data:image');

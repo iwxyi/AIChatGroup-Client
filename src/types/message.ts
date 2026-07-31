@@ -21,10 +21,13 @@ export interface MessageAttachment {
   height?: number;
   generationJobId?: string;
   promptText?: string;
+  semanticSummary?: string;
   aspectRatio?: string;
   imageSize?: string;
   targetArtifactId?: string;
   targetImageIds?: string[];
+  referenceImageIds?: string[];
+  styleImageIds?: string[];
   referenceCharacterIds?: string[];
   referenceImages?: Array<{
     url: string;

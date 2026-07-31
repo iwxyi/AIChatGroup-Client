@@ -1156,6 +1156,8 @@ describe('chatEngine streaming preview', () => {
           prompt: 'Create a revised poster with a larger title while preserving the original layout',
           altText: '标题更大的海报版本',
           targetImageIds: ['message-image:image-1'],
+          referenceImageIds: ['message-image:image-1'],
+          styleImageIds: ['message-image:image-1'],
         },
       },
       interactionHints: null,
@@ -1195,6 +1197,8 @@ describe('chatEngine streaming preview', () => {
     expect(metadata?.attachments?.[0]).toMatchObject({
       kind: 'image',
       targetImageIds: ['message-image:image-1'],
+      referenceImageIds: ['message-image:image-1'],
+      styleImageIds: ['message-image:image-1'],
       referenceImages: [{
         url: 'data:image/png;base64,POSTER',
         mimeType: 'image/png',

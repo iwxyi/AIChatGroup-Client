@@ -7,8 +7,37 @@ import { buildAssistantChatDraft } from './chatDraftBuilder';
 import { generateResponse } from './aiClient';
 import { buildAgentArtifactReplyContent, markAssistantMediaAttachmentsFailed, maybeGenerateAssistantChatTitle, runAssistantChatReplyFlow } from './assistantChatFlow';
 
+const agentOrchestratorMock = vi.hoisted(() => ({
+  planAssistantAgentChange: vi.fn(),
+  writeAssistantAgentPatchSet: vi.fn(),
+}));
+
 vi.mock('./aiClient', () => ({
   generateResponse: vi.fn(),
+}));
+
+vi.mock('./assistantAgentOrchestrator', () => agentOrchestratorMock);
+
+vi.mock('../stores/useAssistantArtifactStore', () => ({
+  ensureAssistantArtifactStoreHydrated: vi.fn(async () => undefined),
+  useAssistantArtifactStore: {
+    getState: () => ({
+      getArtifactsForChat: vi.fn(() => []),
+      commitPatchSet: vi.fn(() => []),
+    }),
+  },
+}));
+
+vi.mock('../stores/useLocalWorkspaceStore', () => ({
+  useLocalWorkspaceStore: {
+    getState: () => ({
+      directories: [],
+      getDefaultDirectory: vi.fn(() => null),
+      getSelectedFilePaths: vi.fn(() => []),
+      listDefaultDirectoryFiles: vi.fn(async () => []),
+      readDefaultDirectoryTextFiles: vi.fn(async () => []),
+    }),
+  },
 }));
 
 const generateResponseMock = vi.mocked(generateResponse);
@@ -25,6 +54,8 @@ function assistantChat(id = 'assistant-chat-1'): GroupChat {
 
 beforeEach(() => {
   generateResponseMock.mockReset();
+  agentOrchestratorMock.planAssistantAgentChange.mockReset();
+  agentOrchestratorMock.writeAssistantAgentPatchSet.mockReset();
   useChatStore.setState({ chats: [] });
 });
 
@@ -54,7 +85,10 @@ describe('assistantChatFlow media artifacts', () => {
         }],
       },
     };
-    generateResponseMock.mockResolvedValue('这是一张图片。');
+    generateResponseMock.mockResolvedValue(JSON.stringify({
+      content: '这是一张图片。',
+      imageSummaries: [{ attachmentId: 'uploaded-image', summary: '用户上传的图片。' }],
+    }));
 
     await runAssistantChatReplyFlow({
       api: { provider: 'openai', apiKey: 'k', baseUrl: 'https://api.openai.com/v1', model: 'gpt-5.4-mini' },
@@ -84,6 +118,201 @@ describe('assistantChatFlow media artifacts', () => {
       content: expect.stringContaining('请解释这张图片'),
       attachments: [{ url: 'data:image/png;base64,AAA', mimeType: 'image/png' }],
     });
+    expect(generateResponseMock.mock.calls[0]?.[3]).toBeUndefined();
+  });
+
+  it('stores a lightweight semantic summary on uploaded images after a vision reply', async () => {
+    const chat = assistantChat();
+    const userMessage: Message = {
+      id: 'message-user-fish',
+      chatId: chat.id,
+      type: 'user',
+      senderId: 'user',
+      senderName: '我',
+      content: '这几张图里哪张是鲫鱼？',
+      emotion: 0,
+      timestamp: 1001,
+      isDeleted: false,
+      metadata: {
+        attachments: [{
+          id: 'fish-image',
+          kind: 'image',
+          status: 'ready',
+          altText: '用户上传的图片',
+          mimeType: 'image/png',
+          url: 'data:image/png;base64,FISH',
+          createdAt: 1001,
+          updatedAt: 1001,
+        }],
+      },
+    };
+    generateResponseMock.mockResolvedValue(JSON.stringify({
+      content: '第一张图里钓到的是鲫鱼，体型偏小，银灰色鱼身。',
+      imageSummaries: [{
+        attachmentId: 'fish-image',
+        summary: '钓到的鲫鱼，体型偏小，银灰色鱼身，可按“鲫鱼图”引用。',
+      }],
+    }));
+    const upsertMessage = vi.fn();
+
+    await runAssistantChatReplyFlow({
+      api: { provider: 'openai', apiKey: 'k', baseUrl: 'https://api.openai.com/v1', model: 'gpt-5.4-mini' },
+      aiProfiles: [{
+        id: 'gpt-text',
+        name: 'GPT',
+        type: 'text',
+        provider: 'openai',
+        apiKey: 'k',
+        baseUrl: 'https://api.openai.com/v1',
+        model: 'gpt-5.4-mini',
+        isDefault: true,
+      }],
+      chat,
+      chatId: chat.id,
+      currentMessages: [userMessage],
+      upsertMessage,
+      updateChat: vi.fn(async () => undefined),
+    });
+
+    const summarizedUserMessage = upsertMessage.mock.calls
+      .map((call) => call[0] as Message)
+      .find((message) => message.id === userMessage.id && message.metadata?.attachments?.[0]?.semanticSummary);
+    expect(summarizedUserMessage?.metadata?.attachments?.[0]?.semanticSummary).toContain('鲫鱼');
+    expect(summarizedUserMessage?.metadata?.attachments?.[0]?.semanticSummary).toContain('银灰色鱼身');
+  });
+
+  it('stores multi-image semantic summaries by structured attachment id', async () => {
+    const chat = assistantChat();
+    const userMessage: Message = {
+      id: 'message-user-multi-fish',
+      chatId: chat.id,
+      type: 'user',
+      senderId: 'user',
+      senderName: '我',
+      content: '上面哪张钓的是鲫鱼？',
+      emotion: 0,
+      timestamp: 1001,
+      isDeleted: false,
+      metadata: {
+        attachments: [
+          {
+            id: 'image-1',
+            kind: 'image',
+            status: 'ready',
+            altText: '第一张图',
+            mimeType: 'image/png',
+            url: 'data:image/png;base64,FISH',
+            createdAt: 1001,
+            updatedAt: 1001,
+          },
+          {
+            id: 'image-2',
+            kind: 'image',
+            status: 'ready',
+            altText: '第二张图',
+            mimeType: 'image/png',
+            url: 'data:image/png;base64,BUCKET',
+            createdAt: 1001,
+            updatedAt: 1001,
+          },
+        ],
+      },
+    };
+    generateResponseMock.mockResolvedValue(JSON.stringify({
+      content: '第一张图里钓到的是鲫鱼，第二张图主要是水桶和鱼竿。',
+      imageSummaries: [
+        { attachmentId: 'image-1', summary: '钓到的鲫鱼，银灰色鱼身。' },
+        { attachmentId: 'image-2', summary: '水桶和鱼竿。' },
+      ],
+    }));
+    const upsertMessage = vi.fn();
+
+    await runAssistantChatReplyFlow({
+      api: { provider: 'openai', apiKey: 'k', baseUrl: 'https://api.openai.com/v1', model: 'gpt-5.4-mini' },
+      aiProfiles: [{
+        id: 'gpt-text',
+        name: 'GPT',
+        type: 'text',
+        provider: 'openai',
+        apiKey: 'k',
+        baseUrl: 'https://api.openai.com/v1',
+        model: 'gpt-5.4-mini',
+        isDefault: true,
+        inputCapabilities: { imageInput: true, multiImageInput: true, maxAttachments: 9 },
+      }],
+      chat,
+      chatId: chat.id,
+      currentMessages: [userMessage],
+      upsertMessage,
+      updateChat: vi.fn(async () => undefined),
+    });
+
+    const summarizedUserMessage = upsertMessage.mock.calls
+      .map((call) => call[0] as Message)
+      .find((message) => message.id === userMessage.id && message.metadata?.attachments?.some((attachment) => attachment.semanticSummary));
+    const [first, second] = summarizedUserMessage?.metadata?.attachments || [];
+    expect(first?.semanticSummary).toContain('鲫鱼');
+    expect(first?.semanticSummary).not.toContain('水桶');
+    expect(second?.semanticSummary).toContain('水桶');
+    expect(second?.semanticSummary).not.toContain('鲫鱼');
+  });
+
+  it('ignores hallucinated image summary attachment ids', async () => {
+    const chat = assistantChat();
+    const userMessage: Message = {
+      id: 'message-user-bad-summary-id',
+      chatId: chat.id,
+      type: 'user',
+      senderId: 'user',
+      senderName: '我',
+      content: '解释图片',
+      emotion: 0,
+      timestamp: 1001,
+      isDeleted: false,
+      metadata: {
+        attachments: [{
+          id: 'real-image',
+          kind: 'image',
+          status: 'ready',
+          altText: '真实图片',
+          mimeType: 'image/png',
+          url: 'data:image/png;base64,REAL',
+          createdAt: 1001,
+          updatedAt: 1001,
+        }],
+      },
+    };
+    generateResponseMock.mockResolvedValue(JSON.stringify({
+      content: '我看到了图片内容。',
+      imageSummaries: [{ attachmentId: 'fake-image', summary: '幻觉出来的图片摘要。' }],
+    }));
+    const upsertMessage = vi.fn();
+
+    await runAssistantChatReplyFlow({
+      api: { provider: 'openai', apiKey: 'k', baseUrl: 'https://api.openai.com/v1', model: 'gpt-5.4-mini' },
+      aiProfiles: [{
+        id: 'gpt-text',
+        name: 'GPT',
+        type: 'text',
+        provider: 'openai',
+        apiKey: 'k',
+        baseUrl: 'https://api.openai.com/v1',
+        model: 'gpt-5.4-mini',
+        isDefault: true,
+      }],
+      chat,
+      chatId: chat.id,
+      currentMessages: [userMessage],
+      upsertMessage,
+      updateChat: vi.fn(async () => undefined),
+    });
+
+    expect(upsertMessage).not.toHaveBeenCalledWith(expect.objectContaining({
+      id: userMessage.id,
+      metadata: expect.objectContaining({
+        attachments: [expect.objectContaining({ semanticSummary: expect.any(String) })],
+      }),
+    }));
   });
 
   it('passes uploaded images through the official GPT provider even when the model alias is provider-like', async () => {
@@ -111,7 +340,10 @@ describe('assistantChatFlow media artifacts', () => {
         }],
       },
     };
-    generateResponseMock.mockResolvedValue('我看到了图片内容。');
+    generateResponseMock.mockResolvedValue(JSON.stringify({
+      content: '我看到了图片内容。',
+      imageSummaries: [{ attachmentId: 'uploaded-image', summary: '参考图。' }],
+    }));
 
     await runAssistantChatReplyFlow({
       api: { provider: 'official-2', apiKey: '', baseUrl: '/api/ai', model: 'official-2' },
@@ -165,6 +397,7 @@ describe('assistantChatFlow media artifacts', () => {
       },
     };
     generateResponseMock.mockResolvedValue('当前模型未收到可解析的图片输入。');
+    const upsertMessage = vi.fn();
 
     await runAssistantChatReplyFlow({
       api: { provider: 'openai', apiKey: 'k', baseUrl: 'https://api.openai.com/v1', model: 'gpt-5.4-mini' },
@@ -182,7 +415,7 @@ describe('assistantChatFlow media artifacts', () => {
       chat,
       chatId: chat.id,
       currentMessages: [userMessage],
-      upsertMessage: vi.fn(),
+      upsertMessage,
       updateChat: vi.fn(async () => undefined),
     });
 
@@ -194,6 +427,92 @@ describe('assistantChatFlow media artifacts', () => {
     expect(systemPrompt).toContain('当前文本模型请求没有携带可视觉解析的图片输入');
     expect(projected[0]?.content).toContain('[图片附件：捕获.PNG]');
     expect(projected[0]?.attachments).toBeUndefined();
+    expect(upsertMessage).not.toHaveBeenCalledWith(expect.objectContaining({
+      id: userMessage.id,
+      metadata: expect.objectContaining({
+        attachments: [expect.objectContaining({ semanticSummary: expect.any(String) })],
+      }),
+    }));
+  });
+
+  it('uses the text model with image pixels for Agent chat replies instead of planner-only text', async () => {
+    const chat = assistantChat();
+    chat.modeState.assistantCapabilities = {
+      ...(chat.modeState.assistantCapabilities || {}),
+      agent: true,
+      artifacts: true,
+    };
+    const userMessage: Message = {
+      id: 'message-user-agent-image',
+      chatId: chat.id,
+      type: 'user',
+      senderId: 'user',
+      senderName: '我',
+      content: '解释这张参考图',
+      emotion: 0,
+      timestamp: 1001,
+      isDeleted: false,
+      metadata: {
+        attachments: [{
+          id: 'uploaded-image',
+          kind: 'image',
+          status: 'ready',
+          altText: '参考图',
+          mimeType: 'image/png',
+          url: 'data:image/png;base64,AAA',
+          createdAt: 1001,
+          updatedAt: 1001,
+        }],
+      },
+    };
+    agentOrchestratorMock.planAssistantAgentChange.mockResolvedValue({
+      intent: 'chat',
+      assistantMessage: '我只能看到图片附件名称。',
+      scope: { targetMode: 'unknown', artifactIds: [] },
+      operations: [],
+      requiresConfirmation: false,
+      clarificationQuestion: '',
+      confidence: 1,
+      rationale: 'planner text',
+    });
+    generateResponseMock.mockResolvedValue(JSON.stringify({
+      content: '我已根据图片内容完成解释。',
+      imageSummaries: [{ attachmentId: 'uploaded-image', summary: '参考图内容已解释。' }],
+    }));
+    const upsertMessage = vi.fn();
+
+    await runAssistantChatReplyFlow({
+      api: { provider: 'openai', apiKey: 'k', baseUrl: 'https://api.openai.com/v1', model: 'gpt-5.4-mini' },
+      aiProfiles: [{
+        id: 'gpt-text',
+        name: 'GPT',
+        type: 'text',
+        provider: 'openai',
+        apiKey: 'k',
+        baseUrl: 'https://api.openai.com/v1',
+        model: 'gpt-5.4-mini',
+        isDefault: true,
+      }],
+      chat,
+      chatId: chat.id,
+      currentMessages: [userMessage],
+      upsertMessage,
+      updateChat: vi.fn(async () => undefined),
+    });
+
+    const imageReplyCall = generateResponseMock.mock.calls.find((call) => {
+      const projectedMessages = call[2] as Array<{ attachments?: unknown[] }>;
+      return projectedMessages.some((message) => Boolean(message.attachments?.length));
+    });
+    expect(imageReplyCall).toBeTruthy();
+    const projected = imageReplyCall?.[2] as Array<{
+      attachments?: Array<{ url: string; mimeType?: string }>;
+    }>;
+    expect(projected[0]?.attachments).toEqual([{ url: 'data:image/png;base64,AAA', mimeType: 'image/png' }]);
+    const finalMessage = upsertMessage.mock.calls
+      .map((call) => call[0] as Message)
+      .find((message) => message.type === 'ai' && message.content === '我已根据图片内容完成解释。');
+    expect(finalMessage?.content).toBe('我已根据图片内容完成解释。');
   });
 
   it('does not append the same Mermaid artifact twice when the writer already included it inline', () => {
@@ -254,6 +573,9 @@ describe('assistantChatFlow media artifacts', () => {
         kind: 'image',
         prompt: 'A realistic photo of Chinese braised pork belly, glossy soy caramel sauce, food photography',
         altText: '红烧肉照片',
+        targetImageIds: ['message-a:image-1'],
+        referenceImageIds: ['message-b:image-2'],
+        styleImageIds: ['message-c:image-3'],
       }],
     };
 

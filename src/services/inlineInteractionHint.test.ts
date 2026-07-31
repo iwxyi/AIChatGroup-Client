@@ -147,6 +147,7 @@ describe('buildInlineInteractionContract analysis room detection', () => {
             altText: '红烧肉照片',
             caption: '红烧肉成品图',
             promptText: 'A realistic braised pork belly dish, glossy sauce, warm restaurant lighting',
+            semanticSummary: '模型识别：红烧肉色泽红亮，适合做封面。',
             url: 'data:image/png;base64,AAA',
             mimeType: 'image/png',
             createdAt: 10,
@@ -163,6 +164,7 @@ describe('buildInlineInteractionContract analysis room detection', () => {
     expect(contract).toContain('image.prompt must be the final prompt for the image model');
     expect(contract).toContain('"refId":"message-image:image-1"');
     expect(contract).toContain('"promptText":"A realistic braised pork belly dish');
+    expect(contract).toContain('"semanticSummary":"模型识别：红烧肉色泽红亮，适合做封面。"');
     expect(contract).not.toContain('data:image/png;base64,AAA');
   });
 

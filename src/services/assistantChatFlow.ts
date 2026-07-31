@@ -14,7 +14,16 @@ const MAX_ASSISTANT_HISTORY = 24;
 const MAX_ASSISTANT_TITLE_CONTEXT = 12;
 const DEFAULT_ASSISTANT_CHAT_NAME = '新助手会话';
 const MAX_GENERATED_TITLE_LENGTH = 28;
+const MAX_IMAGE_SEMANTIC_SUMMARY_LENGTH = 700;
 const pendingAssistantTitleChatIds = new Set<string>();
+
+interface AssistantVisionReply {
+  content: string;
+  imageSummaries: Array<{
+    attachmentId: string;
+    summary: string;
+  }>;
+}
 
 function ensureAssistantReplyStillCurrent(params: { signal?: AbortSignal; shouldContinue?: () => boolean }) {
   if (params.signal?.aborted) throw new GenerationCancelledError();
@@ -51,7 +60,12 @@ function buildAssistantSystemPrompt() {
 function buildAssistantImageInputPromptBlock(params: { hasImageAttachments: boolean; projectedImageAttachments: boolean }) {
   if (!params.hasImageAttachments) return '';
   if (params.projectedImageAttachments) {
-    return '本轮用户上传的图片已作为多模态图片输入提供给你。可以基于图片像素内容回答，但不要编造看不到的细节。';
+    return [
+      '本轮用户上传的图片已作为多模态图片输入提供给你。可以基于图片像素内容回答，但不要编造看不到的细节。',
+      '如果本轮需要基于图片内容回答，必须只输出严格 JSON：{"content":"给用户看的自然回答","imageSummaries":[{"attachmentId":"本轮图片附件ID","summary":"这张图可供后续引用的简短事实摘要"}]}。',
+      'imageSummaries 只写你确实能从图片和上下文确认的内容；多张图必须按 attachmentId 分别写，不能只写“第一张/第二张”。如果无法确认某张图内容，就不要为那张图写摘要。',
+      'content 不要提 JSON、attachmentId 或内部协议。',
+    ].join('\n');
   }
   return [
     '本轮用户上传了图片，但当前文本模型请求没有携带可视觉解析的图片输入；你只能看到附件文件名、格式、大小或说明。',
@@ -60,13 +74,46 @@ function buildAssistantImageInputPromptBlock(params: { hasImageAttachments: bool
   ].join('\n');
 }
 
+function parseAssistantVisionReply(raw: string, userMessage: Message, imageInputProjected: boolean): AssistantVisionReply {
+  const fallback = { content: raw.trim(), imageSummaries: [] };
+  if (!imageInputProjected) return fallback;
+  const validAttachmentIds = new Set((userMessage.metadata?.attachments || [])
+    .filter((attachment) => attachment.kind === 'image' && attachment.status === 'ready' && Boolean(attachment.url))
+    .map((attachment) => attachment.id));
+  if (!validAttachmentIds.size) return fallback;
+  try {
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return fallback;
+    const parsed = JSON.parse(jsonMatch[0]) as unknown;
+    if (!parsed || typeof parsed !== 'object') return fallback;
+    const record = parsed as { content?: unknown; imageSummaries?: unknown };
+    const content = typeof record.content === 'string' ? record.content.trim() : '';
+    if (!content) return fallback;
+    const imageSummaries = Array.isArray(record.imageSummaries)
+      ? record.imageSummaries.flatMap((item): AssistantVisionReply['imageSummaries'] => {
+        if (!item || typeof item !== 'object') return [];
+        const summaryRecord = item as { attachmentId?: unknown; summary?: unknown };
+        const attachmentId = typeof summaryRecord.attachmentId === 'string' ? summaryRecord.attachmentId.trim() : '';
+        const summary = typeof summaryRecord.summary === 'string'
+          ? summaryRecord.summary.replace(/\s+/g, ' ').trim().slice(0, MAX_IMAGE_SEMANTIC_SUMMARY_LENGTH)
+          : '';
+        if (!attachmentId || !validAttachmentIds.has(attachmentId) || !summary) return [];
+        return [{ attachmentId, summary }];
+      })
+      : [];
+    return { content, imageSummaries };
+  } catch {
+    return fallback;
+  }
+}
+
 function buildAssistantImageAttachmentText(message: Message) {
   const attachments = (message.metadata?.attachments || [])
     .filter((attachment) => attachment.kind === 'image' && attachment.status !== 'deleted' && attachment.status !== 'failed');
   if (!attachments.length) return '';
   const labels = attachments
     .slice(0, 6)
-    .map((attachment, index) => attachment.caption || attachment.altText || attachment.promptText || `图片 ${index + 1}`);
+    .map((attachment, index) => attachment.semanticSummary || attachment.caption || attachment.altText || attachment.promptText || `图片 ${index + 1}`);
   const suffix = attachments.length > labels.length ? ` 等 ${attachments.length} 张图片` : '';
   return `[图片附件：${labels.join('、')}${suffix}]`;
 }
@@ -150,7 +197,7 @@ async function generateAssistantLocalFileAnswer(params: {
   signal?: AbortSignal;
 }) {
   const promptImageState = getAssistantPromptImageState(withLatestUserMessage(params.messages, params.userMessage), params.inputCapabilities);
-  return generateResponse(
+  const raw = await generateResponse(
     params.api,
     [
       buildAssistantSystemPrompt(),
@@ -171,6 +218,7 @@ async function generateAssistantLocalFileAnswer(params: {
       },
     },
   );
+  return parseAssistantVisionReply(raw, params.userMessage, promptImageState.projectedImageAttachments);
 }
 
 async function generateAssistantSearchAnswer(params: {
@@ -211,7 +259,7 @@ async function generateAssistantSearchAnswer(params: {
     ].join('\n');
   }
   const promptImageState = getAssistantPromptImageState(withLatestUserMessage(params.messages, params.userMessage), params.inputCapabilities);
-  return generateResponse(
+  const raw = await generateResponse(
     params.api,
     [
       buildAssistantSystemPrompt(),
@@ -232,6 +280,39 @@ async function generateAssistantSearchAnswer(params: {
       },
     },
   );
+  return parseAssistantVisionReply(raw, params.userMessage, promptImageState.projectedImageAttachments);
+}
+
+async function generateAssistantGeneralAnswer(params: {
+  api: APIConfig;
+  inputCapabilities: AIModelInputCapabilities;
+  chatId: string;
+  userMessage: Message;
+  messages: Message[];
+  signal?: AbortSignal;
+}) {
+  const promptImageState = getAssistantPromptImageState(withLatestUserMessage(params.messages, params.userMessage), params.inputCapabilities);
+  const raw = await generateResponse(
+    params.api,
+    [
+      buildAssistantSystemPrompt(),
+      buildAssistantImageInputPromptBlock(promptImageState),
+      'Answer the latest user request directly. If images are provided as multimodal inputs, use their visual content when relevant.',
+    ].filter(Boolean).join('\n\n'),
+    promptImageState.messages,
+    undefined,
+    {
+      responseFormat: 'text',
+      signal: params.signal,
+      aiUsage: {
+        type: 'assistant_chat',
+        label: '助手Agent普通回答',
+        scope: 'chat',
+        resourceId: params.chatId,
+      },
+    },
+  );
+  return parseAssistantVisionReply(raw, params.userMessage, promptImageState.projectedImageAttachments);
 }
 
 function createAssistantMediaAttachments(patchSet: AssistantAgentPatchSet, timestamp: number): MessageAttachment[] {
@@ -247,6 +328,8 @@ function createAssistantMediaAttachments(patchSet: AssistantAgentPatchSet, times
     imageSize: task.imageSize,
     targetArtifactId: task.targetArtifactId,
     targetImageIds: task.targetImageIds,
+    referenceImageIds: task.referenceImageIds,
+    styleImageIds: task.styleImageIds,
     referenceImages: task.referenceImages,
     createdAt: timestamp + index,
     updatedAt: timestamp + index,
@@ -366,7 +449,7 @@ async function persistAssistantArtifactsFromReply(params: {
       searchQuery: query,
       signal: params.signal,
     });
-    const content = answer.trim() || '搜索已完成，但没有生成有效回答。';
+    const content = answer.content.trim() || '搜索已完成，但没有生成有效回答。';
     const assistantMessage = await persistAssistantFinalMessage({
       chat: params.chat,
       chatId: params.chatId,
@@ -379,11 +462,17 @@ async function persistAssistantArtifactsFromReply(params: {
       lastMessageAt: assistantMessage.timestamp,
       latestMessage: assistantMessage,
     });
+    await persistUserImageSemanticSummary({
+      userMessage: params.userMessage,
+      imageSummaries: answer.imageSummaries,
+      upsertMessage: params.upsertMessage,
+    });
     return { message: assistantMessage, patchesCommitted: 0 };
   }
-  if (plan.intent === 'chat' && (plan.assistantMessage?.trim() || localFiles.length)) {
-    const content = localFiles.length
-      ? (await generateAssistantLocalFileAnswer({
+  const latestUserHasImages = hasReadyImageAttachments(params.userMessage);
+  if (plan.intent === 'chat' && (plan.assistantMessage?.trim() || localFiles.length || latestUserHasImages)) {
+    const answer = localFiles.length
+      ? await generateAssistantLocalFileAnswer({
         api: params.api,
         inputCapabilities: params.inputCapabilities,
         chatId: params.chatId,
@@ -391,8 +480,18 @@ async function persistAssistantArtifactsFromReply(params: {
         messages: params.messages,
         localFiles,
         signal: params.signal,
-      })).trim() || (plan.assistantMessage || '').trim()
-      : (plan.assistantMessage || '').trim();
+      })
+      : latestUserHasImages
+        ? await generateAssistantGeneralAnswer({
+          api: params.api,
+          inputCapabilities: params.inputCapabilities,
+          chatId: params.chatId,
+          userMessage: params.userMessage,
+          messages: params.messages,
+          signal: params.signal,
+        })
+        : { content: (plan.assistantMessage || '').trim(), imageSummaries: [] };
+    const content = answer.content.trim() || (plan.assistantMessage || '').trim();
     const assistantMessage = await persistAssistantFinalMessage({
       chat: params.chat,
       chatId: params.chatId,
@@ -404,6 +503,11 @@ async function persistAssistantArtifactsFromReply(params: {
     await params.updateChat(params.chatId, {
       lastMessageAt: assistantMessage.timestamp,
       latestMessage: assistantMessage,
+    });
+    await persistUserImageSemanticSummary({
+      userMessage: params.userMessage,
+      imageSummaries: answer.imageSummaries,
+      upsertMessage: params.upsertMessage,
     });
     return { message: assistantMessage, patchesCommitted: 0 };
   }
@@ -646,7 +750,7 @@ function toAssistantPromptMessages(messages: Message[], inputCapabilities?: AIMo
     .map((message) => {
       const imageText = buildAssistantImageAttachmentText(message);
       const content = [message.content, imageText].filter(Boolean).join('\n');
-      const attachments = latestUserImageMessage?.id === message.id
+      const attachments = inputCapabilities && latestUserImageMessage?.id === message.id
         ? buildAssistantProjectedImageAttachments(message, inputCapabilities)
         : undefined;
       return {
@@ -696,6 +800,44 @@ function hasReadyImageAttachments(message: Message | null | undefined) {
     && attachment.status === 'ready'
     && Boolean(attachment.url)
   )));
+}
+
+async function persistUserImageSemanticSummary(params: {
+  userMessage: Message;
+  imageSummaries: AssistantVisionReply['imageSummaries'];
+  upsertMessage: (message: Message) => void;
+}) {
+  const summaries = new Map(params.imageSummaries.map((item) => [item.attachmentId, item.summary]));
+  if (!summaries.size) return;
+  const attachments = params.userMessage.metadata?.attachments || [];
+  let changed = false;
+  const nextAttachments = attachments.map((attachment) => {
+    if (attachment.kind !== 'image' || attachment.status !== 'ready' || !attachment.url) return attachment;
+    const summary = summaries.get(attachment.id);
+    if (!summary) return attachment;
+    if (attachment.semanticSummary === summary) return attachment;
+    changed = true;
+    return {
+      ...attachment,
+      semanticSummary: summary,
+      updatedAt: Date.now(),
+    };
+  });
+  if (!changed) return;
+  const metadata: MessageMetadata = {
+    ...(params.userMessage.metadata || {}),
+    attachments: nextAttachments,
+  };
+  const nextMessage = {
+    ...params.userMessage,
+    metadata,
+  };
+  params.upsertMessage(nextMessage);
+  await persistLocalFirstMessage({
+    message: nextMessage,
+    existingLocalMessage: params.userMessage,
+    upsertMessage: params.upsertMessage,
+  });
 }
 
 function getTitleSource(chat: GroupChat) {
@@ -917,6 +1059,7 @@ export async function runAssistantChatReplyFlow(params: {
   let streamingMessage = { ...placeholder, isStreaming: true };
   params.upsertMessage(streamingMessage);
   const promptImageState = getAssistantPromptImageState(params.currentMessages, inputCapabilities);
+  const shouldStreamVisibleReply = !promptImageState.projectedImageAttachments;
   const generated = await generateResponse(
     resolvedApi,
     [
@@ -924,11 +1067,13 @@ export async function runAssistantChatReplyFlow(params: {
       buildAssistantImageInputPromptBlock(promptImageState),
     ].filter(Boolean).join('\n\n'),
     promptImageState.messages,
-    (content) => {
-      ensureAssistantReplyStillCurrent(params);
-      streamingMessage = { ...streamingMessage, content, isStreaming: true };
-      params.upsertMessage(streamingMessage);
-    },
+    shouldStreamVisibleReply
+      ? (content) => {
+        ensureAssistantReplyStillCurrent(params);
+        streamingMessage = { ...streamingMessage, content, isStreaming: true };
+        params.upsertMessage(streamingMessage);
+      }
+      : undefined,
     {
       responseFormat: 'text',
       signal: params.signal,
@@ -941,7 +1086,12 @@ export async function runAssistantChatReplyFlow(params: {
     },
   );
   ensureAssistantReplyStillCurrent(params);
-  const content = generated.trim();
+  const visionReply = parseAssistantVisionReply(
+    generated,
+    latestUserMessage(params.currentMessages) || params.currentMessages.at(-1) || streamingMessage,
+    promptImageState.projectedImageAttachments,
+  );
+  const content = visionReply.content.trim();
   if (!content) throw new Error('助手没有生成有效内容');
   const persisted = await persistLocalFirstMessage({
     message: {
@@ -955,6 +1105,11 @@ export async function runAssistantChatReplyFlow(params: {
   await params.updateChat(params.chatId, {
     lastMessageAt: persisted.timestamp,
     latestMessage: persisted,
+  });
+  await persistUserImageSemanticSummary({
+    userMessage: latestUserMessage(params.currentMessages) || params.currentMessages.at(-1) || streamingMessage,
+    imageSummaries: visionReply.imageSummaries,
+    upsertMessage: params.upsertMessage,
   });
   void maybeGenerateAssistantChatTitle({
     api: resolvedApi,

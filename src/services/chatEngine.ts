@@ -2296,6 +2296,8 @@ function buildMessageMetadata(params: {
       aspectRatio: decision.image.aspectRatio,
       imageSize: decision.image.imageSize,
       targetImageIds: decision.image.targetImageIds?.filter(Boolean),
+      referenceImageIds: decision.image.referenceImageIds?.filter(Boolean),
+      styleImageIds: decision.image.styleImageIds?.filter(Boolean),
       referenceCharacterIds: decision.image.referenceCharacterIds?.filter(Boolean),
       referenceImages: referenceImages.length ? referenceImages : undefined,
       createdAt: now,
