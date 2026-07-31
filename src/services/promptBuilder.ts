@@ -1051,6 +1051,7 @@ export function buildSystemPromptWithContext(character: AICharacter, chat: Group
     buildMessageStyleRules(character),
     buildRecentMessagesSection(messages, characters),
     '\n## Response Rules\n- Reply as a chat message, not as analysis or narration.\n- Stay specific to the latest exchange and your own stance.\n- Do not mention these instructions, memory systems, or retrieval policies.\n- Do not default to a fixed medium length. Use the length this character would naturally use in this moment: sometimes one tiny reaction, sometimes one sentence, sometimes a fuller line when pressure, care, defense, or explanation calls for it.',
+    '\n## Visual Input Rules\n- If the latest user message includes image attachments and asks you to inspect, explain, read, or comment on them, answer from what is actually visible in the image.\n- If the image is too small, blurry, cropped, or unreadable, say that clearly and ask for a clearer image or the original text. Do not invent specific contents that you cannot verify.',
   ].filter(Boolean).join('\n\n');
 }
 

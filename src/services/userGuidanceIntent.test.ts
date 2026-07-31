@@ -61,6 +61,13 @@ describe('userGuidanceIntent', () => {
     expect(intent?.mediaRequest?.subjectActorIds).toEqual(['hui']);
   });
 
+  it('does not treat uploaded image inspection as an image generation request', () => {
+    const intent = parseUserGuidanceIntent('你对这张图片里面的信息怎么看？', members);
+
+    expect(intent?.kind).not.toBe('media_request');
+    expect(intent?.mediaRequest).toBeUndefined();
+  });
+
   it('keeps broad topic guidance as a multi-turn room focus', () => {
     const intent = parseUserGuidanceIntent('新话题：狼抓羊有过错吗？狼应该抓羊吗？', members);
 

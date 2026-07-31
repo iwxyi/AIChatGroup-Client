@@ -97,7 +97,15 @@ function findMentionedActors(text: string, characters: AICharacter[]) {
 }
 
 function isImageRequest(text: string) {
-  return /(图片|照片|相片|图像|配图|发图|晒图|发张|发个图|画个|画张|画一张|拍个|拍张|证件照|自拍|截图|海报|插画|头像|表情包)/i.test(text);
+  const imageNoun = /(图片|照片|相片|图像|配图|图|证件照|自拍|海报|插画|头像|表情包)/i;
+  if (!imageNoun.test(text)) return false;
+  const asksToInspectExistingImage = /(怎么看|咋看|什么看法|你觉得|你认为|解释|分析|识别|读取|提取|总结|翻译|看清|看得清|里面|图里|图片里|截图里|照片里|这张|这幅|这图)/i.test(text);
+  const imageOutputAction = /(发|发送|发给|给我发|来张|来个|整张|整一张|晒|拍|生成|画|绘制|做|制作|设计|创建|出一张|出个|换成|改成|修图|P图|p图|扩图|重绘)/i;
+  const outputBeforeNoun = /(发|发送|发给|给我发|来|整|晒|拍|生成|画|绘制|做|制作|设计|创建|出|换成|改成|修图|P图|p图|扩图|重绘).{0,16}(图片|照片|相片|图像|配图|图|证件照|自拍|海报|插画|头像|表情包)/i.test(text);
+  const nounBeforeOutput = /(图片|照片|相片|图像|配图|图|证件照|自拍|海报|插画|头像|表情包).{0,16}(发|发送|生成|画|绘制|做|制作|设计|创建|换成|改成|修图|P图|p图|扩图|重绘)/i.test(text);
+  if (outputBeforeNoun || nounBeforeOutput) return true;
+  if (asksToInspectExistingImage) return false;
+  return imageOutputAction.test(text) && /(证件照|自拍|海报|插画|头像|表情包)/i.test(text);
 }
 
 function isDirectSpeakRequest(text: string) {
@@ -110,6 +118,13 @@ function hasHardConstraintText(text: string) {
 
 function needsShortTermTargetProtection(text: string) {
   return /(不是.{0,12}(让|叫|替)|别.{0,8}(抢|替|代)|不要.{0,8}(抢|替|代)|让.{0,12}(说完|讲完|先说)|想听.{0,16}(说|讲|回答|发言))/i.test(text);
+}
+
+function shouldProtectTargetForMultipleTurns(text: string) {
+  if (/(刚才|之前|前面).{0,12}想听.{0,12}(说|讲|回答|发言).{0,24}(不是|并非|没想|不想).{0,12}(让|叫|替|代)/i.test(text)) return false;
+  return needsShortTermTargetProtection(text)
+    || isNegatedSpeakerCorrection(text)
+    || /(不用|别|不要).{0,6}先.{0,8}(照顾|顾及|管|理会)/i.test(text);
 }
 
 function isNegatedSpeakerCorrection(text: string) {
@@ -220,7 +235,7 @@ export function parseUserGuidanceIntent(text: string, characters: AICharacter[])
   const mentionedActorIds = findMentionedActors(rawText, characters);
   const imageRequest = isImageRequest(rawText);
   const hasHardConstraints = hasHardConstraintText(rawText);
-  const minTargetTurns = needsShortTermTargetProtection(rawText) || isNegatedSpeakerCorrection(rawText) ? 2 : undefined;
+  const minTargetTurns = shouldProtectTargetForMultipleTurns(rawText) ? 2 : undefined;
   const hardConstraintActorIds = hasHardConstraints ? mentionedActorIds : [];
   const collectiveActorIds = !imageRequest && isCollectiveActorRequest(rawText) ? allActorIds(characters) : [];
   const actorIds = collectiveActorIds.length ? collectiveActorIds : resolveActionActors(rawText, characters, imageRequest);

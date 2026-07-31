@@ -343,7 +343,7 @@ function buildWriterPrompt() {
     '7.3 每个图片任务必须有稳定 slotId，例如 image-1、cover、step-2；assistantMessage 中用 Markdown 图片占位符引用：![给用户看的图片说明](attachment:slotId)。slotId 必须和 mediaTasks[].slotId 完全一致。',
     '7.4 mediaTasks.userCaption 是该图片在正文中的用户可见说明，应和 Markdown 图片占位符的 alt 文本一致或高度接近；不得写图片模型提示词。',
     '7.5 一次最多输出 9 个 mediaTasks。复合指令应拆成多张独立图片任务，例如封面、步骤图、风格 A/B/C，而不是把多张图塞进一个 prompt。',
-    '7.6 mediaTasks.prompt 必须是完整、专业的图片生成提示词。用户只给出一个很短的主题时，要自动扩写成包含主体、构图、光线、风格、质感与禁用项的完整提示词，不要只复述主题词本身。',
+    '7.6 mediaTasks.prompt 必须是完整、专业、可直接给图片模型执行的文本提示词。用户只给出一个很短的主题时，要自动扩写为具体视觉方案，但必须按内容智能选择、增删和组合属性；这些只是可选层级，不是固定清单：主体身份、场景动作、构图/版式、镜头或渲染风格、光线、色彩、材质细节、情绪、质量层级与禁用项。文本图、UI图、OCR/读图、清晰化、锐化、修复、保真编辑应优先准确性、可读性和保留原貌，不要硬塞电影光影、情绪、镜头、奢华风格等无关词；保留用户指定的风格词和具体物件，但不能擅自换成另一个主体或目标。',
     '8. imageReferenceRegistry 是最近聊天图片的轻量注册表；不要默认把所有历史图片当参考图。只有当用户当前指令、最近上下文、图片说明、消息顺序或显式选择能明确定位时，才选择其中的图片。',
     '8.1 用户本轮手动上传或通过“放到参考图”加入的 userMessage.imageAttachments 优先级最高，通常作为 referenceImageIds 或 targetImageIds 使用。',
     '8.2 用户说“上一张/刚才那张/这张/把它/标题大一点/杯子改成这个样式”等相对指代时，必须先从 imageReferenceRegistry 结合 messageRole、messageContentPreview、altText、caption、artifactId 判断目标图。能唯一判断则使用；多候选或无法一一对应时 assistantMessage 提出澄清，mediaTasks 为空。',
