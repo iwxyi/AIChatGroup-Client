@@ -1,4 +1,4 @@
-import { lazy, Suspense, useMemo, useEffect, useState } from 'react';
+import { lazy, Suspense, useMemo, useEffect, useRef, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, LinearProgress, ThemeProvider, CssBaseline, Typography, useMediaQuery } from '@mui/material';
 import { createAppTheme } from './theme';
@@ -10,7 +10,7 @@ import AdminPermissionGate from './components/admin/AdminPermissionGate';
 import { useAdminAuthStore } from './stores/useAdminAuthStore';
 import { ADMIN_DASHBOARD_PERMISSIONS, ADMIN_PERMISSION_CODES } from './constants/adminPermissions';
 import { ADMIN_LOGIN_EVENT } from './services/adminApi';
-import { api } from './services/api';
+import { api, type SystemAnnouncementItem } from './services/api';
 import { AUTH_SESSION_EXPIRED_EVENT, type AuthSessionExpiredDetail } from './services/authSession';
 import { APP_DESCRIPTION, APP_TITLE } from './constants/brand';
 import { buildSettingsPath } from './routes/settingsRoute';
@@ -20,6 +20,13 @@ import { hasGuestImportData, importGuestDataToCurrentAccount, readGuestImportSna
 import { isCloudSyncEnabled } from './services/cloudSyncPreference';
 import { useChatStore } from './stores/useChatStore';
 import { useCharacterStore } from './stores/useCharacterStore';
+import {
+  formatInAppNotificationWindow,
+  readSeenInAppNotificationIds,
+  useInAppNotificationStore,
+  writeSeenInAppNotificationIds,
+} from './services/inAppNotifications';
+import { AppUsageSessionClient, currentUsagePath } from './services/appUsageSession';
 import './i18n';
 
 const routePreloaders = [
@@ -181,18 +188,6 @@ function CharacterMasterDetailRouteElement({ detail, fallback = 'detail' }: { de
   );
 }
 
-function RequireAuth({ children }: { children: React.ReactNode }) {
-  const isLoggedIn = useAuthStore((s) => s.isLoggedIn);
-  const authMode = useAuthStore((s) => s.authMode);
-  const location = useLocation();
-
-  if (!isLoggedIn && authMode !== 'local') {
-    return <Navigate to="/login" state={{ from: location }} replace />;
-  }
-
-  return <>{children}</>;
-}
-
 function RequireAdminAuth() {
   const isLoggedIn = useAdminAuthStore((s) => s.isLoggedIn);
   const isLoading = useAdminAuthStore((s) => s.isLoading);
@@ -209,24 +204,17 @@ function RequireAdminAuth() {
 function AdminAuthRedirectHandler() {
   const logout = useAdminAuthStore((s) => s.logout);
   const navigate = useNavigate();
-  const [redirect, setRedirect] = useState<string | null>(null);
 
   useEffect(() => {
     const handler = (event: Event) => {
       const from = (event as CustomEvent<{ from?: string }>).detail?.from || `${window.location.pathname}${window.location.search}${window.location.hash}`;
       if (!from.startsWith('/admin')) return;
       logout();
-      setRedirect(from);
+      navigate('/admin/login', { replace: true, state: { from: { pathname: from } } });
     };
     window.addEventListener(ADMIN_LOGIN_EVENT, handler);
     return () => window.removeEventListener(ADMIN_LOGIN_EVENT, handler);
-  }, [logout]);
-
-  useEffect(() => {
-    if (!redirect) return;
-    navigate('/admin/login', { replace: true, state: { from: { pathname: redirect } } });
-    setRedirect(null);
-  }, [navigate, redirect]);
+  }, [logout, navigate]);
 
   return null;
 }
@@ -419,6 +407,126 @@ function SiteConfigBootstrap({ onThemeColor }: { onThemeColor: (value: string | 
   return null;
 }
 
+function InAppNotificationBootstrap() {
+  const authUserId = useAuthStore((state) => state.user?.id || '');
+  const setNotificationItems = useInAppNotificationStore((state) => state.setItems);
+  const [popupNotification, setPopupNotification] = useState<SystemAnnouncementItem | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    let inFlight = false;
+    let lastLoadedAt = 0;
+    const loadNotifications = (force = false) => {
+      if (document.visibilityState === 'hidden' && !force) return;
+      const now = Date.now();
+      if (!force && (inFlight || now - lastLoadedAt < 30_000)) return;
+      inFlight = true;
+      lastLoadedAt = now;
+      api.getSystemAnnouncements()
+        .then((result) => {
+          if (cancelled) return;
+          const activeItems = (result.items || []).filter((item) => item.pinnedEnabled || item.popupEnabled);
+          setNotificationItems(activeItems);
+          const seenIds = readSeenInAppNotificationIds();
+          const nextPopup = activeItems.find((item) => item.popupEnabled && !seenIds.has(item.id));
+          if (nextPopup) {
+            seenIds.add(nextPopup.id);
+            writeSeenInAppNotificationIds(seenIds);
+            setPopupNotification(nextPopup);
+          }
+        })
+        .catch((error) => {
+          console.warn('[notifications] failed to load in-app messages', error);
+          if (!cancelled) setNotificationItems([]);
+        })
+        .finally(() => {
+          inFlight = false;
+        });
+    };
+    loadNotifications(true);
+    const timer = window.setInterval(() => loadNotifications(), 5 * 60_000);
+    const handleFocus = () => loadNotifications();
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') loadNotifications();
+    };
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [authUserId, setNotificationItems]);
+
+  return (
+    <Dialog open={Boolean(popupNotification)} onClose={() => setPopupNotification(null)} maxWidth="sm" fullWidth>
+      <DialogTitle>{popupNotification?.title || '站内信'}</DialogTitle>
+      <DialogContent>
+        {popupNotification ? (
+          <Box sx={{ display: 'grid', gap: 1, pt: 0.5 }}>
+            <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', lineHeight: 1.7, overflowWrap: 'anywhere' }}>
+              {popupNotification.body}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              生效时间：{formatInAppNotificationWindow(popupNotification)}
+            </Typography>
+          </Box>
+        ) : null}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={() => setPopupNotification(null)}>知道了</Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+function AppUsageSessionBootstrap() {
+  const location = useLocation();
+  const authUserId = useAuthStore((state) => state.user?.id || '');
+  const isAdminRoute = location.pathname.startsWith('/admin');
+  const clientRef = useRef<AppUsageSessionClient | null>(null);
+
+  useEffect(() => {
+    if (isAdminRoute) return undefined;
+    const client = new AppUsageSessionClient();
+    clientRef.current = client;
+    void client.start().catch((error) => {
+      console.warn('[usage] failed to start app usage session', error);
+    });
+
+    const heartbeat = () => {
+      void client.heartbeat().catch(() => undefined);
+    };
+    const end = () => {
+      client.end();
+    };
+    const handleVisibilityChange = () => {
+      heartbeat();
+    };
+
+    window.addEventListener('focus', heartbeat);
+    window.addEventListener('pagehide', end);
+    window.addEventListener('beforeunload', end);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.removeEventListener('focus', heartbeat);
+      window.removeEventListener('pagehide', end);
+      window.removeEventListener('beforeunload', end);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      client.end();
+      if (clientRef.current === client) clientRef.current = null;
+    };
+  }, [authUserId, isAdminRoute]);
+
+  useEffect(() => {
+    if (isAdminRoute) return;
+    void clientRef.current?.heartbeat(currentUsagePath());
+  }, [isAdminRoute, location.hash, location.pathname, location.search]);
+
+  return null;
+}
+
 function RoutedApp() {
   return (
     <Routes>
@@ -520,6 +628,8 @@ export default function App() {
           <AdminAuthRedirectHandler />
           <AdminAuthBootstrap />
           <GuestImportPrompt />
+          <InAppNotificationBootstrap />
+          <AppUsageSessionBootstrap />
           <DataLoader>
             <RoutedApp />
           </DataLoader>

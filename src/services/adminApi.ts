@@ -42,6 +42,50 @@ export type AdminManagedUser = AdminUser & {
   roles?: AdminRole[];
 };
 
+export type AdminSystemAnnouncement = {
+  id: string;
+  title: string;
+  body: string;
+  severity: 'info' | 'warning' | 'error' | 'success' | string;
+  status: 'draft' | 'active' | 'archived' | string;
+  audienceType: 'all' | 'users' | string;
+  audienceUserIds: string[];
+  audienceInactiveMonths: number | null;
+  startsAt: number | null;
+  endsAt: number | null;
+  pinnedEnabled: boolean;
+  popupEnabled: boolean;
+  sortOrder: number;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type AdminSystemAnnouncementPayload = {
+  title: string;
+  body: string;
+  severity: string;
+  status: string;
+  audienceType: string;
+  audienceUserIds: string[];
+  audienceInactiveMonths: number | null;
+  startsAt: number | null;
+  endsAt: number | null;
+  pinnedEnabled: boolean;
+  popupEnabled: boolean;
+  sortOrder: number;
+};
+
+export type AdminNotificationJobPayload = {
+  channel: 'email' | 'sms';
+  recipient: string;
+  userId?: string | null;
+  scheduledAt?: number | null;
+  subject?: string;
+  body?: string;
+  code?: string;
+  purpose?: string;
+};
+
 class AdminApiClient {
   getToken() {
     return localStorage.getItem(ADMIN_TOKEN_KEY);
@@ -458,6 +502,26 @@ class AdminApiClient {
 
   getNotificationTemplates() {
     return this.request<{ items: Array<Record<string, unknown>> }>('GET', '/notifications/templates');
+  }
+
+  getSystemAnnouncements() {
+    return this.request<{ items: AdminSystemAnnouncement[] }>('GET', '/notifications/announcements');
+  }
+
+  createSystemAnnouncement(payload: AdminSystemAnnouncementPayload) {
+    return this.request<{ item: AdminSystemAnnouncement }>('POST', '/notifications/announcements', payload);
+  }
+
+  updateSystemAnnouncement(announcementId: string, payload: AdminSystemAnnouncementPayload) {
+    return this.request<{ item: AdminSystemAnnouncement }>('PUT', `/notifications/announcements/${encodeURIComponent(announcementId)}`, payload);
+  }
+
+  deleteSystemAnnouncement(announcementId: string) {
+    return this.request<{ ok: boolean }>('DELETE', `/notifications/announcements/${encodeURIComponent(announcementId)}`);
+  }
+
+  createNotificationJob(payload: AdminNotificationJobPayload) {
+    return this.request<{ item: Record<string, unknown> }>('POST', '/notifications/jobs', payload);
   }
 
   getNotificationJobs(params?: { status?: string; channel?: string }) {

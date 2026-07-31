@@ -926,6 +926,9 @@ function normalizeStoredGuidance(message: Message): UserGuidanceIntent | null {
     rawText: stored.rawText,
     actorIds: stored.actorIds || [],
     mentionedActorIds: stored.mentionedActorIds || [],
+    hardConstraintActorIds: stored.hardConstraintActorIds || [],
+    suppressedActorIds: stored.suppressedActorIds || [],
+    hasHardConstraints: stored.hasHardConstraints,
     mediaRequest: stored.mediaRequest?.kind === 'image' ? {
       kind: 'image',
       subjectActorIds: stored.mediaRequest.subjectActorIds || [],
@@ -936,6 +939,7 @@ function normalizeStoredGuidance(message: Message): UserGuidanceIntent | null {
     beatType: stored.beatType as UserGuidanceIntent['beatType'] || 'invite',
     pressure: stored.pressure || 0,
     maxTurns: stored.maxTurns || 1,
+    minTargetTurns: stored.minTargetTurns,
     reason: stored.reason || '用户明确引导当前互动。',
   };
 }
@@ -965,6 +969,9 @@ function resolveHumanGuidanceTarget(messages: Message[], characters: Map<string,
   if (!guidance) return undefined;
   const target = pickGuidanceTarget(guidance, speaker, characters);
   if (target) return { target, reason: describeGuidanceMemoryTarget(guidance) };
+  if (guidance.suppressedActorIds?.length || guidance.actorIds.includes(speaker.id)) {
+    return { target: undefined, reason: '人工点名没有可召回对象，禁止回退到旧发言者' };
+  }
   return undefined;
 }
 

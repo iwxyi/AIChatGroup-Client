@@ -15,6 +15,7 @@ export type ProjectedChatMessage = {
 export interface ConversationProjectionOptions {
   currentSpeakerId?: string;
   chatType?: GroupChat['type'];
+  imageAttachmentMode?: 'none' | 'latest-user' | 'all';
 }
 
 export interface ConversationProjectionInput {
@@ -50,8 +51,19 @@ function buildTranscriptHeader(message: Message, characters: Map<string, AIChara
   return getTranscriptSpeakerName(message, characters);
 }
 
+function buildImageAttachmentText(message: Message) {
+  const attachments = (message.metadata?.attachments || [])
+    .filter((attachment) => attachment.kind === 'image' && attachment.status !== 'deleted' && attachment.status !== 'failed');
+  if (!attachments.length) return '';
+  const labels = attachments
+    .slice(0, 4)
+    .map((attachment, index) => attachment.caption || attachment.altText || `图片 ${index + 1}`);
+  const suffix = attachments.length > labels.length ? ` 等 ${attachments.length} 张图片` : '';
+  return `[图片附件：${labels.join('、')}${suffix}]`;
+}
+
 function buildTranscriptLine(message: Message, characters: Map<string, AICharacter>, currentSpeakerId?: string) {
-  return `${buildTranscriptHeader(message, characters, currentSpeakerId)}: ${compactTranscriptContent(message.content)}`;
+  return `${buildTranscriptHeader(message, characters, currentSpeakerId)}: ${[compactTranscriptContent(message.content), buildImageAttachmentText(message)].filter(Boolean).join('\n')}`;
 }
 
 function buildTranscriptInstruction(chatType: GroupChat['type']) {
@@ -61,18 +73,6 @@ function buildTranscriptInstruction(chatType: GroupChat['type']) {
     'The complete recent transcript is provided separately as chat messages and is not repeated here.',
     semantics.transcriptInstruction,
   ].join('\n');
-}
-
-function buildUserContextPrompt(transcript: string, chatType: GroupChat['type'] = 'group') {
-  return `${buildTranscriptInstruction(chatType)}\n${transcript}`;
-}
-
-function buildTranscriptContext(messages: Message[], characters: Map<string, AICharacter>, currentSpeakerId?: string) {
-  return messages.map((message) => buildTranscriptLine(message, characters, currentSpeakerId)).join('\n');
-}
-
-function buildCurrentSpeakerHistory(messages: Message[]) {
-  return messages.map((message) => compactTranscriptContent(message.content)).join('\n');
 }
 
 function buildAssistantHistoryPrompt(history: string) {
@@ -93,6 +93,18 @@ function buildProjectedImageAttachments(message: Message) {
   return attachments.length ? attachments : undefined;
 }
 
+function shouldProjectImageAttachments(message: Message, visible: Message[], mode: ConversationProjectionOptions['imageAttachmentMode']) {
+  if (mode === 'all') return true;
+  if (mode !== 'latest-user') return false;
+  const latestUserImageMessage = [...visible]
+    .reverse()
+    .find((item) => (
+      (item.type === 'user' || item.type === 'god')
+      && item.metadata?.attachments?.some((attachment) => attachment.kind === 'image' && attachment.url && attachment.status !== 'deleted' && attachment.status !== 'failed')
+    ));
+  return Boolean(latestUserImageMessage && latestUserImageMessage.id === message.id);
+}
+
 export function projectConversationForModel(input: ConversationProjectionInput): ProjectedChatMessage[] {
   const visible = input.messages
     .filter(isVisibleMessage)
@@ -108,7 +120,9 @@ export function projectConversationForModel(input: ConversationProjectionInput):
     });
   }
   for (const message of visible) {
-    const attachments = buildProjectedImageAttachments(message);
+    const attachments = shouldProjectImageAttachments(message, visible, options.imageAttachmentMode)
+      ? buildProjectedImageAttachments(message)
+      : undefined;
     if (message.type === 'ai' && currentSpeakerId && message.senderId === currentSpeakerId) {
       projected.push({
         role: 'assistant',

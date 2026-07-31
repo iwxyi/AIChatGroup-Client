@@ -40,12 +40,6 @@ function resolveDirectorBeatType(intent: unknown): DirectorBeatType {
   return 'invite';
 }
 
-function uniqueKnownActorIds(ids: unknown, characters: AICharacter[]) {
-  if (!Array.isArray(ids)) return [];
-  const knownIds = new Set(characters.map((character) => character.id));
-  return ids.filter((id, index, array): id is string => typeof id === 'string' && knownIds.has(id) && array.indexOf(id) === index);
-}
-
 function uniqueActorIds(ids: unknown) {
   if (!Array.isArray(ids)) return [];
   return ids.filter((id, index, array): id is string => typeof id === 'string' && id.trim().length > 0 && array.indexOf(id) === index);
@@ -55,8 +49,15 @@ function countAiResponsesAfter(messages: Message[], timestamp: number) {
   return messages.filter((message) => message.type === 'ai' && !message.isDeleted && message.timestamp > timestamp).length;
 }
 
-function getCompletedGuidanceActorIdsAfter(messages: Message[], timestamp: number, guidance: UserGuidanceIntent, characters: AICharacter[]) {
-  return collectGuidanceProgressAfterTimestamp(messages, timestamp, guidance, characters).completedActorIds;
+function getPendingTargetActorIdsAfter(messages: Message[], timestamp: number, guidance: UserGuidanceIntent, characters: AICharacter[]) {
+  const progress = collectGuidanceProgressAfterTimestamp(messages, timestamp, guidance, characters);
+  const minTargetTurns = Math.max(1, Math.round(guidance.minTargetTurns || 1));
+  if (minTargetTurns <= 1) {
+    return uniqueActorIds(guidance.actorIds.filter((actorId) => !progress.completedActorIds.has(actorId)));
+  }
+  return uniqueActorIds(guidance.actorIds.filter((actorId) => (
+    progress.matchedMessages.filter((message) => message.senderId === actorId).length < minTargetTurns
+  )));
 }
 
 function countConsumedGuidanceTurnsAfter(messages: Message[], timestamp: number, guidance: UserGuidanceIntent, characters: AICharacter[]) {
@@ -66,6 +67,7 @@ function countConsumedGuidanceTurnsAfter(messages: Message[], timestamp: number,
 function isExplicitPersistentGuidance(guidance: UserGuidanceIntent) {
   if (guidance.actorIds.length) return true;
   if (guidance.kind === 'media_request') return true;
+  if (guidance.hasHardConstraints) return true;
   return guidance.kind === 'direct_reply' && Boolean(guidance.focusText?.trim());
 }
 
@@ -94,11 +96,16 @@ export function resolveLatestActiveUserGuidance(characters: AICharacter[], messa
     if (now > message.timestamp + 10 * 60_000) return { intent: null, timestamp: message.timestamp };
 
     if (guidance.actorIds.length) {
-      const completedActorIds = getCompletedGuidanceActorIdsAfter(messages, message.timestamp, guidance, characters);
-      const pendingActorIds = uniqueActorIds(guidance.actorIds.filter((actorId) => !completedActorIds.has(actorId)));
+      const pendingActorIds = getPendingTargetActorIdsAfter(messages, message.timestamp, guidance, characters);
       if (pendingActorIds.length) {
         return {
           intent: guidanceIntentToDirectorIntent(guidance, pendingActorIds),
+          timestamp: message.timestamp,
+        };
+      }
+      if (guidance.suppressedActorIds?.length && countConsumedGuidanceTurnsAfter(messages, message.timestamp, guidance, characters) < guidance.maxTurns) {
+        return {
+          intent: guidanceIntentToDirectorIntent(guidance, []),
           timestamp: message.timestamp,
         };
       }
@@ -147,7 +154,7 @@ function getLatestDirectorInterventionIntent(chat: GroupChat, characters: AIChar
       || (parsedGuidance?.kind === 'media_request' && parsedGuidance.actorIds.length),
     );
     const pendingGuidanceActorIds = hasPersistentTargetedGuidance && guidance?.actorIds.length
-      ? guidance.actorIds.filter((actorId) => !getCompletedGuidanceActorIdsAfter(messages, event.createdAt, guidance, characters).has(actorId))
+      ? getPendingTargetActorIdsAfter(messages, event.createdAt, guidance, characters)
       : [];
     if (!hasPersistentTargetedGuidance && !isDirectorInterventionActive(event, messages, now)) continue;
     if (hasPersistentTargetedGuidance && !pendingGuidanceActorIds.length) continue;

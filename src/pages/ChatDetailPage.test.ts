@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Message } from '../types/message';
 import { useMessageStore } from '../stores/useMessageStore';
-import { buildStoryChoicePendingKey, buildStoryReaderTextInputCapabilities, buildVisibleStoryBranchOptions, findVisibleStoryChoiceSourceMessage, getStoryReaderComposerPlaceholder, getStoryTailStatus, isStoryChoicePending, resolveEffectiveStoryReaderAtTail, shouldAutoStartStoryRoom, shouldRegisterLiveNarrativeReveal, shouldRouteTextAsStoryCustomDirection } from './ChatDetailPage';
+import { buildStoryChoicePendingKey, buildStoryReaderTextInputCapabilities, buildVisibleStoryBranchOptions, findVisibleStoryChoiceSourceMessage, getStoryReaderComposerPlaceholder, getStoryTailStatus, isStoryChoicePending, resolveEffectiveStoryReaderAtTail, shouldAutoStartStoryRoom, shouldRegisterLiveNarrativeReveal, shouldRouteTextAsStoryCustomDirection } from './chatDetailStoryHelpers';
 
 function buildPauseResumeMessages() {
   return [] as string[];

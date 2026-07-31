@@ -91,4 +91,83 @@ describe('projectConversationForModel', () => {
     expect(projected[1]?.content).not.toContain('"role"');
     expect(projected[1]?.content).not.toContain('污染的下一条');
   });
+
+  it('keeps historical image attachments as text context only when attachments are not explicitly projected', () => {
+    const projected = projectConversationForModel({
+      messages: [
+        message({
+          id: 'img-1',
+          type: 'user',
+          senderId: 'user',
+          senderName: '我',
+          content: '这是一张参考图。',
+          metadata: {
+            attachments: [{
+              id: 'att-1',
+              kind: 'image',
+              status: 'ready',
+              altText: '旧参考图',
+              createdAt: 1,
+              updatedAt: 1,
+              url: 'data:image/png;base64,AAA',
+            }],
+          },
+        }),
+        message({ id: 'text-1', type: 'ai', senderId: 'char-a', senderName: '甲', content: '收到。', timestamp: 2 }),
+      ],
+      characters: new Map<string, AICharacter>(),
+      options: { currentSpeakerId: 'char-a', chatType: 'group', imageAttachmentMode: 'none' },
+    });
+
+    expect(projected[1]?.content).toContain('图片附件：旧参考图');
+    expect(projected[1]?.attachments).toBeUndefined();
+  });
+
+  it('projects only the latest user image attachments when latest-user mode is enabled', () => {
+    const projected = projectConversationForModel({
+      messages: [
+        message({
+          id: 'img-1',
+          type: 'user',
+          senderId: 'user',
+          senderName: '我',
+          content: '早先的图。',
+          metadata: {
+            attachments: [{
+              id: 'att-1',
+              kind: 'image',
+              status: 'ready',
+              altText: '旧图',
+              createdAt: 1,
+              updatedAt: 1,
+              url: 'data:image/png;base64,AAA',
+            }],
+          },
+        }),
+        message({
+          id: 'img-2',
+          type: 'user',
+          senderId: 'user',
+          senderName: '我',
+          content: '最新上传的图。',
+          metadata: {
+            attachments: [{
+              id: 'att-2',
+              kind: 'image',
+              status: 'ready',
+              altText: '新图',
+              createdAt: 2,
+              updatedAt: 2,
+              url: 'data:image/png;base64,BBB',
+            }],
+          },
+        }),
+      ],
+      characters: new Map<string, AICharacter>(),
+      options: { currentSpeakerId: 'char-a', chatType: 'group', imageAttachmentMode: 'latest-user' },
+    });
+
+    expect(projected[1]?.attachments).toBeUndefined();
+    expect(projected[2]?.attachments).toEqual([{ url: 'data:image/png;base64,BBB', mimeType: undefined }]);
+  });
 });

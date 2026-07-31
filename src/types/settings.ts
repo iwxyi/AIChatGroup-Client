@@ -921,8 +921,8 @@ export const DEFAULT_API_CONFIG: APIConfig = {
 
 export const DEFAULT_IMAGE_CAPABILITIES: AIModelImageCapabilities = {
   textToImage: true,
-  referenceImage: false,
-  multiReferenceImage: false,
+  referenceImage: true,
+  multiReferenceImage: true,
   seed: false,
   negativePrompt: false,
 };

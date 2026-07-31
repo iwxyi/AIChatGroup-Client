@@ -169,6 +169,27 @@ describe('scheduler speaker scoring', () => {
     expect(b?.scoreBreakdown?.addressed).toBeGreaterThan(0);
   });
 
+  it('drops low-pressure stay-silent candidates when another actor has a live cue', () => {
+    const addressedMessage = buildMessage({ senderId: 'a', senderName: '甲', content: '乙，你来定。' }) as Message & {
+      addressedTargetIds: string[];
+      primaryAddressedTargetId: string;
+    };
+    addressedMessage.addressedTargetIds = ['b'];
+    addressedMessage.primaryAddressedTargetId = 'b';
+
+    const candidates = calculateWeights(
+      [buildCharacter('b', '乙'), buildCharacter('c', '丙')],
+      [addressedMessage],
+      {},
+      1,
+      0,
+      null,
+      { ...buildChat(), memberIds: ['b', 'c'] },
+    );
+
+    expect(candidates.map((candidate) => candidate.characterId)).toEqual(['b']);
+  });
+
   it('excludes muted members from speaker candidates when mute governance is enabled', () => {
     const candidates = calculateWeights(
       [buildCharacter('a', '甲'), buildCharacter('b', '乙')],
@@ -388,6 +409,128 @@ describe('scheduler speaker scoring', () => {
       intent,
     );
     expect(candidates.map((candidate) => candidate.characterId)).toEqual(['b']);
+  });
+
+  it('keeps named hard constraints active without forcing the constrained actor to monopolize speech', () => {
+    const intent: DirectorIntent = {
+      source: 'user_message',
+      beatType: 'invite',
+      targetActorIds: [],
+      pressure: 0.84,
+      reason: '用户提到角色并给出了需要持续遵守的群聊约束。',
+      userGuidance: {
+        kind: 'topic_shift',
+        rawText: '小唐预算不超过80，别忽略她',
+        actorIds: [],
+        mentionedActorIds: ['tang'],
+        hardConstraintActorIds: ['tang'],
+        hasHardConstraints: true,
+        focusText: '小唐预算不超过80，别忽略她',
+        beatType: 'invite',
+        pressure: 0.84,
+        maxTurns: 5,
+        reason: '用户提到角色并给出了需要持续遵守的群聊约束。',
+      },
+    };
+    const now = Date.now();
+    const candidates = calculateWeights(
+      [buildCharacter('tang', '小唐'), buildCharacter('a', '安安'), buildCharacter('b', '周策')],
+      [
+        buildMessage({ senderId: 'a', senderName: '安安', content: '我倾向近一点。', timestamp: now - 10_000 }),
+        buildMessage({ senderId: 'b', senderName: '周策', content: '预算先放一放。', timestamp: now }),
+      ],
+      { tang: now },
+      1,
+      60_000,
+      null,
+      { ...buildChat(), memberIds: ['tang', 'a', 'b'] },
+      intent,
+    );
+
+    expect(candidates.map((candidate) => candidate.characterId)).toEqual(['a']);
+  });
+
+  it('suppresses a criticized hijacking actor during a corrective guidance window', () => {
+    const intent: DirectorIntent = {
+      source: 'user_message',
+      beatType: 'answer',
+      targetActorIds: [],
+      pressure: 0.92,
+      reason: '用户点名角色回应。',
+      userGuidance: {
+        kind: 'direct_reply',
+        rawText: '我刚才是想听安安说，不是让周策替她做决定。',
+        actorIds: ['anan'],
+        mentionedActorIds: ['anan', 'zhou'],
+        suppressedActorIds: ['zhou'],
+        focusText: '我刚才是想听安安说，不是让周策替她做决定。',
+        beatType: 'answer',
+        pressure: 0.92,
+        maxTurns: 5,
+        reason: '用户点名角色回应。',
+      },
+    };
+    const candidates = calculateWeights(
+      [buildCharacter('anan', '安安'), buildCharacter('zhou', '周策'), buildCharacter('mei', '梅青')],
+      [
+        buildMessage({ senderId: 'anan', senderName: '安安', content: '我已经把访谈结论说清楚了。', timestamp: 10 }),
+        buildMessage({ senderId: 'mei', senderName: '梅青', content: '那接下来别急着让周策重新包装。', timestamp: 20 }),
+      ],
+      {},
+      1,
+      0,
+      null,
+      { ...buildChat(), memberIds: ['anan', 'zhou', 'mei'] },
+      intent,
+    );
+
+    expect(candidates.map((candidate) => candidate.characterId)).not.toContain('zhou');
+    expect(candidates.length).toBeGreaterThan(0);
+  });
+
+  it('keeps suppression-only guidance from protecting the last speaker into repetition', () => {
+    const intent: DirectorIntent = {
+      source: 'user_message',
+      beatType: 'answer',
+      targetActorIds: [],
+      pressure: 0.92,
+      reason: '用户点名角色回应。',
+      userGuidance: {
+        kind: 'direct_reply',
+        rawText: '我刚才是想听安安说，不是让周策替她做决定。',
+        actorIds: ['anan'],
+        mentionedActorIds: ['anan', 'zhou'],
+        suppressedActorIds: ['zhou'],
+        focusText: '我刚才是想听安安说，不是让周策替她做决定。',
+        beatType: 'answer',
+        pressure: 0.92,
+        maxTurns: 5,
+        reason: '用户点名角色回应。',
+      },
+    };
+    const now = Date.now();
+    const candidates = calculateWeights(
+      [
+        buildCharacter('anan', '安安', { behavior: { proactivity: 18, aggressiveness: 4, humorIntensity: 8, empathyLevel: 78, summarizing: 20, offTopic: 6 } }),
+        buildCharacter('zhou', '周策', { behavior: { proactivity: 86, aggressiveness: 48, humorIntensity: 20, empathyLevel: 26, summarizing: 60, offTopic: 10 } }),
+        buildCharacter('mei', '梅青', { behavior: { proactivity: 54, aggressiveness: 12, humorIntensity: 26, empathyLevel: 72, summarizing: 44, offTopic: 10 } }),
+      ],
+      [
+        buildMessage({ senderId: 'mei', senderName: '梅青', content: '周策，可以先让安安把访谈原话说完。', timestamp: now - 40_000 }),
+        buildMessage({ senderId: 'anan', senderName: '安安', content: '入口和客服是两个主要问题。', timestamp: now - 20_000 }),
+        buildMessage({ senderId: 'anan', senderName: '安安', content: '我会把这些整理成时间表。', timestamp: now }),
+      ],
+      {},
+      1,
+      0,
+      null,
+      { ...buildChat(), memberIds: ['anan', 'zhou', 'mei'] },
+      intent,
+    );
+
+    expect(candidates.map((candidate) => candidate.characterId)).not.toContain('anan');
+    expect(candidates.map((candidate) => candidate.characterId)).not.toContain('zhou');
+    expect(candidates.map((candidate) => candidate.characterId)).toEqual(['mei']);
   });
 
   it('removes the previous AI speaker from normal rotation when another member can speak', () => {

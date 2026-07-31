@@ -15,11 +15,15 @@ export interface UserGuidanceIntent {
   rawText: string;
   actorIds: string[];
   mentionedActorIds: string[];
+  hardConstraintActorIds?: string[];
+  suppressedActorIds?: string[];
+  hasHardConstraints?: boolean;
   mediaRequest?: UserGuidanceMediaRequest;
   focusText: string;
   beatType: DirectorBeatType;
   pressure: number;
   maxTurns: number;
+  minTargetTurns?: number;
   reason: string;
 }
 
@@ -97,7 +101,19 @@ function isImageRequest(text: string) {
 }
 
 function isDirectSpeakRequest(text: string) {
-  return /(说说|说一下|讲讲|回答|回应|回复|解释|评价|吐槽|问问|来一句|你来说|你来|发言|出题|写|分析|总结|展开)/i.test(text);
+  return /(说说|说一下|直接说|先说|说吧|说完|讲讲|回答|回应|回复|解释|评价|吐槽|问问|来一句|你来说|你来|发言|出题|写|分析|总结|展开|怎么看|咋看|什么看法|你觉得|你认为|想听.{0,16}(说|讲|回答|回复|发言|意见|看法)|轮到你)/i.test(text);
+}
+
+function hasHardConstraintText(text: string) {
+  return /(预算|不超过|不能超过|以内|别忽略|不要忽略|别漏|不要漏|不能|不许|必须|一定|优先|至少|最多|只能|不要|别|记得|限制|约束|底线|边界)/i.test(text);
+}
+
+function needsShortTermTargetProtection(text: string) {
+  return /(不是.{0,12}(让|叫|替)|别.{0,8}(抢|替|代)|不要.{0,8}(抢|替|代)|让.{0,12}(说完|讲完|先说)|想听.{0,16}(说|讲|回答|发言))/i.test(text);
+}
+
+function isNegatedSpeakerCorrection(text: string) {
+  return /(不是|并非|没想|不想).{0,12}(让|叫|替|代)/i.test(text);
 }
 
 function isCollectiveActorRequest(text: string) {
@@ -120,6 +136,8 @@ function firstMentionBeforeAction(text: string, mentioned: Array<{ character: AI
 function namesAfterDirectivePrefix(text: string, mentioned: Array<{ character: AICharacter; index: number }>) {
   const prefixMatch = /(让|请|叫|安排|指定|点名|让一下|麻烦|想让)/i.exec(text);
   if (!prefixMatch) return [];
+  const beforePrefix = text.slice(Math.max(0, prefixMatch.index - 4), prefixMatch.index);
+  if (/(不是|并非|别|不要|不用|不该|不能|不想|没想)$/.test(beforePrefix)) return [];
   const firstActionAfterPrefix = /(帮|替|给|发|画|拍|写|说|讲|回答|回应|回复|解释|评价|吐槽|问|出题|总结|分析|展开)/i.exec(text.slice(prefixMatch.index + prefixMatch[0].length));
   const actionIndex = firstActionAfterPrefix
     ? prefixMatch.index + prefixMatch[0].length + firstActionAfterPrefix.index
@@ -127,6 +145,19 @@ function namesAfterDirectivePrefix(text: string, mentioned: Array<{ character: A
   return mentioned
     .filter((item) => item.index > prefixMatch.index && item.index < actionIndex)
     .map((item) => item.character.id);
+}
+
+function namesAfterNegatedDirectivePrefix(text: string, mentioned: Array<{ character: AICharacter; index: number }>) {
+  const negatedDirectivePattern = /(不是|并非|别|不要|不用|不该|不能|不想|没想).{0,4}(让|请|叫|安排|指定|点名|想让|替|代|照顾|管|理会)/gi;
+  const ids: string[] = [];
+  for (const prefixMatch of text.matchAll(negatedDirectivePattern)) {
+    const start = prefixMatch.index ?? 0;
+    const end = Math.min(text.length, start + 36);
+    mentioned
+      .filter((item) => item.index >= start && item.index < end)
+      .forEach((item) => ids.push(item.character.id));
+  }
+  return unique(ids);
 }
 
 function startsWithMentionedActor(text: string, mentioned: Array<{ character: AICharacter; index: number }>) {
@@ -150,7 +181,7 @@ function resolveActionActors(text: string, characters: AICharacter[], imageReque
   const prefixActors = namesAfterDirectivePrefix(text, mentioned);
   if (prefixActors.length) return unique(prefixActors);
   const actorsBeforeAction = mentionedActorsBeforeFirstAction(text, mentioned);
-  if (actorsBeforeAction.length > 1 && (imageRequest || isDirectSpeakRequest(text))) return unique(actorsBeforeAction);
+  if (actorsBeforeAction.length && (imageRequest || isDirectSpeakRequest(text))) return unique(actorsBeforeAction);
   const leadingActors = startsWithMentionedActor(text, mentioned);
   if (leadingActors.length && (imageRequest || isDirectSpeakRequest(text))) return unique(leadingActors);
   const beforeActionActors = firstMentionBeforeAction(text, mentioned);
@@ -188,8 +219,13 @@ export function parseUserGuidanceIntent(text: string, characters: AICharacter[])
   if (!rawText) return null;
   const mentionedActorIds = findMentionedActors(rawText, characters);
   const imageRequest = isImageRequest(rawText);
+  const hasHardConstraints = hasHardConstraintText(rawText);
+  const minTargetTurns = needsShortTermTargetProtection(rawText) || isNegatedSpeakerCorrection(rawText) ? 2 : undefined;
+  const hardConstraintActorIds = hasHardConstraints ? mentionedActorIds : [];
   const collectiveActorIds = !imageRequest && isCollectiveActorRequest(rawText) ? allActorIds(characters) : [];
   const actorIds = collectiveActorIds.length ? collectiveActorIds : resolveActionActors(rawText, characters, imageRequest);
+  const suppressedActorIds = namesAfterNegatedDirectivePrefix(rawText, sortByNamePosition(rawText, characters))
+    .filter((id) => !actorIds.includes(id));
   const subjectActorIds = imageRequest ? unique(mentionedActorIds.filter((id) => !actorIds.includes(id))) : [];
   const directRequest = Boolean(actorIds.length) || isDirectSpeakRequest(rawText);
   if (!imageRequest && !directRequest && !mentionedActorIds.length) {
@@ -198,11 +234,15 @@ export function parseUserGuidanceIntent(text: string, characters: AICharacter[])
       rawText,
       actorIds: [],
       mentionedActorIds,
+      hardConstraintActorIds,
+      suppressedActorIds,
+      hasHardConstraints,
       focusText: rawText,
       beatType: rawText.length > 90 ? 'summarize' : 'invite',
-      pressure: rawText.length > 90 ? 0.66 : 0.58,
-      maxTurns: 3,
-      reason: '用户正在明确改变群聊焦点。',
+      pressure: hasHardConstraints ? 0.78 : rawText.length > 90 ? 0.66 : 0.58,
+      maxTurns: hasHardConstraints ? 5 : 3,
+      minTargetTurns,
+      reason: hasHardConstraints ? '用户给出了需要持续遵守的群聊约束。' : '用户正在明确改变群聊焦点。',
     };
   }
 
@@ -214,6 +254,9 @@ export function parseUserGuidanceIntent(text: string, characters: AICharacter[])
       rawText,
       actorIds,
       mentionedActorIds,
+      hardConstraintActorIds,
+      suppressedActorIds,
+      hasHardConstraints,
       mediaRequest: {
         kind: 'image',
         subjectActorIds,
@@ -224,6 +267,7 @@ export function parseUserGuidanceIntent(text: string, characters: AICharacter[])
       beatType: 'answer',
       pressure: actorIds.length ? 0.98 : 0.86,
       maxTurns: actorIds.length ? Math.max(1, actorIds.length) : 2,
+      minTargetTurns,
       reason: actorIds.length ? '用户指定角色发送或创作图片。' : '用户请求群聊产生图片内容。',
     };
   }
@@ -234,11 +278,21 @@ export function parseUserGuidanceIntent(text: string, characters: AICharacter[])
       rawText,
       actorIds,
       mentionedActorIds,
+      hardConstraintActorIds,
+      suppressedActorIds,
+      hasHardConstraints,
       focusText: rawText,
       beatType: actorIds.length ? 'answer' : 'invite',
-      pressure: collectiveActorIds.length ? 0.96 : actorIds.length ? 0.92 : 0.7,
-      maxTurns: actorIds.length ? Math.max(1, actorIds.length) : 3,
-      reason: collectiveActorIds.length ? '用户要求所有角色分别执行同一个任务。' : actorIds.length ? '用户点名角色回应。' : '用户提到角色并改变当前讨论焦点。',
+      pressure: collectiveActorIds.length ? 0.96 : actorIds.length ? 0.92 : hasHardConstraints ? 0.84 : 0.7,
+      maxTurns: actorIds.length ? Math.max(minTargetTurns || 1, actorIds.length, suppressedActorIds.length ? 5 : 1) : hasHardConstraints ? 5 : 3,
+      minTargetTurns,
+      reason: collectiveActorIds.length
+        ? '用户要求所有角色分别执行同一个任务。'
+        : actorIds.length
+          ? '用户点名角色回应。'
+          : hasHardConstraints
+            ? '用户提到角色并给出了需要持续遵守的群聊约束。'
+            : '用户提到角色并改变当前讨论焦点。',
     };
   }
 
@@ -248,6 +302,7 @@ export function parseUserGuidanceIntent(text: string, characters: AICharacter[])
 export function getGuidanceTargetActorIds(guidance: UserGuidanceIntent | null | undefined) {
   if (!guidance) return [];
   if (guidance.actorIds.length) return guidance.actorIds;
+  if (guidance.hasHardConstraints) return [];
   if (guidance.kind === 'media_request') return guidance.mentionedActorIds;
   return guidance.mentionedActorIds;
 }
@@ -265,7 +320,9 @@ export function getGuidanceMemoryTargetActorIds(
   if (!guidance) return [];
   const actorIds = knownUniqueIds(guidance.actorIds || [], characters);
   const subjectActorIds = knownUniqueIds(guidance.mediaRequest?.subjectActorIds || [], characters);
-  const mentionedActorIds = knownUniqueIds(guidance.mentionedActorIds || [], characters);
+  const suppressedActorIds = knownUniqueIds(guidance.suppressedActorIds || [], characters);
+  const mentionedActorIds = knownUniqueIds(guidance.mentionedActorIds || [], characters)
+    .filter((id) => !suppressedActorIds.includes(id));
   const withoutSpeaker = (ids: string[]) => speakerId ? ids.filter((id) => id !== speakerId) : ids;
   const candidateGroups = [
     withoutSpeaker(subjectActorIds),

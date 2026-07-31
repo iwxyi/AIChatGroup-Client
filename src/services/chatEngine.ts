@@ -763,6 +763,7 @@ function buildSurfaceEchoRetryPrompt(basePrompt: string, priorAttempt: string, r
 - The previous draft was rejected because it borrowed too much surface from recent chat: ${reason}
 - Keep the same character, relationship stance, and current social intent, but enter from a different angle.
 - Do not reuse the rejected draft's opener, emoji/sticker marker, ending, cadence, or sentence shape.
+- Do not reuse the same case, anecdote, quote, number, conclusion, or action plan from the rejected draft or the speaker's recent turns. Add one genuinely unused fact, consequence, doubt, question, or relationship reaction; if none is available, make a short natural handoff instead of restating the point.
 - Do not copy another member's recent line unless you set intentionalRepeat=true and the repetition is clearly a social move: quoting, mocking, chanting, fixed-answering, or deliberate mirroring.
 - Rejected draft: ${priorAttempt.slice(0, 180)}
 - Return a fresh valid JSON object only.`;
@@ -1938,6 +1939,33 @@ ${lines.join('\n')}
 ${hardHints.join('\n')}`;
 }
 
+function reconcileSelectedInnerLife(
+  projection: InnerLifeProjection,
+  speakerScore: SpeakerScoreBreakdown | null | undefined,
+): InnerLifeProjection {
+  if (projection.impulse !== 'stay_silent') return projection;
+  if (!speakerScore) return projection;
+  return {
+    ...projection,
+    impulse: 'answer',
+    tone: projection.tone,
+    reason: '调度最终选择了本角色发言，需要用轻量方式接住当前话题。',
+    pressure: Math.max(projection.pressure, 0.42),
+    evidence: Array.from(new Set([...projection.evidence, '调度选择本轮需要发言'])).slice(0, 5),
+    state: {
+      ...projection.state,
+      lastImpulse: 'answer',
+      lastImpulseReason: '调度最终选择了本角色发言，需要用轻量方式接住当前话题。',
+    },
+    expressionPlan: {
+      ...projection.expressionPlan,
+      length: projection.expressionPlan.length === 'micro' ? 'micro' : 'short',
+      messageCount: 1,
+      allowWithdraw: false,
+    },
+  };
+}
+
 function getCharacterNameById(characters: AICharacter[], id: string) {
   return characters.find((character) => character.id === id)?.name || id;
 }
@@ -1964,7 +1992,7 @@ function buildUserGuidancePrompt(guidance: UserGuidanceIntent | null | undefined
     : '';
   const suppressedNames = guidance.suppressedActorIds?.map((id) => getCharacterNameById(characters, id)).filter(Boolean) || [];
   const suppressionLine = suppressedNames.length
-    ? `\n- Speaker suppression: the user just pushed back against ${suppressedNames.join('、')} taking over or speaking for someone else. During this guidance window, ${suppressedNames.join('、')} should not regain control of the thread unless the user explicitly redirects to them or no other character can speak.`
+    ? `\n- Speaker suppression: the user just pushed back against ${suppressedNames.join('、')} taking over or speaking for someone else. During this guidance window, ${suppressedNames.join('、')} should not regain control of the thread unless the user explicitly redirects to them or no other character can speak.\n- Correction handling: if you are the requested actor, make the first semantic move acknowledge that you are answering in your own voice now, then add one genuinely new fact, feeling, or next action. Do not repeat the same plan in different words. If you are not the requested actor, only speak if you can briefly protect the requested actor's floor or ask a necessary clarification; do not summarize their answer as if closing the topic.`
     : '';
   return `\n## User Guidance Override
 - Latest user guidance: ${guidance.rawText}
@@ -1992,11 +2020,14 @@ function buildGuidanceRetryPrompt(params: {
     : params.guidance.kind === 'direct_reply'
       ? '\n- The user asked for a direct reply. Your next JSON content must answer the requested point first.'
       : '';
+  const suppressionRetry = params.guidance.suppressedActorIds?.length && !params.guidance.actorIds.includes(params.speaker.id)
+    ? `\n- You are not the requested actor. Do not answer or decide for the requested actor. Return only one short handoff sentence that names ${requestedActors.join('、') || 'the requested actor'} and gives the floor back. No plan, no summary, no "I will handle it".`
+    : '';
   return `${params.systemPrompt}
 
 Guidance retry:
 - The previous draft drifted away from the latest human guidance and must be discarded.
-- Latest human guidance: ${params.guidance.rawText}${mediaRetry}${topicRetry}
+- Latest human guidance: ${params.guidance.rawText}${mediaRetry}${topicRetry}${suppressionRetry}
 - Do not continue this failed draft: ${params.previousDraft.slice(0, 160)}
 - Return a fresh valid JSON object only.`;
 }
@@ -2348,10 +2379,14 @@ function buildRuntimeDecisionMetadata(params: {
         rawText: params.directorIntent.userGuidance.rawText,
         actorIds: params.directorIntent.userGuidance.actorIds,
         mentionedActorIds: params.directorIntent.userGuidance.mentionedActorIds,
+        hardConstraintActorIds: params.directorIntent.userGuidance.hardConstraintActorIds,
+        suppressedActorIds: params.directorIntent.userGuidance.suppressedActorIds,
+        hasHardConstraints: params.directorIntent.userGuidance.hasHardConstraints,
         focusText: params.directorIntent.userGuidance.focusText,
         beatType: params.directorIntent.userGuidance.beatType,
         pressure: Number(params.directorIntent.userGuidance.pressure.toFixed(3)),
         maxTurns: params.directorIntent.userGuidance.maxTurns,
+        minTargetTurns: params.directorIntent.userGuidance.minTargetTurns,
         reason: params.directorIntent.userGuidance.reason,
         mediaRequest: params.directorIntent.userGuidance.mediaRequest ? {
           kind: params.directorIntent.userGuidance.mediaRequest.kind,
@@ -3447,7 +3482,10 @@ export async function generateSpeakerMessage(params: {
     conversationFamily: params.chat.sessionKind?.family,
     scenarioId: params.chat.sessionKind?.scenarioId,
   });
-  const innerLife = projectInnerLife({ chat: params.chat, character: params.speaker, messages: activeMessages });
+  const innerLife = reconcileSelectedInnerLife(
+    projectInnerLife({ chat: params.chat, character: params.speaker, messages: activeMessages }),
+    params.speakerScore,
+  );
   const typingDelayMs = await waitForInnerLifeTypingDelay(innerLife, params.chat, params.delay);
   if (typingDelayMs > 0) {
     logDeveloperDiagnostic('chat-run:typing-delay', {

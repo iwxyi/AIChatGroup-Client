@@ -408,24 +408,8 @@ function hasStructuredEntries(items: unknown[] | undefined) {
   return Array.isArray(items) && items.some((item) => Boolean(item && typeof item === 'object' && Object.keys(item as Record<string, unknown>).length > 0));
 }
 
-function hasAnyNonMetaKeys(item: Record<string, unknown>, ignoredKeys: string[] = []) {
-  return Object.keys(item).some((key) => !ignoredKeys.includes(key));
-}
-
 function hasSettingsData(settings: BackupFileShape['settings']) {
   return Boolean(settings && Object.keys(settings).length > 0);
-}
-
-function hasChatPayload(item: Record<string, unknown>) {
-  return hasAnyNonMetaKeys(item);
-}
-
-function hasCharacterPayload(item: Record<string, unknown>) {
-  return hasAnyNonMetaKeys(item);
-}
-
-function hasMessagePayload(item: Record<string, unknown>) {
-  return hasAnyNonMetaKeys(item, ['chatId']);
 }
 
 function hasExportedCharacterCore(item: Record<string, unknown>) {
@@ -612,20 +596,12 @@ function getRestoreHasPayload(data: BackupFileShape) {
   return BACKUP_ROOT_KEYS.some((key) => (collectNodeStats(data)[key] || 0) > 0);
 }
 
-function getNodeDescription(node: BackupTreeNode, language: string) {
-  return language.startsWith('zh') ? node.descriptionZh : node.descriptionEn;
-}
-
 function toggleExpandedKey(current: BackupSectionKey[], key: BackupSectionKey) {
   return current.includes(key) ? current.filter((item) => item !== key) : [...current, key];
 }
 
 function buildDefaultRestoreSelection(availability: BackupSelection): BackupSelection {
   return normalizeSelection(buildRestoreSelectionFromAvailability(availability), availability);
-}
-
-function getRestoreDialogMaxWidth() {
-  return 'min(68vh, 720px)';
 }
 
 function buildRestoreFileNameSx() {
@@ -648,14 +624,6 @@ function buildWarningAlertSx() {
   return { mt: 0.25 };
 }
 
-function getRestoreSelectionSummary(selection: BackupSelection, availability: BackupSelection) {
-  return hasAnySelected(selection, availability);
-}
-
-function getBackupSelectionSummary(selection: BackupSelection) {
-  return hasAnySelected(selection);
-}
-
 function buildTreeRowButtonSx(disabled: boolean) {
   return {
     ...buildTreeContentButtonSx(disabled),
@@ -666,30 +634,6 @@ function buildTreeRowButtonSx(disabled: boolean) {
 
 function buildTreeExpandPlaceholderSx() {
   return { width: 28, height: 28 };
-}
-
-function shouldRenderExpandButton(node: BackupTreeNode, availability?: BackupSelection) {
-  return Boolean(node.children?.length);
-}
-
-function getNodeCount(node: BackupTreeNode, level: number, stats?: BackupNodeStats) {
-  return shouldShowNodeCount(node, level, stats);
-}
-
-function buildDefaultBackupSelection() {
-  return normalizeSelection(DEFAULT_BACKUP_SELECTION);
-}
-
-function normalizeSelectionForAvailability(selection: BackupSelection, availability: BackupSelection) {
-  return normalizeSelection(applyAvailability(selection, availability), availability);
-}
-
-function shouldEnableRestoreConfirm(selection: BackupSelection, availability: BackupSelection) {
-  return getRestoreSelectionSummary(selection, availability);
-}
-
-function shouldEnableBackupConfirm(selection: BackupSelection) {
-  return getBackupSelectionSummary(selection);
 }
 
 function hasSelectedSecrets(selection: BackupSelection) {
@@ -716,65 +660,8 @@ function buildInitialRestoreState(data: BackupFileShape, language: string) {
   };
 }
 
-function getBackupDialogSelection(selection: BackupSelection) {
-  return normalizeSelection(selection);
-}
-
-function getRestoreDialogSelection(selection: BackupSelection, availability: BackupSelection) {
-  return normalizeSelectionForAvailability(selection, availability);
-}
-
-function isRestoreConfirmDisabled(selection: BackupSelection, availability: BackupSelection) {
-  return !shouldEnableRestoreConfirm(selection, availability);
-}
-
-function isBackupConfirmDisabled(selection: BackupSelection) {
-  return !shouldEnableBackupConfirm(selection);
-}
-
-function isNodeDisabled(node: BackupTreeNode, availability: BackupSelection) {
-  return !isNodeAvailable(node, availability);
-}
-
-function getNodeState(node: BackupTreeNode, selection: BackupSelection, availability?: BackupSelection) {
-  return getNodeCheckState(node, selection, availability);
-}
-
-function toggleNodeSelection(
-  node: BackupTreeNode,
-  selection: BackupSelection,
-  checked: boolean,
-  availability?: BackupSelection,
-) {
-  return setSubtreeSelection(selection, node.key, checked, availability);
-}
-
-function isRestoreFileLoaded(data: BackupFileShape | null) {
-  return Boolean(data);
-}
-
 function buildDialogScrollableContentSx() {
   return { overflow: 'hidden', pb: 1 };
-}
-
-function buildTreeNodeClickValue(state: { checked: boolean; indeterminate: boolean }) {
-  return !state.checked || state.indeterminate;
-}
-
-function getDefaultExpandedKeys() {
-  return DEFAULT_EXPANDED_KEYS;
-}
-
-function isSecretWarningVisible(selection: BackupSelection) {
-  return hasSelectedSecrets(selection);
-}
-
-function getTreeNodeCountText(node: BackupTreeNode, level: number, stats?: BackupNodeStats) {
-  return getNodeCount(node, level, stats);
-}
-
-function shouldDisableConfirm(mode: 'backup' | 'restore', selection: BackupSelection, availability?: BackupSelection) {
-  return mode === 'backup' ? isBackupConfirmDisabled(selection) : isRestoreConfirmDisabled(selection, availability || EMPTY_BACKUP_SELECTION);
 }
 
 function createDialogSelectionHandler(
@@ -786,60 +673,8 @@ function createDialogSelectionHandler(
   return setSubtreeSelection(selection, key, checked, availability);
 }
 
-function buildDialogTreeSelection(selection: BackupSelection, availability?: BackupSelection) {
-  return availability ? getRestoreDialogSelection(selection, availability) : getBackupDialogSelection(selection);
-}
-
-function getNodeRowDisabled(node: BackupTreeNode, availability: BackupSelection) {
-  return isNodeDisabled(node, availability);
-}
-
-function canToggleNode(node: BackupTreeNode, availability: BackupSelection) {
-  return !getNodeRowDisabled(node, availability);
-}
-
-function getNodeExpandState(node: BackupTreeNode, expandedKeys: BackupSectionKey[]) {
-  return expandedKeys.includes(node.key);
-}
-
-function buildTreeNodeLabel(node: BackupTreeNode, language: string) {
-  return formatNodeLabel(node, language);
-}
-
-function buildTreeNodeDescription(node: BackupTreeNode, language: string) {
-  return getNodeDescription(node, language);
-}
-
-function getDialogSelectionForSubmit(mode: 'backup' | 'restore', selection: BackupSelection, availability?: BackupSelection) {
-  return mode === 'backup' ? getBackupDialogSelection(selection) : getRestoreDialogSelection(selection, availability || EMPTY_BACKUP_SELECTION);
-}
-
 function updateExpandedKeys(current: BackupSectionKey[], key: BackupSectionKey) {
   return toggleExpandedKey(current, key);
-}
-
-function getTreeState(node: BackupTreeNode, selection: BackupSelection, availability?: BackupSelection) {
-  return getNodeState(node, selection, availability);
-}
-
-function getTreeNodeCheckedValue(state: { checked: boolean; indeterminate: boolean }) {
-  return buildTreeNodeClickValue(state);
-}
-
-function isTreeExpandVisible(node: BackupTreeNode, availability?: BackupSelection) {
-  return shouldRenderExpandButton(node, availability);
-}
-
-function getTreeNodeCount(node: BackupTreeNode, level: number, stats?: BackupNodeStats) {
-  return getTreeNodeCountText(node, level, stats);
-}
-
-function getTreeDialogHeight() {
-  return getRestoreDialogMaxWidth();
-}
-
-function isDialogConfirmDisabled(mode: 'backup' | 'restore', selection: BackupSelection, availability?: BackupSelection) {
-  return shouldDisableConfirm(mode, selection, availability);
 }
 
 function getSelectionAfterToggle(
@@ -851,57 +686,6 @@ function getSelectionAfterToggle(
   return createDialogSelectionHandler(selection, key, checked, availability);
 }
 
-function getPreparedSelection(selection: BackupSelection, availability?: BackupSelection) {
-  return buildDialogTreeSelection(selection, availability);
-}
-
-function hasVisibleCount(node: BackupTreeNode, level: number, stats?: BackupNodeStats) {
-  return getTreeNodeCount(node, level, stats) !== null;
-}
-
-function getVisibleCount(node: BackupTreeNode, level: number, stats?: BackupNodeStats) {
-  return getTreeNodeCount(node, level, stats);
-}
-
-function buildTreeDialogContainerSx() {
-  return buildDialogTreeBodySx();
-}
-
-function getDialogExpandedKeys() {
-  return getDefaultExpandedKeys();
-}
-
-function getSecretWarningState(selection: BackupSelection) {
-  return isSecretWarningVisible(selection);
-}
-
-function shouldShowEmptyHint(hint: string) {
-  return Boolean(hint);
-}
-
-function buildDialogTreeDisabledState(node: BackupTreeNode, availability: BackupSelection) {
-  return getNodeRowDisabled(node, availability);
-}
-
-function buildDialogTreeState(node: BackupTreeNode, selection: BackupSelection, availability?: BackupSelection) {
-  return getTreeState(node, selection, availability);
-}
-
-function buildDialogTreeCount(node: BackupTreeNode, level: number, stats?: BackupNodeStats) {
-  return getVisibleCount(node, level, stats);
-}
-
-function buildDialogTreeExpandState(node: BackupTreeNode, expandedKeys: BackupSectionKey[]) {
-  return getNodeExpandState(node, expandedKeys);
-}
-
-function buildDialogTreeLabel(node: BackupTreeNode, language: string) {
-  return buildTreeNodeLabel(node, language);
-}
-
-function buildDialogTreeDescription(node: BackupTreeNode, language: string) {
-  return buildTreeNodeDescription(node, language);
-}
 function buildBackupPayload(selection: BackupSelection, source: {
   characters: unknown[];
   chats: unknown[];
@@ -1051,10 +835,6 @@ function createSelection(overrides: Partial<BackupSelection> = {}): BackupSelect
   return { ...EMPTY_BACKUP_SELECTION, ...overrides };
 }
 
-function mergeSelection(base: BackupSelection, overrides: Partial<BackupSelection>): BackupSelection {
-  return { ...base, ...overrides };
-}
-
 function createCharacterBackupEntry(character: Record<string, unknown>, selection: BackupSelection) {
   const next: Record<string, unknown> = {};
   if (selection['characters.core']) {
@@ -1166,10 +946,6 @@ function createMessageBackupEntry(message: Record<string, unknown>, selection: B
   return next;
 }
 
-function hasAnyEnabled(selection: BackupSelection, keys: BackupSectionKey[]) {
-  return keys.some((key) => selection[key]);
-}
-
 function buildFullAvailabilitySelection(): BackupSelection {
   return BACKUP_KEY_ORDER.reduce((acc, key) => {
     acc[key] = true;
@@ -1208,14 +984,6 @@ function deriveAvailabilityFromTree(tree: BackupTreeNode[], selection: BackupSel
   };
   tree.forEach(walk);
   return next;
-}
-
-function applyAvailability(selection: BackupSelection, availability: BackupSelection): BackupSelection {
-  const next = BACKUP_KEY_ORDER.reduce((acc, key) => {
-    acc[key] = availability[key] ? selection[key] : false;
-    return acc;
-  }, { ...EMPTY_BACKUP_SELECTION } as BackupSelection);
-  return normalizeSelection(next, availability);
 }
 
 function buildRestoreAvailabilityFromData(data: BackupFileShape): BackupSelection {
@@ -1263,14 +1031,6 @@ function buildRestoreSelectionFromAvailability(availability: BackupSelection): B
   }, { ...EMPTY_BACKUP_SELECTION } as BackupSelection);
 }
 
-function buildRestoreSelectionFromData(data: BackupFileShape): BackupSelection {
-  return buildRestoreSelectionFromAvailability(buildRestoreAvailabilityFromData(data));
-}
-
-function describeSelection(_language: string, _mode: 'backup' | 'restore') {
-  return '';
-}
-
 function buildDialogTreeBodySx() {
   return {
     mt: 1.25,
@@ -1283,10 +1043,6 @@ function buildDialogTreeBodySx() {
     bgcolor: 'background.default',
     p: 1,
   };
-}
-
-function buildTreeHeaderSx() {
-  return { mb: 1.25, lineHeight: 1.6 };
 }
 
 function buildTreeExpandButtonSx() {
@@ -1804,7 +1560,6 @@ export default function SettingsPage() {
         chatStore.loadChats(),
       ]);
 
-      const refreshedCharacterStore = useCharacterStore.getState();
       const refreshedChatStore = useChatStore.getState();
       const messageWindows = useMessageStore.getState().messageWindowsByChatId;
       const allMessages = Object.values(messageWindows).flatMap((window) => window.messages);

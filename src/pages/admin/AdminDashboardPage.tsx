@@ -5,7 +5,7 @@ import AdminRequestState, { getAdminErrorMessage } from '../../components/admin/
 import { AdminMetricGrid, AdminSection, AdminTableFrame, type AdminMetricItem } from '../../components/admin/AdminSurface';
 import { adminApi } from '../../services/adminApi';
 
-type MetricFormat = 'count' | 'money' | 'points';
+type MetricFormat = 'count' | 'money' | 'points' | 'minutes' | 'percent';
 type MetricMeta = { title: string; route?: string; format?: MetricFormat };
 
 const metricMeta: Record<string, MetricMeta> = {
@@ -33,12 +33,22 @@ const metricMeta: Record<string, MetricMeta> = {
   staleNotificationJobs: { title: '卡住通知', route: '/admin/notifications' },
   auditEvents24h: { title: '24h审计事件', route: '/admin/audit' },
   failedAdminLogins24h: { title: '24h登录失败', route: '/admin/audit' },
+  todayAppActiveUsers: { title: '今日活跃用户' },
+  todayAppSessions: { title: '今日启动次数' },
+  todayAppUsageMinutes: { title: '今日使用时长', format: 'minutes' },
+  avgAppSessionMinutes: { title: '平均会话时长', format: 'minutes' },
+  appActiveUsers7d: { title: '7日活跃用户' },
+  currentAppOnlineUsers: { title: '当前在线用户' },
+  currentAppOpenSessions: { title: '当前打开会话' },
+  appRetentionD1: { title: 'D1留存', format: 'percent' },
+  appRetentionD7: { title: 'D7留存', format: 'percent' },
 };
 
 const primaryMetricKeys = ['todayPaidAmount', 'todayPaidOrders', 'todayRefundAmount', 'todayAiGrossProfitPoints'];
 const operationMetricKeys = ['pendingOrders', 'stalePendingOrders', 'pendingRefunds', 'failedRefunds', 'pendingShareReviews', 'activeRestrictions', 'dueNotifications', 'failedNotifications'];
 const aiMetricKeys = ['todayAiRequests', 'todayAiActiveUsers', 'todayAiRevenuePoints', 'todayAiEstimatedCostPoints', 'todayAiFailed'];
 const baseMetricKeys = ['users', 'activeAiEntitlements', 'queuedNotifications', 'auditEvents24h', 'failedAdminLogins24h'];
+const usageMetricKeys = ['currentAppOnlineUsers', 'currentAppOpenSessions', 'todayAppActiveUsers', 'todayAppSessions', 'todayAppUsageMinutes', 'avgAppSessionMinutes', 'appActiveUsers7d', 'appRetentionD1', 'appRetentionD7'];
 
 type CompactSummaryKind = 'orders' | 'reviews' | 'audits';
 
@@ -107,6 +117,8 @@ function formatTime(value: unknown) {
 function formatMetricValue(value: number, format: MetricFormat = 'count') {
   if (format === 'money') return `¥${value.toFixed(2)}`;
   if (format === 'points') return `${value.toFixed(2)}P`;
+  if (format === 'minutes') return `${value.toFixed(value % 1 === 0 ? 0 : 1)} 分钟`;
+  if (format === 'percent') return `${value.toFixed(value % 1 === 0 ? 0 : 1)}%`;
   return String(Math.round(value));
 }
 
@@ -121,6 +133,10 @@ function metricSecondaryText(key: string, metrics: Record<string, number>) {
   if (key === 'todayAiGrossProfitPoints') return `收入 ${formatMetricValue(Number(metrics.todayAiRevenuePoints || 0), 'points')}`;
   if (key === 'todayAiEstimatedCostPoints') return `毛利 ${formatMetricValue(Number(metrics.todayAiGrossProfitPoints || 0), 'points')}`;
   if (key === 'queuedNotifications') return `${formatMetricValue(Number(metrics.dueNotifications || 0))} 条待发送`;
+  if (key === 'todayAppActiveUsers') return `${formatMetricValue(Number(metrics.todayAppSessions || 0))} 次启动`;
+  if (key === 'todayAppUsageMinutes') return `平均 ${formatMetricValue(Number(metrics.avgAppSessionMinutes || 0), 'minutes')}`;
+  if (key === 'appActiveUsers7d') return `D1 ${formatMetricValue(Number(metrics.appRetentionD1 || 0), 'percent')}`;
+  if (key === 'currentAppOnlineUsers') return `${formatMetricValue(Number(metrics.currentAppOpenSessions || 0))} 个打开会话`;
   return '';
 }
 
@@ -242,6 +258,33 @@ function CompactSummaryTable({ title, empty, rows, route, kind }: { title: strin
   );
 }
 
+function UsageTrendTable({ rows }: { rows: Array<Record<string, unknown>> }) {
+  return (
+    <AdminTableFrame minWidth={520}>
+      <Table size="small">
+        <TableHead>
+          <TableRow>
+            <TableCell>日期</TableCell>
+            <TableCell align="right">活跃用户</TableCell>
+            <TableCell align="right">启动次数</TableCell>
+            <TableCell align="right">使用时长</TableCell>
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          {rows.map((row) => (
+            <TableRow key={String(row.date || '')} hover>
+              <TableCell>{String(row.date || '-')}</TableCell>
+              <TableCell align="right">{Math.round(Number(row.activeUsers || 0))}</TableCell>
+              <TableCell align="right">{Math.round(Number(row.sessions || 0))}</TableCell>
+              <TableCell align="right">{formatMetricValue(Number(row.usageMinutes || 0), 'minutes')}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </AdminTableFrame>
+  );
+}
+
 export default function AdminDashboardPage() {
   const navigate = useNavigate();
   const [metrics, setMetrics] = useState<Record<string, number>>({});
@@ -292,6 +335,10 @@ export default function AdminDashboardPage() {
       },
     ].filter((item) => Number(metrics[item.key] || 0) > 0);
   }, [metrics, operations.stalePendingOrderMinutes]);
+  const usageTrend = useMemo(() => {
+    const rows = operations.usageTrend;
+    return Array.isArray(rows) ? rows.slice(-14) as Array<Record<string, unknown>> : [];
+  }, [operations.usageTrend]);
 
   const load = async () => {
     setLoading(true);
@@ -356,6 +403,16 @@ export default function AdminDashboardPage() {
           </AdminSection>
         </Grid>
       </Grid>
+
+      <AdminSection
+        title="使用活跃"
+        subtitle={`心跳超时 ${Math.round(Number(operations.usageHeartbeatTimeoutSeconds || 90))} 秒后按最后心跳推算关闭`}
+      >
+        <Stack spacing={1.5}>
+          <MetricGrid metricKeys={usageMetricKeys} metrics={metrics} minWidth={132} compact onNavigate={navigate} />
+          {usageTrend.length ? <UsageTrendTable rows={usageTrend} /> : <Alert severity="info">暂无使用会话数据。</Alert>}
+        </Stack>
+      </AdminSection>
 
       <Grid container spacing={1.5}>
         <Grid size={{ xs: 12, lg: 7 }}>

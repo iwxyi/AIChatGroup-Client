@@ -245,8 +245,11 @@ export function calculateWeights(
   const cooldownDuration = baseCooldownMs / speed;
   const recentText = buildSchedulerTopicText(recentMessages, directorIntent);
   const keywords = extractKeywords(recentText);
-  const forcedUserGuidanceActorIds = directorIntent?.source === 'user_message' && directorIntent.userGuidance?.actorIds.length
-    ? (directorIntent.targetActorIds.length ? directorIntent.targetActorIds : directorIntent.userGuidance.actorIds)
+  const forcedUserGuidanceActorIds = directorIntent?.source === 'user_message' && directorIntent.targetActorIds.length
+    ? directorIntent.targetActorIds
+    : [];
+  const suppressedUserGuidanceActorIds = directorIntent?.source === 'user_message'
+    ? (directorIntent.userGuidance?.suppressedActorIds || [])
     : [];
   const shouldKeepLastSpeaker = (characterId: string) => {
     if (characterId !== lastSpeakerId) return true;
@@ -257,7 +260,11 @@ export function calculateWeights(
     return false;
   };
   const rotationCandidates = speakableCharacters.filter((character) => shouldKeepLastSpeaker(character.id));
-  const candidatePool = rotationCandidates.length ? rotationCandidates : speakableCharacters;
+  const baseCandidatePool = rotationCandidates.length ? rotationCandidates : speakableCharacters;
+  const unsuppressedCandidatePool = !forcedUserGuidanceActorIds.length && suppressedUserGuidanceActorIds.length
+    ? baseCandidatePool.filter((character) => !suppressedUserGuidanceActorIds.includes(character.id))
+    : baseCandidatePool;
+  const candidatePool = unsuppressedCandidatePool.length ? unsuppressedCandidatePool : baseCandidatePool;
   const attentionStateBiasByActor = new Map<string, number>();
   if (chat) {
     projectWorldAttentionStates([chat], speakableCharacters, { now })
@@ -271,7 +278,7 @@ export function calculateWeights(
       });
   }
 
-  return candidatePool
+  const weightedCandidates = candidatePool
     .filter((char) => {
       if (forcedUserGuidanceActorIds.length && !forcedUserGuidanceActorIds.includes(char.id)) return false;
       if (forcedUserGuidanceActorIds.includes(char.id)) return true;
@@ -401,6 +408,17 @@ export function calculateWeights(
       weight *= repetitionMultiplier;
       weight += Math.random() * 0.03;
 
+      const hasExternalPressure = Boolean(
+        forcedUserGuidanceActorIds.includes(char.id)
+        || pendingReplyBoost
+        || conflictBias
+        || directorBias.bias
+        || attentionStateBias
+        || relationshipPressure
+        || directCueBoost
+      );
+      const idleStaySilent = innerLife.impulse === 'stay_silent' && innerLife.pressure < 0.32 && !hasExternalPressure;
+
       if (Number.isNaN(weight)) {
         console.error('[group-loop:nan-weight:final]', {
           ...debugBase,
@@ -412,9 +430,10 @@ export function calculateWeights(
         });
       }
       const finalScore = Math.max(0.05, weight);
-      return {
+      return [{
         characterId: char.id,
         weight: finalScore,
+        idleStaySilent,
         scoreBreakdown: buildSpeakerScoreBreakdown({
           actorId: char.id,
           addressed: pendingReplyBoost + directCueBoost,
@@ -440,8 +459,16 @@ export function calculateWeights(
             repetitionMultiplier < 1 ? 'repetition_penalty' : '',
           ].filter(Boolean),
         }),
-      };
+      }];
     });
+  const flattenedCandidates = weightedCandidates.flat();
+  const activeCandidates = flattenedCandidates.filter((candidate) => !candidate.idleStaySilent);
+  const selectedCandidates = activeCandidates.length ? activeCandidates : flattenedCandidates;
+  return selectedCandidates.map((candidate) => ({
+    characterId: candidate.characterId,
+    weight: candidate.weight,
+    scoreBreakdown: candidate.scoreBreakdown,
+  }));
 }
 
 export function selectSpeaker(candidates: WeightedCandidate[]): string | null {

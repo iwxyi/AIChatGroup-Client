@@ -854,6 +854,162 @@ describe('chatEngine streaming preview', () => {
     expect(message.metadata?.runtimeDecision?.responseSurface?.basis || []).not.toContain('topic:longform-writing-task');
   });
 
+  it('prompts corrective speaker suppression and persists guidance trace fields', async () => {
+    generateResponseMock.mockReset();
+    generateResponseMock.mockResolvedValue(JSON.stringify({
+      content: '我明白，我自己来说。除了入口和客服，访谈里还有一个细节：老用户觉得改版前没人提前告诉他们。',
+      interactionHints: null,
+      socialEventHints: null,
+      conflictFocus: null,
+    }));
+    const anan = buildCharacter('anan', '安安');
+    const zhou = buildCharacter('zhou', '周策');
+    const mei = buildCharacter('mei', '梅青');
+    const directorIntent: DirectorIntent = {
+      source: 'user_message',
+      beatType: 'answer',
+      targetActorIds: ['anan'],
+      pressure: 0.92,
+      reason: '用户点名角色回应。',
+      userGuidance: {
+        kind: 'direct_reply',
+        rawText: '我刚才是想听安安说，不是让周策替她做决定。',
+        actorIds: ['anan'],
+        mentionedActorIds: ['anan', 'zhou'],
+        suppressedActorIds: ['zhou'],
+        focusText: '我刚才是想听安安说，不是让周策替她做决定。',
+        beatType: 'answer',
+        pressure: 0.92,
+        maxTurns: 5,
+        reason: '用户点名角色回应。',
+      },
+    };
+
+    const message = await generateSpeakerMessage({
+      chat: buildChat({ memberIds: ['anan', 'zhou', 'mei'] }),
+      speaker: anan,
+      characters: [anan, zhou, mei],
+      messages: [
+        buildAiMessage('zhou', '周策', '我先补一句，流失不能简单归因到一个点。', 1),
+        buildUserMessage('我刚才是想听安安说，不是让周策替她做决定。', 2),
+      ],
+      apiConfig: buildProfiles(),
+      directorIntent,
+    });
+    const prompt = String(generateResponseMock.mock.calls[0]?.[1] || '');
+
+    expect(prompt).toContain('Speaker suppression');
+    expect(prompt).toContain('Correction handling');
+    expect(prompt).toContain('add one genuinely new fact');
+    expect(message.metadata?.runtimeDecision?.directorIntent?.userGuidance).toMatchObject({
+      suppressedActorIds: ['zhou'],
+    });
+    expect(message.metadata?.runtimeDecision?.memoryContext?.targetActorId).not.toBe('zhou');
+  });
+
+  it('reconciles stay-silent inner life when the scheduler finally selects the speaker', async () => {
+    generateResponseMock.mockReset();
+    generateResponseMock.mockResolvedValue(JSON.stringify({
+      content: '那我只补一句：先让安安把访谈原话说完，其他结论晚点再收。',
+      interactionHints: null,
+      socialEventHints: null,
+      conflictFocus: null,
+    }));
+    const mei = buildCharacter('mei', '梅青', {
+      behavior: { proactivity: 20, aggressiveness: 8, humorIntensity: 10, empathyLevel: 70, summarizing: 30, offTopic: 8 },
+    });
+    const message = await generateSpeakerMessage({
+      chat: buildChat({ memberIds: ['anan', 'zhou', 'mei'] }),
+      speaker: mei,
+      characters: [buildCharacter('anan', '安安'), buildCharacter('zhou', '周策'), mei],
+      messages: [
+        buildAiMessage('anan', '安安', '我先说一个访谈细节。', 1),
+      ],
+      apiConfig: buildProfiles(),
+      speakerScore: {
+        actorId: 'mei',
+        finalScore: 0.05,
+        addressed: 0,
+        topicRelevance: 0,
+        lineInvolvement: 0,
+        emotionalPressure: 0,
+        innerLifePressure: -0.18,
+        relationshipPressure: 0,
+        factionPressure: 0,
+        personalityDrive: 0.3,
+        knowledgeAccess: 0,
+        novelty: 0,
+        silencePressure: 0,
+        cooldownPenalty: 0,
+        repetitionPenalty: 0,
+        reasons: ['inner:stay_silent'],
+      },
+    });
+
+    expect(message.metadata?.runtimeDecision?.innerLife?.impulse).toBe('answer');
+    expect(message.metadata?.runtimeDecision?.innerLife?.reason).toContain('调度最终选择');
+  });
+
+  it('retries non-target suppression replies that take over the requested actor floor', async () => {
+    generateResponseMock.mockReset();
+    generateResponseMock
+      .mockResolvedValueOnce(JSON.stringify({
+        content: '那我去跟周策说，这段我来安排进附录，后面我负责推进。',
+        interactionHints: null,
+        socialEventHints: null,
+        conflictFocus: null,
+      }))
+      .mockResolvedValueOnce(JSON.stringify({
+        content: '安安，你继续说完，我先不替你收口。',
+        interactionHints: null,
+        socialEventHints: null,
+        conflictFocus: null,
+      }));
+    const anan = buildCharacter('anan', '安安');
+    const zhou = buildCharacter('zhou', '周策');
+    const mei = buildCharacter('mei', '梅青');
+    const directorIntent: DirectorIntent = {
+      source: 'user_message',
+      beatType: 'answer',
+      targetActorIds: [],
+      pressure: 0.92,
+      reason: '用户点名角色回应。',
+      userGuidance: {
+        kind: 'direct_reply',
+        rawText: '我刚才是想听安安说，不是让周策替她做决定。',
+        actorIds: ['anan'],
+        mentionedActorIds: ['anan', 'zhou'],
+        suppressedActorIds: ['zhou'],
+        focusText: '我刚才是想听安安说，不是让周策替她做决定。',
+        beatType: 'answer',
+        pressure: 0.92,
+        maxTurns: 5,
+        reason: '用户点名角色回应。',
+      },
+    };
+
+    const message = await generateSpeakerMessage({
+      chat: buildChat({ memberIds: ['anan', 'zhou', 'mei'] }),
+      speaker: mei,
+      characters: [anan, zhou, mei],
+      messages: [
+        buildUserMessage('我刚才是想听安安说，不是让周策替她做决定。', 1),
+        buildAiMessage('anan', '安安', '我先把真实想法说完。', 2),
+      ],
+      apiConfig: buildProfiles(),
+      directorIntent,
+    });
+
+    expect(generateResponseMock).toHaveBeenCalledTimes(2);
+    expect(String(generateResponseMock.mock.calls[1]?.[1] || '')).toContain('one short handoff sentence');
+    expect(message.content).toBe('安安，你继续说完，我先不替你收口。');
+    expect(message.metadata?.runtimeDecision?.guidanceExecution).toMatchObject({
+      status: 'accepted_after_retry',
+      rejectedReasons: ['suppression_handoff_required'],
+      finalReason: 'matched',
+    });
+  });
+
   it('honors disabled role actions from mode config and strips visible action asides', async () => {
     generateResponseMock.mockReset();
     generateResponseMock.mockResolvedValue(JSON.stringify({

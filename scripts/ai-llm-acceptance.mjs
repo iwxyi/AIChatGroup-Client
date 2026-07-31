@@ -3652,6 +3652,7 @@ async function runRuntimeChatflowScenario(model, scenario) {
       '6. 关系变化和房间态势是否克制，避免为了有 metadata 而过度写入。',
       '7. 故事房需要检查选项数量、选项间隔、选择代价和剧情承接；审议房需要检查 claims/evidence/issues/verdicts 等产物是否合理。',
       '8. 如果质量不足，optimizations 必须指出应调整的 prompt 层，如 humanization、current_intent、conversation_move、turn_plan、response_surface、style_quarantine、visible_message_surface_contract、story_protocol、deliberation_protocol、memoryTrace 或 scheduler。',
+      '9. 用户插话不会重复出现在 transcript 的 AI 行中，但会出现在 userInjectionLog 和 conversationMessages；必须按时间顺序检查插话之后的实际回复，不得仅因 transcript 没有用户行就判定用户输入未被转录。',
       `场景额外要求：${scenario.rubricHint}`,
     ].join('\n'), {
       scenario: {
@@ -3678,6 +3679,15 @@ async function runRuntimeChatflowScenario(model, scenario) {
         .filter((message) => message.type === 'user')
         .map((message) => ({ senderName: message.senderName, content: message.content })),
       userInjectionLog,
+      conversationMessages: messages
+        .filter((message) => !message.isDeleted && message.type !== 'system' && message.type !== 'event')
+        .map((message) => ({
+          type: message.type,
+          senderId: message.senderId,
+          senderName: message.senderName,
+          content: message.content,
+          timestamp: message.timestamp,
+        })),
       eventMessages,
       localInterceptions,
       hardError,

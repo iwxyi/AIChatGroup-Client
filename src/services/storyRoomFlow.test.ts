@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { normalizeConversation } from '../types/chat';
 import { buildChatRenderItems } from '../components/chat/chatRenderModel';
 import { getNarrativeDisplayBlocks, getNarrativeParagraphBlocks } from '../components/chat/messageBubblePresentation';
-import { buildVisibleStoryBranchOptions, findVisibleStoryChoiceSourceMessage, getStoryTailStatus } from '../pages/ChatDetailPage';
+import { buildVisibleStoryBranchOptions, findVisibleStoryChoiceSourceMessage, getStoryTailStatus } from '../pages/chatDetailStoryHelpers';
 import { buildStoryBranchOptions } from './storyChoices';
 import { runSessionActionExecutor } from './sessionActionExecutors/sessionActionExecutorRegistry';
 import { STORY_ENGINE } from './engines/storyEngine';

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Box, Typography, Button, Divider, IconButton, Chip } from '@mui/material';
+import { Alert, Box, Typography, Button, Divider, IconButton, Chip } from '@mui/material';
 import type { Theme } from '@mui/material/styles';
 import AddIcon from '@mui/icons-material/Add';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
@@ -40,6 +40,7 @@ import { buildLocalOutboxProjection, type LocalOutboxArtifactJobLike } from '../
 import { mirrorLocalOutboxQueues } from '../services/localOutboxMirror';
 import { projectWorldCalendar, type WorldCalendarItem } from '../services/worldRuntimeProjection';
 import { api, type OfficialAiProviderInfo } from '../services/api';
+import { formatInAppNotificationWindow, notificationAlertSeverity, useInAppNotificationStore } from '../services/inAppNotifications';
 import { getRegisteredSyncWorkerEntries } from '../stores/storeSyncScheduler';
 import { motion, transition } from '../styles/motion';
 import { formatAiAmount } from '../utils/aiPoints';
@@ -469,6 +470,7 @@ export default function HomePage() {
   const [officialProviderAccess, setOfficialProviderAccess] = useState<Record<string, OfficialBalanceProviderInfo> | null>(null);
   const [companionshipSnapshot, setCompanionshipSnapshot] = useState<HomeCompanionshipSnapshot | null>(null);
   const [calendarNow, setCalendarNow] = useState(() => Date.now());
+  const inAppNotifications = useInAppNotificationStore((state) => state.items);
   const recentChats = useMemo(() => chats.slice(0, 10), [chats]);
   const recentChatIds = useMemo(() => new Set(recentChats.map((chat) => chat.id)), [recentChats]);
   const recentActiveMessages = useMessageStore(useShallow((state) => (
@@ -671,6 +673,7 @@ export default function HomePage() {
     .filter((item) => item.status === 'in_progress')
     .sort((left, right) => (left.endAt || Number.MAX_SAFE_INTEGER) - (right.endAt || Number.MAX_SAFE_INTEGER))
     .slice(0, 4), [calendarNow, characters, chats]);
+  const pinnedAnnouncements = useMemo(() => inAppNotifications.filter((item) => item.pinnedEnabled).slice(0, 3), [inAppNotifications]);
   useEffect(() => {
     if (!canQueryAiPoints || !primaryOfficialBalanceProvider) {
       setAiPointBalance(undefined);
@@ -841,6 +844,30 @@ export default function HomePage() {
   return (
     <Box sx={{ flex: 1, overflow: 'auto', p: { xs: 2.5, sm: 3, md: 3.5 }, pt: { xs: 1, sm: 1, md: 3 }, pb: { xs: 'calc(env(safe-area-inset-bottom, 0px) + 82px)', sm: 3, md: 3.5 } }}>
       <PageSection spacing={3}>
+        {pinnedAnnouncements.length ? (
+          <Box sx={{ display: 'grid', gap: 1 }}>
+            {pinnedAnnouncements.map((item) => (
+              <Alert
+                key={item.id}
+                severity={notificationAlertSeverity(item.severity)}
+                sx={{
+                  alignItems: 'flex-start',
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  borderRadius: 1,
+                  '& .MuiAlert-message': { minWidth: 0, width: '100%' },
+                }}
+              >
+                <Box sx={{ display: 'grid', gap: 0.35, minWidth: 0 }}>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 800, overflowWrap: 'anywhere' }}>{item.title}</Typography>
+                  <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{item.body}</Typography>
+                  <Typography variant="caption" color="text.secondary">生效时间：{formatInAppNotificationWindow(item)}</Typography>
+                </Box>
+              </Alert>
+            ))}
+          </Box>
+        ) : null}
+
         <SurfaceCard>
           <SectionHeader title="工作台概览" />
           <Box sx={buildStatGridSx()}>

@@ -206,10 +206,14 @@ export interface MessageMetadata {
         rawText: string;
         actorIds?: string[];
         mentionedActorIds?: string[];
+        hardConstraintActorIds?: string[];
+        suppressedActorIds?: string[];
+        hasHardConstraints?: boolean;
         focusText?: string;
         beatType?: string;
         pressure?: number;
         maxTurns?: number;
+        minTargetTurns?: number;
         reason?: string;
         mediaRequest?: {
           kind: string;
@@ -302,8 +306,8 @@ export interface MessageMetadata {
       validated: boolean;
       retryCount: number;
       rejectedDraftCount: number;
-      rejectedReasons?: Array<'wrong_speaker' | 'missing_requested_image' | 'missing_requested_subject' | 'missing_topic_focus' | 'missing_question_answer' | 'missing_direct_reply_focus' | 'empty_content'>;
-      finalReason?: 'matched' | 'wrong_speaker' | 'missing_requested_image' | 'missing_requested_subject' | 'missing_topic_focus' | 'missing_question_answer' | 'missing_direct_reply_focus' | 'empty_content';
+      rejectedReasons?: Array<'wrong_speaker' | 'missing_requested_image' | 'missing_requested_subject' | 'missing_topic_focus' | 'missing_question_answer' | 'missing_direct_reply_focus' | 'suppression_handoff_required' | 'empty_content'>;
+      finalReason?: 'matched' | 'wrong_speaker' | 'missing_requested_image' | 'missing_requested_subject' | 'missing_topic_focus' | 'missing_question_answer' | 'missing_direct_reply_focus' | 'suppression_handoff_required' | 'empty_content';
       forcedMediaQueued?: boolean;
     };
     worldInfluence?: {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Message } from '../../types/message';
 import { buildChatRenderItems } from './chatRenderModel';
-import { buildMessageListRenderItems } from './MessageList';
+import { buildMessageListRenderItems } from './messageListRenderItems';
 import { getVisibleNarrativeDisplayBlocks, isNarrativeRevealAllowed } from './messageListPresentation';
 
 function buildMessage(id: string, overrides: Partial<Message> = {}): Message {

@@ -520,6 +520,177 @@ describe('runtimeDecision', () => {
     });
   });
 
+  it('keeps named hard constraints active across later AI turns', () => {
+    const projection = projectRuntimePressure({
+      chat: buildChat({ memberIds: ['tang', 'a', 'b'] }),
+      characters: [buildCharacter('tang', '小唐'), buildCharacter('a', '安安'), buildCharacter('b', '周策')],
+      messages: [
+        buildMessage({ id: 'guide', type: 'user', senderId: 'user', senderName: '我', content: '小唐预算不超过80，别忽略她', timestamp: 100 }),
+        buildMessage({ id: 'a1', type: 'ai', senderId: 'a', senderName: '安安', content: '那先看看店的位置。', timestamp: 110 }),
+        buildMessage({ id: 'b1', type: 'ai', senderId: 'b', senderName: '周策', content: '我倾向近一点。', timestamp: 120 }),
+      ],
+      now: 130,
+    });
+
+    expect(projection.directorIntent).toMatchObject({
+      source: 'user_message',
+      beatType: 'invite',
+      targetActorIds: [],
+    });
+    expect(projection.directorIntent?.userGuidance).toMatchObject({
+      rawText: '小唐预算不超过80，别忽略她',
+      hasHardConstraints: true,
+      hardConstraintActorIds: ['tang'],
+    });
+  });
+
+  it('keeps an older direct user mention active after non-target AI handoff lines', () => {
+    const projection = projectRuntimePressure({
+      chat: buildChat({ memberIds: ['user', 'anan', 'zhou', 'mei'] }),
+      characters: [buildCharacter('anan', '安安'), buildCharacter('zhou', '周策'), buildCharacter('mei', '梅青')],
+      messages: [
+        buildMessage({
+          id: 'guide',
+          type: 'user',
+          senderId: 'user',
+          senderName: '我',
+          content: '安安，你直接说吧，用户到底为什么不再用了？不用先照顾周策的汇报口径。',
+          timestamp: 100,
+        }),
+        buildMessage({
+          id: 'hijack',
+          type: 'ai',
+          senderId: 'zhou',
+          senderName: '周策',
+          content: '我先补一句，流失不能简单归因到一个点，外部环境也有影响。',
+          timestamp: 110,
+        }),
+        buildMessage({
+          id: 'handoff',
+          type: 'ai',
+          senderId: 'mei',
+          senderName: '梅青',
+          content: '周策，可以先让安安把访谈原话说完。',
+          timestamp: 120,
+        }),
+      ],
+      now: 130,
+    });
+
+    expect(projection.directorIntent).toMatchObject({
+      source: 'user_message',
+      beatType: 'answer',
+      targetActorIds: ['anan'],
+    });
+    expect(projection.directorIntent?.userGuidance).toMatchObject({
+      kind: 'direct_reply',
+      actorIds: ['anan'],
+    });
+  });
+
+  it('keeps corrective direct guidance active for one more target reply after the target answers once', () => {
+    const projection = projectRuntimePressure({
+      chat: buildChat({ memberIds: ['user', 'anan', 'zhou', 'mei'] }),
+      characters: [buildCharacter('anan', '安安'), buildCharacter('zhou', '周策'), buildCharacter('mei', '梅青')],
+      messages: [
+        buildMessage({
+          id: 'guide',
+          type: 'user',
+          senderId: 'user',
+          senderName: '我',
+          content: '我刚才是想听安安说，不是让周策替她做决定。',
+          timestamp: 100,
+        }),
+        buildMessage({
+          id: 'answer-1',
+          type: 'ai',
+          senderId: 'anan',
+          senderName: '安安',
+          content: '我先说一部分，访谈里用户主要卡在承诺没有兑现。',
+          timestamp: 110,
+        }),
+      ],
+      now: 120,
+    });
+
+    expect(projection.directorIntent).toMatchObject({
+      source: 'user_message',
+      beatType: 'answer',
+      targetActorIds: ['anan'],
+    });
+  });
+
+  it('keeps corrective suppression after repeated protected target answers without forcing the target', () => {
+    const projection = projectRuntimePressure({
+      chat: buildChat({ memberIds: ['user', 'anan', 'zhou', 'mei'] }),
+      characters: [buildCharacter('anan', '安安'), buildCharacter('zhou', '周策'), buildCharacter('mei', '梅青')],
+      messages: [
+        buildMessage({
+          id: 'guide',
+          type: 'user',
+          senderId: 'user',
+          senderName: '我',
+          content: '我刚才是想听安安说，不是让周策替她做决定。',
+          timestamp: 100,
+        }),
+        buildMessage({
+          id: 'answer-1',
+          type: 'ai',
+          senderId: 'anan',
+          senderName: '安安',
+          content: '我先说一部分，访谈里用户主要卡在承诺没有兑现。',
+          timestamp: 110,
+        }),
+        buildMessage({
+          id: 'answer-2',
+          type: 'ai',
+          senderId: 'anan',
+          senderName: '安安',
+          content: '还有一点是客服跟进太慢，他们不是不需要产品，是不再信任我们。',
+          timestamp: 120,
+        }),
+      ],
+      now: 130,
+    });
+
+    expect(projection.directorIntent).toMatchObject({
+      source: 'user_message',
+      targetActorIds: [],
+    });
+    expect(projection.directorIntent?.userGuidance).toMatchObject({
+      rawText: '我刚才是想听安安说，不是让周策替她做决定。',
+      suppressedActorIds: ['zhou'],
+    });
+  });
+
+  it('releases corrective suppression after the guidance window is consumed', () => {
+    const projection = projectRuntimePressure({
+      chat: buildChat({ memberIds: ['user', 'anan', 'zhou', 'mei'] }),
+      characters: [buildCharacter('anan', '安安'), buildCharacter('zhou', '周策'), buildCharacter('mei', '梅青')],
+      messages: [
+        buildMessage({
+          id: 'guide',
+          type: 'user',
+          senderId: 'user',
+          senderName: '我',
+          content: '我刚才是想听安安说，不是让周策替她做决定。',
+          timestamp: 100,
+        }),
+        ...Array.from({ length: 5 }, (_, index) => buildMessage({
+          id: `answer-${index + 1}`,
+          type: 'ai',
+          senderId: 'anan',
+          senderName: '安安',
+          content: `我继续补第 ${index + 1} 点。`,
+          timestamp: 110 + index * 10,
+        })),
+      ],
+      now: 170,
+    });
+
+    expect(projection.directorIntent?.userGuidance?.rawText).not.toBe('我刚才是想听安安说，不是让周策替她做决定。');
+  });
+
   it('does not treat requested actor banter as completing a media request unless the image request was actually handled', () => {
     const projection = projectRuntimePressure({
       chat: buildChat(),

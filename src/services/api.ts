@@ -243,6 +243,22 @@ export interface AiProxyUsageGroupsResponse {
   items: AiProxyUsageGroupItem[];
 }
 
+export interface SystemAnnouncementItem {
+  id: string;
+  title: string;
+  body: string;
+  severity: 'info' | 'warning' | 'error' | 'success' | string;
+  audienceType?: 'all' | 'users' | string;
+  audienceInactiveMonths?: number | null;
+  startsAt: number | null;
+  endsAt: number | null;
+  pinnedEnabled: boolean;
+  popupEnabled: boolean;
+  sortOrder: number;
+  updatedAt: number;
+  createdAt: number;
+}
+
 export interface BillingPlanItem {
   id: string;
   code: string;
@@ -579,6 +595,10 @@ class ApiClient {
 
   async getPlatformPublicConfig() {
     return this.request<{ site: SitePublicConfig; captcha?: CaptchaPublicConfig }>('GET', '/platform/public-config');
+  }
+
+  async getSystemAnnouncements() {
+    return this.request<{ items: SystemAnnouncementItem[]; serverTime: number }>('GET', '/notifications/announcements');
   }
 
   async searchWeb(query: string, options?: { count?: number; freshness?: string; include?: string; exclude?: string; source?: string; resourceId?: string }) {

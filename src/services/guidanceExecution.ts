@@ -97,6 +97,20 @@ function hasImageCompletionText(content: string) {
     || /我把.{0,24}(画|拍|做|生成).{0,24}(好|完|出来|发)/i.test(content);
 }
 
+function hasSuppressionTakeoverText(content: string) {
+  return /(我去|我来|我帮|我负责|我会|我替|我跟|我找|我安排|我签|交给我|包在我|我来跟|我去跟).{0,16}(说|聊|对|处理|安排|推进|负责|签|扛)/i.test(content);
+}
+
+function isSuppressionHandoffContent(content: string, guidance: UserGuidanceIntent, characters?: AICharacter[]) {
+  const actorNames = characterNamesByIds(guidance.actorIds, characters);
+  if (!actorNames.length) return false;
+  const normalized = normalizeGuidanceMatchText(content);
+  if (normalized.length > 90) return false;
+  if (hasSuppressionTakeoverText(content)) return false;
+  return actorNames.some((name) => content.includes(name))
+    && /(继续|再说|补|说完|你来|你说|你觉得|怎么看|确认|先让|交还|听你)/i.test(content);
+}
+
 function hasConcreteImageAction(content: string) {
   return hasImageUnableText(content) || hasImageCompletionText(content);
 }
@@ -179,7 +193,14 @@ export function evaluateGuidanceGeneratedContent(
   if (!guidance) return { matched: true, reason: 'matched' };
   if (!normalizeGuidanceMatchText(content)) return { matched: false, reason: 'empty_content' };
   const speakerId = typeof speaker === 'string' ? speaker : speaker?.id;
-  if (guidance.actorIds.length && (!speakerId || !guidance.actorIds.includes(speakerId))) return { matched: false, reason: 'wrong_speaker' };
+  if (guidance.actorIds.length && (!speakerId || !guidance.actorIds.includes(speakerId))) {
+    if (guidance.suppressedActorIds?.length) {
+      return isSuppressionHandoffContent(content, guidance, characters)
+        ? { matched: true, reason: 'matched' }
+        : { matched: false, reason: 'suppression_handoff_required' };
+    }
+    return { matched: false, reason: 'wrong_speaker' };
+  }
   if (guidance.kind === 'media_request') {
     const reason = evaluateMediaGuidanceContent(content, guidance, characters, options);
     return { matched: reason === 'matched', reason };

@@ -102,6 +102,24 @@ describe('guidanceExecution', () => {
     });
   });
 
+  it('accepts only short handoffs from non-target speakers during suppression guidance', () => {
+    const roomMembers = [
+      character('anan', '安安'),
+      character('zhou', '周策'),
+      character('mei', '梅青'),
+    ];
+    const guidance = parseUserGuidanceIntent('我刚才是想听安安说，不是让周策替她做决定。', roomMembers);
+
+    expect(evaluateGuidanceGeneratedContent('安安，你继续说完，我先不替你收口。', guidance, 'mei', roomMembers)).toEqual({
+      matched: true,
+      reason: 'matched',
+    });
+    expect(evaluateGuidanceGeneratedContent('我去跟周策说，这段我来安排进附录，后面我负责推进。', guidance, 'mei', roomMembers)).toEqual({
+      matched: false,
+      reason: 'suppression_handoff_required',
+    });
+  });
+
   it('accepts a matching requested image attachment for runtime guidance consumption', () => {
     const guidance = parseUserGuidanceIntent('美羊羊发个灰太狼证件照的图片', members);
 

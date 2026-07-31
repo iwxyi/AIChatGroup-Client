@@ -54,7 +54,6 @@ export function getDirectorIntentSpeakerBias(params: {
       reasons.push(intent.userGuidance.kind === 'media_request' ? 'director:media_request:target' : 'director:user_guidance:target');
     }
   }
-
   if (params.lastSpeakerId && intent.targetActorIds.includes(params.lastSpeakerId)) {
     const relationWeight = getRelationshipWeight(params.character, params.lastSpeakerId);
     const safeRelationWeight = Number.isFinite(relationWeight) ? relationWeight : 0;
