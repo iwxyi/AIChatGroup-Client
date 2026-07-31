@@ -513,6 +513,95 @@ describe('processRichMessageMedia', () => {
     });
   });
 
+  it('keeps all image generation inputs intact when retrying while clearing only stale output fields', async () => {
+    vi.mocked(generateImageWithAdapter).mockResolvedValue([{
+      dataUrl: 'data:image/png;base64,retry-inputs',
+      mimeType: 'image/png',
+    }]);
+    const failedMessage = buildQueuedImageMessage({
+      metadata: {
+        attachments: [{
+          id: 'image-1',
+          kind: 'image',
+          status: 'failed',
+          slotId: 'cover-slot',
+          promptText: '把参考图里的标题放大 20%，其余构图保持不变。',
+          altText: '标题放大后的海报',
+          caption: '海报修改稿',
+          semanticSummary: '上一版标题偏小。',
+          aspectRatio: '4:5',
+          imageSize: '2K',
+          targetArtifactId: 'artifact-image-1',
+          targetImageIds: ['message-old:image-old'],
+          referenceImageIds: ['message-ref:image-ref'],
+          styleImageIds: ['message-style:image-style'],
+          referenceCharacterIds: ['hui'],
+          referenceImages: [{ url: 'data:image/png;base64,old', mimeType: 'image/png', label: '上一版图片' }],
+          error: '上次生成失败',
+          assetId: 'stale-asset',
+          url: '/stale.png',
+          thumbnailAssetId: 'stale-thumb',
+          width: 1024,
+          height: 1280,
+          sizeBytes: 999,
+          checksum: 'stale-checksum',
+          createdAt: 123,
+          updatedAt: 124,
+        }],
+        generation: { status: 'failed', updatedAt: 124 },
+      },
+    });
+    const upserts: Message[] = [];
+
+    await retryRichMessageMedia({
+      message: failedMessage,
+      attachmentId: 'image-1',
+      character,
+      characters: [character, subjectCharacter],
+      aiProfiles: [imageProfile],
+      upsertMessage: (message) => upserts.push(message),
+    });
+
+    const queued = upserts[0]?.metadata?.attachments?.[0];
+    expect(queued).toMatchObject({
+      status: 'queued',
+      slotId: 'cover-slot',
+      promptText: '把参考图里的标题放大 20%，其余构图保持不变。',
+      altText: '标题放大后的海报',
+      caption: '海报修改稿',
+      semanticSummary: '上一版标题偏小。',
+      aspectRatio: '4:5',
+      imageSize: '2K',
+      targetArtifactId: 'artifact-image-1',
+      targetImageIds: ['message-old:image-old'],
+      referenceImageIds: ['message-ref:image-ref'],
+      styleImageIds: ['message-style:image-style'],
+      referenceCharacterIds: ['hui'],
+      referenceImages: [{ url: 'data:image/png;base64,old', mimeType: 'image/png', label: '上一版图片' }],
+      error: undefined,
+      assetId: undefined,
+      url: undefined,
+      thumbnailAssetId: undefined,
+      width: undefined,
+      height: undefined,
+      sizeBytes: undefined,
+      checksum: undefined,
+    });
+    await waitForExpectation(() => {
+      expect(generateImageWithAdapter).toHaveBeenCalledWith(expect.objectContaining({
+        prompt: '把参考图里的标题放大 20%，其余构图保持不变。',
+        aspectRatio: '4:5',
+        imageSize: '2K',
+        referenceImages: [{ url: 'data:image/png;base64,old', mimeType: 'image/png', label: '上一版图片' }],
+        characters: [subjectCharacter],
+      }));
+      expect(upserts.at(-1)?.metadata?.attachments?.[0]).toMatchObject({
+        status: 'ready',
+        url: 'data:image/png;base64,retry-inputs',
+      });
+    });
+  });
+
   it('keeps queued retries behind the current generating attachment', async () => {
     const first = deferred<Array<{ dataUrl: string; mimeType: string }>>();
     const second = deferred<Array<{ dataUrl: string; mimeType: string }>>();
