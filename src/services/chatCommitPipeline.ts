@@ -68,6 +68,7 @@ export async function runChatCommitPipeline(params: {
         message,
         character: speaker,
         characters: params.characters,
+        messages: params.currentMessages,
         aiProfiles: params.aiProfiles || [],
         upsertMessage: params.upsertMessage,
       });

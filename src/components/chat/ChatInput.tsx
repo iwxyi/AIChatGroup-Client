@@ -10,6 +10,7 @@ import { useUIStore } from '../../stores/useUIStore';
 import type { UserDraftActivity } from '../../services/userInputBuffer';
 import type { MessageAttachment } from '../../types/message';
 import type { AIModelInputCapabilities } from '../../types/settings';
+import { buildImageAttachmentHoverInfo } from '../../services/messageAttachmentHoverInfo';
 import { normalizeInputCapabilities } from '../../types/settings';
 
 interface ChatInputProps {
@@ -482,24 +483,34 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
             },
           }}
         >
-          {attachments.map((attachment) => (
-            <Chip
-              key={attachment.id}
-              size="small"
-              label={attachment.altText || 'Image'}
-              onDelete={() => setAttachments((current) => current.filter((item) => item.id !== attachment.id))}
-              avatar={attachment.url ? <Box component="img" src={attachment.url} alt="" sx={{ width: 24, height: 24, objectFit: 'cover' }} /> : undefined}
-              variant="outlined"
-              sx={{
-                flexShrink: 0,
-                maxWidth: { xs: 150, sm: 190 },
-                '& .MuiChip-label': {
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                },
-              }}
-            />
-          ))}
+          {attachments.map((attachment) => {
+            const hoverInfo = buildImageAttachmentHoverInfo(attachment);
+            return (
+              <Tooltip
+                key={attachment.id}
+                title={hoverInfo ? <Box sx={{ whiteSpace: 'pre-wrap', maxWidth: 360 }}>{hoverInfo}</Box> : ''}
+                arrow
+                enterDelay={450}
+                disableHoverListener={!hoverInfo}
+              >
+                <Chip
+                  size="small"
+                  label={attachment.altText || 'Image'}
+                  onDelete={() => setAttachments((current) => current.filter((item) => item.id !== attachment.id))}
+                  avatar={attachment.url ? <Box component="img" src={attachment.url} alt="" sx={{ width: 24, height: 24, objectFit: 'cover' }} /> : undefined}
+                  variant="outlined"
+                  sx={{
+                    flexShrink: 0,
+                    maxWidth: { xs: 150, sm: 190 },
+                    '& .MuiChip-label': {
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    },
+                  }}
+                />
+              </Tooltip>
+            );
+          })}
         </Box>
         ) : null}
         {attachments.length > 0 && inputCapabilityWarning ? (

@@ -1022,6 +1022,7 @@ export default function ChatDetailPage() {
           message,
           character: speaker,
           characters,
+          messages: currentChatMessages,
           aiProfiles,
           upsertMessage,
         });
@@ -2914,10 +2915,11 @@ export default function ChatDetailPage() {
       attachmentId,
       character,
       characters,
+      messages: currentChatMessages,
       aiProfiles,
       upsertMessage: upsertMessageStable,
     });
-  }, [aiProfiles, characters, chatInteractionDisabled, chatReadOnlyReason, upsertMessageStable]);
+  }, [aiProfiles, characters, chatInteractionDisabled, chatReadOnlyReason, currentChatMessages, upsertMessageStable]);
 
   useChatAutoSocialFlow({ chat, runAutoSocialEventFlow });
 

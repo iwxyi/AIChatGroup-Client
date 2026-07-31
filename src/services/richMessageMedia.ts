@@ -82,6 +82,7 @@ type RichMediaQueueEntry = {
   message: Message;
   character?: AICharacter | null;
   characters?: AICharacter[];
+  messages?: Message[];
   aiProfiles: AIModelProfile[];
   upsertMessage: (message: Message) => void;
   promise: Promise<void>;
@@ -223,6 +224,49 @@ function updateAttachment(metadata: MessageMetadata | undefined, attachmentId: s
   };
 }
 
+function messageImageReferenceMap(messages: Message[]) {
+  const refs = new Map<string, { url: string; mimeType?: string; label?: string }>();
+  for (const message of messages) {
+    if (message.isDeleted) continue;
+    for (const attachment of message.metadata?.attachments || []) {
+      if (attachment.kind !== 'image' || attachment.status !== 'ready' || !attachment.url) continue;
+      const value = {
+        url: attachment.url,
+        mimeType: attachment.mimeType,
+        label: attachment.caption || attachment.altText || '参考图',
+      };
+      refs.set(`${message.id}:${attachment.id}`, value);
+      if (message.serverId) refs.set(`${message.serverId}:${attachment.id}`, value);
+      if (message.clientKey) refs.set(`${message.clientKey}:${attachment.id}`, value);
+      refs.set(attachment.id, value);
+    }
+  }
+  return refs;
+}
+
+function resolveAttachmentReferenceImages(attachment: MessageAttachment, messages: Message[]) {
+  const explicit = attachment.referenceImages?.filter((image) => image.url) || [];
+  const ids = Array.from(new Set([
+    ...(attachment.targetImageIds || []),
+    ...(attachment.referenceImageIds || []),
+    ...(attachment.styleImageIds || []),
+  ].filter(Boolean))).slice(0, 9);
+  if (!ids.length) return explicit.length ? explicit : undefined;
+
+  const refs = messageImageReferenceMap(messages);
+  const resolved = ids.flatMap((id) => {
+    const ref = refs.get(id);
+    return ref ? [ref] : [];
+  });
+  const seen = new Set<string>();
+  const merged = [...explicit, ...resolved].filter((image) => {
+    if (seen.has(image.url)) return false;
+    seen.add(image.url);
+    return true;
+  }).slice(0, 9);
+  return merged.length ? merged : undefined;
+}
+
 async function attachAssistantImageArtifact(params: {
   message: Message;
   attachmentId: string;
@@ -293,6 +337,10 @@ async function runRichMediaQueueEntry(entry: RichMediaQueueEntry) {
         .map((id) => entry.characters?.find((character) => character.id === id))
         .filter(Boolean) as AICharacter[];
       const visualCharacter = referenceCharacters[0] || entry.character || null;
+      const referenceImages = resolveAttachmentReferenceImages(attachment, [
+        ...(entry.messages || []),
+        currentMessage,
+      ]);
       const images = await generateImageWithAdapter({
         profile,
         prompt: attachment.promptText,
@@ -300,7 +348,7 @@ async function runRichMediaQueueEntry(entry: RichMediaQueueEntry) {
         intent: 'chat-image',
         character: referenceCharacters.length ? null : entry.character,
         characters: referenceCharacters,
-        referenceImages: attachment.referenceImages,
+        referenceImages,
         aspectRatio: attachment.aspectRatio,
         imageSize: attachment.imageSize,
         allowCharacterReferenceImages: true,
@@ -438,6 +486,7 @@ function enqueueRichMediaAttachment(params: {
   attachment: GenerativeAttachment;
   character?: AICharacter | null;
   characters?: AICharacter[];
+  messages?: Message[];
   aiProfiles: AIModelProfile[];
   upsertMessage: (message: Message) => void;
   priority?: 'normal' | 'next';
@@ -461,6 +510,7 @@ function enqueueRichMediaAttachment(params: {
     message: params.message,
     character: params.character,
     characters: params.characters,
+    messages: params.messages,
     aiProfiles: params.aiProfiles,
     upsertMessage: params.upsertMessage,
     promise,
@@ -482,6 +532,7 @@ export async function processRichMessageMedia(params: {
   message: Message;
   character?: AICharacter | null;
   characters?: AICharacter[];
+  messages?: Message[];
   aiProfiles: AIModelProfile[];
   upsertMessage: (message: Message) => void;
   attachmentIds?: string[];
@@ -500,6 +551,7 @@ export async function processRichMessageMedia(params: {
     attachment,
     character: params.character,
     characters: params.characters,
+    messages: params.messages,
     aiProfiles: params.aiProfiles,
     upsertMessage: params.upsertMessage,
     priority: params.priority,
@@ -511,6 +563,7 @@ export async function retryRichMessageMedia(params: {
   attachmentId: string;
   character?: AICharacter | null;
   characters?: AICharacter[];
+  messages?: Message[];
   aiProfiles: AIModelProfile[];
   upsertMessage: (message: Message) => void;
 }): Promise<void> {
@@ -527,6 +580,7 @@ export async function retryRichMessageMedia(params: {
     message: retryMessage,
     character: params.character,
     characters: params.characters,
+    messages: params.messages,
     aiProfiles: params.aiProfiles,
     upsertMessage: params.upsertMessage,
     attachmentIds: [params.attachmentId],
@@ -546,7 +600,6 @@ export function scrubLocalMediaUrlsForCloud(message: Message) {
       if (attachment.status === 'ready' && typeof attachment.url === 'string' && attachment.url.startsWith('data:')) {
         return {
           ...attachment,
-          status: 'queued' as const,
           url: undefined,
           assetId: undefined,
           updatedAt: Date.now(),

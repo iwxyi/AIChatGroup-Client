@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AICharacter } from '../types/character';
 import type { Message } from '../types/message';
 import type { AIModelProfile } from '../types/settings';
-import { getRichMediaQueueSnapshot, processRichMessageMedia, resetRichMediaQueueForTests, retryRichMessageMedia } from './richMessageMedia';
+import { getRichMediaQueueSnapshot, processRichMessageMedia, resetRichMediaQueueForTests, retryRichMessageMedia, scrubLocalMediaUrlsForCloud } from './richMessageMedia';
 import { generateImageWithAdapter } from './aiGenerationAdapter';
 import { api } from './api';
 
@@ -337,6 +337,91 @@ describe('processRichMessageMedia', () => {
       referenceImages: [{ url: 'https://example.test/reference.png', mimeType: 'image/png', label: '用户参考图' }],
     }));
     expect(upserts.at(-1)?.metadata?.attachments?.[0]?.status).toBe('ready');
+  });
+
+  it('resolves referenced image ids from the current message window when a queued edit is recovered', async () => {
+    vi.mocked(generateImageWithAdapter).mockResolvedValue([{
+      dataUrl: 'data:image/png;base64,edited',
+      mimeType: 'image/png',
+    }]);
+    const sourceMessage = buildQueuedImageMessage({
+      id: 'message-source',
+      metadata: {
+        attachments: [{
+          id: 'source-image',
+          kind: 'image',
+          status: 'ready',
+          url: 'data:image/png;base64,source',
+          mimeType: 'image/png',
+          altText: '梁文峰照片',
+          caption: '待修改图片',
+          createdAt: 100,
+          updatedAt: 110,
+        }],
+      },
+    });
+    const editMessage = buildQueuedImageMessage({
+      id: 'message-edit',
+      metadata: {
+        attachments: [{
+          id: 'image-1',
+          kind: 'image',
+          status: 'queued',
+          promptText: '把图片里的梁文峰改成梁晓峰，保持原图构图和背景不变。',
+          altText: '改名后的图片',
+          targetImageIds: ['message-source:source-image'],
+          createdAt: 123,
+          updatedAt: 123,
+        }],
+      },
+    });
+    const upserts: Message[] = [];
+
+    await processRichMessageMedia({
+      message: editMessage,
+      messages: [sourceMessage, editMessage],
+      aiProfiles: [imageProfile],
+      upsertMessage: (message) => upserts.push(message),
+    });
+
+    expect(generateImageWithAdapter).toHaveBeenCalledWith(expect.objectContaining({
+      referenceImages: [{
+        url: 'data:image/png;base64,source',
+        mimeType: 'image/png',
+        label: '待修改图片',
+      }],
+    }));
+    expect(upserts.at(-1)?.metadata?.attachments?.[0]).toMatchObject({
+      status: 'ready',
+      url: 'data:image/png;base64,edited',
+    });
+  });
+
+  it('scrubs local data urls for cloud without downgrading ready images back to the generation queue', () => {
+    const metadata = scrubLocalMediaUrlsForCloud(buildQueuedImageMessage({
+      metadata: {
+        generation: { status: 'ready', updatedAt: 130 },
+        attachments: [{
+          id: 'image-1',
+          kind: 'image',
+          status: 'ready',
+          url: 'data:image/png;base64,ready',
+          mimeType: 'image/png',
+          altText: '已生成图片',
+          promptText: '正确的图片提示词',
+          createdAt: 123,
+          updatedAt: 130,
+        }],
+      },
+    }));
+
+    expect(metadata?.attachments?.[0]).toMatchObject({
+      id: 'image-1',
+      status: 'ready',
+      url: undefined,
+      assetId: undefined,
+    });
+    expect(metadata?.generation?.status).toBe('ready');
   });
 
   it('retries a failed media attachment by resetting it to queued and running the same pipeline', async () => {

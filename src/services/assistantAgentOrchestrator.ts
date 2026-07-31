@@ -353,6 +353,7 @@ function buildWriterPrompt() {
     '8. imageReferenceRegistry 是最近聊天图片的轻量注册表；不要默认把所有历史图片当参考图。只有当用户当前指令、最近上下文、图片说明、消息顺序或显式选择能明确定位时，才选择其中的图片。',
     '8.1 用户本轮手动上传或通过“放到参考图”加入的 userMessage.imageAttachments 优先级最高，通常作为 referenceImageIds 或 targetImageIds 使用。',
     '8.2 用户说“上一张/刚才那张/这张/把它/标题大一点/杯子改成这个样式”等相对指代时，必须先从 imageReferenceRegistry 结合 messageRole、messageContentPreview、altText、caption、artifactId 判断目标图。能唯一判断则使用；多候选或无法一一对应时 assistantMessage 提出澄清，mediaTasks 为空。',
+    '8.2a 用户说“把图片里的 A 改成 B / 图里的文字改为 B / 照片里的人名替换成 B”这类明确编辑图片内容的请求，即使没有说“上一张”，也默认 target 是 imageReferenceRegistry 中最新的一张可用图片；只有当用户同时指向多张图、或修改会影响多张候选且无法判断时才澄清。',
     '8.3 图片编辑或变体任务必须区分 targetImageIds、referenceImageIds、styleImageIds：target 是要被修改的图；reference 是要借鉴内容/局部元素的图；style 是要借鉴风格的图。输出 ID 必须来自 imageReferenceRegistry[].refId，不要输出 URL，不要虚构 ID。',
     '8.4 如果 target 图对应 imageReferenceRegistry[].artifactId，且用户是在修改同一张图或同一组图，必须把 mediaTasks[].targetArtifactId 设置为该 artifactId；这样图片完成后会追加为同一产物的新版本。批量修改多张图时，每个 mediaTask 对应一个 targetArtifactId。',
     '9. 当前没有可靠蒙版/区域标注能力时，局部修改只能作为“参考原图重新生成整体变体”。必须在 assistantMessage 中说明是整体变体；如果用户明确要求精确局部编辑且缺少区域信息，先澄清。',
@@ -363,6 +364,75 @@ function buildWriterPrompt() {
     '输出格式：',
     '{"assistantMessage":"面向用户的自然回复文案，可包含图片槽位，例如：下面是一份红烧肉图文介绍。\\n\\n![红烧肉成品图](attachment:image-1)\\n\\n这张图突出肥瘦相间和酱汁光泽。","patches":[{"action":"create|update","artifactId":"...","kind":"document|code|diagram|html|table|json|text","title":"...","summary":"...","language":"...","content":"完整内容","files":[{"id":"...","path":"...","language":"...","content":"完整文件内容"}],"baseVersionId":"...","changeSummary":"..."}],"mediaTasks":[{"kind":"image","slotId":"image-1","userCaption":"红烧肉成品图","prompt":"给图片模型的完整提示词","altText":"图片标题或替代文本","aspectRatio":"16:9","imageSize":"2K","targetArtifactId":"已有图片产物ID，可省略","targetImageIds":["message-id:attachment-id"],"referenceImageIds":["message-id:attachment-id"],"styleImageIds":["message-id:attachment-id"]}]}',
   ].join('\n');
+}
+
+function looksLikeImplicitLatestImageEdit(textValue: string) {
+  const normalized = textValue.replace(/\s+/g, '');
+  if (!normalized) return false;
+  const imageScope = /(图片|照片|相片|截图|图像|图里|图中|画面|海报|头像)/i.test(normalized);
+  const editAction = /(改成|改为|修改为|替换成|换成|变成|P成|p成|去掉|删掉|删除|擦除|加上|添加|放大|缩小|调大|调小|变大|变小)/i.test(normalized);
+  return imageScope && editAction;
+}
+
+function createImplicitLatestImageEditTask(params: {
+  userMessage: Message;
+  imageReferenceRegistry: Map<string, ImageAttachmentRef>;
+}): AssistantAgentMediaTask | null {
+  if (!looksLikeImplicitLatestImageEdit(params.userMessage.content)) return null;
+  const latestImage = latestUniqueImageReference(params.imageReferenceRegistry);
+  if (!latestImage) return null;
+  const caption = latestImage.caption || latestImage.altText || '上一张图片';
+  return {
+    kind: 'image',
+    slotId: 'image-1',
+    prompt: enhanceImagePrompt(params.userMessage.content, {
+      caption,
+      subject: `基于${caption}进行图片编辑：${params.userMessage.content}`,
+    }),
+    altText: '图片编辑结果',
+    userCaption: '图片编辑结果',
+    targetArtifactId: latestImage.artifactId,
+    targetImageIds: [latestImage.refId],
+    referenceImages: [{
+      url: latestImage.url,
+      mimeType: latestImage.mimeType,
+      label: caption,
+    }],
+  };
+}
+
+function latestUniqueImageReference(imageReferenceRegistry: Map<string, ImageAttachmentRef>) {
+  const seen = new Set<string>();
+  for (const ref of Array.from(imageReferenceRegistry.values()).reverse()) {
+    if (seen.has(ref.refId)) continue;
+    seen.add(ref.refId);
+    return ref;
+  }
+  return null;
+}
+
+function withImplicitLatestImageTarget(
+  mediaTasks: AssistantAgentMediaTask[],
+  userMessage: Message | undefined,
+  imageReferenceRegistry: Map<string, ImageAttachmentRef>,
+) {
+  if (!userMessage || !mediaTasks.length || !looksLikeImplicitLatestImageEdit(userMessage.content)) return mediaTasks;
+  const latestImage = latestUniqueImageReference(imageReferenceRegistry);
+  if (!latestImage) return mediaTasks;
+  return mediaTasks.map((task) => {
+    if (task.targetImageIds?.length || task.referenceImageIds?.length || task.styleImageIds?.length || task.referenceImages?.length) return task;
+    const caption = latestImage.caption || latestImage.altText || '上一张图片';
+    return {
+      ...task,
+      targetArtifactId: task.targetArtifactId || latestImage.artifactId,
+      targetImageIds: [latestImage.refId],
+      referenceImages: [{
+        url: latestImage.url,
+        mimeType: latestImage.mimeType,
+        label: caption,
+      }],
+    };
+  });
 }
 
 function normalizeKind(value: unknown): AssistantArtifactKind | null {
@@ -500,7 +570,7 @@ function compactLocalFilesForPrompt(localFiles: AssistantAgentLocalFileContext[]
   });
 }
 
-function normalizePatchSet(raw: unknown, imageReferenceRegistry = new Map<string, ImageAttachmentRef>()): AssistantAgentPatchSet {
+function normalizePatchSet(raw: unknown, imageReferenceRegistry = new Map<string, ImageAttachmentRef>(), userMessage?: Message): AssistantAgentPatchSet {
   if (!isRecord(raw)) return { assistantMessage: '没有可提交的产物变更。', patches: [], mediaTasks: [] };
   const patches = Array.isArray(raw.patches) ? raw.patches.slice(0, MAX_PATCHES).flatMap((item): AssistantAgentPatch[] => {
     if (!isRecord(item)) return [];
@@ -522,7 +592,11 @@ function normalizePatchSet(raw: unknown, imageReferenceRegistry = new Map<string
       changeSummary: text(item.changeSummary, 240),
     }];
   }) : [];
-  const mediaTasks = normalizeMediaTasks(raw.mediaTasks, imageReferenceRegistry);
+  let mediaTasks = withImplicitLatestImageTarget(normalizeMediaTasks(raw.mediaTasks, imageReferenceRegistry), userMessage, imageReferenceRegistry);
+  if (!patches.length && !mediaTasks.length && userMessage) {
+    const implicitTask = createImplicitLatestImageEditTask({ userMessage, imageReferenceRegistry });
+    if (implicitTask) mediaTasks = [implicitTask];
+  }
   return {
     assistantMessage: ensureMediaTaskPlaceholders(text(raw.assistantMessage, MAX_ASSISTANT_VISIBLE_MESSAGE_CHARS), mediaTasks)
       || (mediaTasks.length && !patches.length ? '我已根据你的要求准备生成图片。' : patches.length ? '已完成产物变更。' : '没有可提交的产物变更。'),
@@ -698,7 +772,7 @@ export async function writeAssistantAgentPatchSet(params: {
     },
   );
   return validateAssistantAgentPatchSet({
-    patchSet: normalizePatchSet(safeJsonParse(raw), imageReferenceRegistry),
+    patchSet: normalizePatchSet(safeJsonParse(raw), imageReferenceRegistry, params.userMessage),
     plan: params.plan,
     existingArtifacts: params.existingArtifacts,
     blockedUpdateArtifactIds,

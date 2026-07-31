@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Message } from '../../types/message';
+import { buildImageAttachmentHoverInfo } from '../../services/messageAttachmentHoverInfo';
 import { buildAttachmentQueueProgress, getAttachmentDisplayWidth, parseInlineAttachmentPlaceholders, shouldHideGeneratedMediaPlaceholderText } from './ChatMessageContent';
 
 describe('ChatMessageContent media layout', () => {
@@ -60,6 +61,29 @@ describe('ChatMessageContent media layout', () => {
       content: '正在生成图片，完成后会自动显示。',
       metadata: undefined,
     })).toBe(false);
+  });
+
+  it('builds hover info from uploaded image summaries and generated prompts', () => {
+    expect(buildImageAttachmentHoverInfo({
+      id: 'att-1',
+      kind: 'image',
+      status: 'ready',
+      altText: '用户上传图片',
+      semanticSummary: '截图里有一段控制台报错。',
+      promptText: '不应出现在上传图测试里',
+      createdAt: 1,
+      updatedAt: 1,
+    })).toContain('图片摘要：截图里有一段控制台报错。');
+
+    expect(buildImageAttachmentHoverInfo({
+      id: 'att-2',
+      kind: 'image',
+      status: 'ready',
+      altText: '红烧肉照片',
+      promptText: '真实红烧肉摄影，酱汁红亮。',
+      createdAt: 1,
+      updatedAt: 1,
+    })).toContain('生成提示词：真实红烧肉摄影，酱汁红亮。');
   });
 
   it('parses inline markdown attachment placeholders in article content', () => {

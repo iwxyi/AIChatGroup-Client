@@ -322,6 +322,137 @@ describe('assistantAgentOrchestrator validation', () => {
     expect(patchSet.assistantMessage).toContain('attachment:image-1-2');
   });
 
+  it('uses the latest image as target for implicit image text edits when the writer asks to reupload', async () => {
+    generateResponseMock.mockResolvedValue(JSON.stringify({
+      assistantMessage: '请重新上传要修改的图片，或确认是上一条里那张图片。',
+      patches: [],
+      mediaTasks: [],
+    }));
+    const imageMessage: Message = {
+      id: 'message-image',
+      chatId: 'chat-a',
+      type: 'ai',
+      senderId: 'assistant',
+      senderName: '助手',
+      content: '图片已生成。',
+      emotion: 0,
+      timestamp: 10,
+      isDeleted: false,
+      metadata: {
+        attachments: [{
+          id: 'image-a',
+          kind: 'image',
+          status: 'ready',
+          altText: '梁文峰照片',
+          caption: '含有人名梁文峰的图片',
+          url: 'data:image/png;base64,AAA',
+          mimeType: 'image/png',
+          createdAt: 10,
+          updatedAt: 10,
+        }],
+      },
+    };
+    const userMessage: Message = {
+      id: 'message-user',
+      chatId: 'chat-a',
+      type: 'user',
+      senderId: 'user',
+      senderName: '用户',
+      content: '把图片里的梁文峰改成梁晓峰',
+      emotion: 0,
+      timestamp: 20,
+      isDeleted: false,
+    };
+    const plan: AssistantAgentChangePlan = {
+      intent: 'create',
+      scope: { targetMode: 'unknown', artifactIds: [] },
+      operations: [{ kind: 'create', instruction: '编辑图片文字' }],
+      requiresConfirmation: false,
+      confidence: 0.9,
+    };
+
+    const patchSet = await writeAssistantAgentPatchSet({
+      api: { provider: 'openai', apiKey: 'k', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4.1' },
+      chatId: 'chat-a',
+      messages: [imageMessage],
+      userMessage,
+      plan,
+      existingArtifacts: [],
+    });
+
+    expect(patchSet.mediaTasks).toHaveLength(1);
+    expect(patchSet.mediaTasks?.[0]?.targetImageIds).toEqual(['message-image:image-a']);
+    expect(patchSet.mediaTasks?.[0]?.referenceImages?.[0]?.url).toBe('data:image/png;base64,AAA');
+    expect(patchSet.assistantMessage).toContain('attachment:image-1');
+  });
+
+  it('fills the latest image target when an implicit edit media task omits image ids', async () => {
+    generateResponseMock.mockResolvedValue(JSON.stringify({
+      assistantMessage: '已准备修改。',
+      patches: [],
+      mediaTasks: [{
+        kind: 'image',
+        slotId: 'edit-name',
+        prompt: '把图片里的梁文峰改成梁晓峰，保持其它内容不变',
+        altText: '修改后图片',
+      }],
+    }));
+    const imageMessage: Message = {
+      id: 'message-image-latest',
+      chatId: 'chat-a',
+      type: 'ai',
+      senderId: 'assistant',
+      senderName: '助手',
+      content: '',
+      emotion: 0,
+      timestamp: 30,
+      isDeleted: false,
+      metadata: {
+        attachments: [{
+          id: 'image-latest',
+          kind: 'image',
+          status: 'ready',
+          altText: '上一张图',
+          url: 'https://example.test/latest.png',
+          mimeType: 'image/png',
+          createdAt: 30,
+          updatedAt: 30,
+        }],
+      },
+    };
+    const userMessage: Message = {
+      id: 'message-user',
+      chatId: 'chat-a',
+      type: 'user',
+      senderId: 'user',
+      senderName: '用户',
+      content: '把图片里的梁文峰改成梁晓峰',
+      emotion: 0,
+      timestamp: 40,
+      isDeleted: false,
+    };
+    const plan: AssistantAgentChangePlan = {
+      intent: 'create',
+      scope: { targetMode: 'unknown', artifactIds: [] },
+      operations: [{ kind: 'create', instruction: '编辑图片文字' }],
+      requiresConfirmation: false,
+      confidence: 0.9,
+    };
+
+    const patchSet = await writeAssistantAgentPatchSet({
+      api: { provider: 'openai', apiKey: 'k', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4.1' },
+      chatId: 'chat-a',
+      messages: [imageMessage],
+      userMessage,
+      plan,
+      existingArtifacts: [],
+    });
+
+    expect(patchSet.mediaTasks?.[0]?.slotId).toBe('edit-name');
+    expect(patchSet.mediaTasks?.[0]?.targetImageIds).toEqual(['message-image-latest:image-latest']);
+    expect(patchSet.mediaTasks?.[0]?.referenceImages?.[0]?.url).toBe('https://example.test/latest.png');
+  });
+
   it('keeps long user-facing image articles instead of truncating near the first paragraph', async () => {
     const longIntro = `这是一篇图文说明。\n\n${'正文段落。'.repeat(500)}`;
     generateResponseMock.mockResolvedValue(JSON.stringify({

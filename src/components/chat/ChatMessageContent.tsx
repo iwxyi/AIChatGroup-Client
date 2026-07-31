@@ -1,8 +1,9 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import { Box, Button, Chip, LinearProgress, Typography, keyframes } from '@mui/material';
+import { Box, Button, Chip, LinearProgress, Tooltip, Typography, keyframes } from '@mui/material';
 import type { Message, MessageAttachment, NarrativeBlock } from '../../types/message';
 import type { AICharacter } from '../../types/character';
 import { getAttachmentStatusDetail, getAttachmentStatusLabel } from '../../services/messageAttachmentDisplay';
+import { buildImageAttachmentHoverInfo } from '../../services/messageAttachmentHoverInfo';
 import { getRichMediaQueueSnapshot, subscribeRichMediaQueue, type RichMediaQueueSnapshotEntry } from '../../services/richMessageMedia';
 import MarkdownText from '../common/MarkdownText';
 import { formatNarrativeLineText } from '../../services/narrativeLinePresentation';
@@ -138,6 +139,7 @@ function MessageImageAttachment({
   const maxWidth = getAttachmentMaxWidth(ratioValue);
   const maxHeight = Math.min(viewportHeight * 0.56, 520);
   const width = getAttachmentDisplayWidth({ displaySize, ratioValue, maxWidth, maxHeight });
+  const hoverInfo = buildImageAttachmentHoverInfo(attachment, caption);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -156,40 +158,47 @@ function MessageImageAttachment({
         justifySelf: 'start',
       }}
     >
-      <Box
-        sx={{
-          borderRadius: 1.5,
-          overflow: 'hidden',
-          bgcolor: 'action.hover',
-        }}
+      <Tooltip
+        title={hoverInfo ? <Box sx={{ whiteSpace: 'pre-wrap', maxWidth: 420 }}>{hoverInfo}</Box> : ''}
+        arrow
+        enterDelay={450}
+        disableHoverListener={!hoverInfo}
       >
         <Box
-          component="img"
-          src={attachment.url}
-          alt={attachment.altText}
-          loading="lazy"
-          decoding="async"
-          onLoad={(event) => {
-            const image = event.currentTarget;
-            if (image.naturalWidth > 0 && image.naturalHeight > 0) {
-              setNaturalSize({ width: image.naturalWidth, height: image.naturalHeight });
-            }
-          }}
-          onClick={() => onOpenImage?.(message, attachment)}
           sx={{
-            width: '100%',
-            height: 'auto',
-            maxHeight: 'min(56vh, 520px)',
-            objectFit: 'contain',
-            display: 'block',
-            cursor: onOpenImage ? 'zoom-in' : 'default',
             borderRadius: 1.5,
-            border: '1px solid',
-            borderColor: 'divider',
+            overflow: 'hidden',
             bgcolor: 'action.hover',
           }}
-        />
-      </Box>
+        >
+          <Box
+            component="img"
+            src={attachment.url}
+            alt={attachment.altText}
+            loading="lazy"
+            decoding="async"
+            onLoad={(event) => {
+              const image = event.currentTarget;
+              if (image.naturalWidth > 0 && image.naturalHeight > 0) {
+                setNaturalSize({ width: image.naturalWidth, height: image.naturalHeight });
+              }
+            }}
+            onClick={() => onOpenImage?.(message, attachment)}
+            sx={{
+              width: '100%',
+              height: 'auto',
+              maxHeight: 'min(56vh, 520px)',
+              objectFit: 'contain',
+              display: 'block',
+              cursor: onOpenImage ? 'zoom-in' : 'default',
+              borderRadius: 1.5,
+              border: '1px solid',
+              borderColor: 'divider',
+              bgcolor: 'action.hover',
+            }}
+          />
+        </Box>
+      </Tooltip>
       {caption ? (
         <Typography variant="caption" sx={{ color: 'text.secondary', lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
           {caption}

@@ -1,4 +1,4 @@
-import type { Message } from '../types/message';
+import type { Message, MessageAttachment, MessageMetadata } from '../types/message';
 import { buildMessageIdentityKeys, getMessageRenderIdentity, isLocalOnlyMessageId, messagesShareIdentity } from '../services/messageIdentity';
 import { compactMessageMetadata } from '../services/messageMetadataCompaction';
 
@@ -102,6 +102,58 @@ function shouldKeepExistingMessage(existing: Message, incoming: Message) {
   return Boolean(incoming.isStreaming && !existing.isStreaming && messagesShareIdentity(existing, incoming));
 }
 
+function hasUsableMediaUrl(attachment: MessageAttachment | undefined) {
+  return Boolean(attachment?.url && typeof attachment.url === 'string');
+}
+
+function shouldPreserveLocalReadyAttachment(local: MessageAttachment | undefined, incoming: MessageAttachment) {
+  if (!local || local.status !== 'ready' || !hasUsableMediaUrl(local)) return false;
+  if (incoming.status === 'queued' || incoming.status === 'generating') return true;
+  return incoming.status === 'ready' && !hasUsableMediaUrl(incoming);
+}
+
+function mergeAttachmentPair(local: MessageAttachment | undefined, incoming: MessageAttachment) {
+  if (shouldPreserveLocalReadyAttachment(local, incoming)) {
+    return {
+      ...incoming,
+      ...local,
+      updatedAt: Math.max(local?.updatedAt || 0, incoming.updatedAt || 0),
+    };
+  }
+  return incoming;
+}
+
+function mergeMetadataPair(existing: MessageMetadata | undefined, incoming: MessageMetadata | undefined) {
+  if (!incoming || Object.keys(incoming as Record<string, unknown>).length === 0) return existing;
+  if (!existing?.attachments?.length || !incoming.attachments?.length) return incoming;
+
+  const existingAttachments = new Map(existing.attachments.map((attachment) => [attachment.id, attachment]));
+  const incomingIds = new Set(incoming.attachments.map((attachment) => attachment.id));
+  const attachments = [
+    ...incoming.attachments.map((attachment) => mergeAttachmentPair(existingAttachments.get(attachment.id), attachment)),
+    ...existing.attachments.filter((attachment) => !incomingIds.has(attachment.id)),
+  ];
+  const generationStatus = attachments.some((attachment) => attachment.status === 'queued' || attachment.status === 'generating')
+    ? 'generating'
+    : attachments.some((attachment) => attachment.status === 'failed')
+      ? 'failed'
+      : attachments.length
+        ? 'ready'
+        : incoming.generation?.status;
+
+  return {
+    ...incoming,
+    attachments,
+    generation: incoming.generation || existing.generation
+      ? {
+          ...(existing.generation || {}),
+          ...(incoming.generation || {}),
+          status: generationStatus,
+        }
+      : undefined,
+  };
+}
+
 function mergeMessagePair(existing: Message, incoming: Message) {
   if (shouldKeepExistingMessage(existing, incoming)) return existing;
   const existingHasLocalIdentity = hasLocalMessageIdentity(existing);
@@ -120,9 +172,7 @@ function mergeMessagePair(existing: Message, incoming: Message) {
     timestamp: existingHasLocalIdentity ? existing.timestamp : incoming.timestamp,
     isOptimistic: incoming.isOptimistic ?? existing.isOptimistic,
     isStreaming: incoming.isStreaming ?? existing.isStreaming,
-    metadata: incoming.metadata && Object.keys(incoming.metadata as Record<string, unknown>).length > 0
-      ? incoming.metadata
-      : existing.metadata,
+    metadata: mergeMetadataPair(existing.metadata, incoming.metadata),
   };
 }
 
