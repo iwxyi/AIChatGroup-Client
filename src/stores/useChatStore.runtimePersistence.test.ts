@@ -9,6 +9,7 @@ import {
   type GroupChat,
 } from '../types/chat';
 import type { RelationshipLedgerEntry, RuntimeEventV2 } from '../types/runtimeEvent';
+import type { Message } from '../types/message';
 import type { MemoryItem } from '../services/memoryTypes';
 import { storageKey } from '../constants/brand';
 
@@ -227,6 +228,20 @@ function chat(overrides: Partial<GroupChat> = {}): GroupChat {
   };
 }
 
+function message(overrides: Partial<Message>): Message {
+  return {
+    id: overrides.id || 'message-1',
+    chatId: 'chat-1',
+    type: overrides.type || 'ai',
+    senderId: overrides.senderId || 'a',
+    content: overrides.content || '继续聊。',
+    emotion: 0,
+    timestamp: overrides.timestamp || 100,
+    isDeleted: false,
+    ...overrides,
+  };
+}
+
 describe('chat runtime persistence', () => {
   beforeEach(() => {
     vi.resetModules();
@@ -366,6 +381,37 @@ describe('chat runtime persistence', () => {
     expect(updated?.messageBranchState?.activeLeafNodeId).toBe('local-revision');
     expect(updated?.fieldVersions?.messageBranchState).toBe(operation?.clientTimestamp);
     expect(operation?.patch.messageBranchState).toBeTruthy();
+  });
+
+  it('does not let runtime event messages replace chat latest preview', async () => {
+    const { useChatStore } = await import('./useChatStore');
+    const previousLatest = message({ id: 'message-visible', type: 'ai', content: '真正的最后一句发言', timestamp: 100 });
+    const runtimeEvent = message({ id: 'message-event', type: 'event', content: '归属/身份冲突：0', timestamp: 200 });
+    const base = chat({ latestMessage: previousLatest, lastMessageAt: previousLatest.timestamp });
+    useChatStore.setState({
+      chats: [base],
+      currentChatId: base.id,
+      lastSyncedAt: 0,
+      pendingOperations: [],
+      pendingEditSyncCount: 0,
+      pendingEditSyncError: null,
+      remoteDeletedChatIds: [],
+      remoteDeletedChats: [],
+      fieldConflicts: [],
+      chatSummaryLoadedAt: 0,
+      isLoading: false,
+    });
+
+    await useChatStore.getState().updateChat(base.id, {
+      latestMessage: runtimeEvent,
+      lastMessageAt: runtimeEvent.timestamp,
+    });
+
+    const updated = useChatStore.getState().chats[0];
+    const operation = useChatStore.getState().pendingOperations[0];
+    expect(updated?.latestMessage?.id).toBe(previousLatest.id);
+    expect(updated?.lastMessageAt).toBe(previousLatest.timestamp);
+    expect((operation?.patch.latestMessage as Message | undefined)?.id).toBe(previousLatest.id);
   });
 
   it('queues non-runtime chat patch fields when applying runtime delta', async () => {

@@ -14,11 +14,13 @@ import { scopedStorageKey } from '../constants/brand';
 import { getLocalDataUserId } from '../services/authStorageScope';
 import { isCloudSyncEnabled } from '../services/cloudSyncPreference';
 import { useChatStore } from './useChatStore';
+import { useCharacterStore } from './useCharacterStore';
 import { createSyncScopeMetadata, type SyncScopeSnapshot } from './syncScopeMetadata';
 import { completeLocalOutboxWorkerOperation, markLocalOutboxWorkerOperation, mirrorLocalOutboxWorkerQueue, removeLocalOutboxWorkerOperation } from '../services/localOutboxWorkerBridge';
 import { useSettingsStore } from './useSettingsStore';
 import { compactMessage, compactMessageMetadata } from '../services/messageMetadataCompaction';
 import { logDeveloperDiagnostic } from '../services/developerDiagnostics';
+import { canRecreateMissingCloudChat } from '../services/chatAvailability';
 import {
   type CachedMessageWindow,
   MAX_ACTIVE_MESSAGES_PER_CHAT,
@@ -745,6 +747,16 @@ function scheduleChatSyncFirst() {
   void useChatStore.getState().resumeSync();
 }
 
+function ensureLocalChatCreateQueued(chatId: string) {
+  if (shouldSkipCloudSync() || hasPendingChatCreate(chatId)) return false;
+  const chat = useChatStore.getState().chats.find((item) => item.id === chatId && item.deletedAt == null);
+  if (!chat) return false;
+  if (!canRecreateMissingCloudChat(chat, useCharacterStore.getState().characters)) return false;
+  void useChatStore.getState().syncPatch(chatId, { ...chat, id: chat.id } as Record<string, unknown>, 'create');
+  scheduleChatSyncFirst();
+  return true;
+}
+
 function isCloudMissingResourceError(error: unknown) {
   return error instanceof ApiError && (
     error.status === 404
@@ -1195,8 +1207,16 @@ export const useMessageStore = create<MessageStore>()(
             };
           });
         } catch (error) {
-          if (!isAppend && !options?.before && !options?.after && options?.aroundTimestamp === undefined) messageSyncScopes.markError(messageWindowScope(chatId), error);
-          if (!isCloudMissingResourceError(error)) {
+          const cloudMissingResource = isCloudMissingResourceError(error);
+          if (cloudMissingResource) ensureLocalChatCreateQueued(chatId);
+          if (!isAppend && !options?.before && !options?.after && options?.aroundTimestamp === undefined) {
+            if (cloudMissingResource) {
+              messageSyncScopes.markChecked(messageWindowScope(chatId), { applied: false, fresh: true });
+            } else {
+              messageSyncScopes.markError(messageWindowScope(chatId), error);
+            }
+          }
+          if (!cloudMissingResource) {
             reportRecoverableError({
               location: 'cloud-sync:messages-load',
               error,

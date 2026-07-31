@@ -6,11 +6,11 @@ import GroupIcon from '@mui/icons-material/Groups';
 import AssistantIcon from '@mui/icons-material/SmartToyOutlined';
 import type { GroupChat } from '../../types/chat';
 import type { AICharacter } from '../../types/character';
-import type { Message } from '../../types/message';
 import { formatRelativeTime } from '../../utils/format';
 import { buildInteractiveSurfaceSx, buildSelectionRailSx } from '../../styles/interaction';
 import { buildChatSubtitle } from './chatCardSubtitle';
 import { getChatGameplayShortLabel } from '../../services/chatGameplayPresentation';
+import { sanitizeChatLatestMessage } from '../../services/chatLatestMessage';
 
 interface ChatCardProps {
   chat: GroupChat;
@@ -25,18 +25,8 @@ const CHAT_CARD_AVATAR_IMG_PROPS = {
   decoding: 'async',
 } as const;
 
-function isPreviewableMessage(message: Message | null | undefined): message is Message {
-  return Boolean(message && !message.isDeleted && message.type !== 'system' && message.type !== 'event');
-}
-
-function latestByTimestamp(messages: Array<Message | null | undefined>) {
-  return messages
-    .filter(isPreviewableMessage)
-    .sort((a, b) => b.timestamp - a.timestamp)[0];
-}
-
 function ChatCard({ chat, characters, onClick, onPrefetch, selected = false }: ChatCardProps) {
-  const resolvedLatestMessage = latestByTimestamp([chat.latestMessage]) || null;
+  const resolvedLatestMessage = sanitizeChatLatestMessage(chat.latestMessage);
   const members = characters.filter((c) => chat.memberIds.includes(c.id));
   const isAssistant = chat.type === 'assistant';
   const isUserDirect = chat.type === 'direct';

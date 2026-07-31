@@ -11,6 +11,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { useChatStore } from '../stores/useChatStore';
 import { useCharacterStore } from '../stores/useCharacterStore';
 import { useAuthStore } from '../stores/useAuthStore';
+import { useMessageStore } from '../stores/useMessageStore';
 import ChatCard from '../components/chat/ChatCard';
 import EmptyState from '../components/common/EmptyState';
 import NoCharactersDialog from '../components/common/NoCharactersDialog';
@@ -25,6 +26,7 @@ import { readPersistentUiValue, writePersistentUiValue } from '../utils/persiste
 import { motion, transition } from '../styles/motion';
 import { buildListGridSx } from '../styles/interaction';
 import { buildAssistantChatDraft } from '../services/chatDraftBuilder';
+import { getLatestChatPreviewMessage, sanitizeChatLatestMessage } from '../services/chatLatestMessage';
 
 const CHAT_LIST_TAB_KEY = 'chat-list-tab';
 const ASSISTANT_TAB = 3;
@@ -66,6 +68,7 @@ export default function ChatListPage() {
   })));
   const authMode = useAuthStore((state) => state.authMode);
   const isLoggedIn = useAuthStore((state) => state.isLoggedIn);
+  const messageWindowsByChatId = useMessageStore((state) => state.messageWindowsByChatId);
   const [search, setSearch] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [detailCollapsed, setDetailCollapsed] = useState(readDetailCollapsedState);
@@ -229,6 +232,11 @@ export default function ChatListPage() {
   const privateChats = useMemo(() => filteredChats.filter((chat) => chat.type === 'ai_direct'), [filteredChats]);
   const assistantChats = useMemo(() => filteredChats.filter((chat) => chat.type === 'assistant'), [filteredChats]);
   const visibleChats = tab === ASSISTANT_TAB ? assistantChats : tab === 0 ? groupedChats : tab === 1 ? userDirectChats : privateChats;
+  const visibleChatsWithLatestPreview = useMemo(() => visibleChats.map((chat) => {
+    const cachedLatest = getLatestChatPreviewMessage(messageWindowsByChatId[chat.id]?.messages || []);
+    const resolvedLatest = cachedLatest || sanitizeChatLatestMessage(chat.latestMessage);
+    return resolvedLatest === chat.latestMessage ? chat : { ...chat, latestMessage: resolvedLatest };
+  }), [messageWindowsByChatId, visibleChats]);
   const hasCustomCharacters = useMemo(() => characters.some((character) => !character.isPreset && !character.deletedAt), [characters]);
   const [noCharactersDialogOpen, setNoCharactersDialogOpen] = useState(false);
   const [noCharactersReturnTo, setNoCharactersReturnTo] = useState('/chats/create');
@@ -330,7 +338,7 @@ export default function ChatListPage() {
 
       {isLoading && chats.length === 0 ? (
         <ListSkeletonGrid />
-      ) : visibleChats.length === 0 ? (
+      ) : visibleChatsWithLatestPreview.length === 0 ? (
         <EmptyState
           variant="plain"
           message={emptyMessage}
@@ -357,7 +365,7 @@ export default function ChatListPage() {
             ...buildListGridSx(),
           }}
         >
-          {visibleChats.map((chat) => (
+          {visibleChatsWithLatestPreview.map((chat) => (
             <ChatCard
               key={chat.id}
               chat={chat}

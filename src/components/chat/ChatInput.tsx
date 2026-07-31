@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ChangeEvent, type DragEvent, type ReactNode } from 'react';
 import { Box, TextField, IconButton, Chip, CircularProgress, Tooltip, Alert } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
 import StopRoundedIcon from '@mui/icons-material/StopRounded';
@@ -31,6 +31,8 @@ interface ChatInputProps {
   onInjectedAttachmentsConsumed?: () => void;
   isReplyPending?: boolean;
   onStopReply?: () => void;
+  disabled?: boolean;
+  disabledReason?: string;
 }
 
 function getMobilePanelTravelDistance() {
@@ -70,11 +72,12 @@ function buildAttachmentId() {
   return `att_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-export default function ChatInput({ mode, characterName, onSend, onClose, placeholderOverride, sendingLabel, hideSpeakAsChip, onSendError, onOpenPanel, onDraftActivity, inputCapabilities, inputCapabilityWarning, autoFocus, topContent, injectedAttachments, onInjectedAttachmentsConsumed, isReplyPending = false, onStopReply }: ChatInputProps) {
+export default function ChatInput({ mode, characterName, onSend, onClose, placeholderOverride, sendingLabel, hideSpeakAsChip, onSendError, onOpenPanel, onDraftActivity, inputCapabilities, inputCapabilityWarning, autoFocus, topContent, injectedAttachments, onInjectedAttachmentsConsumed, isReplyPending = false, onStopReply, disabled = false, disabledReason }: ChatInputProps) {
   const [text, setText] = useState('');
   const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
   const [isSending, setIsSending] = useState(false);
   const [inputFocused, setInputFocused] = useState(false);
+  const [isImageDragActive, setIsImageDragActive] = useState(false);
   const { t } = useTranslation();
   const { setRightPanelGestureOffset, setRightPanelGestureDragging } = useUIStore(useShallow((state) => ({
     setRightPanelGestureOffset: state.setRightPanelGestureOffset,
@@ -94,6 +97,7 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
   const pendingPanelOffsetRef = useRef<number | null>(null);
   const panelHandleCleanupRef = useRef<(() => void) | null>(null);
   const panelHandleClickSuppressedRef = useRef(false);
+  const imageDragDepthRef = useRef(0);
 
   useEffect(() => {
     if (!autoFocus) return;
@@ -139,7 +143,7 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
   const handleSend = async () => {
     const content = text.trim();
     const outgoingAttachments = attachments;
-    if ((!content && outgoingAttachments.length === 0) || isSending || showStopReply) return;
+    if (disabled || (!content && outgoingAttachments.length === 0) || isSending || showStopReply) return;
     setIsSending(true);
     setText('');
     setAttachments([]);
@@ -170,12 +174,18 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
     }
   };
 
-  const handlePickImages = async (event: ChangeEvent<HTMLInputElement>) => {
-    const selectedFiles = Array.from(event.target.files || []);
-    event.target.value = '';
+  const addImageFiles = useCallback(async (selectedFiles: File[]) => {
+    if (disabled || isSending || showStopReply) return;
+    if (!canAttachImages) {
+      onSendError?.(inputCapabilityWarning || '当前模型不支持图片输入');
+      return;
+    }
     if (!selectedFiles.length) return;
     const remainingSlots = Math.max(0, maxAttachments - attachments.length);
-    if (remainingSlots <= 0) return;
+    if (remainingSlots <= 0) {
+      onSendError?.(`最多只能添加 ${maxAttachments} 张图片`);
+      return;
+    }
     const allowed = new Set(capabilities.supportedMimeTypes);
     const files = selectedFiles
       .filter((file) => file.type.startsWith('image/') && (allowed.size === 0 || allowed.has(file.type)))
@@ -202,7 +212,44 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
       const message = error instanceof Error ? error.message : String(error);
       onSendError?.(message || '读取图片失败');
     }
+  }, [attachments.length, canAttachImages, capabilities.supportedMimeTypes, disabled, inputCapabilityWarning, isSending, maxAttachments, onSendError, showStopReply, t]);
+
+  const handlePickImages = async (event: ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = Array.from(event.target.files || []);
+    event.target.value = '';
+    await addImageFiles(selectedFiles);
   };
+
+  const dragEventHasFiles = (event: DragEvent) => Array.from(event.dataTransfer.types || []).includes('Files');
+
+  const handleImageDragEnter = useCallback((event: DragEvent<HTMLDivElement>) => {
+    if (!dragEventHasFiles(event)) return;
+    event.preventDefault();
+    imageDragDepthRef.current += 1;
+    if (!disabled && !isSending && !showStopReply) setIsImageDragActive(true);
+  }, [disabled, isSending, showStopReply]);
+
+  const handleImageDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
+    if (!dragEventHasFiles(event)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = canAttachImages && !disabled && !isSending && !showStopReply ? 'copy' : 'none';
+    if (!disabled && !isSending && !showStopReply) setIsImageDragActive(true);
+  }, [canAttachImages, disabled, isSending, showStopReply]);
+
+  const handleImageDragLeave = useCallback((event: DragEvent<HTMLDivElement>) => {
+    if (!dragEventHasFiles(event)) return;
+    event.preventDefault();
+    imageDragDepthRef.current = Math.max(0, imageDragDepthRef.current - 1);
+    if (imageDragDepthRef.current === 0) setIsImageDragActive(false);
+  }, []);
+
+  const handleImageDrop = useCallback((event: DragEvent<HTMLDivElement>) => {
+    if (!dragEventHasFiles(event)) return;
+    event.preventDefault();
+    imageDragDepthRef.current = 0;
+    setIsImageDragActive(false);
+    void addImageFiles(Array.from(event.dataTransfer.files || []));
+  }, [addImageFiles]);
 
   useEffect(() => () => {
     cleanupPanelHandleListeners();
@@ -225,7 +272,7 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
     });
   }, []);
 
-  const placeholder = placeholderOverride || (
+  const placeholder = disabled ? (disabledReason || placeholderOverride || '当前会话不可继续') : placeholderOverride || (
     mode === 'speakAs'
       ? t('controls.speakAsPlaceholder', { name: characterName })
       : mode === 'memberSpeak'
@@ -384,6 +431,10 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
       }}
     >
       <Box
+        onDragEnter={handleImageDragEnter}
+        onDragOver={handleImageDragOver}
+        onDragLeave={handleImageDragLeave}
+        onDrop={handleImageDrop}
         sx={{
           width: '100%',
           maxWidth: 760,
@@ -401,6 +452,10 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
           boxShadow: (theme) => theme.palette.mode === 'light'
             ? '0 18px 42px rgba(15,23,42,0.12), 0 1px 0 rgba(255,255,255,0.72) inset'
             : '0 18px 44px rgba(0,0,0,0.30), 0 1px 0 rgba(255,255,255,0.10) inset',
+          outline: isImageDragActive ? '1px solid' : '1px solid transparent',
+          outlineColor: isImageDragActive ? 'primary.main' : 'transparent',
+          outlineOffset: 3,
+          transition: 'outline-color 160ms ease, background-color 160ms ease',
         }}
       >
         {topContent ? (
@@ -409,7 +464,24 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
         </Box>
         ) : null}
         {attachments.length ? (
-        <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap', mb: 0.75 }}>
+        <Box
+          sx={{
+            display: 'flex',
+            gap: 0.75,
+            flexWrap: 'nowrap',
+            overflowX: 'auto',
+            overflowY: 'hidden',
+            mb: 0.75,
+            pb: 0.25,
+            scrollbarWidth: 'thin',
+            overscrollBehaviorX: 'contain',
+            '&::-webkit-scrollbar': { height: 6 },
+            '&::-webkit-scrollbar-thumb': {
+              borderRadius: 999,
+              bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.18)' : 'rgba(226,232,240,0.20)',
+            },
+          }}
+        >
           {attachments.map((attachment) => (
             <Chip
               key={attachment.id}
@@ -418,6 +490,14 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
               onDelete={() => setAttachments((current) => current.filter((item) => item.id !== attachment.id))}
               avatar={attachment.url ? <Box component="img" src={attachment.url} alt="" sx={{ width: 24, height: 24, objectFit: 'cover' }} /> : undefined}
               variant="outlined"
+              sx={{
+                flexShrink: 0,
+                maxWidth: { xs: 150, sm: 190 },
+                '& .MuiChip-label': {
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                },
+              }}
             />
           ))}
         </Box>
@@ -428,7 +508,16 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
         </Alert>
         ) : null}
         <Box
-        sx={{ display: 'flex', alignItems: 'flex-end', gap: 0.75, width: '100%', touchAction: 'pan-y' }}
+        sx={{
+          display: 'flex',
+          alignItems: 'flex-end',
+          gap: 0.75,
+          width: '100%',
+          touchAction: 'pan-y',
+          position: 'relative',
+          borderRadius: 2.5,
+          bgcolor: isImageDragActive ? 'action.hover' : 'transparent',
+        }}
       >
         {mode === 'speakAs' && characterName && !hideSpeakAsChip ? (
           <Chip
@@ -455,7 +544,7 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
               <span>
                 <IconButton
                   onClick={() => fileInputRef.current?.click()}
-                  disabled={isSending || attachments.length >= maxAttachments}
+                  disabled={disabled || isSending || attachments.length >= maxAttachments}
                   sx={{ flexShrink: 0, width: 42, height: 42 }}
                 >
                   <ImageIcon />
@@ -485,6 +574,7 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
             publishDraftActivity(text, false);
           }}
           inputRef={textInputRef}
+          disabled={disabled}
           sx={{
             '& .MuiOutlinedInput-root': {
               borderRadius: 2.25,
@@ -508,7 +598,7 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
                 void handleSend();
               }}
               onMouseDown={(event) => event.preventDefault()}
-              disabled={(!hasDraftContent && !showStopReply) || isSending}
+              disabled={disabled || (!hasDraftContent && !showStopReply) || isSending}
               sx={{
                 flexShrink: 0,
                 width: 42,

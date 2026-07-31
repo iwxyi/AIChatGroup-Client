@@ -27,6 +27,26 @@ function clipPreview(text: string, max = 72) {
   return text.length > max ? `${text.slice(0, max)}…` : text;
 }
 
+function isRuntimeAxisSnapshot(text: string) {
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+  return trimmed
+    .split(/[；;]/)
+    .every((part) => /^[^：:]{1,40}[：:]-?\d+(?:\.\d+)?$/.test(part.trim()));
+}
+
+function buildMemorySummaryPreview(chat: GroupChat, members: AICharacter[]) {
+  return sanitizeUserFacingText(
+    (chat.layeredMemories || [])
+      .filter(isUserFacingMemoryItem)
+      .filter((item) => !isRuntimeAxisSnapshot(item.text))
+      .slice(-2)
+      .map((item) => item.text)
+      .join(' / '),
+    members,
+  );
+}
+
 export function stripMarkdownForPreview(text: string) {
   return text
     .replace(/```[a-zA-Z0-9_-]*\s*([\s\S]*?)```/g, '$1')
@@ -71,7 +91,7 @@ export function buildChatSubtitle(
     return clipPreview(sanitizeUserFacingText(companionshipPreview, members));
   }
   const relationshipPreview = buildRelationshipPreview(members);
-  const memorySummary = sanitizeUserFacingText((chat.layeredMemories || []).filter(isUserFacingMemoryItem).slice(-2).map((item) => item.text).join(' / '), members);
+  const memorySummary = buildMemorySummaryPreview(chat, members);
   const recentEvent = sanitizeUserFacingText(chat.worldState?.recentEvent || '', members);
   return latestMessagePreview || clipPreview(sanitizeUserFacingText(relationshipPreview || memorySummary || recentEvent || chat.topic || '', members));
 }

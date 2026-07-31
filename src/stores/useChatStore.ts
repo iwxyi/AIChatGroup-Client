@@ -37,6 +37,7 @@ import {
 import { DEFAULT_BASIC_RETENTION_LIMITS, getCurrentRetentionLimits, takeRecentByLimit } from '../services/retentionLimits';
 import { useLocalWorkspaceStore } from './useLocalWorkspaceStore';
 import { logDeveloperDiagnostic } from '../services/developerDiagnostics';
+import { sanitizeChatLatestMessage } from '../services/chatLatestMessage';
 
 function createLocalChatId() {
   return `local-chat-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -64,13 +65,30 @@ function buildPatchedFieldVersions(chat: GroupChat, updates: Partial<GroupChat>,
 }
 
 function applyLocalChatUpdate(chat: GroupChat, updates: Partial<GroupChat>, versionAt = Date.now()) {
+  const cleanUpdates = sanitizeChatLatestPatch(chat, updates);
   return normalizeConversation({
     ...chat,
-    ...updates,
-    fieldVersions: buildPatchedFieldVersions(chat, updates, versionAt),
+    ...cleanUpdates,
+    fieldVersions: buildPatchedFieldVersions(chat, cleanUpdates, versionAt),
     updatedAt: versionAt,
-    lastMessageAt: updates.lastMessageAt ?? chat.lastMessageAt,
+    lastMessageAt: cleanUpdates.lastMessageAt ?? chat.lastMessageAt,
   });
+}
+
+function sanitizeChatLatestPatch(chat: GroupChat | undefined, updates: Partial<GroupChat>) {
+  if (!Object.prototype.hasOwnProperty.call(updates, 'latestMessage')) return updates;
+  const nextUpdates = { ...updates };
+  const nextLatest = sanitizeChatLatestMessage(updates.latestMessage);
+  if (nextLatest) {
+    nextUpdates.latestMessage = nextLatest;
+    return nextUpdates;
+  }
+  const previousLatest = sanitizeChatLatestMessage(chat?.latestMessage);
+  nextUpdates.latestMessage = previousLatest;
+  if (Object.prototype.hasOwnProperty.call(updates, 'lastMessageAt')) {
+    nextUpdates.lastMessageAt = previousLatest?.timestamp ?? chat?.lastMessageAt ?? updates.lastMessageAt;
+  }
+  return nextUpdates;
 }
 
 function applyLocalChatDelete(chat: GroupChat) {
@@ -116,25 +134,23 @@ function applyLocalChatPurge(chats: GroupChat[], ids: string[]) {
 }
 
 function createConflictCopyChatData(chat: GroupChat): Omit<GroupChat, 'id' | 'createdAt' | 'updatedAt' | 'lastMessageAt'> {
-  const {
-    id: _id,
-    createdAt: _createdAt,
-    updatedAt: _updatedAt,
-    lastMessageAt: _lastMessageAt,
-    deletedAt: _deletedAt,
-    fieldVersions: _fieldVersions,
-    latestMessage: _latestMessage,
-    runtimeDetailLoaded: _runtimeDetailLoaded,
-    worldRuntimeLoaded: _worldRuntimeLoaded,
-    ...data
-  } = chat;
+  const data = { ...chat } as Partial<GroupChat>;
+  delete data.id;
+  delete data.createdAt;
+  delete data.updatedAt;
+  delete data.lastMessageAt;
+  delete data.deletedAt;
+  delete data.fieldVersions;
+  delete data.latestMessage;
+  delete data.runtimeDetailLoaded;
+  delete data.worldRuntimeLoaded;
   return {
     ...data,
     name: `${chat.name || '未命名聊天'}（本地副本）`,
     sourceChatId: chat.sourceChatId || chat.id,
     sourceMemberIds: chat.sourceMemberIds?.length ? chat.sourceMemberIds : chat.memberIds,
     deletedAt: null,
-  };
+  } as Omit<GroupChat, 'id' | 'createdAt' | 'updatedAt' | 'lastMessageAt'>;
 }
 
 function applyLocalEmptyDeletedChats(chats: GroupChat[]) {
@@ -544,7 +560,13 @@ function createChatStorageForKey(key: string) {
 }
 
 function normalizeChats(items: GroupChat[]) {
-  return items.map((item) => normalizeConversation(item));
+  return items.map((item) => {
+    const chat = normalizeConversation(item);
+    return {
+      ...chat,
+      latestMessage: sanitizeChatLatestMessage(chat.latestMessage),
+    };
+  });
 }
 
 function hasText(value: unknown) {
@@ -804,7 +826,7 @@ function normalizeChatSummaryChange(change: Record<string, unknown>) {
   const chat = normalizeConversation({
     ...patch,
     id: change.id,
-    latestMessage: isRecord(patch.latestMessage) ? patch.latestMessage as unknown as Message : null,
+    latestMessage: sanitizeChatLatestMessage(isRecord(patch.latestMessage) ? patch.latestMessage as unknown as Message : null),
     runtimeDetailLoaded: false,
   } as unknown as GroupChat);
   return {
@@ -1794,20 +1816,22 @@ export const useChatStore = create<ChatStore>()(
         },
 
         updateChat: async (id, updates) => {
-          await prepareAssistantLocalWorkspaceChatRename(id, updates, get().chats);
+          const currentChat = get().chats.find((chat) => chat.id === id);
+          const cleanUpdates = sanitizeChatLatestPatch(currentChat, updates);
+          await prepareAssistantLocalWorkspaceChatRename(id, cleanUpdates, get().chats);
           if (shouldSkipCloudSync()) {
             set((state) => ({
-              chats: state.chats.map((chat) => chat.id === id ? applyLocalChatUpdate(chat, updates) : chat),
+              chats: state.chats.map((chat) => chat.id === id ? applyLocalChatUpdate(chat, cleanUpdates) : chat),
             }));
             return;
           }
-          if (Object.keys(compactChatPatchForCloud(updates as Record<string, unknown>)).length === 0) {
+          if (Object.keys(compactChatPatchForCloud(cleanUpdates as Record<string, unknown>)).length === 0) {
             set((state) => ({
-              chats: state.chats.map((chat) => chat.id === id ? applyLocalChatUpdate(chat, updates) : chat),
+              chats: state.chats.map((chat) => chat.id === id ? applyLocalChatUpdate(chat, cleanUpdates) : chat),
             }));
             return;
           }
-          await get().syncPatch(id, updates, 'patch');
+          await get().syncPatch(id, cleanUpdates, 'patch');
         },
 
         applyChatRuntimeDelta: async (id, delta, patch = {}) => {

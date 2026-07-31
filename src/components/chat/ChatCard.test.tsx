@@ -137,6 +137,35 @@ describe('ChatCard subtitle', () => {
 
     expect(subtitle).toBe('苏苏：结论 重点：可以用 文档 说明。 第一步：运行 npm test');
   });
+
+  it('does not expose runtime axis snapshots as chat list memory previews', () => {
+    const subtitle = buildChatSubtitle(
+      {
+        ...chat('group'),
+        topic: '皇帝闲聊',
+        layeredMemories: [{
+          id: 'memory-conflict-axis',
+          scope: 'conversation',
+          layer: 'episodic',
+          kind: 'conflict',
+          ownerId: 'chat-1',
+          text: '归属/身份冲突：0',
+          salience: 50,
+          confidence: 0.7,
+          recency: 50,
+          reinforcementCount: 1,
+          sourceEventIds: [],
+          createdAt: 1,
+          updatedAt: 1,
+        }],
+        worldState: { phase: 'idle', mood: '', focus: '', recentEvent: '', conflictAxes: [] },
+      },
+      [character()],
+      null,
+    );
+
+    expect(subtitle).toBe('皇帝闲聊');
+  });
 });
 
 describe('stripMarkdownForPreview', () => {

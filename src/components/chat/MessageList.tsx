@@ -92,6 +92,7 @@ interface MessageListProps {
   onCreateRevision?: (message: Message, content: string) => void | Promise<void>;
   onSwitchRevision?: (message: Message, direction: -1 | 1) => void | Promise<void>;
   onOpenArtifact?: (artifactId: string) => void;
+  readOnly?: boolean;
   branchVersionInfoByMessageId?: Record<string, MessageBranchVersionInfo | null | undefined>;
   onReachTop?: () => void | Promise<void>;
   onReachBottom?: () => void | Promise<void>;
@@ -513,6 +514,7 @@ export default function MessageList({
   onCreateRevision,
   onSwitchRevision,
   onOpenArtifact,
+  readOnly = false,
   branchVersionInfoByMessageId,
   onReachTop,
   onReachBottom,
@@ -675,14 +677,14 @@ export default function MessageList({
       character={options?.character || (item.message.type === 'ai' ? resolveCharacterOrDeleted(characters, item.message.senderId, item.message.senderName) : undefined)}
       currentUser={currentUser}
       onDelete={item.pending || item.message.type === 'system' || (options?.message && options.message.id !== item.message.id) ? undefined : onDeleteMessage}
-      onAnalyze={item.pending || item.message.type === 'system' ? undefined : onAnalyzeMessage}
-      onExpressionFeedback={item.pending || (options?.message || item.message).type !== 'ai' ? undefined : onExpressionFeedback}
-      onRetryMedia={item.pending ? undefined : onRetryMedia}
+      onAnalyze={item.pending || readOnly || item.message.type === 'system' ? undefined : onAnalyzeMessage}
+      onExpressionFeedback={item.pending || readOnly || (options?.message || item.message).type !== 'ai' ? undefined : onExpressionFeedback}
+      onRetryMedia={item.pending || readOnly ? undefined : onRetryMedia}
       onOpenImage={item.pending ? undefined : openChatImage}
-      onAddImagesToReference={item.pending ? undefined : onAddImagesToReference}
+      onAddImagesToReference={item.pending || readOnly ? undefined : onAddImagesToReference}
       onOpenDiagram={item.pending ? undefined : openChatDiagram}
       onCharacterAvatarClick={item.pending ? undefined : onCharacterAvatarClick}
-      onCreateRevision={item.pending ? undefined : onCreateRevision}
+      onCreateRevision={item.pending || readOnly ? undefined : onCreateRevision}
       onSwitchRevision={item.pending ? undefined : onSwitchRevision}
       onOpenArtifact={item.pending ? undefined : onOpenArtifact}
       branchVersionInfo={branchVersionInfoByMessageId?.[options?.message?.id || item.message.id] || null}
@@ -690,7 +692,7 @@ export default function MessageList({
       selfMemberId={selfMemberId}
       privateConversation={privateConversation}
     />
-  ), [branchVersionInfoByMessageId, characters, currentUser, onAddImagesToReference, onAnalyzeMessage, onCharacterAvatarClick, onCreateRevision, onDeleteMessage, onExpressionFeedback, onOpenArtifact, onRetryMedia, onSwitchRevision, openChatDiagram, openChatImage, privateConversation, selfMemberId]);
+  ), [branchVersionInfoByMessageId, characters, currentUser, onAddImagesToReference, onAnalyzeMessage, onCharacterAvatarClick, onCreateRevision, onDeleteMessage, onExpressionFeedback, onOpenArtifact, onRetryMedia, onSwitchRevision, openChatDiagram, openChatImage, privateConversation, readOnly, selfMemberId]);
 
   const renderMessageItem = useCallback((item: MessageListRenderItem) => {
     const anchorProps = {

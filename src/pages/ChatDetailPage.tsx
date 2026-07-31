@@ -10,7 +10,7 @@ import PlayIcon from '@mui/icons-material/PlayArrow';
 import PauseIcon from '@mui/icons-material/Pause';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import SettingsIcon from '@mui/icons-material/Settings';
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import DeleteOutlineOutlinedIcon from '@mui/icons-material/DeleteOutlineOutlined';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutlineOutlined';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -60,10 +60,12 @@ import { resolveSessionScrollCapabilities } from '../services/sessionScrollCapab
 import { buildStoryRoomOpeningPreview, type StoryRoomOpeningPreview } from '../services/storyRoomOpeningPreview';
 import { motion, prefersReducedMotion, transition } from '../styles/motion';
 import { attachMessageToActiveBranch, buildMessageBranchVersionInfoByMessageId, createMessageRevisionDraft, getBranchRevisionGroup, getMessageBranchVersionInfo, isMessageBranchingEnabled, projectActiveBranchMessages, resolveMessageBranchNodes } from '../services/messageBranching';
+import { getLatestChatPreviewMessage } from '../services/chatLatestMessage';
 import { projectMergedChatMessages } from '../services/currentChatMessages';
 import { resolveSessionFamilyKey } from '../services/sessionEngineKeys';
 import { isAssistantArtifactCloudSyncEnabled, setAssistantArtifactCloudSyncEnabled } from '../services/assistantArtifactCloudSyncPreference';
 import { writeAssistantAgentDefaultEnabled } from '../services/assistantAgentPreference';
+import { isChatBlockedByMissingRequiredCharacters } from '../services/chatAvailability';
 import { getPendingAppCommand, subscribePendingAppCommand, type PendingAppCommand } from '../features/appCommand/pendingCommandStore';
 import {
   buildStoryChoicePendingKey,
@@ -1088,6 +1090,16 @@ export default function ChatDetailPage() {
     () => chat ? chat.memberIds.map((memberId) => resolveCharacterOrDeleted(characters, memberId)) : [],
     [characters, chat]
   );
+  const isMissingRequiredCharacterChat = useMemo(
+    () => isChatBlockedByMissingRequiredCharacters(chat, characters),
+    [characters, chat],
+  );
+  const chatReadOnlyReason = isRemoteDeletedChat
+    ? '此会话已在其他设备删除'
+    : isMissingRequiredCharacterChat
+      ? '角色已删除，无法继续聊天'
+      : '';
+  const chatInteractionDisabled = Boolean(chatReadOnlyReason);
   const activeMembers = useMemo(
     () => chat ? characters.filter((c) => chat.memberIds.includes(c.id)) : [],
     [characters, chat]
@@ -1219,12 +1231,20 @@ export default function ChatDetailPage() {
   );
 
   const openCharacterPreview = useCallback((character: AICharacter, anchorEl: HTMLElement) => {
+    if (character.deletedAt != null || !characters.some((item) => item.id === character.id && item.deletedAt == null)) {
+      setSnackbar({ open: true, message: '这个角色已删除，仅可查看历史消息', severity: 'info' });
+      return;
+    }
     setProfilePreview({ kind: 'character', anchorRect: anchorEl.getBoundingClientRect(), anchorElement: anchorEl, character });
-  }, []);
+  }, [characters]);
 
   const openChatPreview = useCallback((anchorEl: HTMLElement) => {
+    if (chatInteractionDisabled) {
+      setSnackbar({ open: true, message: chatReadOnlyReason || '当前会话不可继续', severity: 'info' });
+      return;
+    }
     setProfilePreview({ kind: 'chat', anchorRect: anchorEl.getBoundingClientRect(), anchorElement: anchorEl });
-  }, []);
+  }, [chatInteractionDisabled, chatReadOnlyReason]);
   const {
     actionSchema,
     actionPanelTitle,
@@ -1442,6 +1462,10 @@ export default function ChatDetailPage() {
   }, [isZh]);
 
   const handleAddImagesToReference = useCallback((message: Message, attachments: MessageAttachment[]) => {
+    if (chatInteractionDisabled) {
+      setSnackbar({ open: true, message: chatReadOnlyReason || '当前会话不可继续', severity: 'info' });
+      return;
+    }
     if (!effectiveTextInputCapabilities.imageInput) {
       setSnackbar({ open: true, message: '当前模型未开启图片输入能力', severity: 'error' });
       return;
@@ -1454,7 +1478,7 @@ export default function ChatDetailPage() {
       message: nextAttachments.length > 1 ? `已放入 ${nextAttachments.length} 张参考图` : '已放入参考图',
       severity: 'success',
     });
-  }, [effectiveTextInputCapabilities.imageInput]);
+  }, [chatInteractionDisabled, chatReadOnlyReason, effectiveTextInputCapabilities.imageInput]);
 
   const closeSnackbar = useCallback(() => {
     setSnackbar((prev) => ({ ...prev, open: false }));
@@ -1686,6 +1710,10 @@ export default function ChatDetailPage() {
 
   const handleCreateMessageRevision = useCallback(async (sourceMessage: Message, nextContent: string) => {
     if (!chat || !id || !isMessageBranchingEnabled(chat)) return;
+    if (chatInteractionDisabled) {
+      setSnackbar({ open: true, message: chatReadOnlyReason || '当前会话不可继续', severity: 'info' });
+      return;
+    }
     const trimmedContent = nextContent.trim();
     if (!trimmedContent) return;
     directReplyAbortRef.current?.abort();
@@ -1867,7 +1895,7 @@ export default function ChatDetailPage() {
       }
       if (chat.type !== 'direct' && chat.type !== 'assistant') startConversationLoopIfNeeded(nextChat, { immediate: true });
     });
-  }, [addAnchoredMessage, aiProfiles, api, appendEventMessage, appendEventMessageStable, appendEventMessagesStable, appendLocalInterceptionHint, applyChatRuntimeDelta, cancelActiveConversationLoop, characters, chat, chats, commitPersistedManualRuntime, currentChatAllMessages, enqueueManualInput, getNextMessageTimestamp, id, recordSpeak, selectedAssistantArtifactId, setSnackbar, showErrorToast, startConversationLoopIfNeeded, updateCharacter, updateCharacters, updateChat, upsertMessageStable]);
+  }, [addAnchoredMessage, aiProfiles, api, appendEventMessage, appendEventMessageStable, appendEventMessagesStable, appendLocalInterceptionHint, applyChatRuntimeDelta, cancelActiveConversationLoop, characters, chat, chatInteractionDisabled, chatReadOnlyReason, chats, commitPersistedManualRuntime, currentChatAllMessages, enqueueManualInput, getNextMessageTimestamp, id, recordSpeak, selectedAssistantArtifactId, setSnackbar, showErrorToast, startConversationLoopIfNeeded, updateCharacter, updateCharacters, updateChat, upsertMessageStable]);
 
   const handleSwitchMessageRevision = useCallback(async (sourceMessage: Message, direction: -1 | 1) => {
     if (!chat || !id || !isMessageBranchingEnabled(chat)) return;
@@ -1905,15 +1933,17 @@ export default function ChatDetailPage() {
       ...chat,
       messageBranchState: nextBranchState,
     };
-    const activeTail = projectActiveBranchMessages(nextChat, currentChatAllMessages).at(-1);
+    const activeBranchMessages = projectActiveBranchMessages(nextChat, currentChatAllMessages);
+    const activeTail = activeBranchMessages.at(-1);
+    const activePreviewTail = getLatestChatPreviewMessage(activeBranchMessages);
     await updateChat(id, {
       messageBranchState: {
         ...nextBranchState,
         activeLeafNodeId: activeTail?.metadata?.branching?.nodeId || activeTail?.id || targetNodeId,
       },
-      ...(activeTail ? {
-        lastMessageAt: activeTail.timestamp,
-        latestMessage: activeTail,
+      ...(activePreviewTail ? {
+        lastMessageAt: activePreviewTail.timestamp,
+        latestMessage: activePreviewTail,
       } : {}),
     });
     if (scrollRestoreRequest) {
@@ -1928,6 +1958,15 @@ export default function ChatDetailPage() {
       setSnackbar({ open: true, message: '已切换分支，当前生成已停止', severity: 'success' });
     }
   }, [cancelActiveConversationLoop, chat, currentChatAllMessages, id, setSnackbar, updateChat]);
+
+  useEffect(() => {
+    if (!chatInteractionDisabled) return;
+    directReplyAbortRef.current?.abort();
+    directReplyAbortRef.current = null;
+    directReplyEpochRef.current += 1;
+    setIsDirectReplyPending(false);
+    if (isRunningRef.current) cancelActiveConversationLoop('chat_read_only');
+  }, [cancelActiveConversationLoop, chatInteractionDisabled]);
 
   useEffect(() => {
     if (id) {
@@ -2056,6 +2095,10 @@ export default function ChatDetailPage() {
 
   const handleMemberSpeakSend = useCallback(async (content: string, attachments: MessageAttachment[] = []) => {
     if (!chat || !id) return;
+    if (chatInteractionDisabled) {
+      setSnackbar({ open: true, message: chatReadOnlyReason || '当前会话不可继续', severity: 'info' });
+      return;
+    }
     await enqueueManualInput(async () => {
       const recentMessages = currentChatMessages;
       const userMessage = await addMessageStable({
@@ -2160,7 +2203,7 @@ export default function ChatDetailPage() {
       }
       startConversationLoopIfNeeded(chat);
     });
-  }, [addMessageStable, aiProfiles, api, appendEventMessage, appendEventMessageStable, appendEventMessagesStable, appendLocalInterceptionHint, applyChatRuntimeDelta, characters, chat, chats, commitPersistedManualRuntime, currentChatMessages, currentUser?.nickname, enqueueManualInput, getNextMessageTimestamp, id, recordSpeak, selectedAssistantArtifactId, showErrorToast, startConversationLoopIfNeeded, updateCharacter, updateCharacters, updateChat, upsertMessageStable]);
+  }, [addMessageStable, aiProfiles, api, appendEventMessage, appendEventMessageStable, appendEventMessagesStable, appendLocalInterceptionHint, applyChatRuntimeDelta, characters, chat, chatInteractionDisabled, chatReadOnlyReason, chats, commitPersistedManualRuntime, currentChatMessages, currentUser?.nickname, enqueueManualInput, getNextMessageTimestamp, id, recordSpeak, selectedAssistantArtifactId, setSnackbar, showErrorToast, startConversationLoopIfNeeded, updateCharacter, updateCharacters, updateChat, upsertMessageStable]);
 
   const handlePendingAppCommandChoice = useCallback(async (choiceId: string) => {
     if (!chat || !id || chat.type !== 'assistant') return;
@@ -2247,6 +2290,10 @@ export default function ChatDetailPage() {
 
   const handleGuideSend = useCallback(async (content: string, attachments: MessageAttachment[] = []) => {
     if (!chat || !id) return;
+    if (chatInteractionDisabled) {
+      setSnackbar({ open: true, message: chatReadOnlyReason || '当前会话不可继续', severity: 'info' });
+      return;
+    }
     await enqueueManualInput(async () => {
       const recentMessages = currentChatMessages;
       const guidedMessage = await addMessageStable({
@@ -2264,10 +2311,14 @@ export default function ChatDetailPage() {
       await commitPersistedManualRuntime(guidedMessage, recentMessagesWithGuide);
       startConversationLoopIfNeeded(chat);
     });
-  }, [addMessageStable, chat, commitPersistedManualRuntime, currentChatMessages, enqueueManualInput, getNextMessageTimestamp, id, startConversationLoopIfNeeded, updateChat]);
+  }, [addMessageStable, chat, chatInteractionDisabled, chatReadOnlyReason, commitPersistedManualRuntime, currentChatMessages, enqueueManualInput, getNextMessageTimestamp, id, setSnackbar, startConversationLoopIfNeeded, updateChat]);
 
   const handleSpeakAs = useCallback(async (content: string, attachments: MessageAttachment[] = []) => {
     if (!chat || !id || !effectiveSpeakAsChar) return;
+    if (chatInteractionDisabled) {
+      setSnackbar({ open: true, message: chatReadOnlyReason || '当前会话不可继续', severity: 'info' });
+      return;
+    }
     const char = effectiveSpeakAsChar;
     if (!char) return;
     await enqueueManualInput(async () => {
@@ -2294,7 +2345,7 @@ export default function ChatDetailPage() {
       await commitPersistedManualRuntime(spokeMessage, recentMessagesWithSpeaker);
       startConversationLoopIfNeeded(chat);
     });
-  }, [addMessageStable, chat, commitPersistedManualRuntime, currentChatMessages, effectiveSpeakAsChar, enqueueManualInput, getNextMessageTimestamp, id, startConversationLoopIfNeeded, updateChat]);
+  }, [addMessageStable, chat, chatInteractionDisabled, chatReadOnlyReason, commitPersistedManualRuntime, currentChatMessages, effectiveSpeakAsChar, enqueueManualInput, getNextMessageTimestamp, id, setSnackbar, startConversationLoopIfNeeded, updateChat]);
 
   const { runSessionAction, normalizeAndRunSurfaceIntent, runAutoSocialEventFlow } = useChatSurfaceActions({
     chat,
@@ -2836,6 +2887,10 @@ export default function ChatDetailPage() {
   ) : null;
 
   const handleExpressionFeedback = useCallback(async (message: Message, kind: ExpressionFeedbackKind) => {
+    if (chatInteractionDisabled) {
+      setSnackbar({ open: true, message: chatReadOnlyReason || '当前会话不可继续', severity: 'info' });
+      return;
+    }
     if (message.type !== 'ai') return;
     const character = characters.find((item) => item.id === message.senderId);
     if (!character) {
@@ -2845,9 +2900,13 @@ export default function ChatDetailPage() {
     const patch = buildExpressionFeedbackPatch({ character, message, kind });
     await updateCharacter(character.id, patch);
     setSnackbar({ open: true, message: `已记录反馈：${getExpressionFeedbackLabel(kind)}`, severity: 'success' });
-  }, [characters, updateCharacter]);
+  }, [characters, chatInteractionDisabled, chatReadOnlyReason, updateCharacter]);
 
   const handleRetryMedia = useCallback(async (message: Message, attachmentId: string) => {
+    if (chatInteractionDisabled) {
+      setSnackbar({ open: true, message: chatReadOnlyReason || '当前会话不可继续', severity: 'info' });
+      return;
+    }
     const character = message.type === 'ai' ? characters.find((item) => item.id === message.senderId) : null;
     const { retryRichMessageMedia } = await import('../services/richMessageMedia');
     await retryRichMessageMedia({
@@ -2858,7 +2917,7 @@ export default function ChatDetailPage() {
       aiProfiles,
       upsertMessage: upsertMessageStable,
     });
-  }, [aiProfiles, characters, upsertMessageStable]);
+  }, [aiProfiles, characters, chatInteractionDisabled, chatReadOnlyReason, upsertMessageStable]);
 
   useChatAutoSocialFlow({ chat, runAutoSocialEventFlow });
 
@@ -2966,7 +3025,7 @@ export default function ChatDetailPage() {
     }, 'warn');
   }, [id, setSnackbar]);
 
-  const canAutoRunConversation = chat?.type !== 'direct' && !isRemoteDeletedChat;
+  const canAutoRunConversation = chat?.type !== 'direct' && !chatInteractionDisabled;
 
   const handleMessageListBottomPinnedChange = useCallback((pinned: boolean) => {
     isStoryReaderAtTailRef.current = pinned;
@@ -3149,8 +3208,8 @@ export default function ChatDetailPage() {
             characters={characters}
             selfMemberId={effectiveAiDirectPerspectiveMemberId}
             currentUser={currentUser ? { nickname: currentUser.nickname, avatar: currentUser.avatar } : undefined}
-            onCreateRevision={isMessageBranchingEnabled(chat) ? handleCreateMessageRevision : undefined}
-            onSwitchRevision={isMessageBranchingEnabled(chat) ? handleSwitchMessageRevision : undefined}
+            onCreateRevision={undefined}
+            onSwitchRevision={undefined}
             branchVersionInfoByMessageId={branchVersionInfoByMessageId}
             isLoadingOlder={isLoadingOlder}
             isLoadingNewer={isLoadingNewer}
@@ -3163,6 +3222,7 @@ export default function ChatDetailPage() {
             topHint="没有更早的消息"
             topInset={isSplitDetailPane ? { xs: '76px', sm: '76px' } : { xs: 'calc(88px + env(safe-area-inset-top, 0px))', sm: '80px' }}
             bottomInset={{ xs: '24px', sm: '24px' }}
+            readOnly
           />
         </Box>
       </Box>
@@ -3252,7 +3312,7 @@ export default function ChatDetailPage() {
                 <ArrowBackIcon />
             </IconButton>
           ) : null}
-          actions={isRemoteDeletedChat ? null : (
+          actions={chatInteractionDisabled ? null : (
             <>
               {isAssistantChat ? null : headerPrimaryActionButton}
               {isAssistantChat && !isMobile ? (
@@ -3294,7 +3354,7 @@ export default function ChatDetailPage() {
             messages={currentChatMessages}
             characters={characters}
             currentUser={currentUser ? { nickname: currentUser.nickname, avatar: currentUser.avatar } : undefined}
-            onCreateRevision={isMessageBranchingEnabled(chat) ? handleCreateMessageRevision : undefined}
+            onCreateRevision={isMessageBranchingEnabled(chat) && !chatInteractionDisabled ? handleCreateMessageRevision : undefined}
             onSwitchRevision={isMessageBranchingEnabled(chat) ? handleSwitchMessageRevision : undefined}
             branchVersionInfoByMessageId={branchVersionInfoByMessageId}
             onDeleteMessage={deleteMessage}
@@ -3322,7 +3382,7 @@ export default function ChatDetailPage() {
             storyChoiceMessageId={displayedStoryChoiceMessageId}
             storyChoiceOptions={displayedStoryChoiceOptions}
             storyChoiceSubmittingValue={displayedStoryChoiceSubmittingValue}
-            onChooseStoryChoice={isStoryWaitingForChoice ? handleChooseStoryBranch : undefined}
+            onChooseStoryChoice={!chatInteractionDisabled && isStoryWaitingForChoice ? handleChooseStoryBranch : undefined}
             onBottomPinnedChange={isStoryRoom ? handleMessageListBottomPinnedChange : undefined}
             onNearBottomChange={isStoryRoom ? handleMessageListNearBottomChange : undefined}
             initialScrollPosition={isStoryRoom ? initialStoryReadingPosition : null}
@@ -3332,9 +3392,29 @@ export default function ChatDetailPage() {
             narrativeRevealMessageKeys={narrativeRevealMessageKeys}
             onNarrativeRevealComplete={clearNarrativeRevealMessage}
             autoStickToBottom={sessionScrollCapabilities.autoStickToBottom}
+            readOnly={chatInteractionDisabled}
           />}
         </Box>
-        {isRemoteDeletedChat ? null : <Box
+        {chatInteractionDisabled ? (
+          <Box sx={{
+            position: 'absolute',
+            left: 12,
+            right: 12,
+            bottom: 'calc(env(safe-area-inset-bottom, 0px) + 18px)',
+            zIndex: 3,
+            p: 1.25,
+            borderRadius: 1.5,
+            border: '1px solid',
+            borderColor: 'divider',
+            bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.78)' : 'rgba(18,18,24,0.72)',
+            backdropFilter: 'blur(18px)',
+            WebkitBackdropFilter: 'blur(18px)',
+            boxShadow: 2,
+          }}>
+            <Typography variant="body2" sx={{ fontWeight: 600 }}>{chatReadOnlyReason}</Typography>
+            <Typography variant="caption" color="text.secondary">当前仅保留历史记录，可查看或删除，不能继续发送和生成。</Typography>
+          </Box>
+        ) : <Box
           ref={composerDockRef}
           sx={{
             position: 'absolute',
@@ -3366,6 +3446,8 @@ export default function ChatDetailPage() {
             isReplyPending={Boolean((chat.type === 'assistant' || chat.type === 'direct') && isDirectReplyPending)}
             onStopReply={chat.type === 'assistant' || chat.type === 'direct' ? handleStopDirectReply : undefined}
             onOpenPanel={isMobile ? () => setRightPanelOpen(true) : undefined}
+            disabled={chatInteractionDisabled}
+            disabledReason={chatReadOnlyReason}
             onDraftActivity={(activity) => {
               userDraftActivityRef.current = activity;
               if (isStoryRoom) setHasStoryUserDraft(Boolean(activity.hasDraft));
@@ -3399,7 +3481,7 @@ export default function ChatDetailPage() {
         </Box>}
       </Box>
 
-      {isRemoteDeletedChat || (isAssistantChat && !rightPanelOpen) ? null : <RightPanel
+      {chatInteractionDisabled || (isAssistantChat && !rightPanelOpen) ? null : <RightPanel
         title={isAssistantChat ? '助手能力' : sidebarTitle}
         hideMobileTitle
         desktopMaxWidth={isSplitDetailPane ? 340 : 420}
@@ -3411,7 +3493,7 @@ export default function ChatDetailPage() {
             </IconButton>
             {isAssistantChat ? (
               <IconButton size="small" aria-label="删除助手" color="error" onClick={() => void handleDeleteAssistantChat()}>
-                <DeleteOutlineIcon fontSize="small" />
+                <DeleteOutlineOutlinedIcon fontSize="small" />
               </IconButton>
             ) : null}
           </>

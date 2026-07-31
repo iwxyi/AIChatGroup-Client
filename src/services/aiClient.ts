@@ -9,6 +9,10 @@ export interface ChatMessageImageAttachment {
 }
 
 type ChatMessage = { role: ChatRole; content: string; attachments?: ChatMessageImageAttachment[] };
+type OpenAICompatibleMessageContent = string | Array<
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string } }
+>;
 type MaybeTypedConfig = APIConfig & Partial<Pick<AIModelProfile, 'type'>>;
 type JSONValue = string | number | boolean | null | JSONValue[] | { [key: string]: JSONValue };
 export type AiUsageType =
@@ -327,16 +331,24 @@ function splitDataUrl(dataUrl: string) {
   return { mimeType: match[1], base64: match[2] };
 }
 
-function buildOpenAICompatibleContent(message: ChatMessage) {
+function buildOpenAICompatibleContent(message: ChatMessage): OpenAICompatibleMessageContent {
   const attachments = (message.attachments || []).filter((attachment) => attachment.url);
   if (!attachments.length) return message.content;
   return [
-    ...(message.content ? [{ type: 'text', text: message.content }] : []),
+    ...(message.content ? [{ type: 'text' as const, text: message.content }] : []),
     ...attachments.map((attachment) => ({
-      type: 'image_url',
+      type: 'image_url' as const,
       image_url: { url: attachment.url },
     })),
   ];
+}
+
+function appendJsonInstructionToContent(content: OpenAICompatibleMessageContent): OpenAICompatibleMessageContent {
+  const instruction = 'Return exactly one valid json object.';
+  if (typeof content === 'string') {
+    return content.trim() ? `${content}\n\n${instruction}` : instruction;
+  }
+  return [...content, { type: 'text', text: instruction }];
 }
 
 function buildAnthropicContent(message: ChatMessage) {
@@ -394,13 +406,27 @@ function buildQwenMessages(messages: ChatMessage[], systemPrompt: string) {
   ];
 }
 
-function buildOpenAICompatibleMessages(messages: ChatMessage[], systemPrompt: string) {
-  return [
+function buildOpenAICompatibleMessages(messages: ChatMessage[], systemPrompt: string, includeJsonInputInstruction = false) {
+  const payload = [
     { role: 'system' as const, content: systemPrompt },
     ...messages.map((message) => ({
       role: message.role,
       content: buildOpenAICompatibleContent(message),
     })),
+  ];
+  if (!includeJsonInputInstruction) return payload;
+  for (let index = payload.length - 1; index >= 0; index -= 1) {
+    if (payload[index]?.role === 'user') {
+      payload[index] = {
+        ...payload[index],
+        content: appendJsonInstructionToContent(payload[index].content),
+      };
+      return payload;
+    }
+  }
+  return [
+    ...payload,
+    { role: 'user' as const, content: 'Return exactly one valid json object.' },
   ];
 }
 
@@ -409,8 +435,8 @@ function getAuthHeaders(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-function buildOfficialMessages(messages: ChatMessage[], systemPrompt: string) {
-  return buildOpenAICompatibleMessages(messages, systemPrompt);
+function buildOfficialMessages(messages: ChatMessage[], systemPrompt: string, includeJsonInputInstruction = false) {
+  return buildOpenAICompatibleMessages(messages, systemPrompt, includeJsonInputInstruction);
 }
 
 async function parseOfficialProxyResponse(response: Response) {
@@ -661,7 +687,7 @@ async function generateZhipuResponse(
   const maxTokensConfig = options.maxTokens === undefined ? {} : { max_tokens: options.maxTokens };
   const requestBody = {
     model: config.model,
-    messages: buildOpenAICompatibleMessages(messages, systemPrompt),
+    messages: buildOpenAICompatibleMessages(messages, systemPrompt, options.responseFormat === 'json'),
     temperature: 0.8,
     ...maxTokensConfig,
     stream: Boolean(onChunk),
@@ -795,7 +821,7 @@ async function generateOpenAICompatibleResponse(
   const maxTokensConfig = options.maxTokens === undefined ? {} : { max_tokens: options.maxTokens };
   const requestBody = {
     model: config.model,
-    messages: buildOpenAICompatibleMessages(messages, systemPrompt),
+    messages: buildOpenAICompatibleMessages(messages, systemPrompt, options.responseFormat === 'json'),
     stream: Boolean(onChunk),
     ...maxTokensConfig,
     temperature: 0.8,
@@ -852,7 +878,7 @@ async function generateOfficialResponse(
   const requestBody = {
     provider: resolveOfficialBackendProvider(config.provider),
     model: config.model,
-    messages: buildOfficialMessages(messages, systemPrompt),
+    messages: buildOfficialMessages(messages, systemPrompt, options.responseFormat === 'json'),
     stream: Boolean(onChunk),
     max_tokens: options.maxTokens,
     response_format: options.responseFormat === 'json' ? { type: 'json_object' } : undefined,

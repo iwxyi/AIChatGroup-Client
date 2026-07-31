@@ -457,6 +457,49 @@ describe('buildSystemPromptWithContext', () => {
     expect(prompt).toContain('用户预算有限但重视质感');
   });
 
+  it('carries character-owned memories from other chats into a later direct chat', () => {
+    const character = buildCharacter({
+      layeredMemories: [
+        memory({
+          id: 'group-experience-memory',
+          scope: 'relationship',
+          subjectIds: ['char-a', 'char-b'],
+          text: '在十皇共议中，苏苏记住了阿远会在争执最激烈时先替别人留台阶。',
+          evidenceText: '这条记忆来自十皇共议，不是当前单聊。',
+          relatedConversationId: 'group-chat-1',
+          sourceTag: 'llm_memory_character_perspective',
+          archivedAt: null,
+          recency: 0.85,
+          updatedAt: 100,
+        }),
+      ],
+    });
+    const directChat = buildDirectChat();
+    const prompt = buildSystemPromptWithContext(
+      character,
+      directChat,
+      0,
+      [buildMessage({ type: 'user', senderId: 'user', senderName: '用户', content: '你还记得阿远吗？' })],
+      new Map([
+        [character.id, character],
+        ['char-b', buildCharacter({ id: 'char-b', name: '阿远' })],
+      ]),
+    );
+    const trace = buildPromptMemoryTrace(
+      character,
+      directChat,
+      [buildMessage({ type: 'user', senderId: 'user', senderName: '用户', content: '你还记得阿远吗？' })],
+      new Map([
+        [character.id, character],
+        ['char-b', buildCharacter({ id: 'char-b', name: '阿远' })],
+      ]),
+    );
+
+    expect(prompt).toContain('苏苏记住了阿远会在争执最激烈时先替别人留台阶');
+    expect(prompt).not.toContain('group-chat-1');
+    expect(trace.injectedIds).toContain('group-experience-memory');
+  });
+
   it('injects companionship context for direct chats without confirming romance', () => {
     const character = buildCharacter({
       memory: {

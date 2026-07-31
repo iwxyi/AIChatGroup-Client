@@ -27,6 +27,8 @@ interface SessionComposerHostProps {
   onInjectedAttachmentsConsumed?: () => void;
   isReplyPending?: boolean;
   onStopReply?: () => void;
+  disabled?: boolean;
+  disabledReason?: string;
 }
 
 function buildInitialFieldState(surfaces: SessionInputSurfaceDefinition[]) {
@@ -38,7 +40,7 @@ function buildInitialFieldState(surfaces: SessionInputSurfaceDefinition[]) {
   ) as Record<string, Record<string, string>>;
 }
 
-export default function SessionComposerHost({ surfaces, onSubmitText, onSubmitForm, onSubmitBoard, speakAsCharacterName, onCloseSpeakAs, sendingLabel, hideSpeakAsChip, onSendError, onOpenPanel, onDraftActivity, inputCapabilities, inputCapabilityWarning, autoFocus, topContent, injectedAttachments, onInjectedAttachmentsConsumed, isReplyPending, onStopReply }: SessionComposerHostProps) {
+export default function SessionComposerHost({ surfaces, onSubmitText, onSubmitForm, onSubmitBoard, speakAsCharacterName, onCloseSpeakAs, sendingLabel, hideSpeakAsChip, onSendError, onOpenPanel, onDraftActivity, inputCapabilities, inputCapabilityWarning, autoFocus, topContent, injectedAttachments, onInjectedAttachmentsConsumed, isReplyPending, onStopReply, disabled = false, disabledReason }: SessionComposerHostProps) {
   const primarySurface = surfaces.find((surface) => surface.type === 'text') || surfaces[0];
   const secondarySurfaces = surfaces.filter((surface) => surface !== primarySurface && (surface.type === 'board' || surface.type === 'form' || surface.type === 'hybrid'));
   const [fieldState, setFieldState] = useState<Record<string, Record<string, string>>>(() => buildInitialFieldState(surfaces));
@@ -57,6 +59,7 @@ export default function SessionComposerHost({ surfaces, onSubmitText, onSubmitFo
                   label="位置"
                   placeholder="如 A1"
                   value={fieldState[surface.key]?.position || ''}
+                  disabled={disabled}
                   onChange={(e) => setFieldState((current) => ({
                     ...current,
                     [surface.key]: { ...(current[surface.key] || {}), position: e.target.value },
@@ -67,6 +70,7 @@ export default function SessionComposerHost({ surfaces, onSubmitText, onSubmitFo
                   label="棋子"
                   placeholder="如 black-1"
                   value={fieldState[surface.key]?.pieceId || ''}
+                  disabled={disabled}
                   onChange={(e) => setFieldState((current) => ({
                     ...current,
                     [surface.key]: { ...(current[surface.key] || {}), pieceId: e.target.value },
@@ -77,6 +81,7 @@ export default function SessionComposerHost({ surfaces, onSubmitText, onSubmitFo
                   label="走法"
                   placeholder="如 place / move"
                   value={fieldState[surface.key]?.move || ''}
+                  disabled={disabled}
                   onChange={(e) => setFieldState((current) => ({
                     ...current,
                     [surface.key]: { ...(current[surface.key] || {}), move: e.target.value },
@@ -90,7 +95,7 @@ export default function SessionComposerHost({ surfaces, onSubmitText, onSubmitFo
                     pieceId: fieldState[surface.key]?.pieceId,
                     move: fieldState[surface.key]?.move,
                   }, surface)}
-                  disabled={!onSubmitBoard}
+                  disabled={disabled || !onSubmitBoard}
                 >
                   提交棋盘动作
                 </Button>
@@ -111,6 +116,7 @@ export default function SessionComposerHost({ surfaces, onSubmitText, onSubmitFo
                     label={field.label}
                     placeholder={field.placeholder}
                     value={fieldState[surface.key]?.[field.key] || ''}
+                    disabled={disabled}
                     onChange={(e) => setFieldState((current) => ({
                       ...current,
                       [surface.key]: {
@@ -129,7 +135,7 @@ export default function SessionComposerHost({ surfaces, onSubmitText, onSubmitFo
                 <Button
                   variant="outlined"
                   onClick={() => onSubmitForm?.({ actorId: surface.actorId, fields: fieldState[surface.key] || {} }, surface)}
-                  disabled={!onSubmitForm}
+                  disabled={disabled || !onSubmitForm}
                 >
                   提交表单动作
                 </Button>
@@ -158,6 +164,8 @@ export default function SessionComposerHost({ surfaces, onSubmitText, onSubmitFo
           onInjectedAttachmentsConsumed={onInjectedAttachmentsConsumed}
           isReplyPending={isReplyPending}
           onStopReply={onStopReply}
+          disabled={disabled}
+          disabledReason={disabledReason}
         />
       ) : (() => {
         const mode = speakAsCharacterName
@@ -190,6 +198,8 @@ export default function SessionComposerHost({ surfaces, onSubmitText, onSubmitFo
             onInjectedAttachmentsConsumed={onInjectedAttachmentsConsumed}
             isReplyPending={isReplyPending}
             onStopReply={onStopReply}
+            disabled={disabled}
+            disabledReason={disabledReason}
           />
         );
       })()}

@@ -121,5 +121,34 @@ describe('aiClient multimodal requests', () => {
     const body = JSON.parse(String(calls[0]?.body || '{}'));
     expect(body.response_format).toEqual({ type: 'json_object' });
     expect(String(body.messages[0]?.content || '')).toContain('json');
+    expect(String(body.messages[1]?.content || '')).toContain('json');
+  });
+
+  it('keeps json_object requests valid when the latest user message contains images', async () => {
+    const calls: RequestInit[] = [];
+    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push(init || {});
+      return new Response(JSON.stringify({ choices: [{ message: { content: '{"ok":true}' } }] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }) as typeof fetch;
+
+    await generateResponse(
+      { provider: 'official-gpt', apiKey: '', baseUrl: '/api/ai', model: 'gpt-5.4-mini' },
+      '你是结构化规划器。',
+      [{
+        role: 'user',
+        content: '解释这张参考图',
+        attachments: [{ url: 'data:image/png;base64,AAA', mimeType: 'image/png' }],
+      }],
+      undefined,
+      { responseFormat: 'json' },
+    );
+
+    const body = JSON.parse(String(calls[0]?.body || '{}'));
+    expect(body.response_format).toEqual({ type: 'json_object' });
+    expect(body.messages[1].content).toEqual([
+      { type: 'text', text: '解释这张参考图' },
+      { type: 'image_url', image_url: { url: 'data:image/png;base64,AAA' } },
+      { type: 'text', text: 'Return exactly one valid json object.' },
+    ]);
   });
 });

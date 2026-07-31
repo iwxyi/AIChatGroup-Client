@@ -1145,6 +1145,172 @@ describe('useMessageStore', () => {
     expect(reportRecoverableErrorMock).not.toHaveBeenCalled();
   });
 
+  it('queues local chat creation when cloud messages fail because the chat is missing remotely', async () => {
+    localStorage.setItem(storageKey('auth-mode'), 'cloud');
+    const [{ useMessageStore }, { useChatStore }, { useCharacterStore }, { buildDeletedCharacter }] = await Promise.all([
+      import('./useMessageStore'),
+      import('./useChatStore'),
+      import('./useCharacterStore'),
+      import('../utils/deletedEntity'),
+    ]);
+    const chatId = 'local-first-chat-needs-cloud-create';
+    const cachedMessage = buildMessage(1, chatId);
+    getSyncChangesMock.mockResolvedValueOnce({
+      status: 'modified',
+      scope: `messages.window:${chatId}`,
+      cursor: 'messages.window:rev-missing',
+      revision: 'messages.window:rev-missing',
+      changes: [],
+    });
+    getMessagesMock.mockRejectedValueOnce(new MockApiError('聊天不存在', { code: 'NOT_FOUND', status: 404 }));
+    useCharacterStore.setState({
+      characters: [{
+        ...buildDeletedCharacter('character-1', '角色'),
+        deletedAt: null,
+        createdAt: 1,
+        updatedAt: 2,
+      }],
+    });
+
+    useChatStore.setState({
+      chats: [{
+        id: chatId,
+        type: 'direct',
+        mode: 'normal',
+        name: '本地单聊',
+        topic: '',
+        style: 'casual',
+        memberIds: ['user', 'character-1'],
+        speed: 'normal',
+        isActive: true,
+        allowIntervention: true,
+        showRoleActions: true,
+        createdAt: 1,
+        updatedAt: 2,
+        lastMessageAt: 2,
+      }],
+      pendingOperations: [],
+      currentChatId: chatId,
+      lastSyncedAt: 1,
+      pendingEditSyncCount: 0,
+      pendingEditSyncError: null,
+      remoteDeletedChatIds: [],
+      remoteDeletedChats: [],
+      fieldConflicts: [],
+      chatSummaryLoadedAt: 1,
+      isLoading: false,
+    });
+    useMessageStore.setState({
+      messages: [],
+      messageWindowsByChatId: {
+        [chatId]: {
+          messages: [cachedMessage],
+          lastSyncedAt: 0,
+          updatedAt: cachedMessage.timestamp,
+        },
+      },
+      pendingOperations: [],
+      activeChatId: null,
+      isLoading: false,
+      isLoadingOlder: false,
+      isLoadingNewer: false,
+      hasMore: true,
+      hasMoreNewer: false,
+    });
+
+    await useMessageStore.getState().loadMessages(chatId, { limit: 40 });
+
+    expect(useMessageStore.getState().messages.map((message) => message.id)).toEqual(['message-1']);
+    expect(useChatStore.getState().pendingOperations).toEqual([
+      expect.objectContaining({
+        kind: 'create',
+        entityId: chatId,
+        status: 'pending',
+      }),
+    ]);
+    expect(reportRecoverableErrorMock).not.toHaveBeenCalled();
+  }, 20_000);
+
+  it('does not recreate a cloud direct chat when its required character is deleted locally', async () => {
+    localStorage.setItem(storageKey('auth-mode'), 'cloud');
+    const [{ useMessageStore }, { useChatStore }, { useCharacterStore }, { buildDeletedCharacter }] = await Promise.all([
+      import('./useMessageStore'),
+      import('./useChatStore'),
+      import('./useCharacterStore'),
+      import('../utils/deletedEntity'),
+    ]);
+    const chatId = 'deleted-character-direct-chat';
+    const cachedMessage = buildMessage(1, chatId);
+    getSyncChangesMock.mockResolvedValueOnce({
+      status: 'modified',
+      scope: `messages.window:${chatId}`,
+      cursor: 'messages.window:rev-missing-deleted-character',
+      revision: 'messages.window:rev-missing-deleted-character',
+      changes: [],
+    });
+    getMessagesMock.mockRejectedValueOnce(new MockApiError('聊天不存在', { code: 'NOT_FOUND', status: 404 }));
+    useCharacterStore.setState({
+      characters: [{
+        ...buildDeletedCharacter('character-1', '角色'),
+        deletedAt: 10,
+        createdAt: 1,
+        updatedAt: 10,
+      }],
+    });
+
+    useChatStore.setState({
+      chats: [{
+        id: chatId,
+        type: 'direct',
+        mode: 'normal',
+        name: '已删除角色单聊',
+        topic: '',
+        style: 'casual',
+        memberIds: ['user', 'character-1'],
+        speed: 'normal',
+        isActive: true,
+        allowIntervention: true,
+        showRoleActions: true,
+        createdAt: 1,
+        updatedAt: 2,
+        lastMessageAt: 2,
+      }],
+      pendingOperations: [],
+      currentChatId: chatId,
+      lastSyncedAt: 1,
+      pendingEditSyncCount: 0,
+      pendingEditSyncError: null,
+      remoteDeletedChatIds: [],
+      remoteDeletedChats: [],
+      fieldConflicts: [],
+      chatSummaryLoadedAt: 1,
+      isLoading: false,
+    });
+    useMessageStore.setState({
+      messages: [],
+      messageWindowsByChatId: {
+        [chatId]: {
+          messages: [cachedMessage],
+          lastSyncedAt: 0,
+          updatedAt: cachedMessage.timestamp,
+        },
+      },
+      pendingOperations: [],
+      activeChatId: null,
+      isLoading: false,
+      isLoadingOlder: false,
+      isLoadingNewer: false,
+      hasMore: true,
+      hasMoreNewer: false,
+    });
+
+    await useMessageStore.getState().loadMessages(chatId, { limit: 40 });
+
+    expect(useMessageStore.getState().messages.map((message) => message.id)).toEqual(['message-1']);
+    expect(useChatStore.getState().pendingOperations).toEqual([]);
+    expect(reportRecoverableErrorMock).not.toHaveBeenCalled();
+  }, 20_000);
+
   it('opens a cloud message window around a historical timestamp', async () => {
     localStorage.setItem(storageKey('auth-mode'), 'cloud');
     const { useMessageStore } = await import('./useMessageStore');
