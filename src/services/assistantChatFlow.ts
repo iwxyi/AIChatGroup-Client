@@ -1,8 +1,8 @@
 import type { GroupChat } from '../types/chat';
 import type { Message, MessageAttachment, MessageMetadata } from '../types/message';
 import type { AssistantAgentLocalFileContext, AssistantAgentPatchSet } from '../types/assistantArtifact';
-import type { APIConfig, AIModelProfile } from '../types/settings';
-import { getUsablePreferredAIProfile } from '../types/settings';
+import type { AIModelInputCapabilities, APIConfig, AIModelProfile } from '../types/settings';
+import { getUsablePreferredAIProfile, resolveAIModelInputCapabilities } from '../types/settings';
 import { createStreamingLocalMessage, persistLocalFirstMessage } from './chatCommitMessage';
 import { generateResponse } from './aiClient';
 import { GenerationCancelledError } from './generationCancellation';
@@ -21,15 +21,21 @@ function ensureAssistantReplyStillCurrent(params: { signal?: AbortSignal; should
   if (params.shouldContinue && !params.shouldContinue()) throw new GenerationCancelledError('助手回复所属分支已切换');
 }
 
-function resolveTextApiConfig(fallback: APIConfig, aiProfiles: AIModelProfile[]) {
+function resolveTextProfile(fallback: APIConfig, aiProfiles: AIModelProfile[]) {
   const profile = getUsablePreferredAIProfile(aiProfiles, 'text');
-  if (!profile) return fallback;
+  const api = profile
+    ? {
+      provider: profile.provider,
+      apiKey: profile.apiKey,
+      baseUrl: profile.baseUrl,
+      model: profile.model,
+    } satisfies APIConfig
+    : fallback;
   return {
-    provider: profile.provider,
-    apiKey: profile.apiKey,
-    baseUrl: profile.baseUrl,
-    model: profile.model,
-  } satisfies APIConfig;
+    api,
+    profile: profile || null,
+    inputCapabilities: resolveAIModelInputCapabilities(profile || { ...api, type: 'text' }),
+  };
 }
 
 function buildAssistantSystemPrompt() {
@@ -40,6 +46,27 @@ function buildAssistantSystemPrompt() {
     '如果用户要求最新资料或实时事实，而当前没有检索结果，请明确说明需要联网检索或外部来源确认。',
     '可以使用 Markdown 组织答案，但不要为了形式而过度结构化。',
   ].join('\n');
+}
+
+function buildAssistantImageAttachmentText(message: Message) {
+  const attachments = (message.metadata?.attachments || [])
+    .filter((attachment) => attachment.kind === 'image' && attachment.status !== 'deleted' && attachment.status !== 'failed');
+  if (!attachments.length) return '';
+  const labels = attachments
+    .slice(0, 6)
+    .map((attachment, index) => attachment.caption || attachment.altText || attachment.promptText || `图片 ${index + 1}`);
+  const suffix = attachments.length > labels.length ? ` 等 ${attachments.length} 张图片` : '';
+  return `[图片附件：${labels.join('、')}${suffix}]`;
+}
+
+function buildAssistantProjectedImageAttachments(message: Message, capabilities: AIModelInputCapabilities) {
+  if (!capabilities.imageInput) return undefined;
+  const maxAttachments = capabilities.multiImageInput ? capabilities.maxAttachments : 1;
+  const attachments = (message.metadata?.attachments || [])
+    .filter((attachment) => attachment.kind === 'image' && attachment.status === 'ready' && Boolean(attachment.url))
+    .map((attachment) => ({ url: attachment.url as string, mimeType: attachment.mimeType }))
+    .slice(0, Math.max(1, maxAttachments));
+  return attachments.length ? attachments : undefined;
 }
 
 function buildAppCommandRecentMessages(messages: Message[]) {
@@ -103,6 +130,7 @@ function buildLocalFilePromptBlock(localFiles: AssistantAgentLocalFileContext[])
 
 async function generateAssistantLocalFileAnswer(params: {
   api: APIConfig;
+  inputCapabilities: AIModelInputCapabilities;
   chatId: string;
   userMessage: Message;
   messages: Message[];
@@ -116,7 +144,7 @@ async function generateAssistantLocalFileAnswer(params: {
       buildLocalFilePromptBlock(params.localFiles),
       'Answer the latest user request using the authorized local file content above. If the provided file content is insufficient or truncated, say what is missing instead of guessing.',
     ].join('\n\n'),
-    toAssistantPromptMessages(withLatestUserMessage(params.messages, params.userMessage)),
+    toAssistantPromptMessages(withLatestUserMessage(params.messages, params.userMessage), params.inputCapabilities),
     undefined,
     {
       responseFormat: 'text',
@@ -133,6 +161,7 @@ async function generateAssistantLocalFileAnswer(params: {
 
 async function generateAssistantSearchAnswer(params: {
   api: APIConfig;
+  inputCapabilities: AIModelInputCapabilities;
   chatId: string;
   userMessage: Message;
   messages: Message[];
@@ -174,7 +203,7 @@ async function generateAssistantSearchAnswer(params: {
       searchPromptBlock,
       'Answer the latest user request using the search result above. Keep the answer objective and cite URLs when useful.',
     ].join('\n\n'),
-    toAssistantPromptMessages(withLatestUserMessage(params.messages, params.userMessage)),
+    toAssistantPromptMessages(withLatestUserMessage(params.messages, params.userMessage), params.inputCapabilities),
     undefined,
     {
       responseFormat: 'text',
@@ -238,6 +267,7 @@ async function persistAssistantArtifactsFromReply(params: {
   upsertMessage: (message: Message) => void;
   updateChat: (id: string, patch: Partial<GroupChat>) => Promise<void>;
   api: APIConfig;
+  inputCapabilities: AIModelInputCapabilities;
   aiProfiles: AIModelProfile[];
   signal?: AbortSignal;
 }) {
@@ -313,6 +343,7 @@ async function persistAssistantArtifactsFromReply(params: {
     const query = plan.searchQuery?.trim() || params.userMessage.content.trim();
     const answer = await generateAssistantSearchAnswer({
       api: params.api,
+      inputCapabilities: params.inputCapabilities,
       chatId: params.chatId,
       userMessage: params.userMessage,
       messages: params.messages,
@@ -338,6 +369,7 @@ async function persistAssistantArtifactsFromReply(params: {
     const content = localFiles.length
       ? (await generateAssistantLocalFileAnswer({
         api: params.api,
+        inputCapabilities: params.inputCapabilities,
         chatId: params.chatId,
         userMessage: params.userMessage,
         messages: params.messages,
@@ -582,15 +614,32 @@ async function persistAssistantFinalMessage(params: {
   });
 }
 
-function toAssistantPromptMessages(messages: Message[]) {
-  return messages
+function toAssistantPromptMessages(messages: Message[], inputCapabilities?: AIModelInputCapabilities) {
+  const visible = messages
     .filter((message) => !message.isDeleted && message.type !== 'system' && message.type !== 'event')
-    .slice(-MAX_ASSISTANT_HISTORY)
-    .map((message) => ({
-      role: message.type === 'ai' ? 'assistant' as const : 'user' as const,
-      content: message.content,
-    }))
-    .filter((message) => message.content.trim());
+    .slice(-MAX_ASSISTANT_HISTORY);
+  const latestUserImageMessage = inputCapabilities?.imageInput
+    ? [...visible]
+      .reverse()
+      .find((message) => (
+        (message.type === 'user' || message.type === 'god')
+        && message.metadata?.attachments?.some((attachment) => attachment.kind === 'image' && attachment.status === 'ready' && Boolean(attachment.url))
+      ))
+    : null;
+  return visible
+    .map((message) => {
+      const imageText = buildAssistantImageAttachmentText(message);
+      const content = [message.content, imageText].filter(Boolean).join('\n');
+      const attachments = latestUserImageMessage?.id === message.id
+        ? buildAssistantProjectedImageAttachments(message, inputCapabilities)
+        : undefined;
+      return {
+        role: message.type === 'ai' ? 'assistant' as const : 'user' as const,
+        content,
+        attachments,
+      };
+    })
+    .filter((message) => message.content.trim() || message.attachments?.length);
 }
 
 function withLatestUserMessage(messages: Message[], userMessage: Message) {
@@ -735,7 +784,7 @@ export async function runAssistantChatReplyFlow(params: {
   shouldContinue?: () => boolean;
 }) {
   ensureAssistantReplyStillCurrent(params);
-  const resolvedApi = resolveTextApiConfig(params.api, params.aiProfiles);
+  const { api: resolvedApi, inputCapabilities } = resolveTextProfile(params.api, params.aiProfiles);
   if (params.chat.modeState.assistantCapabilities?.agent) {
     const userMessage = latestUserMessage(params.currentMessages);
     if (userMessage) {
@@ -793,6 +842,7 @@ export async function runAssistantChatReplyFlow(params: {
         upsertMessage: params.upsertMessage,
         updateChat: params.updateChat,
         api: resolvedApi,
+        inputCapabilities,
         aiProfiles: params.aiProfiles,
         signal: params.signal,
       });
@@ -831,7 +881,7 @@ export async function runAssistantChatReplyFlow(params: {
   const generated = await generateResponse(
     resolvedApi,
     buildAssistantSystemPrompt(),
-    toAssistantPromptMessages(params.currentMessages),
+    toAssistantPromptMessages(params.currentMessages, inputCapabilities),
     (content) => {
       ensureAssistantReplyStillCurrent(params);
       streamingMessage = { ...streamingMessage, content, isStreaming: true };
