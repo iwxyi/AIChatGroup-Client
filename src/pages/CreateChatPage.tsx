@@ -46,7 +46,8 @@ import MemberSelectionDialog from '../components/createChat/MemberSelectionDialo
 import { normalizeRuntimeSeedLines } from '../services/runtimeSeed';
 import { buildIncludeUserAsMemberCopy } from '../services/createChatPresentation';
 import { resolveRoomTemplateCapabilityDefaults } from '../services/conversationCapabilities';
-import FloatingSegmentedTabs, { buildFloatingTabContainerSx } from '../components/common/FloatingSegmentedTabs';
+import FloatingSegmentedTabs from '../components/common/FloatingSegmentedTabs';
+import { buildFloatingTabContainerSx } from '../components/common/FloatingSegmentedTabs.styles';
 import AppSnackbar from '../components/common/AppSnackbar';
 import ExpandableFab from '../components/common/ExpandableFab';
 import NoCharactersDialog from '../components/common/NoCharactersDialog';

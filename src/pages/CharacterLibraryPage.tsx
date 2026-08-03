@@ -17,7 +17,7 @@ import CharacterGroupFilterBar from '../components/character/CharacterGroupFilte
 import ConfirmDialog from '../components/common/ConfirmDialog';
 import EmptyState from '../components/common/EmptyState';
 import ListSkeletonGrid from '../components/common/ListSkeletonGrid';
-import { buildFloatingTabContainerSx } from '../components/common/FloatingSegmentedTabs';
+import { buildFloatingTabContainerSx } from '../components/common/FloatingSegmentedTabs.styles';
 import AppSnackbar from '../components/common/AppSnackbar';
 import ExpandableFab from '../components/common/ExpandableFab';
 import VipLimitDialog from '../components/common/VipLimitDialog';

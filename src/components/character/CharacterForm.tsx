@@ -117,7 +117,8 @@ function buildAvatarOptionSx(selected: boolean) {
 }
 
 import type { CharacterVisualIdentity, CharacterVisualReferenceImage } from '../../types/character';
-import FloatingSegmentedTabs, { buildFloatingTabContainerSx } from '../common/FloatingSegmentedTabs';
+import FloatingSegmentedTabs from '../common/FloatingSegmentedTabs';
+import { buildFloatingTabContainerSx } from '../common/FloatingSegmentedTabs.styles';
 
 function getDiaryEntriesSorted<T extends { dateKey?: string | null; createdAt: number }>(entries: T[]) {
   return entries
