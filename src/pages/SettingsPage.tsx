@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   Alert,
   Box,
@@ -50,6 +50,8 @@ import StatChipRow from '../components/common/StatChipRow';
 import AppSnackbar from '../components/common/AppSnackbar';
 import FloatingSegmentedTabs from '../components/common/FloatingSegmentedTabs';
 import { buildFloatingTabContainerSx } from '../components/common/FloatingSegmentedTabs.styles';
+import AnimatedTabContent from '../components/common/AnimatedTabContent';
+import { resolveTabTransitionDirection } from '../components/common/tabTransition';
 import { PAPER_SURFACE_VARIANTS, type PaperSurfaceVariant } from '../types/artifactAppearance';
 import type { AppSettingsWithMemory } from '../types/settings';
 import type { CompanionshipRitualKind } from '../types/settings';
@@ -1430,6 +1432,7 @@ export default function SettingsPage() {
     severity: 'success',
   });
   const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTabKey>(() => resolveSettingsTab(new URLSearchParams(window.location.search).get('tab')));
+  const [tabTransitionDirection, setTabTransitionDirection] = useState<-1 | 1>(1);
   const userBubbleStyle = useMemo(
     () => resolveCharacterBubbleStyle({
       bubbleStyle: settings.userBubbleStyle,
@@ -1824,28 +1827,16 @@ export default function SettingsPage() {
     </SurfaceCard>
   );
 
-  return (
-    <Box sx={buildPageSx(activeSettingsTab)}>
-      <PageSection spacing={2.25}>
-        <Box sx={{ ...buildFloatingTabContainerSx(), order: -100, mb: 0.5, animation: 'none !important', transform: 'none !important' }}>
-          <FloatingSegmentedTabs
-            value={activeSettingsTab}
-            onChange={(value) => {
-              if (SETTINGS_TAB_KEYS.includes(value)) {
-                setActiveSettingsTab(value);
-                updateSettingsLocation(value);
-              }
-            }}
-            items={[
-              { value: 'general', label: i18n.language.startsWith('zh') ? '通用' : 'General' },
-              { value: 'models', label: i18n.language.startsWith('zh') ? '模型' : 'Models' },
-              { value: 'chat', label: i18n.language.startsWith('zh') ? '聊天' : 'Chat' },
-              { value: 'plugins', label: i18n.language.startsWith('zh') ? '插件' : 'Plugins' },
-            ]}
-          />
-        </Box>
+  const settingsTabLabels: Record<SettingsTabKey, string> = {
+    general: i18n.language.startsWith('zh') ? '通用' : 'General',
+    models: i18n.language.startsWith('zh') ? '模型' : 'Models',
+    chat: i18n.language.startsWith('zh') ? '聊天' : 'Chat',
+    plugins: i18n.language.startsWith('zh') ? '插件' : 'Plugins',
+  };
+  const settingsTabItems = SETTINGS_TAB_KEYS.map((value) => ({ value, label: settingsTabLabels[value] }));
 
-        {activeSettingsTab === 'general' ? (
+  const settingsTabRenderers = {
+    general: (): ReactNode => (
           <>
         <SurfaceCard id="settings-card-account" sx={{ order: -30 }} contentSx={buildCardBodySx()}>
           <Box sx={buildTopRowSx()}>
@@ -2184,16 +2175,49 @@ export default function SettingsPage() {
           </Box>
         </SurfaceCard>
 
-          </>
-        ) : null}
 
-        {activeSettingsTab === 'models' ? (
+        <SurfaceCard id="settings-card-data" contentSx={buildCardBodySx()}>
+          <Box sx={buildSectionBodySx()}>
+            <SectionHeader title={t('settings.dataManagement')} />
+            <StatChipRow items={buildDataChips(i18n.language)} />
+            <Box sx={buildActionGridSx()}>
+              <Button startIcon={<BackupIcon />} variant="outlined" onClick={handleBackup}>{t('settings.backup')}</Button>
+              <Button startIcon={<RestoreIcon />} variant="outlined" onClick={handleRestore}>{t('settings.restore')}</Button>
+              <Button variant="outlined" onClick={() => navigate('/settings/recycle-bin')}>{i18n.language.startsWith('zh') ? '回收站' : 'Recycle Bin'}</Button>
+              <Button startIcon={<ClearIcon />} variant="outlined" color="error" onClick={() => setClearConfirm(true)}>{t('settings.clearAll')}</Button>
+            </Box>
+          </Box>
+        </SurfaceCard>
+
+        {developerToolsSection}
+
+        <SurfaceCard id="settings-card-about" contentSx={buildCardBodySx()}>
+          <SectionHeader title={t('settings.about')} dense />
+          <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.75 }}>Sense Murmur</Typography>
+          <Chip size="small" label="v1.0.0" variant="outlined" onClick={() => navigate('/intro')} sx={{ cursor: 'pointer' }} />
+        </SurfaceCard>
+
+        <Button
+          fullWidth
+          variant="outlined"
+          color="error"
+          startIcon={<LogoutIcon />}
+          onClick={() => {
+            useAuthStore.getState().logout();
+            window.location.href = '/login';
+          }}
+          sx={{ mb: 1 }}
+        >
+          {i18n.language.startsWith('zh') ? '退出登录' : 'Log out'}
+        </Button>
+          </>
+    ),
+    models: (): ReactNode => (
           <Box id="settings-card-models">
             <AIModelsPanel embedded />
           </Box>
-        ) : null}
-
-        {activeSettingsTab === 'chat' ? (
+    ),
+    chat: (): ReactNode => (
           <>
 
         <SurfaceCard id="settings-card-ai-generation" contentSx={buildCardBodySx()}>
@@ -2323,9 +2347,8 @@ export default function SettingsPage() {
           </Box>
         </SurfaceCard>
           </>
-        ) : null}
-
-        {activeSettingsTab === 'plugins' ? (
+    ),
+    plugins: (): ReactNode => (
           <SurfaceCard id="settings-card-plugins" contentSx={buildCardBodySx()}>
             <Box sx={buildSectionBodySx()}>
               <SectionHeader
@@ -2339,47 +2362,31 @@ export default function SettingsPage() {
               </Alert>
             </Box>
           </SurfaceCard>
-        ) : null}
+    ),
+  } satisfies Record<SettingsTabKey, () => ReactNode>;
 
-        {activeSettingsTab === 'general' ? (
-          <>
+  const settingsTabContent = settingsTabRenderers[activeSettingsTab]();
 
-        <SurfaceCard id="settings-card-data" contentSx={buildCardBodySx()}>
-          <Box sx={buildSectionBodySx()}>
-            <SectionHeader title={t('settings.dataManagement')} />
-            <StatChipRow items={buildDataChips(i18n.language)} />
-            <Box sx={buildActionGridSx()}>
-              <Button startIcon={<BackupIcon />} variant="outlined" onClick={handleBackup}>{t('settings.backup')}</Button>
-              <Button startIcon={<RestoreIcon />} variant="outlined" onClick={handleRestore}>{t('settings.restore')}</Button>
-              <Button variant="outlined" onClick={() => navigate('/settings/recycle-bin')}>{i18n.language.startsWith('zh') ? '回收站' : 'Recycle Bin'}</Button>
-              <Button startIcon={<ClearIcon />} variant="outlined" color="error" onClick={() => setClearConfirm(true)}>{t('settings.clearAll')}</Button>
-            </Box>
-          </Box>
-        </SurfaceCard>
+  return (
+    <Box sx={buildPageSx(activeSettingsTab)}>
+      <PageSection spacing={2.25}>
+        <Box sx={{ ...buildFloatingTabContainerSx(), order: -100, mb: 0.5, animation: 'none !important', transform: 'none !important' }}>
+          <FloatingSegmentedTabs
+            value={activeSettingsTab}
+            onChange={(value) => {
+              if (SETTINGS_TAB_KEYS.includes(value)) {
+                setTabTransitionDirection(resolveTabTransitionDirection(SETTINGS_TAB_KEYS, activeSettingsTab, value));
+                setActiveSettingsTab(value);
+                updateSettingsLocation(value);
+              }
+            }}
+            items={settingsTabItems}
+          />
+        </Box>
 
-        {developerToolsSection}
-
-        <SurfaceCard id="settings-card-about" contentSx={buildCardBodySx()}>
-          <SectionHeader title={t('settings.about')} dense />
-          <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.75 }}>Sense Murmur</Typography>
-          <Chip size="small" label="v1.0.0" variant="outlined" onClick={() => navigate('/intro')} sx={{ cursor: 'pointer' }} />
-        </SurfaceCard>
-
-        <Button
-          fullWidth
-          variant="outlined"
-          color="error"
-          startIcon={<LogoutIcon />}
-          onClick={() => {
-            useAuthStore.getState().logout();
-            window.location.href = '/login';
-          }}
-          sx={{ mb: 1 }}
-        >
-          {i18n.language.startsWith('zh') ? '退出登录' : 'Log out'}
-        </Button>
-          </>
-        ) : null}
+        <AnimatedTabContent value={activeSettingsTab} direction={tabTransitionDirection}>
+          {settingsTabContent}
+        </AnimatedTabContent>
       </PageSection>
 
       <ConfirmDialog
