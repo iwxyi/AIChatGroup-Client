@@ -159,6 +159,51 @@ describe('routeAppCommand', () => {
     expect(route.plan.chatQuery).toBe('世界杯');
   });
 
+  it('keeps opening messages for direct chat creation plans', async () => {
+    generateResponseMock.mockResolvedValueOnce(JSON.stringify({
+      mode: 'local_action',
+      action: 'create_direct_chat',
+      riskLevel: 'medium',
+      requiresConfirmation: false,
+      plan: {
+        action: 'create_direct_chat',
+        characterName: '秦始皇',
+        openingMessage: '统一六国之后，你最怕哪件事失控？',
+      },
+    }));
+
+    const { route } = await routeAppCommand(context('让我和秦始皇单聊：统一六国之后，他最怕哪件事失控？'));
+
+    expect(route.mode).toBe('local_action');
+    if (route.mode !== 'local_action') return;
+    expect(route.action).toBe('create_direct_chat');
+    expect(route.plan.characterName).toBe('秦始皇');
+    expect(route.plan.openingMessage).toBe('统一六国之后，你最怕哪件事失控？');
+  });
+
+  it('routes chat topic updates separately from app appearance themes', async () => {
+    generateResponseMock.mockResolvedValueOnce(JSON.stringify({
+      mode: 'local_action',
+      action: 'update_chat_topic',
+      riskLevel: 'medium',
+      requiresConfirmation: false,
+      plan: {
+        action: 'update_chat_topic',
+        chatTypePreference: 'group',
+        selectionMode: 'random',
+        newTopic: '雨夜叛逃与旧盟约',
+      },
+    }));
+
+    const { route } = await routeAppCommand(context('随机选一个群聊，帮我换一个更有张力的新聊天话题'));
+
+    expect(route.mode).toBe('local_action');
+    if (route.mode !== 'local_action') return;
+    expect(route.action).toBe('update_chat_topic');
+    expect(route.plan.selectionMode).toBe('random');
+    expect(route.plan.newTopic).toBe('雨夜叛逃与旧盟约');
+  });
+
   it('routes incomplete model setup requests to the model settings page', async () => {
     generateResponseMock.mockResolvedValueOnce(JSON.stringify({
       mode: 'local_action',

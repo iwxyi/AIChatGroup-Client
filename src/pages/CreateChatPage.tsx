@@ -21,9 +21,6 @@ import { getPreferredAIProfile, isAIProfileUsable } from '../types/settings';
 import type { ChatStyle, GroupChat, RuntimeEvolutionIntensity } from '../types/chat';
 import { ROOM_TEMPLATES, filterRoomTemplatesForAvailability, getRoomTemplate, getRoomTemplateKernel, getRoomTemplateKeyBySessionKind, type RoomTemplateKey } from '../services/roomTemplates';
 import {
-  DEFAULT_CONVERSATION_DIRECTOR_CONTROLS,
-  DEFAULT_CONVERSATION_DRAMA_RULES,
-  DEFAULT_CONVERSATION_GOVERNANCE,
   DEFAULT_CONVERSATION_WORLD_STATE,
   defaultTopologySummaryForConversation,
   deriveSessionMemoryLayerSummary,
@@ -43,7 +40,6 @@ import ChatConfigSection from '../components/createChat/ChatConfigSection';
 import GameplaySection from '../components/createChat/GameplaySection';
 import ManagementSection from '../components/createChat/ManagementSection';
 import MemberSelectionDialog from '../components/createChat/MemberSelectionDialog';
-import { normalizeRuntimeSeedLines } from '../services/runtimeSeed';
 import { buildIncludeUserAsMemberCopy } from '../services/createChatPresentation';
 import { resolveRoomTemplateCapabilityDefaults } from '../services/conversationCapabilities';
 import FloatingSegmentedTabs from '../components/common/FloatingSegmentedTabs';
@@ -69,6 +65,7 @@ import { buildOpeningTopicGuideMessage } from '../services/createChatOpening';
 
 const HotTopicDialogContainer = lazy(() => import('../components/createChat/HotTopicDialogContainer'));
 const CHAT_DRAFT_KEY = storageKey('create-chat-draft');
+const BATCH_GENERATED_MEMBER_IDS_KEY = storageKey('create-chat-batch-generated-member-ids');
 const RuntimeSeedSection = lazy(() => import('../components/createChat/RuntimeSeedSection'));
 
 function hasGameplayRuntimeData(chat: GroupChat) {
@@ -185,6 +182,31 @@ function buildSaveAsChatName(sourceName: string, existingNames: string[]) {
 function isAgentRoomTemplate(template: ReturnType<typeof getRoomTemplate>) {
   const sessionKind = template.sessionKind;
   return sessionKind.family === 'agent' || sessionKind.scenarioId.includes('agent');
+}
+
+function normalizeReturnPath(path: string) {
+  const [pathname, search = ''] = path.split('?');
+  const params = new URLSearchParams(search);
+  params.delete('restoreDraft');
+  const serialized = params.toString();
+  return serialized ? `${pathname}?${serialized}` : pathname;
+}
+
+function readBatchGeneratedMemberIds(currentPath: string) {
+  const raw = sessionStorage.getItem(BATCH_GENERATED_MEMBER_IDS_KEY);
+  if (!raw) return [];
+  try {
+    const payload = JSON.parse(raw) as { returnTo?: unknown; characterIds?: unknown };
+    const returnTo = typeof payload.returnTo === 'string' ? normalizeReturnPath(payload.returnTo) : '';
+    if (returnTo && returnTo !== normalizeReturnPath(currentPath)) return [];
+    sessionStorage.removeItem(BATCH_GENERATED_MEMBER_IDS_KEY);
+    return Array.isArray(payload.characterIds)
+      ? payload.characterIds.filter((id): id is string => typeof id === 'string' && Boolean(id.trim()))
+      : [];
+  } catch {
+    sessionStorage.removeItem(BATCH_GENERATED_MEMBER_IDS_KEY);
+    return [];
+  }
 }
 
 export default function CreateChatPage() {
@@ -582,7 +604,9 @@ export default function CreateChatPage() {
       setStyle((draft.style as ChatStyle) || chatDraftDefaults.style);
       styleOverriddenRef.current = Boolean(draft.style);
       setRoomTemplate((draft.roomTemplate as RoomTemplateKey) || 'open_chat');
-      setSelectedMembers(stripUserMemberId(Array.isArray(draft.selectedMembers) ? draft.selectedMembers as string[] : []));
+      const restoredMembers = stripUserMemberId(Array.isArray(draft.selectedMembers) ? draft.selectedMembers as string[] : []);
+      const batchGeneratedMemberIds = readBatchGeneratedMemberIds(location.pathname + location.search);
+      setSelectedMembers(Array.from(new Set([...restoredMembers, ...batchGeneratedMemberIds])));
       setOwnerCharacterId(String(draft.ownerCharacterId || ''));
       setAdminCharacterIds(Array.isArray(draft.adminCharacterIds) ? draft.adminCharacterIds as string[] : []);
       setMood(String(draft.mood || ''));
@@ -688,17 +712,13 @@ export default function CreateChatPage() {
     }
   }, [editingChat, location.search]);
 
-  useEffect(() => {
-    if (selectedMembers.length <= MAX_MEMBERS) return;
-    setSelectedMembers((prev) => prev.slice(0, MAX_MEMBERS));
-  }, [selectedMembers]);
-
-  const customCharacters = characters.filter((char) => !char.isPreset);
+  const customCharacters = characters.filter((char) => !char.isPreset && !char.deletedAt);
   const selectedCharacters = [
     ...characters.filter((char) => selectedMembers.includes(char.id)),
     ...marketBundleCharacterPreviews.filter((char) => selectedMembers.includes(char.id) && !characters.some((item) => item.id === char.id)),
   ];
   const hasCustomCharacters = customCharacters.length > 0;
+  const insufficientGroupCharacterCount = !editingChat && !marketImportDraft && isGroupConversation && customCharacters.length < MIN_MEMBERS;
   const canAutofill = !editingChat && !aiAutofilling && Boolean(name.trim() || topic.trim() || selectedMembers.length);
   const agentEntitled = authMode === 'cloud' && isLoggedIn && currentUser?.agentEntitled === true;
   const availableRoomTemplates = useMemo(
@@ -973,6 +993,13 @@ export default function CreateChatPage() {
     if (generationDescription) params.set('description', generationDescription);
     navigate(`/characters/batch-generate?${params.toString()}`);
   };
+  const openMemberDialog = () => {
+    if (insufficientGroupCharacterCount) {
+      setNoCharactersDialogOpen(true);
+      return;
+    }
+    setMemberDialogOpen(true);
+  };
   const closeSnackbar = () => {
     setSnackbar((prev) => ({ ...prev, open: false }));
   };
@@ -1030,6 +1057,17 @@ export default function CreateChatPage() {
 
   const memberSummaryEmptyLabel = isZh ? '未选择AI角色' : 'No AI roles selected';
   const memberDialogConfirmLabel = t('common.confirm');
+  const missingGroupCharacterCount = Math.max(0, MIN_MEMBERS - customCharacters.length);
+  const noCharactersDialogTitle = customCharacters.length === 0
+    ? (isZh ? '还没有AI角色' : 'No AI roles yet')
+    : (isZh ? 'AI角色不足' : 'Not enough AI roles');
+  const noCharactersDialogMessage = customCharacters.length === 0
+    ? (isZh
+        ? `创建群聊至少需要 ${MIN_MEMBERS} 个AI角色。可以先去角色库创建角色，或根据主题批量生成。`
+        : `A group chat needs at least ${MIN_MEMBERS} AI roles. Create roles in the character library, or generate them in batch from your topic.`)
+    : (isZh
+        ? `当前只有 ${customCharacters.length} 个AI角色，群聊至少需要 ${MIN_MEMBERS} 个AI角色。请再创建 ${missingGroupCharacterCount} 个角色，或根据主题批量生成。`
+        : `You currently have ${customCharacters.length} AI role(s), but a group chat needs at least ${MIN_MEMBERS}. Create ${missingGroupCharacterCount} more, or generate roles in batch from your topic.`);
   const startChatLabel = editingChat ? t('common.save') : '开始群聊';
   const useFreeEntitlement = authMode !== 'cloud' || !isLoggedIn;
   const entitlementReady = useFreeEntitlement ? freeEntitlementLoaded : membershipLoaded;
@@ -1247,7 +1285,7 @@ export default function CreateChatPage() {
       showError(isZh ? 'Agent 房间仅会员可用。' : 'Agent rooms are available to members only.');
       return;
     }
-    if (!editingChat && !marketImportDraft && !hasCustomCharacters) {
+    if (insufficientGroupCharacterCount) {
       setNoCharactersDialogOpen(true);
       return;
     }
@@ -1458,7 +1496,7 @@ export default function CreateChatPage() {
               onAutoModerationChange={setAutoModeration}
               onAllowMuteChange={setAllowMute}
               onAllowPrivateThreadsChange={setAllowPrivateThreads}
-              onOpenMemberDialog={() => setMemberDialogOpen(true)}
+              onOpenMemberDialog={openMemberDialog}
               onOpenBatchGenerate={openBatchGenerate}
               onOpenHotDialog={openHotDialog}
               onToggleMember={toggleMember}
@@ -1681,6 +1719,8 @@ export default function CreateChatPage() {
         returnTo={location.pathname + location.search}
         batchTopic={topic || name}
         batchDescription={[storyBackground, storyOutline, storyDirection, focus, recentEvent, seedMemoryText].filter((item) => item.trim()).join('\n\n')}
+        title={noCharactersDialogTitle}
+        message={noCharactersDialogMessage}
       />
 
       <MemberSelectionDialog

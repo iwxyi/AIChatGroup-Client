@@ -30,6 +30,7 @@ import { motion, transition } from '../styles/motion';
 import { buildListGridSx } from '../styles/interaction';
 import { buildAssistantChatDraft } from '../services/chatDraftBuilder';
 import { getLatestChatPreviewMessage, sanitizeChatLatestMessage } from '../services/chatLatestMessage';
+import { MIN_MEMBERS } from '../constants/defaults';
 
 const CHAT_LIST_TAB_KEY = 'chat-list-tab';
 const ASSISTANT_TAB = 3;
@@ -242,21 +243,30 @@ export default function ChatListPage() {
     const resolvedLatest = cachedLatest || sanitizeChatLatestMessage(chat.latestMessage);
     return resolvedLatest === chat.latestMessage ? chat : { ...chat, latestMessage: resolvedLatest };
   }), [messageWindowsByChatId, visibleChats]);
-  const hasCustomCharacters = useMemo(() => characters.some((character) => !character.isPreset && !character.deletedAt), [characters]);
+  const customCharacterCount = useMemo(() => characters.filter((character) => !character.isPreset && !character.deletedAt).length, [characters]);
   const [noCharactersDialogOpen, setNoCharactersDialogOpen] = useState(false);
   const [noCharactersReturnTo, setNoCharactersReturnTo] = useState('/chats/create');
+  const [noCharactersRequiredCount, setNoCharactersRequiredCount] = useState(MIN_MEMBERS);
   const emptyMessage = tab === ASSISTANT_TAB ? '还没有助手会话' : tab === 0 ? t('chat.noGroups') : tab === 1 ? '还没有单聊' : '还没有 AI私聊';
   const createPath = tab === 0 ? '/chats/create' : '/direct/create';
   const createLabel = tab === ASSISTANT_TAB ? '创建助手' : tab === 0 ? t('chat.create') : '创建单聊';
   const showCreateFab = tab !== 2;
   const openCreateWithCharacterGuard = (path: string) => {
-    if (!hasCustomCharacters) {
+    const requiredCount = path.startsWith('/chats/create') ? MIN_MEMBERS : 1;
+    if (customCharacterCount < requiredCount) {
       setNoCharactersReturnTo(path);
+      setNoCharactersRequiredCount(requiredCount);
       setNoCharactersDialogOpen(true);
       return;
     }
     navigate(path);
   };
+  const noCharactersDialogTitle = customCharacterCount === 0 ? '还没有AI角色' : 'AI角色不足';
+  const noCharactersDialogMessage = noCharactersRequiredCount > 1
+    ? customCharacterCount === 0
+      ? `创建群聊至少需要 ${noCharactersRequiredCount} 个AI角色。可以先去角色库创建角色，或根据主题批量生成。`
+      : `当前只有 ${customCharacterCount} 个AI角色，群聊至少需要 ${noCharactersRequiredCount} 个AI角色。请再创建 ${noCharactersRequiredCount - customCharacterCount} 个角色，或根据主题批量生成。`
+    : '创建单聊前，需要先在角色库中创建至少一个AI角色。也可以根据主题或故事批量生成角色。';
   const createAssistantChat = async () => {
     if (creatingAssistant) return;
     setCreatingAssistant(true);
@@ -421,6 +431,8 @@ export default function ChatListPage() {
         open={noCharactersDialogOpen}
         onClose={() => setNoCharactersDialogOpen(false)}
         returnTo={noCharactersReturnTo}
+        title={noCharactersDialogTitle}
+        message={noCharactersDialogMessage}
       />
       <AppSnackbar
         open={Boolean(deletedAssistantNotice)}

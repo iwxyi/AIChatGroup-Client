@@ -93,7 +93,7 @@ const RITUAL_KIND_OPTIONS: Array<{ kind: CompanionshipRitualKind; zh: string; en
 function buildThemePresetGridSx() {
   return {
     display: 'grid',
-    gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', lg: 'repeat(3, minmax(0, 1fr))' },
+    gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', lg: 'repeat(3, minmax(0, 1fr))' },
     gap: 1,
   };
 }
@@ -103,9 +103,9 @@ function buildThemePresetButtonSx(preset: AppThemePreset, selected: boolean) {
   return {
     alignItems: 'stretch',
     justifyContent: 'stretch',
-    minHeight: 154,
-    px: 1.05,
-    py: 1.05,
+    minHeight: { xs: 138, sm: 154 },
+    px: { xs: 0.8, sm: 1.05 },
+    py: { xs: 0.8, sm: 1.05 },
     borderRadius: 2,
     textTransform: 'none',
     whiteSpace: 'normal',
@@ -198,9 +198,9 @@ function buildThemeMiniPreviewSx(preset: AppThemePreset) {
   return {
     display: 'grid',
     gridTemplateRows: 'auto 1fr',
-    gap: 1,
-    minHeight: 92,
-    p: 1,
+    gap: { xs: 0.75, sm: 1 },
+    minHeight: { xs: 78, sm: 92 },
+    p: { xs: 0.75, sm: 1 },
     borderRadius: 1.5,
     border: '1px solid',
     borderColor: 'divider',
@@ -1994,15 +1994,15 @@ export default function SettingsPage() {
                     >
                       <Box sx={{ width: '100%', display: 'grid', gap: 1 }}>
                         <Box sx={buildThemeMiniPreviewSx(preset)}>
-                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
-                            <Box sx={{ display: 'flex', gap: 0.55 }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: { xs: 0.6, sm: 1 } }}>
+                            <Box sx={{ display: 'flex', gap: { xs: 0.4, sm: 0.55 } }}>
                               {[primary, secondary, accent].map((color, index) => (
                                 <Box
                                   key={color}
                                   className="theme-wave-dot"
                                   sx={{
-                                    width: 14,
-                                    height: 14,
+                                    width: { xs: 11, sm: 14 },
+                                    height: { xs: 11, sm: 14 },
                                     borderRadius: '50%',
                                     bgcolor: color,
                                     position: 'relative',
@@ -2014,12 +2014,12 @@ export default function SettingsPage() {
                                 />
                               ))}
                             </Box>
-                            <Box sx={{ width: 24, height: 24, borderRadius: '50%', bgcolor: selected ? primary : 'rgba(255,255,255,0.56)', color: '#fff', display: 'grid', placeItems: 'center', border: '1px solid', borderColor: selected ? `${primary}88` : 'rgba(255,255,255,0.46)', boxShadow: selected ? `0 8px 18px ${primary}35` : 'inset 0 1px 0 rgba(255,255,255,0.4)' }}>
-                              {selected ? <CheckIcon sx={{ fontSize: 16 }} /> : null}
+                            <Box sx={{ width: { xs: 20, sm: 24 }, height: { xs: 20, sm: 24 }, borderRadius: '50%', bgcolor: selected ? primary : 'rgba(255,255,255,0.56)', color: '#fff', display: 'grid', placeItems: 'center', border: '1px solid', borderColor: selected ? `${primary}88` : 'rgba(255,255,255,0.46)', boxShadow: selected ? `0 8px 18px ${primary}35` : 'inset 0 1px 0 rgba(255,255,255,0.4)' }}>
+                              {selected ? <CheckIcon sx={{ fontSize: { xs: 14, sm: 16 } }} /> : null}
                             </Box>
                           </Box>
-                          <Box sx={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 72px', gap: 1, alignItems: 'end' }}>
-                            <Box sx={{ display: 'grid', gap: 0.8, alignSelf: 'center', pb: 0.3, transform: 'translateY(-2px)' }}>
+                          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'minmax(0, 1fr) 50px', sm: 'minmax(0, 1fr) 72px' }, gap: { xs: 0.6, sm: 1 }, alignItems: 'end' }}>
+                            <Box sx={{ display: 'grid', gap: { xs: 0.55, sm: 0.8 }, alignSelf: 'center', pb: 0.3, transform: 'translateY(-2px)' }}>
                               {[
                                 { color: primary, width: '96%', opacity: 0.9, animation: 'themeLineRhythmA 1200ms ease-in-out infinite' },
                                 { color: secondary, width: '74%', opacity: 0.68, animation: 'themeLineRhythmB 1480ms ease-in-out infinite' },
@@ -2029,7 +2029,7 @@ export default function SettingsPage() {
                                   key={`${line.color}-${index}`}
                                   className="theme-rhythm-line"
                                   sx={{
-                                    height: index === 0 ? 7 : 6,
+                                    height: { xs: index === 0 ? 6 : 5, sm: index === 0 ? 7 : 6 },
                                     width: line.width,
                                     borderRadius: 999,
                                     bgcolor: line.color,
@@ -2047,8 +2047,8 @@ export default function SettingsPage() {
                               sx={{
                                 justifySelf: 'end',
                                 alignSelf: 'end',
-                                width: 68,
-                                height: 48,
+                                width: { xs: 48, sm: 68 },
+                                height: { xs: 36, sm: 48 },
                                 position: 'relative',
                                 animation: 'themePreviewDrift 2200ms ease-in-out infinite',
                                 animationPlayState: 'paused',
@@ -2063,10 +2063,10 @@ export default function SettingsPage() {
                                 className="theme-floating-bubble"
                                 sx={{
                                   position: 'absolute',
-                                  left: 8,
-                                  top: 10,
-                                  width: 34,
-                                  height: 14,
+                                  left: { xs: 6, sm: 8 },
+                                  top: { xs: 8, sm: 10 },
+                                  width: { xs: 24, sm: 34 },
+                                  height: { xs: 11, sm: 14 },
                                   borderRadius: '7px 7px 7px 2px',
                                   bgcolor: 'rgba(255,255,255,0.76)',
                                   border: '1px solid rgba(255,255,255,0.44)',
@@ -2077,16 +2077,16 @@ export default function SettingsPage() {
                                   boxShadow: '0 6px 13px rgba(15,23,42,0.08)',
                                 }}
                               >
-                                <Box sx={{ position: 'absolute', left: 7, top: 5, width: 15, height: 3, borderRadius: 999, bgcolor: 'rgba(15,23,42,0.16)' }} />
+                                <Box sx={{ position: 'absolute', left: { xs: 5, sm: 7 }, top: { xs: 4, sm: 5 }, width: { xs: 11, sm: 15 }, height: 3, borderRadius: 999, bgcolor: 'rgba(15,23,42,0.16)' }} />
                               </Box>
                               <Box
                                 className="theme-floating-bubble"
                                 sx={{
                                   position: 'absolute',
-                                  right: 7,
-                                  bottom: 8,
-                                  width: 38,
-                                  height: 16,
+                                  right: { xs: 5, sm: 7 },
+                                  bottom: { xs: 6, sm: 8 },
+                                  width: { xs: 28, sm: 38 },
+                                  height: { xs: 12, sm: 16 },
                                   borderRadius: '8px 8px 2px 8px',
                                   bgcolor: primary,
                                   animation: 'themeBubbleRise 3200ms cubic-bezier(0.4, 0, 0.2, 1) infinite',
@@ -2096,7 +2096,7 @@ export default function SettingsPage() {
                                   boxShadow: `0 7px 16px ${primary}28`,
                                 }}
                               >
-                                <Box sx={{ position: 'absolute', right: 8, top: 6, width: 18, height: 4, borderRadius: 999, bgcolor: 'rgba(255,255,255,0.72)' }} />
+                                <Box sx={{ position: 'absolute', right: { xs: 6, sm: 8 }, top: { xs: 4, sm: 6 }, width: { xs: 13, sm: 18 }, height: { xs: 3, sm: 4 }, borderRadius: 999, bgcolor: 'rgba(255,255,255,0.72)' }} />
                               </Box>
                             </Box>
                           </Box>

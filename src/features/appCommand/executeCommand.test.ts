@@ -218,6 +218,42 @@ describe('executeAppCommandRoute', () => {
     }
   });
 
+  it('passes opening messages through navigation state when creating a direct chat', async () => {
+    const navigate = vi.fn();
+    const originalAddChat = useChatStore.getState().addChat;
+    useCharacterStore.setState({ characters: [character('char-qin', '秦始皇')] });
+    useChatStore.setState({
+      chats: [],
+      addChat: vi.fn(async (draft) => {
+        const created = { ...draft, id: 'chat-qin' } as GroupChat;
+        useChatStore.setState({ chats: [created] });
+        return created;
+      }),
+    });
+
+    try {
+      const result = await executeAppCommandRoute({
+        mode: 'local_action',
+        action: 'create_direct_chat',
+        riskLevel: 'medium',
+        requiresConfirmation: false,
+        plan: {
+          action: 'create_direct_chat',
+          characterName: '秦始皇',
+          openingMessage: '统一六国之后，你最怕哪件事失控？',
+        },
+      }, { ...context(), navigate });
+
+      expect(result.status).toBe('success');
+      expect(navigate).toHaveBeenCalledWith('/chats/chat-qin?fromTab=1', {
+        state: { homeCommandInitialMessage: '统一六国之后，你最怕哪件事失控？' },
+      });
+    } finally {
+      useCharacterStore.setState({ characters: [] });
+      useChatStore.setState({ chats: [], addChat: originalAddChat });
+    }
+  });
+
   it('finds role collections from natural-language Chinese queries without selecting related non-role characters', async () => {
     const qin = {
       ...character('char-qin', '秦始皇'),
@@ -450,6 +486,34 @@ describe('executeAppCommandRoute', () => {
 
       expect(result.status).toBe('success');
       expect(updateChat).toHaveBeenCalledWith('chat-worldcup', { name: '世界杯消息' });
+    } finally {
+      useChatStore.setState({ chats: [], updateChat: originalUpdateChat });
+    }
+  });
+
+  it('updates a resolved chat topic through the chat store', async () => {
+    const originalUpdateChat = useChatStore.getState().updateChat;
+    const updateChat = vi.fn(async (id: string, updates: Partial<GroupChat>) => {
+      useChatStore.setState((state) => ({
+        chats: state.chats.map((item) => item.id === id ? { ...item, ...updates } : item),
+      }));
+    });
+    useChatStore.setState({
+      chats: [chat('chat-tea', '赛博茶馆', 'group')],
+      updateChat,
+    });
+
+    try {
+      const result = await executeAppCommandRoute({
+        mode: 'local_action',
+        action: 'update_chat_topic',
+        riskLevel: 'medium',
+        requiresConfirmation: false,
+        plan: { action: 'update_chat_topic', chatId: 'chat-tea', newTopic: '雨夜叛逃与旧盟约' },
+      }, context());
+
+      expect(result.status).toBe('success');
+      expect(updateChat).toHaveBeenCalledWith('chat-tea', { topic: '雨夜叛逃与旧盟约' });
     } finally {
       useChatStore.setState({ chats: [], updateChat: originalUpdateChat });
     }

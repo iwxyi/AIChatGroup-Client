@@ -185,6 +185,14 @@ export const APP_COMMAND_TOOLS: AppCommandToolDefinition[] = [
     examples: ['把这个群聊改名为赛博茶馆', '把最新世界杯动态查询改名为世界杯消息'],
   },
   {
+    action: 'update_chat_topic',
+    title: '修改会话主题',
+    riskLevel: 'medium',
+    description: '修改明确匹配的群聊、单聊或助手会话的聊天主题/话题。newTopic 是新的聊天主题；selectionMode=random/recent 可在未指定会话时选择一个群聊。',
+    parameters: ['chatQuery', 'chatName', 'chatTypePreference', 'selectionMode', 'newTopic', 'summary'],
+    examples: ['把赛博茶馆的聊天主题改成雨夜叛逃', '随机选一个群聊换一个更有张力的新话题'],
+  },
+  {
     action: 'create_assistant_chat',
     title: '创建助手会话',
     riskLevel: 'medium',

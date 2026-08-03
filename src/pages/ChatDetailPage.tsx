@@ -108,7 +108,7 @@ type PendingStoryChoiceVisual = {
   selectedValue: string;
   options: NarrativeStoryChoiceOption[];
 };
-type HomeCommandAssistantLocationState = {
+type HomeCommandChatLocationState = {
   homeCommandInitialMessage?: string;
   homeCommandStartAgent?: boolean;
   homeCommandPreferredMode?: 'chat' | 'image' | 'research' | 'tool';
@@ -807,7 +807,7 @@ export default function ChatDetailPage() {
   const chatShareAvailable = authMode === 'cloud' && currentUser?.chatShareEntitled === true;
   const isRemoteDeletedChat = Boolean(id && remoteDeletedChatIds.includes(id));
 
-  const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'error' | 'success' }>({ open: false, message: '', severity: 'error' });
+  const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'error' | 'success' | 'info' }>({ open: false, message: '', severity: 'error' });
   const [detailBootstrapComplete, setDetailBootstrapComplete] = useState(false);
   const [sidebarMessagesReady, setSidebarMessagesReady] = useState(false);
   const [profilePreview, setProfilePreview] = useState<ProfilePreviewState | null>(null);
@@ -2263,15 +2263,15 @@ export default function ChatDetailPage() {
   }, [addMessageStable, aiProfiles, api, chat, currentUser?.nickname, enqueueManualInput, getNextMessageTimestamp, id, showErrorToast, updateChat, visiblePendingAppCommand]);
 
   useEffect(() => {
-    if (!chat || !id || chat.type !== 'assistant') return;
-    const state = location.state as HomeCommandAssistantLocationState | null;
+    if (!chat || !id) return;
+    const state = location.state as HomeCommandChatLocationState | null;
     const initialMessage = state?.homeCommandInitialMessage?.trim();
     if (!initialMessage) return;
     const consumeKey = `${id}:${initialMessage}`;
     if (consumedHomeCommandRef.current === consumeKey) return;
     consumedHomeCommandRef.current = consumeKey;
     navigate({ pathname: location.pathname, search: location.search, hash: location.hash }, { replace: true, state: null });
-    if (state?.homeCommandStartAgent && agentEntitled) {
+    if (chat.type === 'assistant' && state?.homeCommandStartAgent && agentEntitled) {
       writeAssistantAgentDefaultEnabled(true);
       void updateChat(id, {
         modeState: {

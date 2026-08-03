@@ -118,6 +118,13 @@ function chatWebPath(chatId: string, tab: number) {
   return `/chats/${encodeURIComponent(chatId)}?fromTab=${tab}`;
 }
 
+function navigateToChat(context: AppCommandContext, chatId: string, tab: number, openingMessage?: string) {
+  const url = chatWebPath(chatId, tab);
+  const message = clean(openingMessage);
+  context.navigate?.(url, message ? { state: { homeCommandInitialMessage: message } } : undefined);
+  return url;
+}
+
 function chatAppLink(chatId: string, tab: number) {
   return serializeAppLink({ target: 'chat', id: chatId, action: 'open', params: { fromTab: String(tab) } });
 }
@@ -643,8 +650,7 @@ async function createDirectChat(plan: LocalActionPlan, context: AppCommandContex
   const [character] = await ensureCharacters([{ name, group: plan.characters?.[0]?.group || null, roleHint: plan.summary }], context);
   const existing = useChatStore.getState().chats.find((chat) => chat.type === 'direct' && chat.memberIds.includes(character.id));
   const chat = existing || await useChatStore.getState().addChat(buildDirectChatDraft(character.id, character.name));
-  const url = chatWebPath(chat.id, 1);
-  context.navigate?.(url);
+  const url = navigateToChat(context, chat.id, 1, plan.openingMessage);
   return {
     status: 'success',
     title: existing ? '已打开单聊' : '已创建单聊',
@@ -690,8 +696,7 @@ async function createGroupChat(plan: LocalActionPlan, context: AppCommandContext
     scenarioId: template.sessionKind.scenarioId,
   });
   if (existing) {
-    const url = chatWebPath(existing.id, 0);
-    context.navigate?.(url);
+    const url = navigateToChat(context, existing.id, 0, plan.openingMessage);
     return {
       status: 'success',
       title: '已打开已有群聊',
@@ -749,7 +754,7 @@ async function createGroupChat(plan: LocalActionPlan, context: AppCommandContext
     allowForcedReply: true,
   }));
   const url = chatWebPath(chat.id, 0);
-  context.navigate?.(url);
+  navigateToChat(context, chat.id, 0, plan.openingMessage);
   return {
     status: 'success',
     title: `已创建${template.label}`,
@@ -1150,6 +1155,23 @@ async function openCharacter(plan: LocalActionPlan, context: AppCommandContext):
   };
 }
 
+function resolveChatTopicTargets(plan: LocalActionPlan, input: string) {
+  const activeChats = useChatStore.getState().chats.filter((chat) => !chat.deletedAt);
+  const typeFiltered = activeChats.filter((chat) => {
+    if (!plan.chatTypePreference || plan.chatTypePreference === 'any') return true;
+    return chat.type === plan.chatTypePreference;
+  });
+  if (plan.chatId) return typeFiltered.filter((chat) => chat.id === plan.chatId);
+  if (plan.selectionMode === 'random') {
+    if (!typeFiltered.length) return [];
+    return [typeFiltered[Math.floor(Math.random() * typeFiltered.length)]].filter(Boolean);
+  }
+  if (plan.selectionMode === 'recent') {
+    return [...typeFiltered].sort((a, b) => (b.lastMessageAt || b.updatedAt || 0) - (a.lastMessageAt || a.updatedAt || 0)).slice(0, 1);
+  }
+  return resolveChatMatches(plan, input).filter((chat) => typeFiltered.some((item) => item.id === chat.id)).slice(0, 8);
+}
+
 async function renameCharacter(plan: LocalActionPlan, context: AppCommandContext): Promise<AppCommandExecutionResult> {
   const newName = clean(plan.newName || plan.summary);
   if (!newName) return { status: 'info', title: '缺少新名称', message: '请告诉我要把角色改成什么名字。' };
@@ -1242,6 +1264,32 @@ async function renameChat(plan: LocalActionPlan, context: AppCommandContext): Pr
     title: '已重命名会话',
     message: `已将“${target.name}”重命名为“${newName}”。`,
     markdown: `已重命名会话：${markdownChatLink(newName, target.id, target.type === 'assistant' ? 3 : target.type === 'direct' ? 1 : 0)}`,
+  };
+}
+
+async function updateChatTopic(plan: LocalActionPlan, context: AppCommandContext): Promise<AppCommandExecutionResult> {
+  const newTopic = clean(plan.newTopic || plan.groupTopic || plan.summary);
+  if (!newTopic) return { status: 'info', title: '缺少新主题', message: '请告诉我要把聊天主题改成什么。' };
+  const matches = resolveChatTopicTargets({ ...plan, chatTypePreference: plan.chatTypePreference || 'group' }, context.input);
+  if (!matches.length) return { status: 'info', title: '没有找到会话', message: '没有找到要修改主题的会话。', recoverable: true, reasonType: 'chat_not_found' };
+  if (matches.length > 1) {
+    const candidates = chatCandidates(matches);
+    return {
+      status: 'needs_confirmation',
+      title: '找到多个会话',
+      message: '找到多个可能要修改主题的会话，请选择一个。',
+      candidates,
+      choices: chatActionChoices(matches, plan),
+      choicePresentation: candidates.length > 4 ? 'select' : 'chips',
+    };
+  }
+  const target = matches[0];
+  await useChatStore.getState().updateChat(target.id, { topic: newTopic });
+  return {
+    status: 'success',
+    title: '已更新聊天主题',
+    message: `已将“${target.name}”的聊天主题改为“${newTopic}”。`,
+    markdown: `已更新聊天主题：${markdownChatLink(target.name, target.id, target.type === 'assistant' ? 3 : target.type === 'direct' ? 1 : 0)}`,
   };
 }
 
@@ -1348,6 +1396,7 @@ const LOCAL_ACTION_HANDLERS: Record<LocalActionPlan['action'], LocalActionHandle
   delete_chats: deleteChats,
   restore_chats: restoreChats,
   rename_chat: renameChat,
+  update_chat_topic: updateChatTopic,
   create_assistant_chat: createAssistantChat,
   manage_group_members: manageGroupMembers,
   query_ai_balance: () => queryAiBalance(),

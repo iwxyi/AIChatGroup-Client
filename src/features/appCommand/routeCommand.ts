@@ -94,6 +94,13 @@ function normalizePlan(raw: Record<string, unknown>): LocalActionPlan {
     compareQuestion: shortText(rawPlan.compareQuestion ?? rawPlan.compare_question, 260),
     chatName: shortText(rawPlan.chatName ?? rawPlan.chat_name, 80),
     newName: shortText(rawPlan.newName ?? rawPlan.new_name, 80),
+    newTopic: shortText(rawPlan.newTopic ?? rawPlan.new_topic, 260),
+    openingMessage: shortText(rawPlan.openingMessage ?? rawPlan.opening_message, 500),
+    selectionMode: rawPlan.selectionMode === 'random' || rawPlan.selection_mode === 'random'
+      ? 'random'
+      : rawPlan.selectionMode === 'recent' || rawPlan.selection_mode === 'recent'
+        ? 'recent'
+        : undefined,
     memberOperation: rawPlan.memberOperation === 'add' || rawPlan.memberOperation === 'remove' || rawPlan.memberOperation === 'set'
       ? rawPlan.memberOperation
       : rawPlan.member_operation === 'add' || rawPlan.member_operation === 'remove' || rawPlan.member_operation === 'set'
@@ -329,6 +336,7 @@ function buildPlannerPrompt(source: AppCommandContext['source']) {
     '- 如果用户描述了故事背景、剧情方向、案件、规则、学习目标或任务目标，应把这些内容写入对应玩法参数，而不是只塞进 groupTopic。',
     '- 创建群聊或玩法房时，如果本地角色库中已有角色和用户主题、时代、地点、人物关系明显相关，必须优先写入 plan.characters 或 characterName；不要创建空房间再让用户手动补。',
     '- 如果用户要求 N 人玩法房且本地角色不足，必须 workflow 先 create_characters 补齐，或在 create_group_chat 的 plan.characters 里直接列出 N 个可创建角色。',
+    '- 创建或打开单聊/群聊时，如果用户输入里包含进入后要发送给角色的明确开场、问题或第一句话，必须写入 openingMessage，只保留要发进聊天的那句话，不要把“帮我创建/让我进入/和某某聊天”等应用指令一起放进去。例如“让我和秦始皇单聊：统一六国之后，他最怕哪件事失控？”应 create_direct_chat characterName=秦始皇 openingMessage=统一六国之后，你最怕哪件事失控？',
     '- 玩法参数字段写普通短文本，不要在字符串里嵌套 JSON、数组或大量转义内容。',
     '- 同名或多候选角色需要 choices；每个 choice 的 label 必须带分组或摘要差异，choice.plan 里也要带 characterQuery、characterName、characters[].group 等可用于本地消歧的信息。',
     '- 对“秦始皇的性格怎么样”“A 和 B 谁更擅长做菜”“结合角色库信息回答”这类请求，必须使用 read_character_info 或 compare_characters；不要直接 final_response，不要退回 assistant_agent，也不要只凭摘要自由回答。',
@@ -339,7 +347,9 @@ function buildPlannerPrompt(source: AppCommandContext['source']) {
     '- delete_characters 是移入回收站，不是永久清空；当角色名称或范围明确时可以 requiresConfirmation=false，范围不明确或多候选时由执行器继续让用户选择。',
     '- 对“恢复/找回/撤销删除某角色”输出 restore_characters；对“打开某角色资料/设置/编辑页”输出 open_character；对“把某角色改名为 X”输出 rename_character。',
     '- 对“删除/恢复/重命名某会话/群聊/助手”分别输出 delete_chats、restore_chats、rename_chat；目标不明确时让执行器返回候选。',
+    '- 对“修改聊天主题/换群聊话题/给某个群聊换新主题”输出 update_chat_topic，newTopic 写新话题；没有明确群聊但用户说随机时 selectionMode=random、chatTypePreference=group；用户说最近时 selectionMode=recent。注意这和程序外观主题不同。',
     '- 对“新建助手会话”输出 create_assistant_chat；对“给群聊添加/移除/替换成员”输出 manage_group_members，并写 memberOperation=add/remove/set。',
+    '- 对“切换程序外观主题/应用主题/夜间模式/浅色模式/跟随系统/随机换个外观主题”输出 update_theme，theme 为 light、dark 或 system；如果用户说随机，任选一个和当前无关的合法主题即可。不要和聊天主题混淆。',
     '- 对“设置模型为 deepseek / 配置 OpenAI / 配置图片模型 / 模型怎么设置”这类没有提供真实 key 或完整配置的请求，输出 navigate，routePath 使用 ssmm://settings?action=open&tab=models&card=models，不要假装已经设置完成。',
     '- 需要跳转页面时，routePath 优先使用跨平台 AppLink，例如 ssmm://settings?action=open&tab=models&card=models、ssmm://characters?action=open、ssmm://chats?action=open；不要输出 hash 路由或平台私有路径。',
     '- sourceGroup 表示源分组筛选；targetGroup 表示写入目标分组。不要把“移动到 X 分组”里的 X 放到 sourceGroup。',

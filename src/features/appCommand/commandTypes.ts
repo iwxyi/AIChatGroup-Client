@@ -20,6 +20,7 @@ export type AppCommandAction =
   | 'delete_chats'
   | 'restore_chats'
   | 'rename_chat'
+  | 'update_chat_topic'
   | 'create_assistant_chat'
   | 'manage_group_members'
   | 'query_ai_balance'
@@ -92,6 +93,9 @@ export interface LocalActionPlan {
   compareQuestion?: string;
   chatName?: string;
   newName?: string;
+  newTopic?: string;
+  openingMessage?: string;
+  selectionMode?: 'random' | 'recent';
   memberOperation?: 'add' | 'remove' | 'set';
   theme?: 'light' | 'dark' | 'system';
   providerHint?: string;

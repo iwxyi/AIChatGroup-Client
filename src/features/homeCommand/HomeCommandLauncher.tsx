@@ -74,8 +74,12 @@ export default function HomeCommandLauncher() {
   };
 
   const submit = async () => {
+    const hasTypedInput = input.trim().length > 0;
     const value = resolveHomeCommandSubmissionValue(input, placeholder);
     if (!value || loading) return;
+    if (!hasTypedInput) {
+      setInput(value);
+    }
     setLoading(true);
     setFeedback(null);
     setPending(null);

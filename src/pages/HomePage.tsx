@@ -31,6 +31,7 @@ import PageSection from '../components/common/PageSection';
 import { buildSettingsPath } from '../routes/settingsRoute';
 import SectionHeader from '../components/common/SectionHeader';
 import HomeCommandLauncher from '../features/homeCommand/HomeCommandLauncher';
+import { MIN_MEMBERS } from '../constants/defaults';
 import { avatarGenerationQueue, type AvatarGenerationQueueSummary } from '../services/avatarGenerationQueue';
 import type { HomeCompanionshipSnapshot } from '../services/companionshipProjection';
 import { shouldShowCompanionshipStatusHints } from '../services/companionshipStatusVisibility';
@@ -55,6 +56,8 @@ interface HomeOverviewCard {
   createLabel?: string;
   attention?: boolean;
 }
+
+const AI_POINT_PLACEHOLDER_VALUE = '--';
 
 type OfficialBalanceProvider = string;
 
@@ -523,22 +526,30 @@ export default function HomePage() {
     };
   }, []);
 
-  const customCharacters = characters.filter((character) => !character.isPreset);
-  const hasCustomCharacters = customCharacters.length > 0;
+  const customCharacters = characters.filter((character) => !character.isPreset && !character.deletedAt);
   const [noCharactersDialogOpen, setNoCharactersDialogOpen] = useState(false);
   const [noCharactersReturnTo, setNoCharactersReturnTo] = useState('/chats/create');
+  const [noCharactersRequiredCount, setNoCharactersRequiredCount] = useState(MIN_MEMBERS);
   const totalDirectChats = chats.filter((chat) => chat.type === 'direct' || chat.type === 'ai_direct').length;
   const totalGroupChats = chats.filter((chat) => chat.type === 'group').length;
   const resolveChatListTab = (chat: typeof chats[number]) => chat.type === 'assistant' ? 3 : chat.type === 'group' ? 0 : chat.type === 'ai_direct' ? 2 : 1;
   const openChatFromHome = (chat: typeof chats[number]) => navigate(`/chats/${chat.id}?fromTab=${resolveChatListTab(chat)}`);
   const openCreateChatWithCharacterGuard = (path: string) => {
-    if (!hasCustomCharacters) {
+    const requiredCount = path.startsWith('/chats/create') ? MIN_MEMBERS : 1;
+    if (customCharacters.length < requiredCount) {
       setNoCharactersReturnTo(path);
+      setNoCharactersRequiredCount(requiredCount);
       setNoCharactersDialogOpen(true);
       return;
     }
     navigate(path);
   };
+  const noCharactersDialogTitle = customCharacters.length === 0 ? '还没有AI角色' : 'AI角色不足';
+  const noCharactersDialogMessage = noCharactersRequiredCount > 1
+    ? customCharacters.length === 0
+      ? `创建群聊至少需要 ${noCharactersRequiredCount} 个AI角色。可以先去角色库创建角色，或根据主题批量生成。`
+      : `当前只有 ${customCharacters.length} 个AI角色，群聊至少需要 ${noCharactersRequiredCount} 个AI角色。请再创建 ${noCharactersRequiredCount - customCharacters.length} 个角色，或根据主题批量生成。`
+    : '创建单聊前，需要先在角色库中创建至少一个AI角色。也可以根据主题或故事批量生成角色。';
   const recentChatsTitle = '最近会话';
   const recentChatsActionTab = recentChats[0] ? resolveChatListTab(recentChats[0]) : 0;
   const needsAIModelSetup = !hasUsableDefaultTextAI(aiProfiles);
@@ -585,6 +596,12 @@ export default function HomePage() {
   }, [aiProfiles, officialProviderAccess]);
   const primaryOfficialBalanceProvider = enabledOfficialBalanceProviders[0] || null;
   const canQueryAiPoints = !needsLogin && Boolean(primaryOfficialBalanceProvider);
+  const shouldReserveAiPointsCard = !needsLogin;
+  const aiPointCardValue = primaryOfficialBalanceProvider && typeof aiPointBalance === 'number'
+    ? formatAiAmount(aiPointBalance, primaryOfficialBalanceProvider.publicProvider, { compact: true })
+    : aiPointBalance === null
+      ? '未分配'
+      : AI_POINT_PLACEHOLDER_VALUE;
   const needsNicknameSetup = !needsLogin && !String(user?.nickname || '').trim();
   const needsOwnCharacter = characters.length > 0 && customCharacters.length === 0;
   const hasActiveAvatarTasks = avatarQueueSummary.active > 0;
@@ -795,6 +812,15 @@ export default function HomePage() {
       attention: true,
     }] : []),
     {
+      label: t('home.totalCharacters'),
+      value: customCharacters.length,
+      icon: <PersonIcon />,
+      color: 'primary.main',
+      onOpen: () => navigate('/characters'),
+      onCreate: () => navigate('/characters/create'),
+      createLabel: t('character.create'),
+    },
+    {
       label: t('home.totalChats'),
       value: totalGroupChats,
       icon: <ChatIcon />,
@@ -813,31 +839,19 @@ export default function HomePage() {
       createLabel: '创建单聊',
     },
     {
-      label: t('home.totalCharacters'),
-      value: customCharacters.length,
-      icon: <PersonIcon />,
-      color: 'primary.main',
-      onOpen: () => navigate('/characters'),
-      onCreate: () => navigate('/characters/create'),
-      createLabel: t('character.create'),
-    },
-    {
       label: '角色消息',
       value: aiMessageCount,
       icon: <ChatIcon />,
       color: 'primary.main',
       onOpen: () => navigate('/chats?tab=0'),
     },
-    ...(() => {
-      if (!primaryOfficialBalanceProvider || aiPointBalance === null || aiPointBalance === undefined) return [];
-      return [{
+    ...(shouldReserveAiPointsCard ? [{
         label: 'AI点数',
-        value: formatAiAmount(aiPointBalance, primaryOfficialBalanceProvider.publicProvider, { compact: true }),
+        value: aiPointCardValue,
         icon: <AutoAwesomeIcon />,
         color: 'primary.main',
         onOpen: () => navigate(buildSettingsPath({ tab: 'models', card: 'models' })),
-      }];
-    })(),
+      }] : []),
     ...syncStatusStats,
   ];
 
@@ -1019,6 +1033,8 @@ export default function HomePage() {
         open={noCharactersDialogOpen}
         onClose={() => setNoCharactersDialogOpen(false)}
         returnTo={noCharactersReturnTo}
+        title={noCharactersDialogTitle}
+        message={noCharactersDialogMessage}
       />
     </Box>
   );

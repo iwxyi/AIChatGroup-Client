@@ -26,11 +26,13 @@ import { getTopicDerivedCharacterGroup } from '../types/character';
 import { getPreferredAIProfile, isAIProfileUsable } from '../types/settings';
 import { chooseRandomBubbleStyleId, createCharacterBubbleStyleId } from '../utils/bubbleStyle';
 import { api, type BillingMembershipResponse, type VipEntitlementInfo } from '../services/api';
+import { storageKey } from '../constants/brand';
 
 const BATCH_GENERATE_GROUP_SIZE = 10;
 const MOBILE_BOTTOM_NAV_FAB_OFFSET = 'calc(env(safe-area-inset-bottom, 0px) + 104px)';
 const MOBILE_BOTTOM_NAV_CONTENT_PADDING = 'calc(env(safe-area-inset-bottom, 0px) + 176px)';
 const HIGH_RELATIONSHIP_CONFIDENCE = 0.75;
+const BATCH_GENERATED_MEMBER_IDS_KEY = storageKey('create-chat-batch-generated-member-ids');
 
 function usesPlatformAi(profile: AIModelProfile | null | undefined) {
   if (!profile) return false;
@@ -353,7 +355,7 @@ function isValidCandidateName(value: string) {
   const normalized = value.trim().replace(/^[:：\-•*\d.\s]+/, '').trim();
   if (!normalized) return false;
   if (normalized.length > 40) return false;
-  if (/[{}\[\]]/.test(normalized)) return false;
+  if (/[[\]{}]/.test(normalized)) return false;
   if (INVALID_NAME_PATTERNS.some((pattern) => pattern.test(normalized))) return false;
   return true;
 }
@@ -1077,6 +1079,12 @@ export default function BatchGenerateCharactersPage() {
         severity: cancelGenerationRef.current ? 'error' : 'success',
       });
       if (!cancelGenerationRef.current && returnTo) {
+        if (createdCharacters.length) {
+          sessionStorage.setItem(BATCH_GENERATED_MEMBER_IDS_KEY, JSON.stringify({
+            returnTo,
+            characterIds: createdCharacters.map((character) => character.id),
+          }));
+        }
         navigate(`${returnTo}${returnTo.includes('?') ? '&' : '?'}restoreDraft=1`, { replace: true });
       }
     } catch (error) {

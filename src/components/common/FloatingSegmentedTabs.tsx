@@ -71,7 +71,7 @@ export default function FloatingSegmentedTabs<T extends string | number>({ value
       Math.min(motion.durations.settle, Math.round(distance * 0.72)),
     );
     const duration = previewValueRef.current !== null ? previewDuration : settledDuration;
-    const easing = previewValueRef.current !== null ? motion.navTrack : motion.gentleSpring;
+    const easing = previewValueRef.current !== null ? motion.softOut : motion.standard;
     indicator.style.opacity = '1';
     indicator.style.transition = transition(['transform', 'width', 'opacity', 'background-color', 'box-shadow'], duration, easing);
     indicator.style.transform = `translateX(${nextLeft}px)`;
@@ -293,7 +293,7 @@ export default function FloatingSegmentedTabs<T extends string | number>({ value
             boxShadow: (theme) => theme.palette.mode === 'light'
               ? '0 8px 18px rgba(49,90,156,0.12), 0 1px 0 rgba(255,255,255,0.72) inset'
               : '0 10px 22px rgba(0,0,0,0.24), 0 1px 0 rgba(255,255,255,0.06) inset',
-            transition: transition(['transform', 'width', 'opacity', 'background-color', 'box-shadow'], motion.durations.navTrack, motion.navTrack),
+            transition: transition(['transform', 'width', 'opacity', 'background-color', 'box-shadow'], motion.durations.navTrack, motion.softOut),
             willChange: 'transform, width',
             '@media (prefers-reduced-motion: reduce)': {
               transition: transition(['transform', 'width', 'opacity'], motion.durations.fast, motion.softOut),
@@ -347,7 +347,7 @@ export default function FloatingSegmentedTabs<T extends string | number>({ value
                 opacity: selected ? 1 : 0.78,
                 overflow: 'hidden',
                 outline: '1px solid transparent',
-                transition: transition(['background-color', 'color', 'opacity', 'box-shadow', 'outline-color', 'transform'], motion.durations.base, selected ? motion.gentleSpring : motion.softOut),
+                transition: transition(['background-color', 'color', 'opacity', 'box-shadow', 'outline-color', 'transform'], motion.durations.base, motion.softOut),
                 '&:hover': {
                   opacity: 1,
                   bgcolor: selected
