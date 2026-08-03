@@ -1,5 +1,5 @@
 import { defineConfig, loadEnv } from 'vite'
-import type { Plugin, ProxyOptions, UserConfig } from 'vite'
+import type { Plugin, PluginOption, ProxyOptions, UserConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
@@ -114,7 +114,7 @@ function setForwardedHeaders(proxyRequest: { setHeader(name: string, value: stri
   if (portMatch?.[1]) proxyRequest.setHeader('x-forwarded-port', portMatch[1]);
 }
 
-export default defineConfig(({ mode }): UserConfig => {
+export default defineConfig(({ mode }) => {
   const env = loadClientEnv(mode)
   const appUpdateMode = resolveAppUpdateMode(env)
   const allowedHosts = resolveAllowedHosts(env)
@@ -242,7 +242,7 @@ export default defineConfig(({ mode }): UserConfig => {
             },
           ],
         },
-      }),
+      }) as unknown as PluginOption,
     ],
     resolve: {
       alias: {
@@ -266,5 +266,5 @@ export default defineConfig(({ mode }): UserConfig => {
         },
       },
     },
-  }
+  } as UserConfig
 })
