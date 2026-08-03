@@ -48,6 +48,8 @@ import { buildIncludeUserAsMemberCopy } from '../services/createChatPresentation
 import { resolveRoomTemplateCapabilityDefaults } from '../services/conversationCapabilities';
 import FloatingSegmentedTabs from '../components/common/FloatingSegmentedTabs';
 import { buildFloatingTabContainerSx } from '../components/common/FloatingSegmentedTabs.styles';
+import AnimatedTabContent from '../components/common/AnimatedTabContent';
+import { resolveTabTransitionDirection } from '../components/common/tabTransition';
 import AppSnackbar from '../components/common/AppSnackbar';
 import ExpandableFab from '../components/common/ExpandableFab';
 import NoCharactersDialog from '../components/common/NoCharactersDialog';
@@ -227,6 +229,7 @@ export default function CreateChatPage() {
   const [marketUploadDraft, setMarketUploadDraft] = useState<MarketUploadDraft | null>(null);
   const [marketBundleCharacterPreviews, setMarketBundleCharacterPreviews] = useState<AICharacter[]>([]);
   const [configTab, setConfigTab] = useState(0);
+  const [tabTransitionDirection, setTabTransitionDirection] = useState<-1 | 1>(1);
 
   const editingChat = id ? chats.find((chat) => chat.id === id) : null;
 
@@ -974,6 +977,17 @@ export default function CreateChatPage() {
     setSnackbar((prev) => ({ ...prev, open: false }));
   };
   const handleTabChange = (_: unknown, value: number) => {
+    setTabTransitionDirection(resolveTabTransitionDirection(
+      [
+        ...(showGameplayTab ? [gameplayTabIndex] : []),
+        0,
+        ...(showManagementTab ? [managementTabIndex] : []),
+        ...(showRuntimeTab ? [runtimeTabIndex] : []),
+        ...(showDirectorTab ? [directorTabIndex] : []),
+      ],
+      configTab,
+      value,
+    ));
     setConfigTab(value);
   };
   const handleCreateAction = () => {
@@ -1397,8 +1411,12 @@ export default function CreateChatPage() {
           />
         </Box>
 
-        {configTab === 0 ? (
-          <>
+        <AnimatedTabContent
+          value={configTab}
+          direction={tabTransitionDirection}
+        >
+          {configTab === 0 ? (
+            <>
             <ChatConfigSection
               lockMembers={Boolean(editingChat && !isGroupConversation)}
               showMembers={Boolean(!editingChat || isGroupConversation)}
@@ -1479,8 +1497,8 @@ export default function CreateChatPage() {
                 </Box>
               </SurfaceCard>
             ) : null}
-          </>
-        ) : null}
+            </>
+          ) : null}
 
         {showGameplayTab && configTab === gameplayTabIndex ? (
           <GameplaySection
@@ -1604,26 +1622,27 @@ export default function CreateChatPage() {
           </Suspense>
         ) : null}
 
-        {showDirectorTab && configTab === directorTabIndex ? (
-          <DirectorControlsSection
-            runtimeEvolutionIntensity={runtimeEvolutionIntensity}
-            setRuntimeEvolutionIntensity={setRuntimeEvolutionIntensity}
-            allowSpeakAs={allowSpeakAs}
-            setAllowSpeakAs={setAllowSpeakAs}
-            allowDirectorMode={allowDirectorMode}
-            setAllowDirectorMode={setAllowDirectorMode}
-            allowEventInjection={allowEventInjection}
-            setAllowEventInjection={setAllowEventInjection}
-            allowForcedReply={allowForcedReply}
-            setAllowForcedReply={setAllowForcedReply}
-            allowCliques={allowCliques}
-            setAllowCliques={setAllowCliques}
-            allowMockery={allowMockery}
-            setAllowMockery={setAllowMockery}
-            onSaveAsChat={editingChat ? handleSaveAsChatAction : undefined}
-            saveAsChatDisabled={saving || saveAsChatSaving}
-          />
-        ) : null}
+          {showDirectorTab && configTab === directorTabIndex ? (
+            <DirectorControlsSection
+              runtimeEvolutionIntensity={runtimeEvolutionIntensity}
+              setRuntimeEvolutionIntensity={setRuntimeEvolutionIntensity}
+              allowSpeakAs={allowSpeakAs}
+              setAllowSpeakAs={setAllowSpeakAs}
+              allowDirectorMode={allowDirectorMode}
+              setAllowDirectorMode={setAllowDirectorMode}
+              allowEventInjection={allowEventInjection}
+              setAllowEventInjection={setAllowEventInjection}
+              allowForcedReply={allowForcedReply}
+              setAllowForcedReply={setAllowForcedReply}
+              allowCliques={allowCliques}
+              setAllowCliques={setAllowCliques}
+              allowMockery={allowMockery}
+              setAllowMockery={setAllowMockery}
+              onSaveAsChat={editingChat ? handleSaveAsChatAction : undefined}
+              saveAsChatDisabled={saving || saveAsChatSaving}
+            />
+          ) : null}
+        </AnimatedTabContent>
 
         <ExpandableFab
           icon={editingChat ? <SaveIcon /> : <ForumIcon />}

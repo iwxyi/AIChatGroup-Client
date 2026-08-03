@@ -15,6 +15,8 @@ import type { GroupChat } from '../types/chat';
 import { resolveCharacterOrDeleted } from '../utils/deletedEntity';
 import FloatingSegmentedTabs from '../components/common/FloatingSegmentedTabs';
 import { buildFloatingTabContainerSx } from '../components/common/FloatingSegmentedTabs.styles';
+import AnimatedTabContent from '../components/common/AnimatedTabContent';
+import { resolveTabTransitionDirection } from '../components/common/tabTransition';
 import AppSnackbar from '../components/common/AppSnackbar';
 import ExpandableFab from '../components/common/ExpandableFab';
 import { buildListGridSx } from '../styles/interaction';
@@ -42,6 +44,8 @@ function sortByDeletedAt<T extends { deletedAt?: number | null }>(items: T[]) {
   return [...items].sort((a, b) => (b.deletedAt || 0) - (a.deletedAt || 0));
 }
 
+const RECYCLE_BIN_TAB_ORDER = [0, 1, 2, 3] as const;
+
 export default function RecycleBinPage() {
   const { i18n } = useTranslation();
   const { characters, loadProjectedDeletedCharacters, restoreCharacters, purgeCharacters, emptyDeletedCharacters, loadProjectedCharacters } = useCharacterStore(useShallow((state) => ({
@@ -61,6 +65,7 @@ export default function RecycleBinPage() {
   })));
 
   const [tab, setTab] = useState(0);
+  const [tabTransitionDirection, setTabTransitionDirection] = useState<-1 | 1>(1);
   const [deletedCharacters, setDeletedCharacters] = useState<AICharacter[]>([]);
   const [deletedChats, setDeletedChats] = useState<GroupChat[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -180,6 +185,7 @@ export default function RecycleBinPage() {
         <FloatingSegmentedTabs
           value={tab}
           onChange={(value) => {
+            setTabTransitionDirection(resolveTabTransitionDirection(RECYCLE_BIN_TAB_ORDER, tab, value));
             setTab(value);
             clearSelection();
           }}
@@ -203,45 +209,47 @@ export default function RecycleBinPage() {
         ) : null}
       </Box>
 
-      {tab === 0 ? (
-        visibleCharacters.length === 0 ? (
+      <AnimatedTabContent value={tab} direction={tabTransitionDirection}>
+        {tab === 0 ? (
+          visibleCharacters.length === 0 ? (
+            <EmptyState variant="plain" message={emptyMessage} />
+          ) : (
+            <Box sx={buildListGridSx()}>
+              {visibleCharacters.map((character) => (
+                <Box key={character.id}>
+                  <Box sx={{ position: 'relative' }}>
+                    <OverlayCheckbox checked={selectedIds.includes(character.id)} onChange={() => toggleSelection(character.id)} />
+                    <CharacterCard character={character} selected={selectedIds.includes(character.id)} onClick={() => toggleSelection(character.id)} />
+                  </Box>
+                  <Box sx={{ mt: 0.75, px: 0.5 }}>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                      {i18n.language.startsWith('zh') ? '删除时间' : 'Deleted at'}：{character.deletedAt ? new Date(character.deletedAt).toLocaleString() : ''}
+                    </Typography>
+                  </Box>
+                </Box>
+              ))}
+            </Box>
+          )
+        ) : visibleChats.length === 0 ? (
           <EmptyState variant="plain" message={emptyMessage} />
         ) : (
           <Box sx={buildListGridSx()}>
-            {visibleCharacters.map((character) => (
-              <Box key={character.id}>
+            {visibleChats.map((chat) => (
+              <Box key={chat.id}>
                 <Box sx={{ position: 'relative' }}>
-                  <OverlayCheckbox checked={selectedIds.includes(character.id)} onChange={() => toggleSelection(character.id)} />
-                  <CharacterCard character={character} selected={selectedIds.includes(character.id)} onClick={() => toggleSelection(character.id)} />
+                  <OverlayCheckbox checked={selectedIds.includes(chat.id)} onChange={() => toggleSelection(chat.id)} />
+                  <ChatCard chat={chat} characters={recycleCharacters} selected={selectedIds.includes(chat.id)} onClick={() => toggleSelection(chat.id)} />
                 </Box>
                 <Box sx={{ mt: 0.75, px: 0.5 }}>
                   <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                    {i18n.language.startsWith('zh') ? '删除时间' : 'Deleted at'}：{character.deletedAt ? new Date(character.deletedAt).toLocaleString() : ''}
+                    {i18n.language.startsWith('zh') ? '删除时间' : 'Deleted at'}：{chat.deletedAt ? new Date(chat.deletedAt).toLocaleString() : ''}
                   </Typography>
                 </Box>
               </Box>
             ))}
           </Box>
-        )
-      ) : visibleChats.length === 0 ? (
-        <EmptyState variant="plain" message={emptyMessage} />
-      ) : (
-        <Box sx={buildListGridSx()}>
-          {visibleChats.map((chat) => (
-            <Box key={chat.id}>
-              <Box sx={{ position: 'relative' }}>
-                <OverlayCheckbox checked={selectedIds.includes(chat.id)} onChange={() => toggleSelection(chat.id)} />
-                <ChatCard chat={chat} characters={recycleCharacters} selected={selectedIds.includes(chat.id)} onClick={() => toggleSelection(chat.id)} />
-              </Box>
-              <Box sx={{ mt: 0.75, px: 0.5 }}>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                  {i18n.language.startsWith('zh') ? '删除时间' : 'Deleted at'}：{chat.deletedAt ? new Date(chat.deletedAt).toLocaleString() : ''}
-                </Typography>
-              </Box>
-            </Box>
-          ))}
-        </Box>
-      )}
+        )}
+      </AnimatedTabContent>
 
       <ExpandableFab
         color="error"

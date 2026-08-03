@@ -20,6 +20,8 @@ import ConfirmDialog from '../components/common/ConfirmDialog';
 import AppSnackbar from '../components/common/AppSnackbar';
 import FloatingSegmentedTabs from '../components/common/FloatingSegmentedTabs';
 import { buildFloatingTabContainerSx } from '../components/common/FloatingSegmentedTabs.styles';
+import AnimatedTabContent from '../components/common/AnimatedTabContent';
+import { resolveTabTransitionDirection } from '../components/common/tabTransition';
 import ExpandableFab from '../components/common/ExpandableFab';
 import { usePaneLayout } from '../components/layout/PaneLayoutContext';
 import { DETAIL_COLLAPSED_CHANGE_EVENT, DETAIL_COLLAPSED_STORAGE_KEY, readDetailCollapsedState, writeDetailCollapsedState } from '../components/layout/masterDetailState';
@@ -31,6 +33,7 @@ import { getLatestChatPreviewMessage, sanitizeChatLatestMessage } from '../servi
 
 const CHAT_LIST_TAB_KEY = 'chat-list-tab';
 const ASSISTANT_TAB = 3;
+const CHAT_LIST_TAB_ORDER = [ASSISTANT_TAB, 0, 1, 2] as const;
 const isChatListTab = (value: unknown): value is number => Number.isInteger(value) && Number(value) >= 0 && Number(value) <= ASSISTANT_TAB;
 
 type ChatListLocationState = {
@@ -81,6 +84,7 @@ export default function ChatListPage() {
     return tabParam != null && isChatListTab(parsed) ? parsed : readPersistentUiValue(CHAT_LIST_TAB_KEY, 0, isChatListTab);
   }, [location.search]);
   const [tab, setTab] = useState(initialTab);
+  const [tabTransitionDirection, setTabTransitionDirection] = useState<-1 | 1>(1);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deletedAssistantNotice, setDeletedAssistantNotice] = useState<{ id: string; name: string } | null>(null);
   const [assistantDeleteError, setAssistantDeleteError] = useState('');
@@ -327,7 +331,10 @@ export default function ChatListPage() {
 
         <FloatingSegmentedTabs
           value={tab}
-          onChange={setTab}
+          onChange={(nextTab) => {
+            setTabTransitionDirection(resolveTabTransitionDirection(CHAT_LIST_TAB_ORDER, tab, nextTab));
+            setTab(nextTab);
+          }}
           items={[
             { value: ASSISTANT_TAB, label: `助手 ${assistantChats.length}` },
             { value: 0, label: `群聊 ${groupedChats.length}` },
@@ -337,46 +344,48 @@ export default function ChatListPage() {
         />
       </Stack>
 
-      {isLoading && chats.length === 0 ? (
-        <ListSkeletonGrid />
-      ) : visibleChatsWithLatestPreview.length === 0 ? (
-        <EmptyState
-          variant="plain"
-          message={emptyMessage}
-          action={
-            tab === ASSISTANT_TAB ? (
-              <Button variant="outlined" onClick={() => void createAssistantChat()} disabled={creatingAssistant}>
-                创建助手
-              </Button>
-            ) : showCreateFab ? (
-              <Stack direction="row" spacing={1}>
-                <Button variant="outlined" onClick={() => openCreateWithCharacterGuard('/chats/create')}>
-                  {t('chat.create')}
+      <AnimatedTabContent value={tab} direction={tabTransitionDirection}>
+        {isLoading && chats.length === 0 ? (
+          <ListSkeletonGrid />
+        ) : visibleChatsWithLatestPreview.length === 0 ? (
+          <EmptyState
+            variant="plain"
+            message={emptyMessage}
+            action={
+              tab === ASSISTANT_TAB ? (
+                <Button variant="outlined" onClick={() => void createAssistantChat()} disabled={creatingAssistant}>
+                  创建助手
                 </Button>
-                <Button variant="outlined" onClick={() => openCreateWithCharacterGuard('/direct/create')}>
-                  创建单聊
-                </Button>
-              </Stack>
-            ) : undefined
-          }
-        />
-      ) : (
-        <Box
-          sx={{
-            ...buildListGridSx(),
-          }}
-        >
-          {visibleChatsWithLatestPreview.map((chat) => (
-            <ChatCard
-              key={chat.id}
-              chat={chat}
-              characters={characters}
-              selected={activeChatId === chat.id}
-              onClick={() => navigate(`/chats/${chat.id}?fromTab=${tab}`)}
-            />
-          ))}
-        </Box>
-      )}
+              ) : showCreateFab ? (
+                <Stack direction="row" spacing={1}>
+                  <Button variant="outlined" onClick={() => openCreateWithCharacterGuard('/chats/create')}>
+                    {t('chat.create')}
+                  </Button>
+                  <Button variant="outlined" onClick={() => openCreateWithCharacterGuard('/direct/create')}>
+                    创建单聊
+                  </Button>
+                </Stack>
+              ) : undefined
+            }
+          />
+        ) : (
+          <Box
+            sx={{
+              ...buildListGridSx(),
+            }}
+          >
+            {visibleChatsWithLatestPreview.map((chat) => (
+              <ChatCard
+                key={chat.id}
+                chat={chat}
+                characters={characters}
+                selected={activeChatId === chat.id}
+                onClick={() => navigate(`/chats/${chat.id}?fromTab=${tab}`)}
+              />
+            ))}
+          </Box>
+        )}
+      </AnimatedTabContent>
 
 
       {/* Delete Confirmation */}

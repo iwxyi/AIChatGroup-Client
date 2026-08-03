@@ -119,6 +119,8 @@ function buildAvatarOptionSx(selected: boolean) {
 import type { CharacterVisualIdentity, CharacterVisualReferenceImage } from '../../types/character';
 import FloatingSegmentedTabs from '../common/FloatingSegmentedTabs';
 import { buildFloatingTabContainerSx } from '../common/FloatingSegmentedTabs.styles';
+import AnimatedTabContent from '../common/AnimatedTabContent';
+import { resolveTabTransitionDirection } from '../common/tabTransition';
 
 function getDiaryEntriesSorted<T extends { dateKey?: string | null; createdAt: number }>(entries: T[]) {
   return entries
@@ -354,6 +356,7 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
   const [avatarPickerOpen, setAvatarPickerOpen] = useState(false);
   const [bubblePickerOpen, setBubblePickerOpen] = useState(false);
   const [configTab, setConfigTab] = useState(0);
+  const [tabTransitionDirection, setTabTransitionDirection] = useState<-1 | 1>(1);
   const nameInputRef = useRef<HTMLInputElement | null>(null);
   const modelDefaultsAppliedRef = useRef(false);
   const characters = useCharacterStore((state) => state.characters);
@@ -1655,86 +1658,91 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
       >
         <FloatingSegmentedTabs
           value={configTab}
-          onChange={setConfigTab}
+          onChange={(nextTab) => {
+            setTabTransitionDirection(resolveTabTransitionDirection(availableTabs.map((item) => item.value), configTab, nextTab));
+            setConfigTab(nextTab);
+          }}
           items={availableTabs}
         />
       </Box>
 
-      {configTab === 0 ? settingTab : null}
+      <AnimatedTabContent value={configTab} direction={tabTransitionDirection}>
+        {configTab === 0 ? settingTab : null}
 
-      {configTab === 1 ? behaviorTab : null}
+        {configTab === 1 ? behaviorTab : null}
 
-      {configTab === 2 ? <CharacterRelationshipInspector character={runtimeCharacter} /> : null}
+        {configTab === 2 ? <CharacterRelationshipInspector character={runtimeCharacter} /> : null}
 
-      {configTab === 3 ? (
-        <Box sx={{ display: 'grid', gap: 2 }}>
-          <CharacterMemoryInspector character={runtimeCharacter} />
-          <Card variant="outlined">
-            <CardContent sx={{ display: 'grid', gap: 1.5 }}>
-              <Box>
-                <Typography variant="body2" sx={{ fontWeight: 700 }}>{i18n.language.startsWith('zh') ? '手工记忆设定' : 'Manual memory seeds'}</Typography>
-              </Box>
-              <TextField
-                label={i18n.language.startsWith('zh') ? '短期记忆摘要' : 'Short-term summary'}
-                value={memory.shortTermSummary}
-                onChange={(e) => setMemory((prev) => ({ ...prev, shortTermSummary: e.target.value }))}
-                multiline
-                rows={3}
-                fullWidth
-              />
-              <Box>
-                <Typography variant="body2" sx={{ fontWeight: 500, mb: 1 }}>{i18n.language.startsWith('zh') ? '长期记忆' : 'Long-term memory'}</Typography>
-                {renderTagEditor(memory.longTerm, (next) => setMemory((prev) => ({ ...prev, longTerm: next })), i18n.language.startsWith('zh') ? '输入后回车' : 'Type and press Enter')}
-              </Box>
-              <Box>
-                <Typography variant="body2" sx={{ fontWeight: 500, mb: 1 }}>{i18n.language.startsWith('zh') ? '秘密' : 'Secrets'}</Typography>
-                {renderTagEditor(memory.secrets, (next) => setMemory((prev) => ({ ...prev, secrets: next })), i18n.language.startsWith('zh') ? '输入后回车' : 'Type and press Enter')}
-              </Box>
-              <Box>
-                <Typography variant="body2" sx={{ fontWeight: 500, mb: 1 }}>{i18n.language.startsWith('zh') ? '执念 / 禁区 / 用户记忆' : 'Obsessions / taboo / user memory'}</Typography>
-                <Stack spacing={1.25}>
-                  {renderTagEditor(memory.obsessions, (next) => setMemory((prev) => ({ ...prev, obsessions: next })), i18n.language.startsWith('zh') ? '执念，输入后回车' : 'Obsessions, press Enter')}
-                  {renderTagEditor(memory.tabooTopics, (next) => setMemory((prev) => ({ ...prev, tabooTopics: next })), i18n.language.startsWith('zh') ? '禁区话题，输入后回车' : 'Taboo topics, press Enter')}
-                  {renderTagEditor(memory.userMemories, (next) => setMemory((prev) => ({ ...prev, userMemories: next })), i18n.language.startsWith('zh') ? '用户相关记忆，输入后回车' : 'User memories, press Enter')}
-                </Stack>
-              </Box>
-            </CardContent>
-          </Card>
-        </Box>
-      ) : null}
+        {configTab === 3 ? (
+          <Box sx={{ display: 'grid', gap: 2 }}>
+            <CharacterMemoryInspector character={runtimeCharacter} />
+            <Card variant="outlined">
+              <CardContent sx={{ display: 'grid', gap: 1.5 }}>
+                <Box>
+                  <Typography variant="body2" sx={{ fontWeight: 700 }}>{i18n.language.startsWith('zh') ? '手工记忆设定' : 'Manual memory seeds'}</Typography>
+                </Box>
+                <TextField
+                  label={i18n.language.startsWith('zh') ? '短期记忆摘要' : 'Short-term summary'}
+                  value={memory.shortTermSummary}
+                  onChange={(e) => setMemory((prev) => ({ ...prev, shortTermSummary: e.target.value }))}
+                  multiline
+                  rows={3}
+                  fullWidth
+                />
+                <Box>
+                  <Typography variant="body2" sx={{ fontWeight: 500, mb: 1 }}>{i18n.language.startsWith('zh') ? '长期记忆' : 'Long-term memory'}</Typography>
+                  {renderTagEditor(memory.longTerm, (next) => setMemory((prev) => ({ ...prev, longTerm: next })), i18n.language.startsWith('zh') ? '输入后回车' : 'Type and press Enter')}
+                </Box>
+                <Box>
+                  <Typography variant="body2" sx={{ fontWeight: 500, mb: 1 }}>{i18n.language.startsWith('zh') ? '秘密' : 'Secrets'}</Typography>
+                  {renderTagEditor(memory.secrets, (next) => setMemory((prev) => ({ ...prev, secrets: next })), i18n.language.startsWith('zh') ? '输入后回车' : 'Type and press Enter')}
+                </Box>
+                <Box>
+                  <Typography variant="body2" sx={{ fontWeight: 500, mb: 1 }}>{i18n.language.startsWith('zh') ? '执念 / 禁区 / 用户记忆' : 'Obsessions / taboo / user memory'}</Typography>
+                  <Stack spacing={1.25}>
+                    {renderTagEditor(memory.obsessions, (next) => setMemory((prev) => ({ ...prev, obsessions: next })), i18n.language.startsWith('zh') ? '执念，输入后回车' : 'Obsessions, press Enter')}
+                    {renderTagEditor(memory.tabooTopics, (next) => setMemory((prev) => ({ ...prev, tabooTopics: next })), i18n.language.startsWith('zh') ? '禁区话题，输入后回车' : 'Taboo topics, press Enter')}
+                    {renderTagEditor(memory.userMemories, (next) => setMemory((prev) => ({ ...prev, userMemories: next })), i18n.language.startsWith('zh') ? '用户相关记忆，输入后回车' : 'User memories, press Enter')}
+                  </Stack>
+                </Box>
+              </CardContent>
+            </Card>
+          </Box>
+        ) : null}
 
-      {configTab === 4 ? runtimeTab : null}
+        {configTab === 4 ? runtimeTab : null}
 
-      {configTab === 5 ? (
-        calendarContext ? (
-          <WorldCalendarPanel
-            chats={calendarContext.chats}
-            characters={calendarContext.characters}
-            updateChat={calendarContext.updateChat}
-            isZh={i18n.language.startsWith('zh')}
-            actorId={calendarContext.actorId}
-            title={i18n.language.startsWith('zh') ? '活动' : 'Activities'}
-            showHeader
-          />
-        ) : null
-      ) : null}
+        {configTab === 5 ? (
+          calendarContext ? (
+            <WorldCalendarPanel
+              chats={calendarContext.chats}
+              characters={calendarContext.characters}
+              updateChat={calendarContext.updateChat}
+              isZh={i18n.language.startsWith('zh')}
+              actorId={calendarContext.actorId}
+              title={i18n.language.startsWith('zh') ? '活动' : 'Activities'}
+              showHeader
+            />
+          ) : null
+        ) : null}
 
-      {configTab === 6 ? (
-        <Box sx={{ display: 'grid', gap: 1.5 }}>
-          <ArtifactCalendarReader
-            items={diaryEntries}
-            deletedItems={deletedDiaryEntries}
-            language={i18n.language}
-            paperVariant={settings.artifactAppearance.paperVariant}
-            readerHeight={artifactReaderHeight}
-            countUnit={i18n.language.startsWith('zh') ? '篇' : ''}
-            emptyTitle={i18n.language.startsWith('zh') ? '暂无日记' : 'No diary entries yet'}
-            emptyDescription=""
-            getMeta={(item) => item.dateKey || new Date(item.createdAt).toLocaleDateString(i18n.language.startsWith('zh') ? 'zh-CN' : 'en-US')}
-            onRegenerateDebug={settings.developerMode ? handleRegenerateDiaryDebug : undefined}
-          />
-        </Box>
-      ) : null}
+        {configTab === 6 ? (
+          <Box sx={{ display: 'grid', gap: 1.5 }}>
+            <ArtifactCalendarReader
+              items={diaryEntries}
+              deletedItems={deletedDiaryEntries}
+              language={i18n.language}
+              paperVariant={settings.artifactAppearance.paperVariant}
+              readerHeight={artifactReaderHeight}
+              countUnit={i18n.language.startsWith('zh') ? '篇' : ''}
+              emptyTitle={i18n.language.startsWith('zh') ? '暂无日记' : 'No diary entries yet'}
+              emptyDescription=""
+              getMeta={(item) => item.dateKey || new Date(item.createdAt).toLocaleDateString(i18n.language.startsWith('zh') ? 'zh-CN' : 'en-US')}
+              onRegenerateDebug={settings.developerMode ? handleRegenerateDiaryDebug : undefined}
+            />
+          </Box>
+        ) : null}
+      </AnimatedTabContent>
 
 
       <Dialog open={avatarPickerOpen} onClose={() => setAvatarPickerOpen(false)} maxWidth="xs" fullWidth>

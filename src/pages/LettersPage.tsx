@@ -9,6 +9,8 @@ import { ensureCharacterArtifactStoreHydrated, useCharacterArtifactStore, type C
 import { useSettingsStore } from '../stores/useSettingsStore';
 import FloatingSegmentedTabs from '../components/common/FloatingSegmentedTabs';
 import { buildFloatingTabContainerSx } from '../components/common/FloatingSegmentedTabs.styles';
+import AnimatedTabContent from '../components/common/AnimatedTabContent';
+import { resolveTabTransitionDirection } from '../components/common/tabTransition';
 import ArtifactCalendarReader from '../components/artifacts/ArtifactCalendarReader';
 import AppSnackbar from '../components/common/AppSnackbar';
 import { readPersistentUiValue, writePersistentUiValue } from '../utils/persistentUiState';
@@ -16,6 +18,7 @@ import { reportUnresolvedDisplayEntity } from '../services/diagnostics';
 
 type LettersTab = 'letters' | 'diary';
 const LETTERS_TAB_KEY = 'letters-tab';
+const LETTERS_TAB_ORDER = ['letters', 'diary'] as const;
 const isLettersTab = (value: unknown): value is LettersTab => value === 'letters' || value === 'diary';
 const isLikelyUuid = (value: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 
@@ -54,6 +57,7 @@ export default function LettersPage() {
   const paperVariant = useSettingsStore((state) => state.artifactAppearance.paperVariant);
   const developerMode = useSettingsStore((state) => state.developerMode);
   const [tab, setTab] = useState<LettersTab>(() => readPersistentUiValue(LETTERS_TAB_KEY, 'letters', isLettersTab));
+  const [tabTransitionDirection, setTabTransitionDirection] = useState<-1 | 1>(1);
   const [characterFilter, setCharacterFilter] = useState('all');
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({ open: false, message: '', severity: 'success' });
   const readerHeight = 'clamp(420px, calc(100dvh - 180px), 1040px)';
@@ -154,7 +158,10 @@ export default function LettersPage() {
           >
             <FloatingSegmentedTabs
               value={tab}
-              onChange={setTab}
+              onChange={(nextTab) => {
+                setTabTransitionDirection(resolveTabTransitionDirection(LETTERS_TAB_ORDER, tab, nextTab));
+                setTab(nextTab);
+              }}
               items={[
                 {
                   value: 'letters',
@@ -214,23 +221,25 @@ export default function LettersPage() {
           </Box>
         </Box>
 
-        <ArtifactCalendarReader
-          items={visibleItems}
-          deletedItems={visibleDeletedItems}
-          language={i18n.language}
-          paperVariant={paperVariant}
-          readerHeight={readerHeight}
-          countUnit={i18n.language.startsWith('zh') ? (tab === 'letters' ? '封' : '篇') : ''}
-          emptyTitle={tab === 'letters'
-            ? (i18n.language.startsWith('zh') ? '还没有寄出的信' : 'No letters have arrived yet')
-            : (i18n.language.startsWith('zh') ? '还没有写下的日记' : 'No diary pages yet')}
-          emptyDescription={tab === 'letters'
-            ? (i18n.language.startsWith('zh') ? '等角色真正经历过相遇、告别、牵挂和改变，这里会留下它们想认真说完的话。' : 'When a character has lived through enough meetings, partings, attachments, and change, the words they need to finish will rest here.')
-            : (i18n.language.startsWith('zh') ? '日记不会急着出现。它会等某一天的关系余波、没说出口的话，或一点明天还想继续的理由。' : 'Diaries are not rushed. They wait for relationship residue, unsent words, or one small reason to keep going tomorrow.')}
-          getMeta={(item) => `${characterNameMap.get(item.characterId) || item.characterName} · ${item.dateKey || new Date(item.createdAt).toLocaleDateString(i18n.language.startsWith('zh') ? 'zh-CN' : 'en-US')}`}
-          onRegenerateDebug={developerMode ? handleRegenerateDebug : undefined}
-          onEnsureDetail={ensureArtifactDetail}
-        />
+        <AnimatedTabContent value={tab} direction={tabTransitionDirection}>
+          <ArtifactCalendarReader
+            items={visibleItems}
+            deletedItems={visibleDeletedItems}
+            language={i18n.language}
+            paperVariant={paperVariant}
+            readerHeight={readerHeight}
+            countUnit={i18n.language.startsWith('zh') ? (tab === 'letters' ? '封' : '篇') : ''}
+            emptyTitle={tab === 'letters'
+              ? (i18n.language.startsWith('zh') ? '还没有寄出的信' : 'No letters have arrived yet')
+              : (i18n.language.startsWith('zh') ? '还没有写下的日记' : 'No diary pages yet')}
+            emptyDescription={tab === 'letters'
+              ? (i18n.language.startsWith('zh') ? '等角色真正经历过相遇、告别、牵挂和改变，这里会留下它们想认真说完的话。' : 'When a character has lived through enough meetings, partings, attachments, and change, the words they need to finish will rest here.')
+              : (i18n.language.startsWith('zh') ? '日记不会急着出现。它会等某一天的关系余波、没说出口的话，或一点明天还想继续的理由。' : 'Diaries are not rushed. They wait for relationship residue, unsent words, or one small reason to keep going tomorrow.')}
+            getMeta={(item) => `${characterNameMap.get(item.characterId) || item.characterName} · ${item.dateKey || new Date(item.createdAt).toLocaleDateString(i18n.language.startsWith('zh') ? 'zh-CN' : 'en-US')}`}
+            onRegenerateDebug={developerMode ? handleRegenerateDebug : undefined}
+            onEnsureDetail={ensureArtifactDetail}
+          />
+        </AnimatedTabContent>
       </Stack>
       <AppSnackbar
         open={snackbar.open}
