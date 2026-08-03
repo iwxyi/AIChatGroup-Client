@@ -2,6 +2,7 @@ import type { AICharacter } from '../types/character';
 import type { GroupChat } from '../types/chat';
 import type { Message } from '../types/message';
 import { getChannelSemantics } from './channelSemanticsRegistry';
+import { getTranscriptSpeakerLabel, isHumanDirectedMessage } from './chatMessageSemantics';
 
 export type ProjectedChatMessage = {
   role: 'user' | 'assistant';
@@ -25,13 +26,6 @@ export interface ConversationProjectionInput {
   options?: ConversationProjectionOptions;
 }
 
-function getTranscriptSpeakerName(message: Message, characters: Map<string, AICharacter>) {
-  if (message.type === 'user' || message.type === 'god') return message.senderName || 'User';
-  if (message.type === 'system') return 'System';
-  if (message.type === 'event') return 'Event';
-  return message.senderName || characters.get(message.senderId)?.name || 'Unknown';
-}
-
 function stripEmbeddedTranscriptJson(content: string) {
   const normalized = content || '';
   const roleMarker = normalized.search(/["“]?role["”]?\s*:\s*["“](assistant|user|system)["”]/i);
@@ -46,9 +40,7 @@ function compactTranscriptContent(content: string, max = 1400) {
 }
 
 function buildTranscriptHeader(message: Message, characters: Map<string, AICharacter>, currentSpeakerId?: string) {
-  if (message.type === 'user' || message.type === 'god') return '用户';
-  if (message.senderId === currentSpeakerId) return '自己';
-  return getTranscriptSpeakerName(message, characters);
+  return getTranscriptSpeakerLabel(message, characters, currentSpeakerId);
 }
 
 function buildImageAttachmentText(message: Message) {
@@ -99,7 +91,7 @@ function shouldProjectImageAttachments(message: Message, visible: Message[], mod
   const latestUserImageMessage = [...visible]
     .reverse()
     .find((item) => (
-      (item.type === 'user' || item.type === 'god')
+      isHumanDirectedMessage(item)
       && item.metadata?.attachments?.some((attachment) => attachment.kind === 'image' && attachment.url && attachment.status !== 'deleted' && attachment.status !== 'failed')
     ));
   return Boolean(latestUserImageMessage && latestUserImageMessage.id === message.id);

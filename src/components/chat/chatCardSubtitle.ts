@@ -3,6 +3,7 @@ import type { AICharacter } from '../../types/character';
 import type { Message } from '../../types/message';
 import { sanitizeUserFacingText } from '../../services/displayTextSanitizer';
 import { isUserFacingMemoryItem } from '../../services/memoryPresentation';
+import { getUserFacingMessageSenderLabel } from '../../services/chatMessageSemantics';
 
 function cleanRelationshipPreview(text: string) {
   return text
@@ -72,11 +73,7 @@ export function stripMarkdownForPreview(text: string) {
 function buildLatestMessagePreview(message: Message | null, members: AICharacter[]) {
   if (!message || message.isDeleted || message.type === 'system' || message.type === 'event') return '';
   const content = stripMarkdownForPreview(message.content);
-  const senderName = message.type === 'user'
-    ? '你'
-    : message.type === 'god'
-      ? 'God Mode'
-      : members.find((member) => member.id === message.senderId)?.name || message.senderName || '未知';
+  const senderName = getUserFacingMessageSenderLabel(message, members);
   return clipPreview(sanitizeUserFacingText(`${senderName}：${content}`, members));
 }
 

@@ -19,6 +19,7 @@ import type { SharedMemoryAnchor, UserProfileMemoryEventItem, UserProfileMemoryK
 import type { RelationshipLedgerEntry, RuntimeEventV2 } from '../types/runtimeEvent';
 import { buildPublicSafeRelationshipSemanticSummary } from './relationshipSemanticPrivacy';
 import { CHAT_STYLE_PROMPT_DESCRIPTIONS } from '../constants/chatStyles';
+import { getPromptSpeakerLabel, getPromptTurnTypeLabel, isHumanDirectedMessage } from './chatMessageSemantics';
 
 const COMPANIONSHIP_SHARED_ANCHOR_SOURCE_TAG = 'companionship_shared_anchor';
 const COMPANIONSHIP_USER_PROFILE_SOURCE_TAG = 'companionship_user_profile';
@@ -893,16 +894,11 @@ function buildRelationshipSection(character: AICharacter, target: AICharacter | 
 }
 
 function getPromptMessageSpeakerName(message: Message, characters: Map<string, AICharacter>) {
-  if (message.type === 'user' || message.type === 'god') return 'User';
-  if (message.type === 'system') return 'System';
-  if (message.type === 'event') return 'Event';
-  return message.senderName || characters.get(message.senderId)?.name || 'Unknown';
+  return getPromptSpeakerLabel(message, characters);
 }
 
 function getPromptMessageTypeLabel(message: Message) {
-  if (message.type === 'user' || message.type === 'god') return 'human';
-  if (message.type === 'ai') return 'AI';
-  return message.type;
+  return getPromptTurnTypeLabel(message);
 }
 
 function buildRecentMessagesSection(messages: Message[], characters: Map<string, AICharacter>, limit = 12) {
@@ -912,7 +908,7 @@ function buildRecentMessagesSection(messages: Message[], characters: Map<string,
   if (!visible.length) return '\n## Conversation Window\n- No messages yet.';
   const latest = visible.at(-1);
   const latestAi = visible.slice().reverse().find((message) => message.type === 'ai');
-  const humanCount = visible.filter((message) => message.type === 'user' || message.type === 'god').length;
+  const humanCount = visible.filter(isHumanDirectedMessage).length;
   const aiCount = visible.filter((message) => message.type === 'ai').length;
   const activeSpeakers = Array.from(new Set(visible.map((message) => getPromptMessageSpeakerName(message, characters)))).slice(-6);
   return `\n## Conversation Window\n- The complete recent transcript is provided separately as chat messages. Only your own prior visible turns are assistant messages; other speakers are user-side transcript context. This system section intentionally does not repeat raw dialogue.\n- Recent visible turns: ${visible.length} (${humanCount} human / ${aiCount} AI).\n- Latest visible turn: ${latest ? `${getPromptMessageTypeLabel(latest)} from ${getPromptMessageSpeakerName(latest, characters)}` : 'none'}.\n- Latest AI speaker in window: ${latestAi ? getPromptMessageSpeakerName(latestAi, characters) : 'none'}.\n- Active speakers in window: ${activeSpeakers.join(', ') || 'none'}.\n- Treat the transcript messages as factual context and relationship evidence, not style samples. Do not copy their emoji/sticker markers, opening fillers, endings, cadence, or full sentence shape unless you are explicitly quoting someone on purpose.`;
@@ -962,7 +958,7 @@ function describeGuidanceMemoryTarget(guidance: UserGuidanceIntent) {
 
 function resolveHumanGuidanceTarget(messages: Message[], characters: Map<string, AICharacter>, speaker: AICharacter) {
   const latestHumanMessage = messages
-    .filter((item) => !item.isDeleted && (item.type === 'user' || item.type === 'god'))
+    .filter((item) => !item.isDeleted && isHumanDirectedMessage(item))
     .at(-1);
   if (!latestHumanMessage) return undefined;
   const guidance = parsePromptGuidance(latestHumanMessage, characters);

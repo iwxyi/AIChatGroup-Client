@@ -62,6 +62,7 @@ import {
   remapIds,
 } from '../services/marketImportDraft';
 import { buildBundleMarketPayload, buildChatMarketPayload, getMarketSummaryForChat, getMarketTitleForChat } from '../services/templateMarketPayload';
+import { buildOpeningTopicGuideMessage } from '../services/createChatOpening';
 
 const HotTopicDialogContainer = lazy(() => import('../components/createChat/HotTopicDialogContainer'));
 const CHAT_DRAFT_KEY = storageKey('create-chat-draft');
@@ -315,14 +316,7 @@ export default function CreateChatPage() {
   const seedOpeningTopicMessage = useCallback(async (chatId: string, topicText?: string | null) => {
     const openingTopic = (topicText || '').trim();
     if (!openingTopic) return;
-    await useMessageStore.getState().addMessage({
-      chatId,
-      type: 'god',
-      senderId: 'user',
-      senderName: 'User',
-      content: openingTopic,
-      emotion: 0,
-    });
+    await useMessageStore.getState().addMessage(buildOpeningTopicGuideMessage(chatId, openingTopic));
   }, []);
 
   useEffect(() => {

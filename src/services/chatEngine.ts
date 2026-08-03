@@ -51,6 +51,7 @@ import { sanitizeUserFacingText } from './displayTextSanitizer';
 import { enhanceImagePrompt } from './imagePromptComposer';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { api, ApiError, type AiSearchResultItem } from './api';
+import { getPromptSpeakerLabel, getPromptTurnTypeLabel, isHumanDirectedMessage } from './chatMessageSemantics';
 
 export interface GeneratedRoundMessage extends Omit<Message, 'id' | 'timestamp' | 'isDeleted'> {
   extraMessages?: string[] | null;
@@ -366,10 +367,7 @@ function buildSpeakerSystemPrompt(args: {
 }
 
 function getSessionMessageSpeakerName(message: Message) {
-  if (message.type === 'user' || message.type === 'god') return 'User';
-  if (message.type === 'system') return 'System';
-  if (message.type === 'event') return 'Event';
-  return message.senderName || 'Unknown';
+  return getPromptSpeakerLabel(message);
 }
 
 function buildRecentContextSignalSummary(messages: Message[]) {
@@ -378,13 +376,13 @@ function buildRecentContextSignalSummary(messages: Message[]) {
     .slice(-8);
   if (!recent.length) return '- No visible recent turns yet.';
   const latest = recent.at(-1);
-  const humanCount = recent.filter((message) => message.type === 'user' || message.type === 'god').length;
+  const humanCount = recent.filter(isHumanDirectedMessage).length;
   const aiCount = recent.filter((message) => message.type === 'ai').length;
   const speakers = Array.from(new Set(recent.map(getSessionMessageSpeakerName))).slice(-6);
   return [
     `- Complete recent transcript is supplied as separate chat messages and is not repeated here.`,
     `- Recent window: ${recent.length} turns (${humanCount} human / ${aiCount} AI).`,
-    `- Latest turn: ${latest ? `${latest.type === 'ai' ? 'AI' : 'human'} from ${getSessionMessageSpeakerName(latest)}` : 'none'}.`,
+    `- Latest turn: ${latest ? `${getPromptTurnTypeLabel(latest)} from ${getSessionMessageSpeakerName(latest)}` : 'none'}.`,
     `- Active speakers: ${speakers.join(', ') || 'none'}.`,
   ].join('\n');
 }
@@ -1095,7 +1093,7 @@ function isExplicitRepeatOrAnswerRequest(text: string) {
 
 function hasLegitimateRepeatContext(messages: Message[]) {
   const latestHumanInstruction = messages
-    .filter((message) => !message.isDeleted && (message.type === 'user' || message.type === 'god'))
+    .filter((message) => !message.isDeleted && isHumanDirectedMessage(message))
     .slice(-3)
     .reverse()
     .find((message) => message.content.trim());
@@ -1147,7 +1145,7 @@ function collectRecentConstraintLines(messages: Message[], speakerId: string) {
 function latestHumanPressure(messages: Message[], speakerName: string) {
   const latestHuman = [...messages]
     .reverse()
-    .find((message) => !message.isDeleted && (message.type === 'user' || message.type === 'god') && message.content.trim());
+    .find((message) => !message.isDeleted && isHumanDirectedMessage(message) && message.content.trim());
   const text = latestHuman?.content || '';
   return {
     text,
@@ -2208,7 +2206,7 @@ function latestUserReferenceImages(messages: Message[]) {
     .reverse()
     .find((message) => (
       !message.isDeleted
-      && (message.type === 'user' || message.type === 'god')
+      && isHumanDirectedMessage(message)
       && message.metadata?.attachments?.some((attachment) => attachment.kind === 'image' && attachment.status === 'ready' && Boolean(attachment.url))
     ));
   return (latest?.metadata?.attachments || [])
@@ -2623,7 +2621,7 @@ function buildWebSearchResultPromptBlock(params: {
 function getLatestHumanTurnId(messages: Message[]) {
   return [...messages]
     .reverse()
-    .find((message) => !message.isDeleted && (message.type === 'user' || message.type === 'god') && message.content.trim())
+    .find((message) => !message.isDeleted && isHumanDirectedMessage(message) && message.content.trim())
     ?.id || 'no-human-turn';
 }
 

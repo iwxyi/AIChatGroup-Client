@@ -138,6 +138,16 @@ describe('ChatCard subtitle', () => {
     expect(subtitle).toBe('苏苏：结论 重点：可以用 文档 说明。 第一步：运行 npm test');
   });
 
+  it('labels opening topic guidance instead of God Mode or User', () => {
+    const subtitle = buildChatSubtitle(
+      chat('group'),
+      [character()],
+      message({ type: 'god', senderId: 'user', senderName: '话题引导', content: '聊聊赛博茶馆的开场' }),
+    );
+
+    expect(subtitle).toBe('话题引导：聊聊赛博茶馆的开场');
+  });
+
   it('does not expose runtime axis snapshots as chat list memory previews', () => {
     const subtitle = buildChatSubtitle(
       {

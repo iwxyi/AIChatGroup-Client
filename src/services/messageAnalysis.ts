@@ -5,6 +5,7 @@ import type { APIConfig } from '../types/settings';
 import { resolveSessionDefinition } from '../types/sessionEngine';
 import { generateResponse } from './aiClient';
 import { formatMessageRuntimeCluesForPrompt } from './messageRuntimeClues';
+import { getUserFacingMessageSenderLabel } from './chatMessageSemantics';
 
 type AnalysisContext = {
   chat: GroupChat;
@@ -15,10 +16,7 @@ type AnalysisContext = {
 
 function formatMessageLabel(message: Message, characters: AICharacter[]) {
   if (message.type === 'user') return '用户';
-  if (message.type === 'god') return 'God Mode';
-  if (message.type === 'event') return '事件';
-  if (message.type === 'system') return '系统';
-  return characters.find((character) => character.id === message.senderId)?.name || message.senderName || 'AI角色';
+  return getUserFacingMessageSenderLabel(message, characters, 'AI角色');
 }
 
 function buildContextWindow(target: Message, messages: Message[], characters: AICharacter[]) {

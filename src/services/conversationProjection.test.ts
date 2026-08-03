@@ -72,6 +72,22 @@ describe('projectConversationForModel', () => {
     ]);
   });
 
+  it('labels topic guidance distinctly from ordinary user turns', () => {
+    const projected = projectConversationForModel({
+      messages: [
+        message({ id: 'guide', type: 'god', senderId: 'user', senderName: 'User', content: '围绕赛博茶馆开场。', timestamp: 1 }),
+        message({ id: 'user', type: 'user', senderId: 'user', senderName: '我', content: '继续推进', timestamp: 2 }),
+      ],
+      characters: new Map<string, AICharacter>(),
+      options: { currentSpeakerId: 'char-a', chatType: 'group' },
+    });
+
+    expect(projected[1]?.content).toBe('话题引导: 围绕赛博茶馆开场。');
+    expect(projected[1]?.content).not.toContain('User:');
+    expect(projected[1]?.content).not.toContain('用户:');
+    expect(projected[2]?.content).toBe('用户: 继续推进');
+  });
+
   it('strips embedded serialized role fragments from transcript content', () => {
     const projected = projectConversationForModel({
       messages: [

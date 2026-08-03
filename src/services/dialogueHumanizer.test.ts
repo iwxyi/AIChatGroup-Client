@@ -63,6 +63,27 @@ function character(): AICharacter {
 }
 
 describe('dialogueHumanizer', () => {
+  it('treats a topic guidance seed as opening context rather than prior dialogue', () => {
+    const prompt = buildHumanizationPrompt(
+      character(),
+      fragmentIntent(),
+      [{
+        id: 'guide-1',
+        chatId: 'chat-1',
+        type: 'god',
+        senderId: 'user',
+        senderName: '话题引导',
+        content: '围绕赛博茶馆开场。',
+        emotion: 0,
+        timestamp: 1,
+        isDeleted: false,
+      }],
+    );
+
+    expect(prompt).toContain('This is the first visible message in the room');
+    expect(prompt).not.toContain('Preferred archetype:');
+  });
+
   it('does not turn selective focus or side-comment style into a length cap', () => {
     const prompt = buildHumanizationPrompt(
       character(),

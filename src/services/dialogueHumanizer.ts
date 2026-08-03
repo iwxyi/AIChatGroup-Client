@@ -2,6 +2,7 @@ import type { AICharacter } from '../types/character';
 import type { Message } from '../types/message';
 import type { SpeakIntent } from './intentEngine';
 import type { UserGuidanceIntent } from './userGuidanceIntent';
+import { isVisibleDialogueTurn } from './chatMessageSemantics';
 
 export interface SpeechFingerprint {
   fillers: string[];
@@ -303,7 +304,7 @@ export function buildHumanizationPrompt(character: AICharacter, intent: SpeakInt
   const recentTargetId = intent.target === 'group' ? null : intent.target;
   const latestTargetText = guidance?.focusText || guidance?.rawText || getLatestTargetText(messages, recentTargetId);
   const guidanceOverride = buildGuidanceCarryoverOverride(guidance);
-  const hasChatHistory = messages.some((message) => !message.isDeleted && (message.type === 'ai' || message.type === 'god' || message.type === 'user'));
+  const hasChatHistory = messages.some(isVisibleDialogueTurn);
   if (!hasChatHistory) {
     return `\n## Human Chat Fingerprint
 - This is the first visible message in the room. Open the conversation from the chat topic or setting; do not act like you are replying to earlier lines.

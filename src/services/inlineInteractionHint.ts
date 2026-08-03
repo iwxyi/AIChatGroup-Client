@@ -6,6 +6,7 @@ import { normalizeSocialEventHints } from '../types/runtimeEvent';
 import type { TurnPlan } from './turnPlanner';
 import { hasVisibleStoryEvents, normalizeStoryEvents } from './narrativeRuntime';
 import { resolveSessionFamilyKey } from './sessionEngineKeys';
+import { getPromptSpeakerLabel, getPromptTurnTypeLabel, isHumanDirectedMessage } from './chatMessageSemantics';
 
 export interface InlineStoryChoice {
   label: string;
@@ -288,14 +289,14 @@ function buildRecentTranscriptScope(messages: Message[]) {
     .filter((message) => !message.isDeleted && message.type !== 'system' && message.type !== 'event')
     .slice(-8);
   if (!recent.length) return '- No recent transcript turns are available.';
-  const humanCount = recent.filter((message) => message.type === 'user' || message.type === 'god').length;
+  const humanCount = recent.filter(isHumanDirectedMessage).length;
   const aiCount = recent.filter((message) => message.type === 'ai').length;
   const latest = recent.at(-1);
-  const speakers = Array.from(new Set(recent.map((message) => (message.type === 'user' || message.type === 'god') ? 'User' : message.senderName))).slice(-6);
+  const speakers = Array.from(new Set(recent.map((message) => getPromptSpeakerLabel(message)))).slice(-6);
   return [
     '- The complete recent transcript is supplied as separate chat messages. Only the current speaker\'s own prior visible turns are assistant messages. This contract intentionally does not repeat raw dialogue.',
     `- Recent window for judging interaction fields: ${recent.length} turns (${humanCount} human / ${aiCount} AI).`,
-    `- Latest turn: ${latest ? `${latest.type === 'ai' ? 'AI' : 'human'} from ${(latest.type === 'user' || latest.type === 'god') ? 'User' : latest.senderName}` : 'none'}.`,
+    `- Latest turn: ${latest ? `${getPromptTurnTypeLabel(latest)} from ${getPromptSpeakerLabel(latest)}` : 'none'}.`,
     `- Speakers in window: ${speakers.join(', ') || 'none'}.`,
   ].join('\n');
 }
@@ -310,7 +311,7 @@ function buildImageReferenceRegistry(messages: Message[]) {
       .map((attachment) => ({
         refId: `${message.id}:${attachment.id}`,
         messageId: message.id,
-        messageRole: message.type === 'ai' ? 'assistant' : message.type === 'user' || message.type === 'god' ? 'user' : 'other',
+        messageRole: message.type === 'ai' ? 'assistant' : isHumanDirectedMessage(message) ? 'user' : 'other',
         senderName: message.senderName,
         altText: attachment.altText,
         caption: attachment.caption || '',
