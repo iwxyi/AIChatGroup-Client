@@ -100,7 +100,7 @@ try {
 
 function logProgress(message, detail = {}) {
   const suffix = Object.keys(detail).length ? ` ${JSON.stringify(detail)}` : '';
-  console.error(`[ai-acceptance] ${new Date().toISOString()} ${message}${suffix}`);
+  console.log(`[ai-acceptance] ${new Date().toISOString()} ${message}${suffix}`);
 }
 
 if (!config.apiKey || !config.models.length) {
@@ -273,6 +273,7 @@ async function callJudge(model, rubric, sample, options = {}) {
         '你是 Sense Murmur 的严格 AI 质量评审器。只输出 JSON，不要 Markdown。',
         'JSON schema: {"score":0-100,"pass":true,"strengths":["..."],"issues":["..."],"optimizations":["..."],"critical":false}',
         'score 必须综合角色身份、人格、关系承接、场景推进、协议可用性和用户体验。发现严重违背角色/协议/安全边界时 critical=true。',
+        '数组字段最多 4 项，每项不超过 80 个中文字符；优先输出可解析的完整 JSON，不要长篇解释。',
       ].join('\n'),
     },
     {
@@ -291,8 +292,9 @@ async function callJudge(model, rubric, sample, options = {}) {
     messages,
     apiKey: config.judgeApiKey,
     baseUrl: config.judgeBaseUrl,
-    options: { json: true, maxTokens: 1600, temperature: 0 },
+    options: { json: true, maxTokens: options.maxTokens ?? 2600, temperature: 0 },
     retryLabel: 'judge',
+    maxAttempts: 3,
   });
   const parsed = response.parsed;
   const score = Number(parsed.score);
@@ -382,12 +384,13 @@ async function callJsonWithRetry(params) {
   const messages = [...params.messages];
   let firstInvalidJson = null;
   let lastResponse = null;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  const maxAttempts = Math.max(2, Math.min(Number(params.maxAttempts || 2), 4));
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     const retryOptions = attempt === 0
       ? params.options
       : {
         ...params.options,
-        maxTokens: Math.min(2400, Math.max((params.options?.maxTokens || 700) * 2, 1200)),
+        maxTokens: Math.min(5200, Math.max((params.options?.maxTokens || 700) * 2, 1200)),
       };
     const response = await callOpenAICompatible({
       model: params.model,
@@ -412,7 +415,7 @@ async function callJsonWithRetry(params) {
           content: clip(response.content, 800),
         };
       }
-      if (attempt === 1) break;
+      if (attempt === maxAttempts - 1) break;
       messages.push({ role: 'assistant', content: response.content });
       messages.push({
         role: 'user',
@@ -3350,16 +3353,155 @@ function assertScenarioSpecificChatflow(scenario, transcript, finalChat) {
   }
 }
 
-function collectChatflowReviewFailures(runs, aggregateReview) {
+const CHATFLOW_JUDGE_CALIBRATION_CASES = [
+  {
+    name: 'agreement_echo_loop_bad',
+    expected: 'fail',
+    maxScore: 62,
+    sample: {
+      roomKind: 'open_chat',
+      seedUserMessages: [{ senderName: '用户', content: '皇帝们聊聊怎么保护肯做事的人，但不要只总结。' }],
+      transcript: [
+        { turn: 1, senderName: '宋太祖', content: '这句还算稳当。锅别一气掀翻，真肯做事的人先护住。' },
+        { turn: 2, senderName: '秦始皇', content: '这句能用。先把肯做事的拎出来护着，余下的再慢慢剥。' },
+        { turn: 3, senderName: '康熙帝', content: '这句朕认，同一把刀，先用来定轻重，不是先图个响。' },
+        { turn: 4, senderName: '拿破仑', content: '这句我也接。先把分寸立住，下面的人才知道是在办事。' },
+        { turn: 5, senderName: '成吉思汗', content: '这后辈说得不差。先护住肯冲的人，队伍才跑得远。' },
+        { turn: 6, senderName: '汉武帝', content: '这回朕也站他。护住肯扛事的人，才有后劲。' },
+      ],
+    },
+    rubricHint: '应判定为明显附和循环：多轮开头、语义和推进方式高度同向，几乎没有新条件、分歧、代价或剧情推进。',
+  },
+  {
+    name: 'agreement_with_independent_boundaries_good',
+    expected: 'pass',
+    minScore: 78,
+    sample: {
+      roomKind: 'open_chat',
+      seedUserMessages: [{ senderName: '用户', content: '皇帝们聊聊怎么保护肯做事的人，但不要只总结。' }],
+      transcript: [
+        { turn: 1, senderName: '宋太祖', content: '护是要护，可先把账摊开。谁替公事担责，谁借担责揽私权，不能一锅端。' },
+        { turn: 2, senderName: '秦始皇', content: '朕不怕护人，怕的是护成私门。功劳要刻，过错也要刻，法度不能跟着人情走。' },
+        { turn: 3, senderName: '唐太宗', content: '若只说护，底下人会学会邀功；若只说罚，又没人敢做事。中间那把尺子，才最难。' },
+        { turn: 4, senderName: '拿破仑', content: '我会先给任务编号，胜败都能追到命令链。保护能人可以，但先别让他变成不可审计的人。' },
+      ],
+    },
+    rubricHint: '允许部分认同，但应看到每轮都带新条件、制度边界、风险或执行方法，能推动讨论。',
+  },
+  {
+    name: 'runaway_length_and_actions_bad',
+    expected: 'fail',
+    maxScore: 60,
+    sample: {
+      roomKind: 'open_chat',
+      seedUserMessages: [{ senderName: '用户', content: '随便聊聊，如果你们穿越到现代商场会怎样？' }],
+      transcript: [
+        { turn: 1, senderName: '角色甲', content: '我大概先看地图，找出口和人少的地方。' },
+        { turn: 2, senderName: '角色乙', content: '我会先去试吃，看看有没有热的东西。' },
+        { turn: 3, senderName: '角色甲', content: '（他缓缓走过灯光明亮的中庭，抬头看见玻璃穹顶反射出无数细碎的人影，心中忽然泛起一种难以言说的孤独感。他停下脚步，手指掠过扶梯冰冷的金属扶手，像是在触摸另一个时代的脉搏）现代商场的秩序，其实像一座没有城墙的都城。人们沿着看不见的路线流动，被招牌、气味、折扣牵引，仿佛每一个选择都自由，实则每一步都被安排好了。（他低声笑了笑，又向前走去，目光落在远处一家甜品店暖黄色的灯牌上）不过，若真要在这里立足，首先不是征服，而是学会等待。等待电梯，等待结账，等待别人把手机从付款码页面翻出来。' },
+        { turn: 4, senderName: '角色乙', content: '（她接过一杯奶茶，又低头看向杯壁上的水珠）你这说得太长了，我只是想问有没有座位。' },
+      ],
+    },
+    rubricHint: '应判定为明显长度失控和动作漂移：普通聊天突然变成长篇动作+话+动作+话，破坏 live chat 质感。',
+  },
+  {
+    name: 'user_injection_ignored_bad',
+    expected: 'fail',
+    maxScore: 62,
+    sample: {
+      roomKind: 'open_chat',
+      seedUserMessages: [{ senderName: '用户', content: '生日局预算别超过 80，别让小唐难开口。' }],
+      userInjectionLog: [{ afterTurn: 2, content: '我再强调一次，小唐的预算上限是 80，不要把他当成默认能参加。' }],
+      transcript: [
+        { turn: 1, senderName: '沫沫', content: '那我们搞个屋顶餐吧吧，灯串和蛋糕拍照一定好看。' },
+        { turn: 2, senderName: '陈越', content: '屋顶餐吧人均一百五，还要服务费。' },
+        { turn: 3, senderName: '沫沫', content: '或者换成露台火锅？热闹一点，大家也能拍照。' },
+        { turn: 4, senderName: '陈越', content: '火锅要提前订包间，我可以去问问有没有低消。' },
+      ],
+    },
+    rubricHint: '应判定为用户插话被无视：插话后的实际回复没有落实 80 预算和谁确认小唐。',
+  },
+  {
+    name: 'conflict_progression_good',
+    expected: 'pass',
+    minScore: 78,
+    sample: {
+      roomKind: 'open_chat',
+      seedUserMessages: [{ senderName: '用户', content: '你们按事故时间线复盘，先别急着甩锅。' }],
+      userInjectionLog: [{ afterTurn: 3, content: '你们可以吵，但别骂人。把争议点说清楚：到底是谁误解了需求？' }],
+      transcript: [
+        { turn: 1, senderName: '乔一', content: '周二版需求写的是灰度可关，我的问题是周三那次口头补充没有进文档。' },
+        { turn: 2, senderName: '陆沉', content: '我接到的是字段改成必填，但没收到“旧客户端也要兼容”的条件。这里不是谁偷懒，是契约断了。' },
+        { turn: 3, senderName: '秦璐', content: '用户侧看到的是付款卡死。先把争议拆开：字段变更谁确认、兼容性谁验、灰度谁盯。' },
+        { turn: 4, senderName: '乔一', content: '那我认一个问题：口头补充没回写文档。但陆沉你们上线前也没把旧客户端覆盖清单贴出来。' },
+        { turn: 5, senderName: '陆沉', content: '可以。下一步我补接口契约 diff，乔一补需求变更记录，秦璐把用户影响时间线贴上来。' },
+      ],
+    },
+    rubricHint: '应判定为冲突推进良好：有分歧、有边界、有责任拆分和下一步，没有人身攻击或泛泛总结。',
+  },
+];
+
+function calibrationPassed(caseItem, review) {
+  if (caseItem.expected === 'fail') return review.score <= caseItem.maxScore && review.pass === false;
+  return review.score >= caseItem.minScore && review.pass === true;
+}
+
+async function runChatflowJudgeCalibration(model) {
+  const cases = [];
+  for (const caseItem of CHATFLOW_JUDGE_CALIBRATION_CASES) {
+    const review = await callJudge(model, [
+      '这是群聊质量评审器校准样本。请只根据样本质量评分，不要猜测测试意图。',
+      '重点检查：附和循环、独立角度、长度漂移、动作漂移、用户插话承接、冲突推进、角色差异、协议泄漏。',
+      '高分样本应能自然推进群聊；低分样本即使语句通顺，也应因为结构性质量问题被明显压低。',
+      `额外关注：${caseItem.rubricHint}`,
+    ].join('\n'), caseItem.sample, { throwOnFail: false });
+    cases.push({
+      name: caseItem.name,
+      expected: caseItem.expected,
+      threshold: caseItem.expected === 'fail' ? `<=${caseItem.maxScore}` : `>=${caseItem.minScore}`,
+      ok: calibrationPassed(caseItem, review),
+      review,
+    });
+  }
+  const failed = cases.filter((item) => !item.ok);
+  return {
+    ok: failed.length === 0,
+    cases,
+    error: failed.length ? `judge calibration failed: ${failed.map((item) => item.name).join(', ')}` : undefined,
+  };
+}
+
+function collectChatflowReviewFailures(runs, aggregateReview, judgeCalibration = null) {
   const failures = [];
+  if (judgeCalibration?.ok === false) {
+    failures.push({
+      scope: 'judge_calibration',
+      scenario: 'calibration',
+      score: 0,
+      issues: judgeCalibration.cases
+        .filter((item) => !item.ok)
+        .map((item) => `${item.name} expected ${item.threshold}, got ${item.review?.score}`),
+      optimizations: ['先修复评审 rubric、judge 模型或协议稳定性；评审器无法区分已知好/坏样本时，不应信任真实 chatflow 分数。'],
+    });
+  }
   for (const run of Object.values(runs || {})) {
-    if (run.ok === false) {
+    const hasJudgeErrors = Array.isArray(run.judgeErrors) && run.judgeErrors.length > 0;
+    if (run.ok === false && (!hasJudgeErrors || run.hardError)) {
       failures.push({
         scope: 'runtime',
         scenario: run.scenario,
         score: 0,
         issues: [run.error || 'scenario failed'],
         optimizations: ['先修复该场景的运行时硬错误，再评估提示词质量。'],
+      });
+    }
+    for (const judgeError of run.judgeErrors || []) {
+      failures.push({
+        scope: `judge_${judgeError.scope || 'unknown'}`,
+        scenario: run.scenario,
+        score: 0,
+        issues: [judgeError.error || 'judge failed'],
+        optimizations: ['修复评审模型输出协议、token 上限或 rubric 长度；保留 transcript 后重新评审。'],
       });
     }
     if (run.review && run.review.pass === false) {
@@ -3412,7 +3554,7 @@ function buildMarkdownTable(headers, rows) {
   ].join('\n');
 }
 
-function buildChatflowReportTables(runs) {
+function buildChatflowReportTables(runs, judgeCalibration = null) {
   const overviewRows = Object.values(runs).map((run) => [
     run.scenario,
     run.turnCount,
@@ -3484,6 +3626,18 @@ function buildChatflowReportTables(runs) {
       ]);
     }
   }
+  const calibrationRows = [];
+  for (const item of judgeCalibration?.cases || []) {
+    calibrationRows.push([
+      item.name,
+      item.expected,
+      item.threshold,
+      item.review?.score ?? '',
+      item.ok ? '是' : '否',
+      (item.review?.issues || []).join('；'),
+      (item.review?.optimizations || []).join('；'),
+    ]);
+  }
   return {
     overview: buildMarkdownTable(
       ['场景', '轮数', '运行通过', '整体分', '阶段', '故事分支', '审议产物 C/E/I/V', '主要问题', '优化建议'],
@@ -3498,6 +3652,10 @@ function buildChatflowReportTables(runs) {
       ['场景', '范围', '对象', '分数', '通过', '问题', '优化建议'],
       reviewRows,
     ),
+    judgeCalibration: buildMarkdownTable(
+      ['校准样本', '期望', '阈值', '分数', '通过', '问题', '优化建议'],
+      calibrationRows.length ? calibrationRows : [['-', '-', '-', '-', '-', '-', '-']],
+    ),
   };
 }
 
@@ -3511,6 +3669,7 @@ async function runRuntimeChatflowScenario(model, scenario) {
   const turnReviews = [];
   const selectedSpeakers = [];
   const errors = [];
+  const judgeErrors = [];
   const localInterceptions = [];
   const profiles = runtimeProfile(model);
   const api = profiles[0];
@@ -3613,21 +3772,28 @@ async function runRuntimeChatflowScenario(model, scenario) {
     summarized.deliberationArtifacts = persisted.metadata?.deliberationArtifacts || null;
     transcript.push(summarized);
     logProgress('chatflow turn judge', { model, scenario: scenario.name, turn, senderName: summarized.senderName });
-    const turnReview = await callJudge(model, [
-      '评估真实运行时群聊的单轮回复质量：',
-      '1. 当前发言者选择是否合理，是否承接用户最新要求和上一轮压力。',
-      '2. 可见回复是否符合说话角色，不替别人发言，不像总结模板。',
-      '3. 结构化 metadata、故事选项或审议产物是否和回复一致。',
-      '4. 如果用户刚插话，必须判断这一轮是否回应或推进了插话，不应被无视。',
-      `玩法类型：${scenario.roomKind}。场景要求：${scenario.rubricHint}`,
-    ].join('\n'), {
-      scenario: scenario.name,
-      roomKind: scenario.roomKind,
-      previousMessages: messages.slice(-6).map((message) => ({ type: message.type, senderName: message.senderName, content: message.content })),
-      turn: summarized,
-      scenarioStateAfter: summarized.scenarioStateAfter,
-    }, { throwOnFail: false });
-    turnReviews.push({ turn, senderName: summarized.senderName, score: turnReview.score, review: turnReview });
+    try {
+      const turnReview = await callJudge(model, [
+        '评估真实运行时群聊的单轮回复质量：',
+        '1. 当前发言者选择是否合理，是否承接用户最新要求和上一轮压力。',
+        '2. 可见回复是否符合说话角色，不替别人发言，不像总结模板。',
+        '3. 结构化 metadata、故事选项或审议产物是否和回复一致。',
+        '4. 如果用户刚插话，必须判断这一轮是否回应或推进了插话，不应被无视。',
+        `玩法类型：${scenario.roomKind}。场景要求：${scenario.rubricHint}`,
+      ].join('\n'), {
+        scenario: scenario.name,
+        roomKind: scenario.roomKind,
+        previousMessages: messages.slice(-6).map((message) => ({ type: message.type, senderName: message.senderName, content: message.content })),
+        turn: summarized,
+        scenarioStateAfter: summarized.scenarioStateAfter,
+      }, { throwOnFail: false, maxTokens: 1800 });
+      turnReviews.push({ turn, senderName: summarized.senderName, score: turnReview.score, review: turnReview });
+    } catch (error) {
+      const message = String(error?.message || error);
+      judgeErrors.push({ scope: 'turn', turn, senderName: summarized.senderName, error: message });
+      turnReviews.push({ turn, senderName: summarized.senderName, score: 0, review: null, judgeError: message });
+      logProgress('chatflow turn judge failed', { model, scenario: scenario.name, turn, error: clip(message, 400) });
+    }
     userInjectionLog.push(...appendUserInjection(scenario, messages, turn).map((content) => ({ afterTurn: turn, content })));
   }
 
@@ -3640,62 +3806,69 @@ async function runRuntimeChatflowScenario(model, scenario) {
     logProgress('chatflow scenario hard assertion failed', { model, scenario: scenario.name, error: clip(hardError, 400) });
   }
   let review = null;
+  let scenarioJudgeError = '';
   if (transcript.length) {
     logProgress('chatflow scenario judge', { model, scenario: scenario.name, turns: transcript.length });
-    review = await callJudge(model, [
-      '评估真实运行时多角色/多玩法房间质量，并给出可执行的提示词结构优化建议：',
-      '1. 发言者选择是否符合点名、关系压力、角色专业能力、冷却和上下文承接。',
-      '2. 多轮对话是否自然推进，不像轮流写作文、主持总结、客服问答或模板化复述。',
-      '3. 角色身份、人格、说话风格、背景和关系是否在可见回复中有稳定差异。',
-      '4. 每轮是否只代表当前说话角色，不替其他角色发言，不泄漏系统、JSON、内部 ID、prompt。',
-      '5. innerLife、turnPlan、speakerScore、interactionHints、relationshipSignals、worldInfluence 与可见回复是否一致。',
-      '6. 关系变化和房间态势是否克制，避免为了有 metadata 而过度写入。',
-      '7. 故事房需要检查选项数量、选项间隔、选择代价和剧情承接；审议房需要检查 claims/evidence/issues/verdicts 等产物是否合理。',
-      '8. 如果质量不足，optimizations 必须指出应调整的 prompt 层，如 humanization、current_intent、conversation_move、turn_plan、response_surface、style_quarantine、visible_message_surface_contract、story_protocol、deliberation_protocol、memoryTrace 或 scheduler。',
-      '9. 用户插话不会重复出现在 transcript 的 AI 行中，但会出现在 userInjectionLog 和 conversationMessages；必须按时间顺序检查插话之后的实际回复，不得仅因 transcript 没有用户行就判定用户输入未被转录。',
-      `场景额外要求：${scenario.rubricHint}`,
-    ].join('\n'), {
-      scenario: {
-        name: scenario.name,
-        chat: scenario.chat,
-        characters: scenario.characters.map((character) => ({
-          id: character.id,
-          name: character.name,
-          personality: character.personality,
-          behavior: character.behavior,
-          expertise: character.expertise,
-          speakingStyle: character.speakingStyle,
-          background: character.background,
-          coreProfile: character.coreProfile,
-          relationships: character.relationships,
-        })),
-        seedMessages: scenario.seedMessages.map((message) => ({ senderName: message.senderName, content: message.content })),
-      },
-      selectedSpeakers,
-      transcript,
-      turnReviews,
-      finalScenarioState: collectScenarioStateSnapshot(chat),
-      seedUserMessages: scenario.seedMessages
-        .filter((message) => message.type === 'user')
-        .map((message) => ({ senderName: message.senderName, content: message.content })),
-      userInjectionLog,
-      conversationMessages: messages
-        .filter((message) => !message.isDeleted && message.type !== 'system' && message.type !== 'event')
-        .map((message) => ({
-          type: message.type,
-          senderId: message.senderId,
-          senderName: message.senderName,
-          content: message.content,
-          timestamp: message.timestamp,
-        })),
-      eventMessages,
-      localInterceptions,
-      hardError,
-    }, { throwOnFail: false });
+    try {
+      review = await callJudge(model, [
+        '评估真实运行时多角色/多玩法房间质量，并给出可执行的提示词结构优化建议：',
+        '1. 发言者选择是否符合点名、关系压力、角色专业能力、冷却和上下文承接。',
+        '2. 多轮对话是否自然推进，不像轮流写作文、主持总结、客服问答或模板化复述。',
+        '3. 角色身份、人格、说话风格、背景和关系是否在可见回复中有稳定差异。',
+        '4. 每轮是否只代表当前说话角色，不替其他角色发言，不泄漏系统、JSON、内部 ID、prompt。',
+        '5. innerLife、turnPlan、speakerScore、interactionHints、relationshipSignals、worldInfluence 与可见回复是否一致。',
+        '6. 关系变化和房间态势是否克制，避免为了有 metadata 而过度写入。',
+        '7. 故事房需要检查选项数量、选项间隔、选择代价和剧情承接；审议房需要检查 claims/evidence/issues/verdicts 等产物是否合理。',
+        '8. 如果质量不足，optimizations 必须指出应调整的 prompt 层，如 humanization、current_intent、conversation_move、turn_plan、response_surface、style_quarantine、visible_message_surface_contract、story_protocol、deliberation_protocol、memoryTrace 或 scheduler。',
+        '9. 用户插话不会重复出现在 transcript 的 AI 行中，但会出现在 userInjectionLog 和 conversationMessages；必须按时间顺序检查插话之后的实际回复，不得仅因 transcript 没有用户行就判定用户输入未被转录。',
+        `场景额外要求：${scenario.rubricHint}`,
+      ].join('\n'), {
+        scenario: {
+          name: scenario.name,
+          chat: scenario.chat,
+          characters: scenario.characters.map((character) => ({
+            id: character.id,
+            name: character.name,
+            personality: character.personality,
+            behavior: character.behavior,
+            expertise: character.expertise,
+            speakingStyle: character.speakingStyle,
+            background: character.background,
+            coreProfile: character.coreProfile,
+            relationships: character.relationships,
+          })),
+          seedMessages: scenario.seedMessages.map((message) => ({ senderName: message.senderName, content: message.content })),
+        },
+        selectedSpeakers,
+        transcript,
+        turnReviews,
+        finalScenarioState: collectScenarioStateSnapshot(chat),
+        seedUserMessages: scenario.seedMessages
+          .filter((message) => message.type === 'user')
+          .map((message) => ({ senderName: message.senderName, content: message.content })),
+        userInjectionLog,
+        conversationMessages: messages
+          .filter((message) => !message.isDeleted && message.type !== 'system' && message.type !== 'event')
+          .map((message) => ({
+            type: message.type,
+            senderId: message.senderId,
+            senderName: message.senderName,
+            content: message.content,
+            timestamp: message.timestamp,
+          })),
+        eventMessages,
+        localInterceptions,
+        hardError,
+      }, { throwOnFail: false, maxTokens: 3600 });
+    } catch (error) {
+      scenarioJudgeError = String(error?.message || error);
+      judgeErrors.push({ scope: 'scenario', error: scenarioJudgeError });
+      logProgress('chatflow scenario judge failed', { model, scenario: scenario.name, error: clip(scenarioJudgeError, 400) });
+    }
   }
 
   return {
-    ok: !hardError,
+    ok: !hardError && judgeErrors.length === 0,
     scenario: scenario.name,
     turnCount: transcript.length,
     selectedSpeakers,
@@ -3708,7 +3881,9 @@ async function runRuntimeChatflowScenario(model, scenario) {
     userInjectionLog,
     eventMessages,
     localInterceptions,
-    error: hardError || undefined,
+    hardError,
+    judgeErrors,
+    error: hardError || scenarioJudgeError || (judgeErrors.length ? `${judgeErrors.length} judge error(s)` : undefined),
     review,
   };
 }
@@ -3727,6 +3902,7 @@ async function runChatflowCase(model) {
     for (const scenario of scenarios) {
       try {
         runs[scenario.name] = await runRuntimeChatflowScenario(model, scenario);
+        await writeChatflowCheckpoint(model, scenario.name, runs);
       } catch (error) {
         const message = String(error?.message || error);
         logProgress('chatflow scenario failed', { model, scenario: scenario.name, error: clip(message, 400) });
@@ -3746,27 +3922,66 @@ async function runChatflowCase(model) {
           localInterceptions: [],
           error: message,
         };
+        await writeChatflowCheckpoint(model, scenario.name, runs);
       }
     }
   } finally {
     await closeRuntimeChatModules();
   }
+  logProgress('chatflow judge calibration', { model, cases: CHATFLOW_JUDGE_CALIBRATION_CASES.length });
+  const judgeCalibration = await runChatflowJudgeCalibration(model);
   logProgress('chatflow aggregate judge', { model, scenarios: Object.keys(runs).length });
-  const aggregateReview = await callJudge(model, [
-    '横向评估这些真实运行时群聊样本是否足以验收 Sense Murmur 的普通群聊提示词结构：',
-    '1. 不同场景下角色差异、发言者选择、轮次推进和 metadata 一致性是否稳定。',
-    '2. 是否出现跨场景的同质化、过度总结、空泛追问、关系变化滥写、房间态势乱跳或协议泄漏。',
-    '3. 对运行失败场景也要纳入风险判断，optimizations 要合并成优先级明确的 prompt/runtime 优化清单，不要泛泛而谈。',
-  ].join('\n'), { runs }, { throwOnFail: false });
-  const reviewFailures = collectChatflowReviewFailures(runs, aggregateReview);
+  let aggregateReview = null;
+  let aggregateJudgeError = '';
+  try {
+    aggregateReview = await callJudge(model, [
+      '横向评估这些真实运行时群聊样本是否足以验收 Sense Murmur 的普通群聊提示词结构：',
+      '1. 不同场景下角色差异、发言者选择、轮次推进和 metadata 一致性是否稳定。',
+      '2. 是否出现跨场景的同质化、过度总结、空泛追问、关系变化滥写、房间态势乱跳或协议泄漏。',
+      '3. 对运行失败场景也要纳入风险判断，optimizations 要合并成优先级明确的 prompt/runtime 优化清单，不要泛泛而谈。',
+      '4. 如果 judgeCalibration 有失败，说明评审器本身还不能稳定区分已知好/坏样本，应降低对本次分数的信任。',
+    ].join('\n'), { runs, judgeCalibration }, { throwOnFail: false, maxTokens: 3600 });
+  } catch (error) {
+    aggregateJudgeError = String(error?.message || error);
+    logProgress('chatflow aggregate judge failed', { model, error: clip(aggregateJudgeError, 400) });
+  }
+  const reviewFailures = collectChatflowReviewFailures(runs, aggregateReview, judgeCalibration);
+  if (aggregateJudgeError) {
+    reviewFailures.push({
+      scope: 'judge_aggregate',
+      scenario: 'all',
+      score: 0,
+      issues: [aggregateJudgeError],
+      optimizations: ['修复横向汇总评审的输出协议、token 上限或输入体积；不要丢弃各场景已生成报告。'],
+    });
+  }
   return {
     ok: reviewFailures.length === 0,
     scenarios: runs,
+    judgeCalibration,
     aggregateReview,
+    aggregateJudgeError: aggregateJudgeError || undefined,
     reviewFailures,
     error: reviewFailures.length ? `chatflow judge rejected ${reviewFailures.length} review item(s)` : undefined,
-    reportTables: buildChatflowReportTables(runs),
+    reportTables: buildChatflowReportTables(runs, judgeCalibration),
   };
+}
+
+async function writeChatflowCheckpoint(model, scenarioName, runs) {
+  if (!config.reportDir) return null;
+  const dir = resolve(config.reportDir);
+  await mkdir(dir, { recursive: true });
+  const safeModel = String(model).replace(/[^A-Za-z0-9_.-]+/g, '_');
+  const filePath = resolve(dir, `ai-llm-acceptance-checkpoint-${safeModel}.json`);
+  const payload = {
+    at: new Date().toISOString(),
+    model,
+    latestScenario: scenarioName,
+    scenarioCount: Object.keys(runs).length,
+    scenarios: runs,
+  };
+  await writeFile(filePath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+  return filePath;
 }
 
 async function runQualityCase(model) {
@@ -3947,6 +4162,7 @@ function buildMarkdownReport(payload) {
     lines.push('', '### User Inputs', '', section.tables.userInputs);
     lines.push('', '### Turns', '', section.tables.turns);
     lines.push('', '### Reviews', '', section.tables.reviews);
+    lines.push('', '### Judge Calibration', '', section.tables.judgeCalibration);
     lines.push('', '### Aggregate Review', '');
     lines.push(buildMarkdownTable(['Score', 'Issues', 'Optimizations'], [[
       section.aggregateReview?.score ?? '',

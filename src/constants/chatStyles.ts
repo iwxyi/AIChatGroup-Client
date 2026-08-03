@@ -27,7 +27,7 @@ export const CHAT_STYLE_DEFINITIONS: ChatStyleDefinition[] = [
       en: 'Natural back-and-forth for everyday company and low-pressure topics.',
     },
     promptDescription:
-      'Casual room: keep the conversation natural, warm, and easy to join. Use everyday phrasing, respond to the current emotional texture, and avoid over-structuring unless the user asks for it.',
+      'Casual room: keep the conversation natural, warm, and easy to join. Let replies have uneven length, ordinary reactions, partial attention, side comments, small emotional signals, and occasional low-information social turns. Use everyday phrasing and respond to the current emotional texture. Do not turn ordinary chat into polished speeches, scene narration, or a chain of complete conclusions unless the user asks for that.',
   },
   {
     value: 'debate',
@@ -41,7 +41,7 @@ export const CHAT_STYLE_DEFINITIONS: ChatStyleDefinition[] = [
       en: 'Develop positions, evidence, counterpoints, and tradeoffs without empty arguing.',
     },
     promptDescription:
-      'Deep discussion room: examine the topic through clear claims, reasons, evidence, counterpoints, and tradeoffs. Challenge weak assumptions respectfully, and move the discussion toward sharper understanding rather than performative conflict.',
+      'Deep discussion room: examine the topic through clear claims, reasons, evidence, counterpoints, and tradeoffs. Challenge weak assumptions respectfully, while keeping the exchange conversational: react to people, show hesitation or conviction when earned, and do not make every turn a formal mini-essay. Move the discussion toward sharper understanding rather than performative conflict.',
   },
   {
     value: 'brainstorm',
@@ -55,7 +55,7 @@ export const CHAT_STYLE_DEFINITIONS: ChatStyleDefinition[] = [
       en: 'Explore alternatives, build on them, then converge on usable directions.',
     },
     promptDescription:
-      'Co-creation room: generate varied possibilities, build on other participants ideas, make unexpected but relevant connections, and periodically separate raw ideas from actionable next steps. Do not prematurely dismiss unusual ideas.',
+      'Co-creation room: generate varied possibilities, build on other participants ideas, make unexpected but relevant connections, and periodically separate raw ideas from actionable next steps. Keep the room lively and human through quick reactions, unfinished ideas, playful turns, doubt, and revision. Do not prematurely dismiss unusual ideas or force every turn into a finished proposal.',
   },
   {
     value: 'roleplay',
@@ -69,7 +69,7 @@ export const CHAT_STYLE_DEFINITIONS: ChatStyleDefinition[] = [
       en: 'Stay in character and advance the scene through motives, relationships, and consequences.',
     },
     promptDescription:
-      'Immersive roleplay room: stay inside the character voice and situation. Drive the scene through motives, relationships, sensory details, and consequences while preserving continuity with prior events.',
+      'Immersive roleplay room: stay inside the character voice and situation. Drive the scene through motives, relationships, sensory details, and consequences while preserving continuity with prior events. Let characters speak as people inside the scene; do not automatically expand every reply into narrated prose or a polished dramatic monologue.',
   },
 ];
 

@@ -3,7 +3,7 @@ import type { AICharacter } from '../types/character';
 import type { GroupChat } from '../types/chat';
 import type { Message } from '../types/message';
 import { DEFAULT_CONVERSATION_DIRECTOR_CONTROLS, DEFAULT_CONVERSATION_DRAMA_RULES, DEFAULT_CONVERSATION_GOVERNANCE, DEFAULT_CONVERSATION_WORLD_STATE } from '../types/chat';
-import { calculateWeights } from './scheduler';
+import { calculateWeights, resolvePendingReplyContext } from './scheduler';
 import type { DirectorIntent } from './directorIntent';
 
 const realMathRandom = Math.random;
@@ -194,6 +194,183 @@ describe('scheduler speaker scoring', () => {
 
     const b = candidates.find((candidate) => candidate.characterId === 'b');
     expect(b?.scoreBreakdown?.addressed).toBeGreaterThan(0);
+  });
+
+  it('treats strong interaction hints as pending replies for the target actor', () => {
+    const challengedMessage = buildMessage({ senderId: 'a', senderName: '甲', content: '乙，这个方案你得解释。' }) as Message & {
+      interactionHints: Array<{ targetId: string; kind: string; tone: string; intensity: number; confidence: number; reason: string }>;
+    };
+    challengedMessage.interactionHints = [{
+      targetId: 'b',
+      kind: 'challenge',
+      tone: 'cold',
+      intensity: 3,
+      confidence: 0.86,
+      reason: '甲要求乙解释方案',
+    }];
+
+    const pending = resolvePendingReplyContext(
+      [buildCharacter('a', '甲'), buildCharacter('b', '乙'), buildCharacter('c', '丙')],
+      [challengedMessage],
+    );
+    expect(pending?.primaryTargetId).toBe('b');
+
+    const candidates = calculateWeights(
+      [buildCharacter('a', '甲'), buildCharacter('b', '乙'), buildCharacter('c', '丙')],
+      [challengedMessage],
+      {},
+      1,
+      0,
+      pending,
+      { ...buildChat(), memberIds: ['a', 'b', 'c'] },
+    );
+
+    const b = candidates.find((candidate) => candidate.characterId === 'b');
+    const c = candidates.find((candidate) => candidate.characterId === 'c');
+    expect(b?.weight).toBeGreaterThan(c?.weight || 0);
+    expect(b?.scoreBreakdown?.reasons).toContain('pending_reply');
+    expect(b?.scoreBreakdown?.addressed).toBeGreaterThan(0);
+  });
+
+  it('adds a bounded pressure for unspoken members in multi-character group chat', () => {
+    const now = Date.now();
+    const candidates = calculateWeights(
+      [
+        buildCharacter('a', '甲'),
+        buildCharacter('b', '乙'),
+        buildCharacter('c', '丙', { behavior: { proactivity: 35, aggressiveness: 20, humorIntensity: 20, empathyLevel: 45, summarizing: 25, offTopic: 10 } }),
+      ],
+      [
+        buildMessage({ id: 'm1', senderId: 'a', senderName: '甲', content: '先把开业流程说清楚。', timestamp: now - 20_000 }),
+        buildMessage({ id: 'm2', senderId: 'b', senderName: '乙', content: '我补一下前厅排队和点单。', timestamp: now - 10_000 }),
+      ],
+      {},
+      1,
+      0,
+      null,
+      { ...buildChat(), memberIds: ['a', 'b', 'c'] },
+    );
+
+    const c = candidates.find((candidate) => candidate.characterId === 'c');
+    expect(c?.scoreBreakdown?.silencePressure).toBeGreaterThan(0.2);
+    expect(c?.scoreBreakdown?.reasons).toContain('unspoken_member');
+  });
+
+  it('lets an unspoken member break a two-actor pending-reply loop', () => {
+    const now = Date.now();
+    const latest = buildMessage({ id: 'm3', senderId: 'a', senderName: '甲', content: '乙，那你的规矩是什么？', timestamp: now - 5_000 }) as Message & {
+      interactionHints: Array<{ targetId: string; kind: string; tone: string; intensity: number; confidence: number; reason: string }>;
+    };
+    latest.interactionHints = [{
+      targetId: 'b',
+      kind: 'probe',
+      tone: 'cold',
+      intensity: 3,
+      confidence: 0.82,
+      reason: '甲追问乙',
+    }];
+    const messages = [
+      buildMessage({ id: 'm1', senderId: 'a', senderName: '甲', content: '先说我的规矩。', timestamp: now - 25_000 }),
+      buildMessage({ id: 'm2', senderId: 'b', senderName: '乙', content: '你这规矩第一天就会卡住。', timestamp: now - 15_000 }),
+      latest,
+    ];
+    const characters = [
+      buildCharacter('a', '甲'),
+      buildCharacter('b', '乙'),
+      buildCharacter('c', '丙', { behavior: { proactivity: 35, aggressiveness: 20, humorIntensity: 20, empathyLevel: 45, summarizing: 25, offTopic: 10 } }),
+    ];
+    const pending = resolvePendingReplyContext(characters, messages);
+
+    const candidates = calculateWeights(
+      characters,
+      messages,
+      {},
+      1,
+      0,
+      pending,
+      { ...buildChat(), memberIds: ['a', 'b', 'c'] },
+    );
+
+    const b = candidates.find((candidate) => candidate.characterId === 'b');
+    const c = candidates.find((candidate) => candidate.characterId === 'c');
+    expect(candidates.map((candidate) => candidate.characterId)).toEqual(['c']);
+    expect(b).toBeUndefined();
+    expect(c?.scoreBreakdown?.reasons).toContain('unspoken_member');
+  });
+
+  it('keeps an explicit user-directed target even during a two-actor exchange loop', () => {
+    const now = Date.now();
+    const latest = buildMessage({ id: 'm3', senderId: 'a', senderName: '甲', content: '乙，那你的规矩是什么？', timestamp: now - 5_000 }) as Message & {
+      interactionHints: Array<{ targetId: string; kind: string; tone: string; intensity: number; confidence: number; reason: string }>;
+    };
+    latest.interactionHints = [{
+      targetId: 'b',
+      kind: 'probe',
+      tone: 'cold',
+      intensity: 3,
+      confidence: 0.82,
+      reason: '甲追问乙',
+    }];
+    const messages = [
+      buildMessage({ id: 'm1', senderId: 'a', senderName: '甲', content: '先说我的规矩。', timestamp: now - 25_000 }),
+      buildMessage({ id: 'm2', senderId: 'b', senderName: '乙', content: '你这规矩第一天就会卡住。', timestamp: now - 15_000 }),
+      latest,
+    ];
+    const characters = [
+      buildCharacter('a', '甲'),
+      buildCharacter('b', '乙'),
+      buildCharacter('c', '丙', { behavior: { proactivity: 35, aggressiveness: 20, humorIntensity: 20, empathyLevel: 45, summarizing: 25, offTopic: 10 } }),
+    ];
+    const pending = resolvePendingReplyContext(characters, messages);
+    const intent: DirectorIntent = {
+      source: 'user_message',
+      beatType: 'answer',
+      targetActorIds: ['b'],
+      pressure: 0.9,
+      reason: '用户明确要求乙回答。',
+    };
+
+    const candidates = calculateWeights(
+      characters,
+      messages,
+      {},
+      1,
+      0,
+      pending,
+      { ...buildChat(), memberIds: ['a', 'b', 'c'] },
+      intent,
+    );
+
+    expect(candidates.map((candidate) => candidate.characterId)).toEqual(['b']);
+    expect(candidates[0]?.scoreBreakdown?.reasons).toContain('pending_reply');
+    expect(candidates[0]?.scoreBreakdown?.reasons).toContain('director:answer:target');
+  });
+
+  it('lets an unspoken member break a two-actor exchange even without interaction hints', () => {
+    const now = Date.now();
+    const messages = [
+      buildMessage({ id: 'm1', senderId: 'a', senderName: '甲', content: '第一天先把规矩定死。', timestamp: now - 25_000 }),
+      buildMessage({ id: 'm2', senderId: 'b', senderName: '乙', content: '规矩太硬，客人会不敢反馈。', timestamp: now - 15_000 }),
+      buildMessage({ id: 'm3', senderId: 'a', senderName: '甲', content: '那就留样抽查。', timestamp: now - 5_000 }),
+    ];
+    const characters = [
+      buildCharacter('a', '甲'),
+      buildCharacter('b', '乙'),
+      buildCharacter('c', '丙', { behavior: { proactivity: 35, aggressiveness: 20, humorIntensity: 20, empathyLevel: 45, summarizing: 25, offTopic: 10 } }),
+    ];
+
+    const candidates = calculateWeights(
+      characters,
+      messages,
+      {},
+      1,
+      0,
+      null,
+      { ...buildChat(), memberIds: ['a', 'b', 'c'] },
+    );
+
+    expect(candidates.map((candidate) => candidate.characterId)).toEqual(['c']);
+    expect(candidates[0]?.scoreBreakdown?.reasons).toContain('unspoken_member');
   });
 
   it('drops low-pressure stay-silent candidates when another actor has a live cue', () => {
@@ -477,6 +654,45 @@ describe('scheduler speaker scoring', () => {
     expect(candidates.map((candidate) => candidate.characterId)).toEqual(['a']);
   });
 
+  it('does not force a mentioned topic subject to be the next speaker', () => {
+    const intent: DirectorIntent = {
+      source: 'user_message',
+      beatType: 'invite',
+      targetActorIds: ['qin'],
+      pressure: 0.7,
+      reason: '用户提到角色并改变当前讨论焦点。',
+      userGuidance: {
+        kind: 'topic_shift',
+        rawText: '如果秦始皇开一家主题餐馆，你们觉得第一天会发生什么？',
+        actorIds: [],
+        mentionedActorIds: ['qin'],
+        focusText: '如果秦始皇开一家主题餐馆，你们觉得第一天会发生什么？',
+        beatType: 'invite',
+        pressure: 0.7,
+        maxTurns: 3,
+        reason: '用户提到角色并改变当前讨论焦点。',
+      },
+    };
+    const candidates = calculateWeights(
+      [
+        buildCharacter('qin', '秦始皇'),
+        buildCharacter('operator', '餐饮运营顾问林澈', { behavior: { proactivity: 75, aggressiveness: 35, humorIntensity: 30, empathyLevel: 45, summarizing: 40, offTopic: 10 } }),
+        buildCharacter('chef', '御厨阿衡', { expertise: ['火候', '试菜', '后厨'] }),
+      ],
+      [buildMessage({ type: 'user', senderId: 'user', senderName: '我', content: intent.userGuidance!.rawText })],
+      {},
+      1,
+      0,
+      null,
+      { ...buildChat(), memberIds: ['qin', 'operator', 'chef'] },
+      intent,
+    );
+
+    expect(candidates.map((candidate) => candidate.characterId)).toContain('qin');
+    expect(candidates.map((candidate) => candidate.characterId)).toContain('operator');
+    expect(candidates.length).toBeGreaterThan(1);
+  });
+
   it('suppresses a criticized hijacking actor during a corrective guidance window', () => {
     const intent: DirectorIntent = {
       source: 'user_message',
@@ -513,6 +729,51 @@ describe('scheduler speaker scoring', () => {
 
     expect(candidates.map((candidate) => candidate.characterId)).not.toContain('zhou');
     expect(candidates.length).toBeGreaterThan(0);
+  });
+
+  it('defers a soft framing actor after the requested actor has answered enough', () => {
+    const intent: DirectorIntent = {
+      source: 'user_message',
+      beatType: 'answer',
+      targetActorIds: [],
+      pressure: 0.92,
+      reason: '用户点名角色回应。',
+      userGuidance: {
+        kind: 'direct_reply',
+        rawText: '安安，你直接说吧，用户到底为什么不再用了？不用先照顾周策的汇报口径。',
+        actorIds: ['anan'],
+        mentionedActorIds: ['anan', 'zhou'],
+        suppressedActorIds: [],
+        deferredActorIds: ['zhou'],
+        focusText: '安安，你直接说吧，用户到底为什么不再用了？不用先照顾周策的汇报口径。',
+        beatType: 'answer',
+        pressure: 0.92,
+        maxTurns: 5,
+        minTargetTurns: 2,
+        reason: '用户点名角色回应。',
+      },
+    };
+    const candidates = calculateWeights(
+      [
+        buildCharacter('anan', '安安', { behavior: { proactivity: 18, aggressiveness: 4, humorIntensity: 8, empathyLevel: 78, summarizing: 20, offTopic: 6 } }),
+        buildCharacter('zhou', '周策', { behavior: { proactivity: 95, aggressiveness: 55, humorIntensity: 20, empathyLevel: 24, summarizing: 70, offTopic: 10 } }),
+        buildCharacter('mei', '梅青', { behavior: { proactivity: 54, aggressiveness: 12, humorIntensity: 26, empathyLevel: 72, summarizing: 44, offTopic: 10 } }),
+      ],
+      [
+        buildMessage({ senderId: 'anan', senderName: '安安', content: '访谈里用户主要卡在审核等待。', timestamp: 10 }),
+        buildMessage({ senderId: 'anan', senderName: '安安', content: '他们不是不需要产品，是等不起。', timestamp: 20 }),
+      ],
+      {},
+      1,
+      0,
+      null,
+      { ...buildChat(), memberIds: ['anan', 'zhou', 'mei'] },
+      intent,
+    );
+
+    expect(candidates.map((candidate) => candidate.characterId)).not.toContain('zhou');
+    expect(candidates.length).toBeGreaterThan(0);
+    expect(candidates.find((candidate) => candidate.characterId === 'mei')?.scoreBreakdown?.reasons).toContain('guidance_floor_guardian');
   });
 
   it('keeps suppression-only guidance from protecting the last speaker into repetition', () => {

@@ -279,7 +279,7 @@ function isQuestionLike(text: string) {
 }
 
 function mentionsTarget(text: string) {
-  return /你|你这|他说|她说|这点|刚才|不是吧|等等|所以|可问题是/i.test(text);
+  return /你|你这|他说|她说|这句|这话|这点|这个|刚才|不是吧|等等|所以|可问题是|我认|朕认|我接|我站|同意|赞同/i.test(text);
 }
 
 export function describeIntentForPrompt(intent: SpeakIntent) {
@@ -325,11 +325,11 @@ function deriveSpeakIntentFromDirectorIntent(character: AICharacter, directorInt
     }
     return withMessageShape({
       shouldSpeak: true,
-      reason: 'wants to protect the current target',
+      reason: 'wants to protect the current target without inheriting their viewpoint',
       target,
-      stance: 'back_up',
+      stance: character.behavior.summarizing >= 62 ? 'summarize' : 'probe',
       emotionalTone: 'warm',
-      delivery: 'short_reply',
+      delivery: character.behavior.summarizing >= 62 ? 'group_redirect' : 'quick_question',
     });
   }
   if (directorIntent.beatType === 'challenge' || directorIntent.beatType === 'escalate') {
@@ -395,15 +395,14 @@ export function deriveSpeakIntentFromContext(character: AICharacter, recentTarge
     return adaptQuestionIntent(character, withMessageShape({ ...base, stance: isQuestionLike(recentText) ? 'challenge' : 'probe', delivery: 'quick_question' }));
   }
   if (recentTargetId && mentionsTarget(recentText) && base.stance === 'support') {
-    if (analysisContext) {
-      return adaptBaseIntent(character, withMessageShape({
-        ...base,
-        stance: character.behavior.summarizing >= 62 ? 'summarize' : 'probe',
-        delivery: character.behavior.summarizing >= 62 ? 'group_redirect' : 'quick_question',
-        reason: 'has warmth toward the speaker but keeps the claim open for review',
-      }));
-    }
-    return adaptBaseIntent(character, withMessageShape({ ...base, stance: 'back_up', delivery: pressure > 0 ? 'side_remark' : 'short_reply' }));
+    return adaptBaseIntent(character, withMessageShape({
+      ...base,
+      stance: character.behavior.summarizing >= 62 ? 'summarize' : 'probe',
+      delivery: character.behavior.summarizing >= 62 ? 'group_redirect' : pressure > 0 ? 'side_remark' : 'quick_question',
+      reason: analysisContext
+        ? 'has warmth toward the speaker but keeps the claim open for review'
+        : 'has warmth toward the speaker but keeps an independent angle',
+    }));
   }
   if (pressure > 0.1) {
     return maybePromoteToQuestionIntent(character, withMessageShape({ ...base, delivery: base.stance === 'summarize' ? 'short_reply' : 'side_remark', emotionalTone: base.emotionalTone === 'cold' ? 'defensive' : base.emotionalTone }), recentTargetId, recentText);
@@ -433,23 +432,13 @@ export function deriveSpeakIntent(character: AICharacter, recentTargetId?: strin
   }
 
   if (emotional.affection > 40 || relationWeight > 0.35) {
-    if (analysisContext) {
-      return adaptBaseIntent(character, withMessageShape({
-        shouldSpeak: true,
-        reason: 'has relational warmth but keeps independent judgment',
-        target: recentTargetId || 'group',
-        stance: character.behavior.summarizing >= 70 ? 'summarize' : 'probe',
-        emotionalTone: 'warm',
-        delivery: character.behavior.summarizing >= 70 ? 'group_redirect' : 'quick_question',
-      }));
-    }
     return adaptBaseIntent(character, withMessageShape({
       shouldSpeak: true,
-      reason: 'wants to support',
+      reason: analysisContext ? 'has relational warmth but keeps independent judgment' : 'has relational warmth and a distinct angle',
       target: recentTargetId || 'group',
-      stance: relationWeight > 0.55 ? 'back_up' : 'support',
+      stance: character.behavior.summarizing >= 70 ? 'summarize' : 'probe',
       emotionalTone: 'warm',
-      delivery: 'short_reply',
+      delivery: character.behavior.summarizing >= 70 ? 'group_redirect' : 'quick_question',
     }));
   }
 

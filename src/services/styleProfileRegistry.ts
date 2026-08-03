@@ -1,3 +1,4 @@
+import type { ChatStyle } from '../types/chat';
 import type { SessionGenerationPromptContext } from '../types/sessionEngine';
 
 export type ChatStyleProfile = 'assistant_room' | 'casual_room' | 'discovery_room' | 'analytical_room' | 'companion_room' | 'dramatic_room' | 'task_room';
@@ -13,6 +14,7 @@ const styleProfiles = new Map<ChatStyleProfile, StyleProfileDefinition>([
     key: 'assistant_room',
     label: 'Assistant room',
     promptContext: {
+      styleProfile: 'assistant_room',
       additionalConstraints: ['Answer objectively and directly. Do not roleplay or add character-specific voice.'],
       responseStyle: 'professional',
       allowMarkdown: true,
@@ -22,6 +24,7 @@ const styleProfiles = new Map<ChatStyleProfile, StyleProfileDefinition>([
     key: 'casual_room',
     label: 'Casual room',
     promptContext: {
+      styleProfile: 'casual_room',
       additionalConstraints: ['Keep the social flow easy and low-pressure. Do not over-structure ordinary chat.'],
       responseStyle: 'chat',
       allowMarkdown: true,
@@ -31,6 +34,7 @@ const styleProfiles = new Map<ChatStyleProfile, StyleProfileDefinition>([
     key: 'discovery_room',
     label: 'Discovery room',
     promptContext: {
+      styleProfile: 'discovery_room',
       additionalConstraints: ['Prefer adding materially new examples, angles, or practical discoveries over simply endorsing the latest example.'],
       responseStyle: 'chat',
       allowMarkdown: true,
@@ -40,6 +44,7 @@ const styleProfiles = new Map<ChatStyleProfile, StyleProfileDefinition>([
     key: 'analytical_room',
     label: 'Analytical room',
     promptContext: {
+      styleProfile: 'analytical_room',
       additionalConstraints: ['Prefer clarifying distinctions, tradeoffs, counterpoints, or synthesis over casual agreement.'],
       responseStyle: 'professional',
       allowMarkdown: true,
@@ -49,6 +54,7 @@ const styleProfiles = new Map<ChatStyleProfile, StyleProfileDefinition>([
     key: 'companion_room',
     label: 'Companion room',
     promptContext: {
+      styleProfile: 'companion_room',
       additionalConstraints: ['Prioritize emotional acknowledgment, reassurance, and low-pressure companionship before widening the topic when the moment calls for care. Low-pressure is about tone and consent, not a short-answer rule; user tasks and scene obligations still need complete answers.'],
       responseStyle: 'chat',
       allowMarkdown: true,
@@ -58,6 +64,7 @@ const styleProfiles = new Map<ChatStyleProfile, StyleProfileDefinition>([
     key: 'dramatic_room',
     label: 'Dramatic room',
     promptContext: {
+      styleProfile: 'dramatic_room',
       additionalConstraints: ['Let scene tension, implication, and role-specific friction shape the line more than neutral explanation.'],
       responseStyle: 'creative',
       allowMarkdown: true,
@@ -67,6 +74,7 @@ const styleProfiles = new Map<ChatStyleProfile, StyleProfileDefinition>([
     key: 'task_room',
     label: 'Task room',
     promptContext: {
+      styleProfile: 'task_room',
       additionalConstraints: ['Answer the actual task directly and completely before adding side banter.'],
       responseStyle: 'professional',
       allowMarkdown: true,
@@ -105,6 +113,13 @@ const familyDefaults = new Map<string, ChatStyleProfile>([
   ['simulation', 'dramatic_room'],
 ]);
 
+const chatStyleProfiles = new Map<ChatStyle, ChatStyleProfile>([
+  ['free', 'casual_room'],
+  ['debate', 'analytical_room'],
+  ['brainstorm', 'discovery_room'],
+  ['roleplay', 'dramatic_room'],
+]);
+
 export function getStyleProfile(key: ChatStyleProfile | null | undefined) {
   return key ? styleProfiles.get(key) || null : null;
 }
@@ -117,4 +132,8 @@ export function resolveDefaultStyleProfile(input: { scenarioId?: string; family?
     : familyDefault
       || scenarioDefault
       || 'casual_room';
+}
+
+export function resolveChatStyleProfile(style: ChatStyle | null | undefined) {
+  return style ? chatStyleProfiles.get(style) || null : null;
 }

@@ -65,15 +65,35 @@ describe('promptBlockComposer', () => {
     expect(prompt).toBe('[core]');
   });
 
-  it('keeps ordinary group chat social blocks available', () => {
+  it('uses unified turn directive instead of scattered ordinary group chat expression blocks', () => {
     const policy = resolvePromptPlayMode(chat());
     const prompt = composePromptBlocks([
       { id: 'core', layer: 'core', priority: 0, content: '[core]' },
+      { id: 'turn_directive', layer: 'task', priority: 0, content: '[directive]' },
+      { id: 'humanization', layer: 'character', priority: 0, content: '[humanization]' },
+      { id: 'inner_life', layer: 'character', priority: 1, content: '[inner life]' },
       { id: 'natural_chat_rhythm', layer: 'style', priority: 0, content: '[chat rhythm]' },
+      { id: 'conversation_move', layer: 'task', priority: 1, content: '[move]' },
+      { id: 'turn_plan', layer: 'runtime', priority: 0, content: '[turn plan]' },
     ], policy);
 
     expect(policy.id).toBe('general_group');
-    expect(prompt).toBe('[core][chat rhythm]');
+    expect(prompt).toBe('[core][directive]');
+  });
+
+  it('does not disable scenario group blocks outside ordinary conversation rooms', () => {
+    const policy = resolvePromptPlayMode(chat({
+      mode: 'werewolf',
+      sessionKind: { topology: 'group', family: 'deduction', scenarioId: 'werewolf-classic', surfaceProfile: 'hybrid' },
+    }));
+    const prompt = composePromptBlocks([
+      { id: 'core', layer: 'core', priority: 0, content: '[core]' },
+      { id: 'natural_chat_rhythm', layer: 'style', priority: 0, content: '[chat rhythm]' },
+      { id: 'conversation_move', layer: 'task', priority: 1, content: '[move]' },
+    ], policy);
+
+    expect(policy.id).toBe('general_group');
+    expect(prompt).toBe('[core][move][chat rhythm]');
   });
 
   it('selects story-reader play mode from the session scenario', () => {

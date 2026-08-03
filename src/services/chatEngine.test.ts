@@ -776,7 +776,7 @@ describe('chatEngine streaming preview', () => {
     expect(result.reason).toContain("exactly repeats the speaker's recent line");
   });
 
-  it('injects runtime role constraint when the same speaker dominates recent airtime', async () => {
+  it('folds recent-airtime pressure into the ordinary group turn directive', async () => {
     generateResponseMock.mockReset();
     generateResponseMock.mockResolvedValue(JSON.stringify({
       content: '先把最关键的一点说清楚。',
@@ -807,9 +807,10 @@ describe('chatEngine streaming preview', () => {
     });
     const prompt = String(generateResponseMock.mock.calls[0]?.[1] || '');
 
-    expect(prompt).toContain('Runtime Role Constraint');
-    expect(prompt).toContain('Add one new dimension');
-    expect(prompt).toContain('Keep this turn compact');
+    expect(prompt).toContain('## Turn Directive');
+    expect(prompt).toContain('single behavior decision');
+    expect(prompt).toContain('do not sprawl to keep airtime');
+    expect(prompt).not.toContain('Runtime Role Constraint');
   });
 
   it('preserves deliverable-like generated text without requiring local surface classification', async () => {
@@ -901,11 +902,66 @@ describe('chatEngine streaming preview', () => {
 
     expect(prompt).toContain('Speaker suppression');
     expect(prompt).toContain('Correction handling');
-    expect(prompt).toContain('add one genuinely new fact');
+    expect(prompt).toContain('answer in your own voice');
     expect(message.metadata?.runtimeDecision?.directorIntent?.userGuidance).toMatchObject({
       suppressedActorIds: ['zhou'],
     });
     expect(message.metadata?.runtimeDecision?.memoryContext?.targetActorId).not.toBe('zhou');
+  });
+
+  it('models targeted guidance as floor control without forcing every continuation to add a new thesis', async () => {
+    generateResponseMock.mockReset();
+    generateResponseMock.mockResolvedValue(JSON.stringify({
+      content: '我先把这点收住，别把我的意思又转成别人的口径。',
+      interactionHints: null,
+      socialEventHints: null,
+      conflictFocus: null,
+    }));
+    const anan = buildCharacter('anan', '安安');
+    const zhou = buildCharacter('zhou', '周策');
+    const now = Date.now();
+    const userTurn = buildUserMessage('安安，你直接说吧，用户到底为什么不再用了？不用先照顾周策的汇报口径。', now - 2000);
+    const priorAnswer = buildAiMessage('anan', '安安', '我自己说，访谈里最刺耳的是他们觉得被忽然丢下了。', now - 1000);
+    priorAnswer.metadata = {
+      runtimeDecision: {
+        directorIntent: {
+          source: 'user_message',
+          beatType: 'answer',
+          targetActorIds: ['anan'],
+          pressure: 0.9,
+          reason: '用户点名角色回应。',
+          userGuidance: {
+            kind: 'direct_reply',
+            rawText: userTurn.content,
+            actorIds: ['anan'],
+            mentionedActorIds: ['anan', 'zhou'],
+            suppressedActorIds: [],
+            focusText: userTurn.content,
+            beatType: 'answer',
+            pressure: 0.9,
+            maxTurns: 2,
+            minTargetTurns: 2,
+            reason: '用户点名角色回应。',
+          },
+        },
+      },
+    } as Message['metadata'];
+
+    await generateSpeakerMessage({
+      chat: buildChat({ memberIds: ['anan', 'zhou'] }),
+      speaker: anan,
+      characters: [anan, zhou],
+      messages: [userTurn, priorAnswer],
+      apiConfig: buildProfiles(),
+    });
+    const prompt = String(generateResponseMock.mock.calls[0]?.[1] || '');
+
+    expect(prompt).toContain('## Room Floor State');
+    expect(prompt).toContain('Phase: continue the same floor');
+    expect(prompt).toContain('Low-information social signals are valid');
+    expect(prompt).toContain('do not manufacture a new thesis');
+    expect(prompt).not.toContain('可是');
+    expect(prompt).not.toContain('唉');
   });
 
   it('reconciles stay-silent inner life when the scheduler finally selects the speaker', async () => {
@@ -949,6 +1005,32 @@ describe('chatEngine streaming preview', () => {
 
     expect(message.metadata?.runtimeDecision?.innerLife?.impulse).toBe('answer');
     expect(message.metadata?.runtimeDecision?.innerLife?.reason).toContain('调度最终选择');
+    expect(message.metadata?.runtimeDecision?.speakerScore?.reasons).not.toContain('inner:stay_silent');
+    expect(message.metadata?.runtimeDecision?.speakerScore?.reasons).toContain('inner:answer_after_scheduler_selection');
+  });
+
+  it('infers addressed targets from visible role address when the model omits addressedTargets', async () => {
+    generateResponseMock.mockReset();
+    generateResponseMock.mockResolvedValue(JSON.stringify({
+      content: '御厨，今晚先把料备全，明日谁误了午市，朕拿你是问。',
+      interactionHints: null,
+      socialEventHints: null,
+      conflictFocus: null,
+    }));
+    const qin = buildCharacter('qin', '秦始皇');
+    const chef = buildCharacter('chef', '御厨阿衡');
+    const message = await generateSpeakerMessage({
+      chat: buildChat({ memberIds: ['qin', 'chef'] }),
+      speaker: qin,
+      characters: [qin, chef],
+      messages: [
+        { ...buildAiMessage('chef', '御厨阿衡', '菜单我来定。', 1), chatId: 'chat-1' },
+      ],
+      apiConfig: buildProfiles(),
+    });
+
+    expect(message.addressedTargetIds).toEqual(['chef']);
+    expect(message.primaryAddressedTargetId).toBe('chef');
   });
 
   it('retries non-target suppression replies that take over the requested actor floor', async () => {
@@ -3524,7 +3606,7 @@ describe('chatEngine streaming preview', () => {
     expect(generateResponseMock).toHaveBeenCalledTimes(3);
   });
 
-  it('does not keep locking the requested actor after corrective guidance switches to suppression only', async () => {
+  it('keeps corrective suppression after target floor has enough room without forcing a monologue', async () => {
     generateResponseMock.mockReset();
     generateResponseMock.mockResolvedValue(JSON.stringify({
       content: '我先帮安安把话留住，周策这轮别急着接管。',
@@ -3592,8 +3674,9 @@ describe('chatEngine streaming preview', () => {
       {},
     );
 
-    expect(selected).toEqual(['mei']);
-    expect(completed[0]).toMatchObject({ senderId: 'mei' });
+    expect(selected).toHaveLength(1);
+    expect(selected[0]).not.toBe('zhou');
+    expect(completed[0]).toMatchObject({ senderId: selected[0] });
   });
 
   it('generates a group round without recursive surface resolution for open chat', async () => {

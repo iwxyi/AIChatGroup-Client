@@ -208,6 +208,83 @@ describe('conversationMovePlanner', () => {
     expect(plan.targetMessageId).toBe('m1');
   });
 
+  it('breaks casual agreement echo loops with a boundary or counterexample move', () => {
+    const plan = planConversationMove({
+      chat: chat('conversation'),
+      speaker: character(),
+      messages: [
+        message('m1', 'b', '这句还算稳当。先护住肯做事的人。'),
+        message('m2', 'c', '这句我也接。先把分寸立住。'),
+        message('m3', 'd', '这后辈说得不差。好骑手也得先认清哪匹马真能跑。'),
+        message('m4', 'b', '这句补得对。最后满殿站着的就都是算盘。'),
+      ],
+    });
+
+    expect(['add_boundary_condition', 'counterexample']).toContain(plan.moveType);
+    expect(plan.reason).toBe('chat_echo_loop');
+  });
+
+  it('turns unspoken-member scheduling into a concrete break-in move', () => {
+    const plan = planConversationMove({
+      chat: chat('conversation'),
+      speaker: character({ behavior: { proactivity: 70, aggressiveness: 20, humorIntensity: 20, empathyLevel: 50, summarizing: 20, offTopic: 20 } }),
+      messages: [
+        message('m1', 'b', '这句还算稳当。先护住肯做事的人。'),
+        message('m2', 'c', '这句我也接。先把分寸立住。'),
+        message('m3', 'b', '这句补得对。最后满殿站着的就都是算盘。'),
+      ],
+      speakerScore: {
+        actorId: 'a',
+        addressed: 0,
+        topicRelevance: 0,
+        lineInvolvement: 0,
+        emotionalPressure: 0,
+        innerLifePressure: 0,
+        relationshipPressure: 0,
+        factionPressure: 0,
+        personalityDrive: 0,
+        knowledgeAccess: 0,
+        novelty: 0,
+        silencePressure: 0.4,
+        cooldownPenalty: 0,
+        repetitionPenalty: 0,
+        finalScore: 0.7,
+        reasons: ['unspoken_member', 'inner:stay_silent'],
+      },
+    });
+
+    expect(plan.reason).toBe('break_in_selected_despite_silence');
+    expect(['name_tradeoff', 'counterexample', 'add_boundary_condition']).toContain(plan.moveType);
+  });
+
+  it('renders a casual echo-loop prompt that requires agreement to add new substance', () => {
+    const prompt = buildConversationMovePrompt({
+      speakerId: 'a',
+      moveType: 'add_boundary_condition',
+      socialPosture: { warmth: 'neutral', directness: 'plain' },
+      reason: 'chat_echo_loop',
+      confidence: 0.78,
+    }, chat('conversation'));
+
+    expect(prompt).toContain('agreement echo loop');
+    expect(prompt).toContain('A plain agreement opener is only useful');
+    expect(prompt).toContain('condition, cost, counterexample');
+  });
+
+  it('renders a break-in prompt that requires a missing angle instead of loose commentary', () => {
+    const prompt = buildConversationMovePrompt({
+      speakerId: 'a',
+      moveType: 'name_tradeoff',
+      socialPosture: { warmth: 'neutral', directness: 'plain' },
+      reason: 'break_in_selected_despite_silence',
+      confidence: 0.82,
+    }, chat('conversation'));
+
+    expect(prompt).toContain('selected to break a narrow room loop');
+    expect(prompt).toContain('Do not merely comment that others are right');
+    expect(prompt).toContain('concrete missing angle');
+  });
+
   it('renders a prompt that separates warmth from viewpoint agreement in analysis rooms', () => {
     const plan = planConversationMove({
       chat: chat('analysis'),

@@ -144,6 +144,38 @@ describe('userGuidanceIntent', () => {
     });
   });
 
+  it('treats group questions about a mentioned character as topic guidance', () => {
+    const intent = parseUserGuidanceIntent('如果秦始皇开一家主题餐馆，你们觉得第一天会发生什么？', [
+      character('qin', '秦始皇'),
+      character('operator', '餐饮运营顾问林澈'),
+      character('chef', '御厨阿衡'),
+    ]);
+
+    expect(intent).toMatchObject({
+      kind: 'topic_shift',
+      actorIds: [],
+      mentionedActorIds: ['qin'],
+      beatType: 'invite',
+      maxTurns: 3,
+    });
+  });
+
+  it('keeps directly addressed "what do you think" as a direct reply', () => {
+    const intent = parseUserGuidanceIntent('秦始皇，你觉得第一天会发生什么？', [
+      character('qin', '秦始皇'),
+      character('operator', '餐饮运营顾问林澈'),
+      character('chef', '御厨阿衡'),
+    ]);
+
+    expect(intent).toMatchObject({
+      kind: 'direct_reply',
+      actorIds: ['qin'],
+      mentionedActorIds: ['qin'],
+      beatType: 'answer',
+      maxTurns: 1,
+    });
+  });
+
   it('keeps the leading addressed actor when later text mentions someone else', () => {
     const intent = parseUserGuidanceIntent('安安，你直接说吧，用户到底为什么不再用了？不用先照顾周策的汇报口径。', [
       character('anan', '安安'),
@@ -155,10 +187,11 @@ describe('userGuidanceIntent', () => {
       kind: 'direct_reply',
       actorIds: ['anan'],
       mentionedActorIds: ['anan', 'zhou'],
-      suppressedActorIds: ['zhou'],
+      suppressedActorIds: [],
+      deferredActorIds: ['zhou'],
       beatType: 'answer',
       minTargetTurns: 2,
-      maxTurns: 5,
+      maxTurns: 3,
     });
   });
 
@@ -175,9 +208,9 @@ describe('userGuidanceIntent', () => {
       mentionedActorIds: ['anan', 'zhou'],
       suppressedActorIds: ['zhou'],
       beatType: 'answer',
-      maxTurns: 5,
+      minTargetTurns: 2,
+      maxTurns: 3,
     });
-    expect(intent?.minTargetTurns).toBeUndefined();
   });
 
   it('does not use a suppressed hijacking actor as the memory target', () => {

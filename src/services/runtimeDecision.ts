@@ -64,6 +64,24 @@ function countConsumedGuidanceTurnsAfter(messages: Message[], timestamp: number,
   return collectGuidanceProgressAfterTimestamp(messages, timestamp, guidance, characters).consumedTurns;
 }
 
+function countRestraintWindowTurnsAfterTargetFloor(messages: Message[], timestamp: number, guidance: UserGuidanceIntent, characters: AICharacter[]) {
+  const minTargetTurns = Math.max(1, Math.round(guidance.minTargetTurns || 1));
+  const progress = collectGuidanceProgressAfterTimestamp(messages, timestamp, guidance, characters);
+  const targetMessages = progress.matchedMessages
+    .filter((message) => guidance.actorIds.includes(message.senderId))
+    .sort((left, right) => left.timestamp - right.timestamp);
+  const floorSatisfiedAt = targetMessages[minTargetTurns - 1]?.timestamp;
+  if (typeof floorSatisfiedAt !== 'number') return 0;
+  return countAiResponsesAfter(messages, floorSatisfiedAt);
+}
+
+function isRestraintWindowActive(messages: Message[], timestamp: number, guidance: UserGuidanceIntent, characters: AICharacter[]) {
+  if (!(guidance.suppressedActorIds?.length || guidance.deferredActorIds?.length)) return false;
+  const minTargetTurns = Math.max(1, Math.round(guidance.minTargetTurns || 1));
+  const remainingWindowTurns = Math.max(0, Math.round(guidance.maxTurns || minTargetTurns) - minTargetTurns);
+  return countRestraintWindowTurnsAfterTargetFloor(messages, timestamp, guidance, characters) < remainingWindowTurns;
+}
+
 function isExplicitPersistentGuidance(guidance: UserGuidanceIntent) {
   if (guidance.actorIds.length) return true;
   if (guidance.kind === 'media_request') return true;
@@ -103,7 +121,7 @@ export function resolveLatestActiveUserGuidance(characters: AICharacter[], messa
           timestamp: message.timestamp,
         };
       }
-      if (guidance.suppressedActorIds?.length && countConsumedGuidanceTurnsAfter(messages, message.timestamp, guidance, characters) < guidance.maxTurns) {
+      if (isRestraintWindowActive(messages, message.timestamp, guidance, characters)) {
         return {
           intent: guidanceIntentToDirectorIntent(guidance, []),
           timestamp: message.timestamp,
@@ -157,12 +175,20 @@ function getLatestDirectorInterventionIntent(chat: GroupChat, characters: AIChar
       ? getPendingTargetActorIdsAfter(messages, event.createdAt, guidance, characters)
       : [];
     if (!hasPersistentTargetedGuidance && !isDirectorInterventionActive(event, messages, now)) continue;
-    if (hasPersistentTargetedGuidance && !pendingGuidanceActorIds.length) continue;
+    if (hasPersistentTargetedGuidance && !pendingGuidanceActorIds.length && !(guidance?.suppressedActorIds?.length || guidance?.deferredActorIds?.length)) continue;
 
     const targetActorIds = uniqueActorIds(payload.targetActorIds);
     const guidanceTargetActorIds = uniqueActorIds(getGuidanceTargetActorIds(guidance));
+    const hasFloorRestraintWindow = Boolean(
+      hasPersistentTargetedGuidance
+      && !pendingGuidanceActorIds.length
+      && (guidance?.suppressedActorIds?.length || guidance?.deferredActorIds?.length)
+      && isRestraintWindowActive(messages, event.createdAt, guidance, characters),
+    );
     const activeTargetActorIds = pendingGuidanceActorIds.length
       ? uniqueActorIds(pendingGuidanceActorIds)
+      : hasFloorRestraintWindow
+        ? []
       : targetActorIds.length
         ? targetActorIds
         : guidanceTargetActorIds;

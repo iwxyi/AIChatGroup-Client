@@ -585,6 +585,50 @@ describe('runtimeDecision', () => {
     expect(projection.directorIntent?.userGuidance).toMatchObject({
       kind: 'direct_reply',
       actorIds: ['anan'],
+      deferredActorIds: ['zhou'],
+    });
+  });
+
+  it('keeps soft deferred speakers out after initial target answers without continuing to force the target', () => {
+    const projection = projectRuntimePressure({
+      chat: buildChat({ memberIds: ['user', 'anan', 'zhou', 'mei'] }),
+      characters: [buildCharacter('anan', '安安'), buildCharacter('zhou', '周策'), buildCharacter('mei', '梅青')],
+      messages: [
+        buildMessage({
+          id: 'guide',
+          type: 'user',
+          senderId: 'user',
+          senderName: '我',
+          content: '安安，你直接说吧，用户到底为什么不再用了？不用先照顾周策的汇报口径。',
+          timestamp: 100,
+        }),
+        buildMessage({
+          id: 'answer-1',
+          type: 'ai',
+          senderId: 'anan',
+          senderName: '安安',
+          content: '访谈里用户主要卡在审核等待。',
+          timestamp: 110,
+        }),
+        buildMessage({
+          id: 'answer-2',
+          type: 'ai',
+          senderId: 'anan',
+          senderName: '安安',
+          content: '他们不是不需要产品，是等不起。',
+          timestamp: 120,
+        }),
+      ],
+      now: 130,
+    });
+
+    expect(projection.directorIntent).toMatchObject({
+      source: 'user_message',
+      targetActorIds: [],
+    });
+    expect(projection.directorIntent?.userGuidance).toMatchObject({
+      rawText: '安安，你直接说吧，用户到底为什么不再用了？不用先照顾周策的汇报口径。',
+      deferredActorIds: ['zhou'],
     });
   });
 
@@ -661,6 +705,50 @@ describe('runtimeDecision', () => {
       rawText: '我刚才是想听安安说，不是让周策替她做决定。',
       suppressedActorIds: ['zhou'],
     });
+  });
+
+  it('expires corrective floor window after target answers and one guardian turn', () => {
+    const projection = projectRuntimePressure({
+      chat: buildChat({ memberIds: ['user', 'anan', 'zhou', 'mei'] }),
+      characters: [buildCharacter('anan', '安安'), buildCharacter('zhou', '周策'), buildCharacter('mei', '梅青')],
+      messages: [
+        buildMessage({
+          id: 'guide',
+          type: 'user',
+          senderId: 'user',
+          senderName: '我',
+          content: '我刚才是想听安安说，不是让周策替她做决定。',
+          timestamp: 100,
+        }),
+        buildMessage({
+          id: 'answer-1',
+          type: 'ai',
+          senderId: 'anan',
+          senderName: '安安',
+          content: '我先说一部分，访谈里用户主要卡在承诺没有兑现。',
+          timestamp: 110,
+        }),
+        buildMessage({
+          id: 'answer-2',
+          type: 'ai',
+          senderId: 'anan',
+          senderName: '安安',
+          content: '还有一点是客服跟进太慢，他们不是不需要产品，是不再信任我们。',
+          timestamp: 120,
+        }),
+        buildMessage({
+          id: 'guardian',
+          type: 'ai',
+          senderId: 'mei',
+          senderName: '梅青',
+          content: '先让安安这条线按她自己的说法走完。',
+          timestamp: 130,
+        }),
+      ],
+      now: 140,
+    });
+
+    expect(projection.directorIntent?.userGuidance?.rawText).not.toBe('我刚才是想听安安说，不是让周策替她做决定。');
   });
 
   it('releases corrective suppression after the guidance window is consumed', () => {

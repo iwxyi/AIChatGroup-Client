@@ -72,7 +72,7 @@ function buildStanceSummary(memory: StanceMemory) {
 
 function buildArchetypeExecutionHint(archetype: MessageArchetype) {
   if (archetype.key === 'pushback') return '可以直接顶一句、挑一个漏洞、或者在真有压迫感时反问；如果当前任务需要论证，也可以完整展开。';
-  if (archetype.key === 'backing') return '可以顺着站边、补半句、或者替对方递刀；如果用户在请求实质内容，先把内容说够。';
+  if (archetype.key === 'backing') return '可以护住对方的处境、发言权或被误解的部分，但不要把“维护人”自动写成“同意观点”；这一句需要带出新的条件、代价、边界、证据或关系动作。';
   if (archetype.key === 'probe') return '可以短追问，但提问不只用于缺信息：也可以拿来逼表态、转移问题、带节奏、开玩笑、或者把话题拧去你想要的方向；不要用追问逃避需要回答的任务。';
   if (archetype.key === 'side_comment') return '可以像群里插一句，但这只是入口方式；当前场景或用户任务需要时，可以写成完整段落或更长说明。';
   if (archetype.key === 'redirect') return '把话扯回你在意的主线，但依然保持口语。';
@@ -160,6 +160,32 @@ function buildRecentPhraseConstraint(messages: Message[]) {
   const repeatedPatterns = getRecentSurfacePatterns(messages).filter(([, count]) => count >= 2);
   if (!repeatedPatterns.length) return '';
   return '\n- The room is already echoing repeated phrasing. Preserve the social pressure, but deliberately change sentence architecture instead of matching the same catchphrase, prefix, cadence, or framing.';
+}
+
+function isAgreementEchoOpener(content: string) {
+  return /^(这句|这话|这点|这个|他说得|说得|讲得|我认|朕认|我也认|我也接|我接|我站|我同意|同意|赞同|确实|没错|不错|不差|对[，,。 ]|嗯|是这个理|有道理|补得对|说到点子上|稳当|能用|说得好|说得在理|太准|太真实|就是)/.test(content.trim());
+}
+
+function hasCounterMove(content: string) {
+  return /(但|不过|可|只是|问题是|先别|未必|不对|不该|不能|凭什么|反过来|前提是|除非|代价|风险|漏洞|误区|我不认|朕不认|不见得|未必如此|倒要问)/.test(content);
+}
+
+function isAgreementEchoLoop(messages: Message[]) {
+  const recentAi = messages
+    .filter((message) => !message.isDeleted && message.type === 'ai')
+    .slice(-6);
+  if (recentAi.length < 3) return false;
+  return recentAi.filter((message) => isAgreementEchoOpener(message.content) && !hasCounterMove(message.content)).length >= 3;
+}
+
+function buildAgreementEchoLoopHint(messages: Message[], archetype: MessageArchetype) {
+  if (!isAgreementEchoLoop(messages)) return '';
+  const backingLine = archetype.key === 'backing'
+    ? '\n- Even if the local archetype says backing, backing now must mean adding a new condition, cost, exception, consequence, or pressure. Do not simply say you stand with the previous speaker.'
+    : '';
+  return `${backingLine}
+- The room has fallen into an agreement echo. The next useful move is not another “I agree / I stand with him” opener.
+- Start from a different discourse move: a counterexample, boundary condition, cost, hidden risk, personal doubt, or a sharp question that makes the room choose.`;
 }
 
 function extractEmojiTokens(content: string) {
@@ -251,7 +277,7 @@ export function buildSpeechFingerprint(character: AICharacter): SpeechFingerprin
 
 export function pickMessageArchetype(intent: SpeakIntent): MessageArchetype {
   if (intent.stance === 'challenge' || intent.stance === 'pile_on') return { key: 'pushback', label: '顶回去' };
-  if (intent.stance === 'back_up' || intent.stance === 'support') return { key: 'backing', label: '顺手站边' };
+  if (intent.stance === 'back_up' || intent.stance === 'support') return { key: 'backing', label: '护住关系' };
   if (intent.stance === 'probe') return { key: 'probe', label: '追问一下' };
   if (intent.stance === 'summarize' || intent.delivery === 'group_redirect') return { key: 'redirect', label: '把话题扯回来' };
   if (intent.delivery === 'side_remark' || intent.delivery === 'quick_question') return { key: 'side_comment', label: '插一句' };
@@ -319,13 +345,16 @@ export function buildHumanizationPrompt(character: AICharacter, intent: SpeakInt
   }
   const stanceMemory = buildStanceMemory(messages, character.id, recentTargetId);
   const selectiveMisread = buildSelectiveMisread(intent, latestTargetText);
+  const latchLine = isAgreementEchoLoop(messages)
+    ? '- Latch rule: repeated agreement phrases are exhausted. Do not latch onto them; respond to the underlying unresolved tension instead.'
+    : `- Latch onto this phrase or point if useful: ${pickTopicLatch(latestTargetText)}`;
   return `\n## Human Chat Fingerprint
 - Preferred archetype: ${archetype.label} (${archetype.key})
 - Archetype execution: ${buildArchetypeExecutionHint(archetype)}
 - Carry-over stance: ${stanceMemory.bias}
 - Carry-over rule: ${stanceMemory.carryLine}
 - Thread carryover: ${buildStanceSummary(stanceMemory)}
-- Latch onto this phrase or point if useful: ${pickTopicLatch(latestTargetText)}
+${latchLine}
 - Selective response mode: ${selectiveMisread.mode}
 - ${selectiveMisread.instruction}
 - Selective focus is an attention prior only. It must not cap answer length, forbid paragraphs, or override the current scene, play mode, or user task.
@@ -338,7 +367,7 @@ export function buildHumanizationPrompt(character: AICharacter, intent: SpeakInt
 - If you ask, let it sound like a live human move rather than a formal interviewer move.
 - Question tendency: ${fingerprint.prefersQuestions ? [fingerprint.asksForInformation ? 'info-seeking' : '', fingerprint.usesQuestionAsPushback ? 'pushback' : '', fingerprint.usesQuestionToSteer ? 'steering' : '', fingerprint.usesQuestionPlayfully ? 'playful' : ''].filter(Boolean).join(' / ') : 'not preferred'}
 - Terse bias: ${fingerprint.terseBias}/100${buildRecentSelfOpeningHint(messages, character.id)}${buildInnerResidueChatHint(character)}
-- Sarcasm bias: ${fingerprint.sarcasmBias}/100${buildSpeechStyleSummary(character)}${buildCatchphraseHint(character)}${buildTabooHint(character)}${buildRecentSurfaceHint(messages)}${buildRecentPhraseConstraint(messages)}${buildRecentEmojiContagionHint(messages)}
+- Sarcasm bias: ${fingerprint.sarcasmBias}/100${buildSpeechStyleSummary(character)}${buildCatchphraseHint(character)}${buildTabooHint(character)}${buildRecentSurfaceHint(messages)}${buildRecentPhraseConstraint(messages)}${buildAgreementEchoLoopHint(messages, archetype)}${buildRecentEmojiContagionHint(messages)}
 - Keep the reply socially sticky: continue the social situation, not the room's wording, punctuation rhythm, or sentence mold.${guidanceOverride}`;
 }
 

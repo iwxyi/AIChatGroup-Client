@@ -3,6 +3,7 @@ import type { GroupChat } from '../types/chat';
 import type { Message } from '../types/message';
 import { getRelationshipWeight } from './relationshipEngine';
 import { resolveSessionFamilyKey } from './sessionEngineKeys';
+import type { SpeakerScoreBreakdown } from './speakerScoring';
 
 export type ConversationMoveType =
   | 'react_lightly'
@@ -60,7 +61,11 @@ function isExplicitlyAddressedToSpeaker(text: string, speaker: AICharacter) {
 }
 
 function isAgreementOpener(text: string) {
-  return /^(确实|对[，,。 ]|没错|就是|我也|我同意|同意|赞同|太准|太真实|说得|这个.*好|.*起得好|.*有画面感)/.test(text.trim());
+  return /^(这句|这话|这点|这个|他说得|说得|讲得|我认|朕认|我也认|我也接|我接|我站|我同意|同意|赞同|确实|没错|不错|不差|对[，,。 ]|嗯|是这个理|有道理|补得对|说到点子上|稳当|能用|说得好|说得在理|太准|太真实|就是|.*起得好|.*有画面感)/.test(text.trim());
+}
+
+function hasCounterMove(text: string) {
+  return /(但|不过|可|只是|问题是|先别|未必|不对|不该|不能|凭什么|反过来|前提是|除非|代价|风险|漏洞|误区|我不认|朕不认|不见得|未必如此|倒要问)/.test(text);
 }
 
 function normalizeTopicPhrase(text: string) {
@@ -98,7 +103,7 @@ function findPriorDroppedPoint(messages: Message[], latestId?: string) {
 }
 
 function agreementEchoCount(messages: Message[]) {
-  return recentAiMessages(messages).slice(-4).filter((message) => isAgreementOpener(message.content)).length;
+  return recentAiMessages(messages).slice(-6).filter((message) => isAgreementOpener(message.content) && !hasCounterMove(message.content)).length;
 }
 
 function repeatedPhraseCount(messages: Message[]) {
@@ -190,6 +195,7 @@ export function planConversationMove(params: {
   chat: GroupChat;
   speaker: AICharacter;
   messages: Message[];
+  speakerScore?: SpeakerScoreBreakdown | null;
 }): ConversationMovePlan {
   const messages = visibleMessages(params.messages);
   const latest = messages.at(-1) || null;
@@ -199,6 +205,29 @@ export function planConversationMove(params: {
   const repeatedCount = analysis ? 0 : repeatedPhraseCount(messages);
   const priorDroppedPoint = analysis ? null : findPriorDroppedPoint(messages, latest?.id);
   const deliberationArtifacts = analysis ? summarizeRecentDeliberationArtifacts(messages) : null;
+  const scoreReasons = params.speakerScore?.reasons || [];
+  const isUnspokenBreakIn = scoreReasons.includes('unspoken_member');
+  const selectedDespiteSilence = scoreReasons.includes('inner:stay_silent');
+
+  if (!analysis && isUnspokenBreakIn) {
+    const target = priorDroppedPoint || latest || undefined;
+    const assertive = (params.speaker.behavior?.aggressiveness || 0) >= 55;
+    const proactive = (params.speaker.behavior?.proactivity || 0) >= 55;
+    return {
+      speakerId: params.speaker.id,
+      targetMessageId: target?.id,
+      targetActorId: target?.senderId,
+      targetClaimText: target?.content.slice(0, 120),
+      moveType: echoCount >= 2 || assertive
+        ? 'counterexample'
+        : proactive
+          ? 'name_tradeoff'
+          : 'add_boundary_condition',
+      socialPosture: chooseSocialPosture(params.speaker, target?.senderId),
+      reason: selectedDespiteSilence ? 'break_in_selected_despite_silence' : 'unspoken_member_break_in',
+      confidence: selectedDespiteSilence ? 0.82 : 0.78,
+    };
+  }
 
   if (unresolvedQuestion) {
     return {
@@ -300,10 +329,10 @@ export function planConversationMove(params: {
       targetMessageId: target?.id,
       targetActorId: target?.senderId,
       targetClaimText: target?.content.slice(0, 120),
-      moveType: 'bring_back_prior_point',
+      moveType: repeatedCount >= 3 ? 'counterexample' : 'add_boundary_condition',
       socialPosture: chooseSocialPosture(params.speaker, target?.senderId),
       reason: 'chat_echo_loop',
-      confidence: 0.68,
+      confidence: 0.78,
     };
   }
 
@@ -340,7 +369,7 @@ export function buildConversationMovePrompt(plan: ConversationMovePlan | null | 
     add_personal_angle: 'add a situated angle from this person; it may be ordinary life, taste, mood, practical habit, or expertise only if truly relevant',
     ask_followup: 'ask a useful follow-up that opens the next branch',
     challenge_playfully: 'push back lightly or playfully without turning hostile',
-    add_boundary_condition: 'add a boundary condition or limitation to the current claim',
+    add_boundary_condition: 'add a boundary condition, cost, risk, or limitation to the current claim instead of merely backing it',
     bring_back_prior_point: 'bring back a relevant earlier point instead of only following the latest line',
     answer_unresolved_question: 'answer or directly engage the unresolved question',
     synthesize: 'synthesize without flattening disagreements',
@@ -355,11 +384,17 @@ export function buildConversationMovePrompt(plan: ConversationMovePlan | null | 
   const analysisLine = analysis
     ? '\n- In analysis rooms, warmth is interpersonal tone only. It does not mean viewpoint agreement.'
     : '\n- In casual rooms, keep the move natural and conversational rather than meeting-like. You may ignore part of the previous line, react to the gist, admit a term is outside your lane, or switch to a nearby everyday angle.';
+  const echoLoopLine = plan.reason === 'chat_echo_loop'
+    ? '\n- The room is in an agreement echo loop. A plain agreement opener is only useful if it carries a new condition, cost, counterexample, consequence, or point of friction that changes the direction of the room.'
+    : '';
+  const breakInLine = plan.reason === 'unspoken_member_break_in' || plan.reason === 'break_in_selected_despite_silence'
+    ? '\n- You were selected to break a narrow room loop or fill a missing perspective. Do not merely comment that others are right. Enter with one concrete missing angle: a counterexample, boundary condition, practical consequence, fresh fact, or short action implication that gives the next speaker something new to answer.'
+    : '';
   const scrutinyLine = analysis && ['ask_evidence', 'counterexample', 'test_assumption', 'separate_claims'].includes(plan.moveType)
     ? '\n- Do not add another supporting analogy. Give the requested scrutiny: evidence condition, counterexample, assumption test, or claim split.\n- This turn is expected to create deliberationArtifacts from your visible reply; do not use a no-new-point response for this move.'
     : '';
   return `\n## Conversation Move Guidance
 - Current semantic job: ${moveLabels[plan.moveType] || plan.moveType}.
 - Interpersonal posture: ${plan.socialPosture.warmth} warmth, ${plan.socialPosture.directness} directness.${targetLine}${analysisLine}
-- Use this as a local choice of what this turn should do. Do not mention the guidance itself.${scrutinyLine}`;
+- Use this as a local choice of what this turn should do. Do not mention the guidance itself.${echoLoopLine}${breakInLine}${scrutinyLine}`;
 }

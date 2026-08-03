@@ -13,7 +13,7 @@ import { buildSystemPromptWithContext, buildChatMessages, buildPromptMemoryTrace
 import { buildEngineAwarePrompt } from './promptContextAssembler';
 import { resolveSessionDefinition } from '../types/sessionEngine';
 import { loadSessionEngine } from './sessionEngineLoader';
-import { getStyleProfile, resolveDefaultStyleProfile } from './styleProfileRegistry';
+import { getStyleProfile, resolveChatStyleProfile, resolveDefaultStyleProfile } from './styleProfileRegistry';
 import { getChannelSemantics } from './channelSemanticsRegistry';
 import { logDeveloperDiagnostic } from './developerDiagnostics';
 import { getCurrentRetentionLimits } from './retentionLimits';
@@ -35,13 +35,14 @@ import { BASE_COOLDOWN_MS, MAX_HISTORY_FOR_PROMPT } from '../constants/defaults'
 import { buildInlineInteractionContract, parseInlineInteractionEnvelope } from './inlineInteractionHint';
 import { getExpressionFeedbackCategoryLabel, summarizeExpressionFeedbackInfluence } from './expressionFeedbackInfluence';
 import type { UserGuidanceIntent } from './userGuidanceIntent';
-import { evaluateGuidanceGeneratedContent, type GuidanceExecutionReason, type GuidanceRejectionReason } from './guidanceExecution';
+import { collectGuidanceProgressAfterTimestamp, evaluateGuidanceGeneratedContent, type GuidanceExecutionReason, type GuidanceRejectionReason } from './guidanceExecution';
 import { projectWorldAttentionStates, projectWorldCalendar, projectWorldMoments } from './worldRuntimeProjection';
 import { buildTurnPlanPrompt, deriveTurnPlan, type TurnPlan } from './turnPlanner';
 import { resolvePersonaActivation, type PersonaActivation } from './personaActivation';
 import { buildGenerationRuntimeBundle } from './generationRuntime';
 import { buildConversationMovePrompt, planConversationMove } from './conversationMovePlanner';
 import { buildPromptPlayModeBlock, composePromptBlocks, resolvePromptPlayMode, type PromptBlock } from './promptBlockComposer';
+import { buildTurnDirective, buildTurnDirectivePrompt } from './turnDirective';
 import { resolveSessionFamilyKey } from './sessionEngineKeys';
 import { isCharacterAvailableForScheduling } from './characterPresence';
 import { enrichRuntimeBundleWithHumanAppraisal } from './humanAppraisal';
@@ -321,10 +322,14 @@ function mergePromptContexts(base: SessionGenerationPromptContext | null | undef
 
 function resolveStyleProfilePromptContext(chat: GroupChat) {
   const session = resolveSessionDefinition(chat);
-  const styleProfileKey = resolveDefaultStyleProfile({
+  const defaultStyleProfileKey = resolveDefaultStyleProfile({
     scenarioId: chat.sessionKind?.scenarioId || session.kind.scenarioId,
     family: chat.sessionKind?.family || session.kind.family,
   });
+  const explicitChatStyle = chat.type === 'group' && session.kind.family === 'conversation'
+    ? resolveChatStyleProfile(chat.style)
+    : null;
+  const styleProfileKey = explicitChatStyle || defaultStyleProfileKey;
   return getStyleProfile(styleProfileKey)?.promptContext || null;
 }
 
@@ -512,6 +517,12 @@ function trimHumanChatStyle(content: string, preserveParagraphs = false) {
   return trimmed.replace(/\n{3,}/g, '\n\n');
 }
 
+function stripLeakedInlineProtocol(content: string) {
+  return content
+    .replace(/\s+(?:["'`])?(?:extraMessages|intentionalRepeat|presenceUpdate|interactionHints|socialEventHints|conflictFocus)(?:["'`])?\s*:[\s\S]*$/u, '')
+    .trim();
+}
+
 function salvageEmptyResponse(raw: string, speakerName: string, showRoleActions?: boolean) {
   const withoutPrefix = trimSpeakerPrefix(raw.trim(), speakerName);
   if (!withoutPrefix) return '';
@@ -527,7 +538,7 @@ function salvageEmptyResponse(raw: string, speakerName: string, showRoleActions?
 
 function finalizeResponse(content: string, intent: ReturnType<typeof deriveSpeakIntentFromContext>, speaker: AICharacter, recentMessages: Message[], showRoleActions?: boolean, intentionalRepeat = false, surface?: ResponseSurface) {
   const withoutPrefix = trimSpeakerPrefix(content, speaker.name);
-  const sanitized = trimHumanChatStyle(showRoleActions === false ? stripRoleActions(withoutPrefix) : withoutPrefix, surface?.preserveParagraphs);
+  const sanitized = stripLeakedInlineProtocol(trimHumanChatStyle(showRoleActions === false ? stripRoleActions(withoutPrefix) : withoutPrefix, surface?.preserveParagraphs));
   if (surface?.kind !== 'chat' && normalizeForComparison(sanitized)) return sanitizeUserFacingText(sanitized, [], { preserveLineBreaks: true });
   const processed = postProcessHumanChat(sanitized, intent, speaker, recentMessages, intentionalRepeat);
   if (normalizeForComparison(processed)) return sanitizeUserFacingText(processed, [], { preserveLineBreaks: true });
@@ -1567,6 +1578,9 @@ function buildCurrentIntentPrompt(params: {
   directorIntent: DirectorIntent | null;
   intent: SpeakIntent;
 }) {
+  const stanceClarifier = params.intent.stance === 'support' || params.intent.stance === 'back_up'
+    ? '\n- Support/backing is a social relation move, not automatic viewpoint agreement. You may protect someone, grant one point, add a condition, name a cost, or keep independent judgment.'
+    : '';
   return `\nCurrent director intent:
 - ${params.directorIntent ? describeDirectorIntent(params.directorIntent) : 'none'}
 - Treat this as the current room pressure, not as a fixed plot script.
@@ -1577,7 +1591,7 @@ Current speaking intent:
 - Decide the visible length yourself from the latest user request, the room context, and this character's actual ability. The local intent labels are not word-count rules.
 - Stay socially situated and in character. A tiny reaction is valid when the moment is tiny; a practical explanation, tradeoff analysis, or step-by-step answer is valid when the user asks for it.
 - Do not compress a direct request for detail, reasoning, implementation approach, examples, or tradeoffs into a one-line chat jab just because this is a chat surface.
-- In AI-to-AI group flow, do not treat the latest line as homework. It is valid to take only the understandable part, challenge the premise, make a short aside, or let a different angle enter the room.`;
+- In AI-to-AI group flow, do not treat the latest line as homework. It is valid to take only the understandable part, challenge the premise, make a short aside, or let a different angle enter the room.${stanceClarifier}`;
 }
 
 function buildPrivateTurnPriorityPrompt(chat: GroupChat) {
@@ -1618,6 +1632,7 @@ function buildNaturalChatRhythmPrompt(messages: Message[], innerLife: InnerLifeP
 ${rhythm}
 - One bubble can contain multiple paragraphs when the speaker is making one continuous point.
 - Multiple bubbles are for consecutive sends with separate social purposes: correction, afterthought, softened add-on, practical follow-up, or a second beat that would feel typed after pressing send.
+- A live-chat turn does not always need a new argument or task result. Low-information social signals are valid when they change stance, consent, resistance, timing, face, attention, or emotional temperature.
 - Do not use extraMessages for punctuation splitting, action/dialogue separation, another actor's line, or making a lecture longer.`;
 }
 
@@ -1785,7 +1800,7 @@ function buildExpressionSurfaceChoicePrompt(input: {
       : input.intent.stance === 'support' || input.intent.stance === 'back_up'
         ? isAnalysisRoom
           ? ['answer warmly while separating person from claim', 'add a condition or limitation without turning cold', 'name the part that needs evidence', 'extend the topic with a distinct criterion']
-          : ['back the previous speaker with one concrete reason', 'soften the room with a small practical offer', 'add a detail without restating the joke', 'agree briefly and move the scene forward']
+          : ['protect the person without inheriting the claim', 'soften the room with a small practical offer', 'add a condition or cost that changes the next beat', 'shift from agreement into a distinct angle']
         : ['move the scene forward', 'answer the practical next step', 'make a small observation', 'ask one socially useful question'];
   const ornamentOptions = roomDecorativeCount >= Math.max(3, Math.ceil(recentAi.length * 0.45))
     ? ['plain text', 'plain text', 'one character-specific marker only if it adds new social meaning']
@@ -1943,17 +1958,21 @@ function reconcileSelectedInnerLife(
 ): InnerLifeProjection {
   if (projection.impulse !== 'stay_silent') return projection;
   if (!speakerScore) return projection;
+  const floorGuardian = speakerScore.reasons.includes('guidance_floor_guardian');
+  const reason = floorGuardian
+    ? '调度最终选择本角色护住当前发言权，需要轻量维持场面而不是接管结论。'
+    : '调度最终选择了本角色发言，需要用轻量方式接住当前话题。';
   return {
     ...projection,
     impulse: 'answer',
     tone: projection.tone,
-    reason: '调度最终选择了本角色发言，需要用轻量方式接住当前话题。',
+    reason,
     pressure: Math.max(projection.pressure, 0.42),
-    evidence: Array.from(new Set([...projection.evidence, '调度选择本轮需要发言'])).slice(0, 5),
+    evidence: Array.from(new Set([...projection.evidence, floorGuardian ? '调度选择本轮护住发言权' : '调度选择本轮需要发言'])).slice(0, 5),
     state: {
       ...projection.state,
       lastImpulse: 'answer',
-      lastImpulseReason: '调度最终选择了本角色发言，需要用轻量方式接住当前话题。',
+      lastImpulseReason: reason,
     },
     expressionPlan: {
       ...projection.expressionPlan,
@@ -1964,11 +1983,151 @@ function reconcileSelectedInnerLife(
   };
 }
 
+function reconcileSelectedSpeakerScore(
+  speakerScore: SpeakerScoreBreakdown | null | undefined,
+  innerLife: InnerLifeProjection,
+): SpeakerScoreBreakdown | null | undefined {
+  if (!speakerScore) return speakerScore;
+  if (!speakerScore.reasons.includes('inner:stay_silent')) return speakerScore;
+  if (innerLife.impulse === 'stay_silent') return speakerScore;
+  const reasons = speakerScore.reasons
+    .filter((reason) => reason !== 'inner:stay_silent')
+    .concat('inner:answer_after_scheduler_selection');
+  return {
+    ...speakerScore,
+    innerLifePressure: Math.max(speakerScore.innerLifePressure, 0.08),
+    reasons: Array.from(new Set(reasons)),
+  };
+}
+
+function resolveSelectedSpeakerScore(params: {
+  candidateScore: SpeakerScoreBreakdown | null | undefined;
+  speakerId: string;
+  lockedGuidanceSpeakerId?: string | null;
+}): SpeakerScoreBreakdown | null | undefined {
+  const score = params.candidateScore;
+  if (!score) return score;
+  if (params.lockedGuidanceSpeakerId !== params.speakerId) return score;
+  return {
+    ...score,
+    addressed: Math.max(score.addressed, 0.86),
+    finalScore: Math.max(score.finalScore, 1.12),
+    repetitionPenalty: 0,
+    reasons: Array.from(new Set([
+      'user_guidance_lock',
+      ...score.reasons.filter((reason) => reason !== 'repetition_penalty'),
+    ])),
+  };
+}
+
 function getCharacterNameById(characters: AICharacter[], id: string) {
   return characters.find((character) => character.id === id)?.name || id;
 }
 
-function buildUserGuidancePrompt(guidance: UserGuidanceIntent | null | undefined, speaker: AICharacter, characters: AICharacter[], capabilities: { image: boolean; audio: boolean }) {
+function countPriorGuidanceReplies(messages: Message[], guidance: UserGuidanceIntent | null | undefined, speakerId: string) {
+  if (!guidance) return 0;
+  return messages.filter((message) => (
+    message.type === 'ai'
+    && !message.isDeleted
+    && message.senderId === speakerId
+    && message.metadata?.runtimeDecision?.directorIntent?.userGuidance?.rawText === guidance.rawText
+  )).length;
+}
+
+function countPriorTargetGuidanceReplies(messages: Message[], guidance: UserGuidanceIntent | null | undefined) {
+  if (!guidance?.actorIds.length) return 0;
+  return messages.filter((message) => (
+    message.type === 'ai'
+    && !message.isDeleted
+    && guidance.actorIds.includes(message.senderId)
+    && message.metadata?.runtimeDecision?.directorIntent?.userGuidance?.rawText === guidance.rawText
+  )).length;
+}
+
+type GuidanceFloorPhase =
+  | 'none'
+  | 'claim_floor'
+  | 'continue_floor'
+  | 'settle_or_release'
+  | 'released_listener'
+  | 'suppressed_wait';
+
+interface GuidanceFloorState {
+  phase: GuidanceFloorPhase;
+  requestedActorNames: string[];
+  suppressedActorNames: string[];
+  deferredActorNames: string[];
+  priorTargetTurns: number;
+  minTargetTurns: number;
+}
+
+function resolveGuidanceFloorState(params: {
+  guidance: UserGuidanceIntent | null | undefined;
+  guidanceTimestamp?: number | null;
+  messages: Message[];
+  speaker: AICharacter;
+  characters: AICharacter[];
+}): GuidanceFloorState | null {
+  const guidance = params.guidance;
+  if (!guidance?.actorIds.length) return null;
+  const requestedActorNames = guidance.actorIds.map((id) => getCharacterNameById(params.characters, id)).filter(Boolean);
+  const suppressedActorNames = guidance.suppressedActorIds?.map((id) => getCharacterNameById(params.characters, id)).filter(Boolean) || [];
+  const deferredActorNames = guidance.deferredActorIds?.map((id) => getCharacterNameById(params.characters, id)).filter(Boolean) || [];
+  const minTargetTurns = Math.max(1, Math.round(guidance.minTargetTurns || 1));
+  const since = typeof params.guidanceTimestamp === 'number' ? params.guidanceTimestamp : null;
+  const progress = since === null
+    ? null
+    : collectGuidanceProgressAfterTimestamp(params.messages, since, guidance, params.characters);
+  const priorTargetTurns = progress
+    ? progress.matchedMessages.filter((message) => guidance.actorIds.includes(message.senderId)).length
+    : countPriorTargetGuidanceReplies(params.messages, guidance);
+  const isRequestedActor = guidance.actorIds.includes(params.speaker.id);
+  const isSuppressedActor = Boolean(guidance.suppressedActorIds?.includes(params.speaker.id));
+  if (isRequestedActor) {
+    if (priorTargetTurns <= 0) {
+      return { phase: 'claim_floor', requestedActorNames, suppressedActorNames, deferredActorNames, priorTargetTurns, minTargetTurns };
+    }
+    if (priorTargetTurns < minTargetTurns) {
+      return { phase: 'continue_floor', requestedActorNames, suppressedActorNames, deferredActorNames, priorTargetTurns, minTargetTurns };
+    }
+    return { phase: 'settle_or_release', requestedActorNames, suppressedActorNames, deferredActorNames, priorTargetTurns, minTargetTurns };
+  }
+  if (isSuppressedActor && priorTargetTurns < minTargetTurns) {
+    return { phase: 'suppressed_wait', requestedActorNames, suppressedActorNames, deferredActorNames, priorTargetTurns, minTargetTurns };
+  }
+  if (priorTargetTurns >= minTargetTurns) {
+    return { phase: 'released_listener', requestedActorNames, suppressedActorNames, deferredActorNames, priorTargetTurns, minTargetTurns };
+  }
+  return null;
+}
+
+function buildGuidanceFloorPrompt(state: GuidanceFloorState | null | undefined) {
+  if (!state || state.phase === 'none') return '';
+  const requested = state.requestedActorNames.join('、') || 'the requested actor';
+  const suppressed = state.suppressedActorNames.join('、');
+  const suppressedLine = suppressed
+    ? `\n- Someone was pushed out of the speaker role for this guidance: ${suppressed}. Treat that as a floor-control fact, not a reason to over-explain it.`
+    : '';
+  const deferred = state.deferredActorNames.join('、');
+  const deferredLine = deferred
+    ? `\n- Someone is temporarily deferred by this guidance: ${deferred}. This is not a ban; it means they should not be the first person to define, package, or redirect the requested actor's answer.`
+    : '';
+  const phaseLine: Record<GuidanceFloorPhase, string> = {
+    none: '',
+    claim_floor: `- Phase: claim the floor for ${requested}. Answer in this speaker's own stance before reacting to other room pressure.`,
+    continue_floor: `- Phase: continue the same floor for ${requested}. Keep ownership of the answer, but natural live-chat turns may be low-information social signals when they still carry stance, timing, face, boundary, or emotional pressure.`,
+    settle_or_release: `- Phase: settle or release the floor for ${requested}. A compact landing, partial concession, changed stance, unresolved feeling, or deliberate handoff is valid; do not manufacture a new thesis just to keep speaking.`,
+    released_listener: `- Phase: the requested floor has had room to answer. You may now respond as a listener, supporter, challenger, or side voice. Prefer a narrow reaction, pressure check, question, floor-protection move, or room-temperature move; do not rewrite, package, decide, or conclude the requested actor's answer as if it belonged to you.`,
+    suppressed_wait: `- Phase: wait outside the requested floor. If you speak, keep it brief and socially situated; do not answer, decide, or close the issue for ${requested}.`,
+  };
+  return `\n## Room Floor State
+${phaseLine[state.phase]}
+- Prior matched target turns in this guidance window: ${state.priorTargetTurns}/${state.minTargetTurns}.
+- Floor control chooses who owns the moment; it must not make the visible line stiff, formal, or mechanically purposeful.
+- Some real chat turns mainly change social temperature, attention, consent, resistance, or timing. Those are valid when they fit the room and do not dodge a direct user task.${suppressedLine}${deferredLine}`;
+}
+
+function buildUserGuidancePrompt(guidance: UserGuidanceIntent | null | undefined, speaker: AICharacter, characters: AICharacter[], capabilities: { image: boolean; audio: boolean }, priorGuidanceReplies = 0) {
   if (!guidance) return '';
   const requestedActors = guidance.actorIds.map((id) => getCharacterNameById(characters, id));
   const isRequestedActor = guidance.actorIds.length ? guidance.actorIds.includes(speaker.id) : guidance.mentionedActorIds.includes(speaker.id);
@@ -1989,12 +2148,19 @@ function buildUserGuidancePrompt(guidance: UserGuidanceIntent | null | undefined
     ? `\n- Constraint guidance: the user gave a live constraint or boundary. Keep it active in the next room move, especially for named people, budget, limits, exclusions, priority, or “do not ignore” wording. Do not treat it as background trivia.${guidance.hardConstraintActorIds?.length ? ` Constraint anchor(s): ${guidance.hardConstraintActorIds.map((id) => getCharacterNameById(characters, id)).join('、')}.` : ''}\n- A constraint anchor is not automatically the required next speaker. Other characters may speak if they actively protect, apply, or ask about that constraint instead of ignoring it.`
     : '';
   const suppressedNames = guidance.suppressedActorIds?.map((id) => getCharacterNameById(characters, id)).filter(Boolean) || [];
+  const deferredNames = guidance.deferredActorIds?.map((id) => getCharacterNameById(characters, id)).filter(Boolean) || [];
   const suppressionLine = suppressedNames.length
-    ? `\n- Speaker suppression: the user just pushed back against ${suppressedNames.join('、')} taking over or speaking for someone else. During this guidance window, ${suppressedNames.join('、')} should not regain control of the thread unless the user explicitly redirects to them or no other character can speak.\n- Correction handling: if you are the requested actor, make the first semantic move acknowledge that you are answering in your own voice now, then add one genuinely new fact, feeling, or next action. Do not repeat the same plan in different words. If you are not the requested actor, only speak if you can briefly protect the requested actor's floor or ask a necessary clarification; do not summarize their answer as if closing the topic.`
+    ? `\n- Speaker suppression: the user just pushed back against ${suppressedNames.join('、')} taking over or speaking for someone else. During this guidance window, ${suppressedNames.join('、')} should not regain control of the thread unless the user explicitly redirects to them or no other character can speak.\n- Correction handling: if you are the requested actor, answer in your own voice and keep ownership of the point. Do not repeat the same plan in different words. If you are not the requested actor, only speak if you can briefly protect the requested actor's floor or ask a necessary clarification; do not summarize their answer as if closing the topic.`
+    : '';
+  const continuationLine = guidance.actorIds.includes(speaker.id) && priorGuidanceReplies > 0
+    ? `\n- Continuation handling: you have already answered this user guidance ${priorGuidanceReplies} time(s). Do not restate the same reason, metaphor, or conclusion. The next live-chat move may add substance, settle, concede, resist, pause socially, or release the floor. Choose the human-sized move that fits the room; do not manufacture a new thesis just to be useful.`
+    : '';
+  const deferredLine = deferredNames.length
+    ? `\n- Deferred speaker guidance: ${deferredNames.join('、')} was mentioned as someone whose framing should not lead this guidance. This is not permanent suppression, but their view should not define, package, or redirect the requested actor's answer before the floor is clearly released.`
     : '';
   return `\n## User Guidance Override
 - Latest user guidance: ${guidance.rawText}
-- Function: ${guidance.kind}.${actorLine}${mediaLine}${topicLine}${directLine}${constraintLine}${suppressionLine}
+- Function: ${guidance.kind}.${actorLine}${mediaLine}${topicLine}${directLine}${constraintLine}${suppressionLine}${deferredLine}${continuationLine}
 - Treat this as the current room instruction, above narrative pressure, conflict pressure, and recent banter.
 - If the room has been drifting, pull the next line back to this guidance immediately.`;
 }
@@ -3318,6 +3484,7 @@ async function generateNonDuplicateResponse(params: {
 
 function buildCompletedMessage(params: {
   chat: GroupChat;
+  characters: AICharacter[];
   speakerId: string;
   speakerName: string;
   finalResponse: string;
@@ -3328,6 +3495,13 @@ function buildCompletedMessage(params: {
   metadata?: MessageMetadata;
 }) {
   const interactionHints = normalizeInteractionHintCollection(params.parsedEnvelope?.interactionHints || null, params.speakerId, params.fullResponse);
+  const inferredAddressedTargets = inferAddressedTargetsFromContent(params.finalResponse, params.speakerId, params.characters);
+  const envelopeTargetIds = params.parsedEnvelope?.addressedTargets?.targetIds || [];
+  const addressedTargetIds = Array.from(new Set([...envelopeTargetIds, ...inferredAddressedTargets]));
+  const primaryAddressedTargetId = params.parsedEnvelope?.addressedTargets?.primaryTargetId
+    || params.parsedEnvelope?.addressedTargets?.targetIds?.[0]
+    || addressedTargetIds[0]
+    || null;
   return {
     chatId: params.chat.id,
     type: 'ai' as const,
@@ -3339,11 +3513,41 @@ function buildCompletedMessage(params: {
     emotion: params.emotion,
     interactionHint: interactionHints[0] || null,
     interactionHints,
-    addressedTargetIds: params.parsedEnvelope?.addressedTargets?.targetIds || null,
-    primaryAddressedTargetId: params.parsedEnvelope?.addressedTargets?.primaryTargetId || params.parsedEnvelope?.addressedTargets?.targetIds?.[0] || null,
+    addressedTargetIds: addressedTargetIds.length ? addressedTargetIds : null,
+    primaryAddressedTargetId,
     socialEventHints: params.parsedEnvelope?.socialEventHints || null,
     conflictFocus: params.parsedEnvelope?.conflictFocus || null,
   };
+}
+
+function buildAddressNameVariants(name: string) {
+  const compact = name.replace(/\s+/g, '');
+  if (!compact) return [];
+  const variants = new Set<string>([compact]);
+  if (/^[\p{Script=Han}]{3,}$/u.test(compact)) {
+    variants.add(compact.slice(-2));
+    const titlePrefix = compact.match(/^(御厨|顾问|老师|医生|律师|将军|先生|小姐|老板|店长|经理)/u)?.[1];
+    if (titlePrefix) variants.add(titlePrefix);
+  }
+  return Array.from(variants).filter((item) => item.length >= 2);
+}
+
+function inferAddressedTargetsFromContent(content: string, speakerId: string, characters: AICharacter[]) {
+  const variantOwners = new Map<string, string[]>();
+  characters
+    .filter((character) => character.id !== speakerId && character.name)
+    .forEach((character) => {
+      buildAddressNameVariants(character.name).forEach((variant) => {
+        variantOwners.set(variant, [...(variantOwners.get(variant) || []), character.id]);
+      });
+    });
+  const targets: string[] = [];
+  variantOwners.forEach((ownerIds, variant) => {
+    if (ownerIds.length !== 1) return;
+    if (!content.includes(variant)) return;
+    targets.push(ownerIds[0]);
+  });
+  return Array.from(new Set(targets));
 }
 
 function updateAllEmotions(chatMembers: AICharacter[], speakerId: string, msgEmotion: number, emotion: number) {
@@ -3395,9 +3599,10 @@ function resolveSpeakerFromCandidates(chatMembers: AICharacter[], candidates: Re
 
 function resolveUserGuidanceLockedSpeaker(chatMembers: AICharacter[], directorIntent?: DirectorIntent | null) {
   const guidance = directorIntent?.source === 'user_message' ? directorIntent.userGuidance : null;
-  if (!guidance?.actorIds.length) return null;
   const targetIds = directorIntent?.targetActorIds || [];
   if (!targetIds.length) return null;
+  if (!guidance?.actorIds.length) return null;
+  if (guidance.kind !== 'direct_reply' && guidance.kind !== 'media_request') return null;
   for (const actorId of targetIds) {
     const speaker = chatMembers.find((member) => member.id === actorId);
     if (speaker) return speaker;
@@ -3471,7 +3676,8 @@ export async function generateSpeakerMessage(params: {
   const chatMembers = resolveEffectiveChatMembers(params.chat, params.characters);
   const effectiveMembers = chatMembers.length ? chatMembers : params.characters;
   const activeMessages = params.messages.filter((message) => message.chatId === params.chat.id && !message.isDeleted);
-  const latestActiveUserGuidance = resolveLatestActiveUserGuidance(effectiveMembers, activeMessages).intent;
+  const latestActiveUserGuidanceResolution = resolveLatestActiveUserGuidance(effectiveMembers, activeMessages);
+  const latestActiveUserGuidance = latestActiveUserGuidanceResolution.intent;
   const effectiveDirectorIntent = params.directorIntent?.source === 'user_message'
     ? params.directorIntent
     : latestActiveUserGuidance || params.directorIntent || null;
@@ -3486,6 +3692,7 @@ export async function generateSpeakerMessage(params: {
     projectInnerLife({ chat: params.chat, character: params.speaker, messages: activeMessages }),
     params.speakerScore,
   );
+  const reconciledSpeakerScore = reconcileSelectedSpeakerScore(params.speakerScore, innerLife);
   const typingDelayMs = await waitForInnerLifeTypingDelay(innerLife, params.chat, params.delay);
   if (typingDelayMs > 0) {
     logDeveloperDiagnostic('chat-run:typing-delay', {
@@ -3544,6 +3751,7 @@ export async function generateSpeakerMessage(params: {
     chat: params.chat,
     speaker: params.speaker,
     messages: activeMessages,
+    speakerScore: reconciledSpeakerScore,
   });
   const runtimeBundleWithMovePlan = {
     ...runtimeBundle,
@@ -3587,10 +3795,33 @@ export async function generateSpeakerMessage(params: {
     : await buildCompanionshipTraceIfNeeded({ chat: params.chat, character: params.speaker, messages: activeMessages });
   const companionshipTraceReadyAt = nowMs();
   const userGuidance = effectiveDirectorIntent?.userGuidance || null;
+  const priorGuidanceReplies = countPriorGuidanceReplies(activeMessages, userGuidance, params.speaker.id);
+  const guidanceFloorState = resolveGuidanceFloorState({
+    guidance: userGuidance,
+    guidanceTimestamp: effectiveDirectorIntent === latestActiveUserGuidance
+      ? latestActiveUserGuidanceResolution.timestamp
+      : null,
+    messages: activeMessages,
+    speaker: params.speaker,
+    characters: effectiveMembers,
+  });
   const worldInfluenceSnapshot = buildWorldEventInfluenceSnapshot({
     chat: params.chat,
     speaker: params.speaker,
     members: effectiveMembers,
+  });
+  const unifiedTurnDirective = buildTurnDirective({
+    chat: params.chat,
+    speaker: params.speaker,
+    members: effectiveMembers,
+    messages: activeMessages,
+    styleProfile: enginePromptContext?.styleProfile,
+    intent,
+    innerLife,
+    conversationMovePlan,
+    turnPlan,
+    runtimeBundle: runtimeBundleWithMovePlan,
+    userGuidance,
   });
   const isStoryReader = params.chat.sessionKind?.scenarioId === 'story-reader';
   const promptPlayMode = resolvePromptPlayMode(params.chat);
@@ -3610,7 +3841,8 @@ export async function generateSpeakerMessage(params: {
     { id: 'humanization', layer: 'character', priority: 20, content: buildHumanizationPrompt(params.speaker, intent, activeMessages, userGuidance) },
     { id: 'inner_life', layer: 'character', priority: 30, content: buildInnerLifePromptBlock(innerLife) },
     { id: 'pending_reply', layer: 'task', priority: 10, content: pendingReplyPrompt },
-    { id: 'user_guidance', layer: 'task', priority: 20, content: buildUserGuidancePrompt(userGuidance, params.speaker, effectiveMembers, mediaCapabilities) },
+    { id: 'user_guidance', layer: 'task', priority: 20, content: buildUserGuidancePrompt(userGuidance, params.speaker, effectiveMembers, mediaCapabilities, priorGuidanceReplies) },
+    { id: 'room_floor_state', layer: 'task', priority: 25, content: buildGuidanceFloorPrompt(guidanceFloorState) },
     { id: 'world_event_context', layer: 'scene', priority: 20, content: buildWorldEventContextPrompt({ chat: params.chat, speaker: params.speaker, members: effectiveMembers }) },
     { id: 'world_influence', layer: 'scene', priority: 30, content: worldInfluenceSnapshot.prompt },
     { id: 'current_intent', layer: 'task', priority: 30, content: buildCurrentIntentPrompt({ directorIntent: effectiveDirectorIntent, intent }) },
@@ -3619,6 +3851,7 @@ export async function generateSpeakerMessage(params: {
     { id: 'analysis_room_contract', layer: 'task', priority: 45, content: buildAnalysisRoomContractPrompt(params.chat) },
     { id: 'role_action_visibility', layer: 'runtime', priority: 10, content: buildRoleActionVisibilityPrompt(showRoleActions) },
     { id: 'expression_feedback', layer: 'runtime', priority: 20, content: buildExpressionFeedbackPrompt(expressionFeedbackTrace) },
+    { id: 'turn_directive', layer: 'task', priority: 48, content: buildTurnDirectivePrompt(unifiedTurnDirective) },
     { id: 'natural_chat_rhythm', layer: 'style', priority: 10, content: buildNaturalChatRhythmPrompt(activeMessages, innerLife, responseSurface) },
     { id: 'conversation_move', layer: 'task', priority: 50, content: buildConversationMovePrompt(conversationMovePlan, params.chat) },
     { id: 'expression_surface_choice', layer: 'style', priority: 20, content: buildExpressionSurfaceChoicePrompt({ chat: params.chat, speaker: params.speaker, messages: activeMessages, intent, surface: responseSurface, turnPlan }) },
@@ -3807,6 +4040,7 @@ export async function generateSpeakerMessage(params: {
   }
   const completedMessage = buildCompletedMessage({
     chat: params.chat,
+    characters: effectiveMembers,
     speakerId: params.speaker.id,
     speakerName: params.speaker.name,
     finalResponse: generated.finalResponse,
@@ -3831,7 +4065,7 @@ export async function generateSpeakerMessage(params: {
 	        directorIntent: effectiveDirectorIntent,
 	        narrativeLines: params.narrativeLines,
             speakerSelection: params.speakerSelection,
-	        speakerScore: params.speakerScore,
+	        speakerScore: reconciledSpeakerScore,
           innerLife,
           surface: responseSurface,
           turnPlan,
@@ -4054,6 +4288,11 @@ export const runOneRound = async (
   const speaker = chatMembers.find((c) => c.id === speakerSelection.speakerId);
   if (!speaker) return;
   const selectedCandidate = candidates.find((candidate) => candidate.characterId === speaker.id);
+  const selectedSpeakerScore = resolveSelectedSpeakerScore({
+    candidateScore: selectedCandidate?.scoreBreakdown || null,
+    speakerId: speaker.id,
+    lockedGuidanceSpeakerId: lockedGuidanceSpeaker?.id || null,
+  });
   callbacks.onSpeakerSelected(speaker.id, speaker);
   const hydrateStartedAt = nowMs();
   const hydratedSpeaker = await callbacks.ensureSpeakerDetail?.(speaker.id, speaker);
@@ -4086,7 +4325,7 @@ export const runOneRound = async (
         directorIntent,
         narrativeLines,
         speakerSelection,
-        speakerScore: selectedCandidate?.scoreBreakdown || null,
+        speakerScore: selectedSpeakerScore || null,
         generationContext,
         onChunk: callbacks.onMessageChunk,
         onLocalInterception: callbacks.onLocalInterception,
@@ -4169,6 +4408,8 @@ export const __chatEngineTestUtils = {
   evaluateHiddenEchoDraft,
   buildFocusedSituationalJobContract,
   buildNaturalChatSurfaceContract,
+  resolveGuidanceFloorState,
+  buildGuidanceFloorPrompt,
   buildWorldEventContextPrompt,
   buildWorldEventInfluenceRulesPrompt,
 };

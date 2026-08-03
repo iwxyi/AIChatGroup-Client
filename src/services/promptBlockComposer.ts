@@ -91,6 +91,30 @@ export function resolvePromptPlayMode(chat: GroupChat): PromptPlayModePolicy {
     };
   }
   if (chat.type === 'group') {
+    if (resolveSessionFamilyKey(chat) === 'conversation') {
+      return {
+        id: 'general_group',
+        // Ordinary group chat uses the hybrid prompt architecture: full fact
+        // blocks remain, but scattered behavior/style/runtime blocks are
+        // replaced by the single Turn Directive. Do not apply this to direct
+        // companionship or scenario engines.
+        disabledBlocks: [
+          'humanization',
+          'inner_life',
+          'natural_chat_rhythm',
+          'conversation_move',
+          'expression_surface_choice',
+          'turn_length_variety',
+          'turn_format_variety',
+          'turn_plan',
+          'runtime_role_constraint',
+        ],
+        notes: [
+          'General group rooms keep social momentum, relationships, and room pressure available.',
+          'Ordinary group turns use one Turn Directive for this turn’s social job, emotion, relationship stance, and expression shape.',
+        ],
+      };
+    }
     return {
       id: 'general_group',
       disabledBlocks: [],

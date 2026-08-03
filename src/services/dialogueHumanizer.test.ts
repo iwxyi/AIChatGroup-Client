@@ -28,6 +28,18 @@ function fragmentIntent(): SpeakIntent {
   };
 }
 
+function backingIntent(): SpeakIntent {
+  return {
+    shouldSpeak: true,
+    reason: 'test',
+    target: 'char-2',
+    stance: 'back_up',
+    emotionalTone: 'warm',
+    delivery: 'short_reply',
+    messageShape: 'single_sentence',
+  };
+}
+
 function message(content: string): Message {
   return {
     id: `msg-${content}`,
@@ -39,6 +51,15 @@ function message(content: string): Message {
     emotion: 0,
     timestamp: 1,
     isDeleted: false,
+  };
+}
+
+function messageFrom(senderId: string, content: string): Message {
+  return {
+    ...message(content),
+    id: `msg-${senderId}-${content}`,
+    senderId,
+    senderName: senderId,
   };
 }
 
@@ -116,6 +137,26 @@ describe('dialogueHumanizer', () => {
 
     expect(prompt).toContain('Do not prove you understood every metaphor, acronym, or example');
     expect(prompt).toContain('承认没接住其中的术语');
+  });
+
+  it('does not latch onto repeated agreement phrases when the room is echoing', () => {
+    const prompt = buildHumanizationPrompt(
+      character(),
+      backingIntent(),
+      [
+        messageFrom('char-2', '这句我也接。先把分寸立住。'),
+        messageFrom('char-3', '这后辈说得不差。先护住肯担的人。'),
+        messageFrom('char-4', '这句补得对。最后满殿站着的就都是算盘。'),
+        messageFrom('char-2', '嗯，这回我站他。先把有骨头的人护住。'),
+      ],
+    );
+
+    expect(prompt).toContain('agreement echo');
+    expect(prompt).toContain('Do not simply say you stand with the previous speaker');
+    expect(prompt).toContain('Do not latch onto them');
+    expect(prompt).toContain('Preferred archetype: 护住关系');
+    expect(prompt).not.toContain('Preferred archetype: 顺手站边');
+    expect(prompt).not.toContain('Latch onto this phrase or point if useful: 这回我站他');
   });
 
   it('keeps a long follow-up stance after a question instead of truncating to the first sentence', () => {

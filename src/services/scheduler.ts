@@ -67,6 +67,23 @@ function hasRecentSameTargetLoop(messages: Message[], charId: string, targetId?:
     && lastTwoAi[1].senderId === charId;
 }
 
+function hasTwoActorExchangeLoop(recentAiMessages: Message[], sourceSpeakerId?: string | null, targetId?: string | null) {
+  if (!sourceSpeakerId || !targetId || sourceSpeakerId === targetId) return false;
+  const recent = recentAiMessages.slice(-4);
+  if (recent.length < 3) return false;
+  const pair = new Set([sourceSpeakerId, targetId]);
+  return recent.every((message) => pair.has(message.senderId))
+    && recent.some((message) => message.senderId === sourceSpeakerId)
+    && recent.some((message) => message.senderId === targetId);
+}
+
+function hasTwoActorDominance(recentAiMessages: Message[]) {
+  const recent = recentAiMessages.slice(-3);
+  if (recent.length < 3) return false;
+  const speakers = new Set(recent.map((message) => message.senderId));
+  return speakers.size === 2;
+}
+
 export function isChatMemberMuted(chat: Pick<GroupChat, 'governance' | 'scenarioState'> | null | undefined, memberId: string) {
   if (!chat || !canUseMute(chat)) return false;
   const seat = chat.scenarioState?.seats?.find((item) => item.actorId === memberId);
@@ -164,6 +181,29 @@ function countUnmetTurns(recentAiMessages: Message[], primaryTargetId: string, s
   return turns;
 }
 
+type ReplyWorthyInteractionHint = {
+  targetId?: string | null;
+  kind?: string | null;
+};
+
+const REPLY_WORTHY_INTERACTION_KINDS = new Set(['challenge', 'probe', 'mock', 'dismiss', 'boundary', 'apologize']);
+
+function getReplyWorthyInteractionTargetIds(message: Message, characters: AICharacter[]) {
+  const candidate = message as Message & {
+    interactionHint?: ReplyWorthyInteractionHint | null;
+    interactionHints?: ReplyWorthyInteractionHint[] | null;
+  };
+  const hints = [
+    candidate.interactionHint || null,
+    ...(Array.isArray(candidate.interactionHints) ? candidate.interactionHints : []),
+  ].filter((hint): hint is ReplyWorthyInteractionHint => Boolean(hint));
+  return hints
+    .filter((hint) => REPLY_WORTHY_INTERACTION_KINDS.has(String(hint.kind || '')))
+    .map((hint) => hint.targetId)
+    .filter((targetId, index, array): targetId is string => Boolean(targetId) && array.indexOf(targetId) === index)
+    .filter((targetId) => targetId !== message.senderId && characters.some((character) => character.id === targetId));
+}
+
 function buildSchedulerTopicText(recentMessages: Message[], directorIntent?: DirectorIntent | null) {
   const guidanceFocus = directorIntent?.source === 'user_message' ? directorIntent.userGuidance?.focusText?.trim() : '';
   if (guidanceFocus) {
@@ -174,12 +214,24 @@ function buildSchedulerTopicText(recentMessages: Message[], directorIntent?: Dir
   return recentMessages.slice(-5).map((message) => message.content).join(' ');
 }
 
+function getForcedUserGuidanceActorIds(directorIntent?: DirectorIntent | null) {
+  if (directorIntent?.source !== 'user_message') return [];
+  const guidance = directorIntent.userGuidance;
+  if (guidance) {
+    if (guidance.kind === 'direct_reply') return directorIntent.targetActorIds;
+    if (guidance.kind === 'media_request') return directorIntent.targetActorIds;
+    return [];
+  }
+  return directorIntent.beatType === 'answer' ? directorIntent.targetActorIds : [];
+}
+
 export function resolvePendingReplyContext(characters: AICharacter[], recentMessages: Message[]): PendingReplyContext | null {
   const recentAiMessages = recentMessages.filter((message) => message.type === 'ai' && !message.isDeleted);
   const lastAiMessage = recentAiMessages.at(-1) as (Message & { addressedTargetIds?: string[] | null; primaryAddressedTargetId?: string | null }) | undefined;
   if (!lastAiMessage) return null;
   const targetIds = (lastAiMessage.primaryAddressedTargetId ? [lastAiMessage.primaryAddressedTargetId] : [])
     .concat(lastAiMessage.addressedTargetIds || [])
+    .concat(getReplyWorthyInteractionTargetIds(lastAiMessage, characters))
     .filter((targetId, index, array): targetId is string => Boolean(targetId) && array.indexOf(targetId) === index)
     .filter((targetId) => targetId !== lastAiMessage.senderId && characters.some((character) => character.id === targetId));
   if (!targetIds.length) return null;
@@ -191,7 +243,9 @@ export function resolvePendingReplyContext(characters: AICharacter[], recentMess
     .slice(-3)
     .filter((message) => {
       const candidate = message as Message & { addressedTargetIds?: string[] | null; primaryAddressedTargetId?: string | null };
-      const candidateTargets = (candidate.primaryAddressedTargetId ? [candidate.primaryAddressedTargetId] : []).concat(candidate.addressedTargetIds || []);
+      const candidateTargets = (candidate.primaryAddressedTargetId ? [candidate.primaryAddressedTargetId] : [])
+        .concat(candidate.addressedTargetIds || [])
+        .concat(getReplyWorthyInteractionTargetIds(message, characters));
       return message.senderId === lastAiMessage.senderId && candidateTargets.includes(primaryTargetId);
     })
     .length;
@@ -241,15 +295,22 @@ export function calculateWeights(
     }
     return count;
   })();
+  const pendingTwoActorLoop = hasTwoActorExchangeLoop(
+    recentAiMessages,
+    pendingReplyContext?.sourceSpeakerId,
+    pendingReplyContext?.primaryTargetId,
+  );
+  const twoActorDominance = hasTwoActorDominance(recentAiMessages);
 
   const cooldownDuration = baseCooldownMs / speed;
   const recentText = buildSchedulerTopicText(recentMessages, directorIntent);
   const keywords = extractKeywords(recentText);
-  const forcedUserGuidanceActorIds = directorIntent?.source === 'user_message' && directorIntent.targetActorIds.length
-    ? directorIntent.targetActorIds
-    : [];
+  const forcedUserGuidanceActorIds = getForcedUserGuidanceActorIds(directorIntent);
   const suppressedUserGuidanceActorIds = directorIntent?.source === 'user_message'
     ? (directorIntent.userGuidance?.suppressedActorIds || [])
+    : [];
+  const deferredUserGuidanceActorIds = directorIntent?.source === 'user_message'
+    ? (directorIntent.userGuidance?.deferredActorIds || [])
     : [];
   const shouldKeepLastSpeaker = (characterId: string) => {
     if (characterId !== lastSpeakerId) return true;
@@ -264,7 +325,10 @@ export function calculateWeights(
   const unsuppressedCandidatePool = !forcedUserGuidanceActorIds.length && suppressedUserGuidanceActorIds.length
     ? baseCandidatePool.filter((character) => !suppressedUserGuidanceActorIds.includes(character.id))
     : baseCandidatePool;
-  const candidatePool = unsuppressedCandidatePool.length ? unsuppressedCandidatePool : baseCandidatePool;
+  const undeferredCandidatePool = !forcedUserGuidanceActorIds.length && deferredUserGuidanceActorIds.length
+    ? unsuppressedCandidatePool.filter((character) => !deferredUserGuidanceActorIds.includes(character.id))
+    : unsuppressedCandidatePool;
+  const candidatePool = undeferredCandidatePool.length ? undeferredCandidatePool : unsuppressedCandidatePool.length ? unsuppressedCandidatePool : baseCandidatePool;
   const attentionStateBiasByActor = new Map<string, number>();
   if (chat) {
     projectWorldAttentionStates([chat], speakableCharacters, { now })
@@ -301,11 +365,27 @@ export function calculateWeights(
       const recentCount = recentSpeakCounts[char.id] || 0;
       const pendingReplyBoost = pendingReplyContext?.targetIds.includes(char.id)
         ? (char.id === pendingReplyContext.primaryTargetId
-            ? (pendingReplyContext.strength === 'strong' ? 0.85 : 0.45) + Math.min(0.45, pendingReplyContext.unmetTurns * 0.12)
+            ? ((pendingReplyContext.strength === 'strong' ? 0.85 : 0.45) + Math.min(0.45, pendingReplyContext.unmetTurns * 0.12)) * (pendingTwoActorLoop ? 0.62 : 1)
             : 0.18)
 	        : 0;
+      const unspokenMemberBias = chat?.type === 'group'
+        && speakableCharacters.length >= 3
+        && recentCount === 0
+        && recentAiMessages.length >= Math.min(2, speakableCharacters.length - 1)
+        && !forcedUserGuidanceActorIds.length
+        ? (pendingReplyContext?.primaryTargetId ? ((pendingTwoActorLoop || twoActorDominance) ? 0.38 : 0.08) : 0.22)
+        : 0;
       const conflictBias = getConflictSpeakerBias(char, conflictContext, lastSpeakerId);
       const directorBias = getDirectorIntentSpeakerBias({ character: char, directorIntent, chat, lastSpeakerId });
+      const guidanceFloorGuardianBias = directorIntent?.source === 'user_message'
+        && !forcedUserGuidanceActorIds.length
+        && Boolean(directorIntent.userGuidance?.actorIds.length)
+        && Boolean(suppressedUserGuidanceActorIds.length || deferredUserGuidanceActorIds.length)
+        && !directorIntent.userGuidance?.actorIds.includes(char.id)
+        && !suppressedUserGuidanceActorIds.includes(char.id)
+        && !deferredUserGuidanceActorIds.includes(char.id)
+        ? 0.32
+        : 0;
       const innerLife = projectInnerLife({ chat, character: char, messages: recentMessages, now });
       const innerLifeBias = getInnerLifeSpeakerBias(innerLife);
       const attentionStateBias = attentionStateBiasByActor.get(char.id) || 0;
@@ -328,10 +408,12 @@ export function calculateWeights(
 
       weight -= recentCount * 0.5;
       if (recentCount === 0) weight += 0.06;
+      weight += unspokenMemberBias;
       if (recentCount >= 2) weight -= 0.18;
       weight += pendingReplyBoost;
       weight += conflictBias;
       weight += directorBias.bias;
+      weight += guidanceFloorGuardianBias;
       weight += innerLifeBias.bias;
       if (!(directorIntent?.source === 'user_message' && directorIntent.targetActorIds.length)) {
         weight += attentionStateBias;
@@ -358,7 +440,8 @@ export function calculateWeights(
         const explicitTargets = [
           addressedMessage.primaryAddressedTargetId,
           ...(addressedMessage.addressedTargetIds || []),
-        ].filter(Boolean);
+          ...getReplyWorthyInteractionTargetIds(lastAiMessage, characters),
+        ].filter((targetId, index, array): targetId is string => Boolean(targetId) && array.indexOf(targetId) === index);
         const directCue = lastAiMessage.content.includes(char.name) || explicitTargets.includes(char.id);
         if (directCue) {
           directCueBoost = 0.18;
@@ -413,9 +496,11 @@ export function calculateWeights(
         || pendingReplyBoost
         || conflictBias
         || directorBias.bias
+        || guidanceFloorGuardianBias
         || attentionStateBias
         || relationshipPressure
         || directCueBoost
+        || unspokenMemberBias
       );
       const idleStaySilent = innerLife.impulse === 'stay_silent' && innerLife.pressure < 0.32 && !hasExternalPressure;
 
@@ -445,14 +530,16 @@ export function calculateWeights(
           factionPressure: directorIntent?.source === 'faction' ? directorBias.bias : 0,
           personalityDrive,
           novelty: recentCount === 0 ? 0.06 : 0,
-          silencePressure: recentCount === 0 ? 0.06 : 0,
+          silencePressure: (recentCount === 0 ? 0.06 : 0) + unspokenMemberBias,
           repetitionPenalty: repetitionMultiplier < 1 ? weight * (1 - repetitionMultiplier) : 0,
           finalScore,
           reasons: [
             pendingReplyBoost ? 'pending_reply' : '',
+            unspokenMemberBias ? 'unspoken_member' : '',
             emotionalReason,
             conflictBias ? 'conflict' : '',
             ...directorBias.reasons,
+            guidanceFloorGuardianBias ? 'guidance_floor_guardian' : '',
             innerLifeBias.bias ? innerLifeBias.reason : '',
             attentionStateBias ? 'attention_state' : '',
             relationshipPressure ? 'relationship' : '',
@@ -463,7 +550,11 @@ export function calculateWeights(
     });
   const flattenedCandidates = weightedCandidates.flat();
   const activeCandidates = flattenedCandidates.filter((candidate) => !candidate.idleStaySilent);
-  const selectedCandidates = activeCandidates.length ? activeCandidates : flattenedCandidates;
+  const baseSelectedCandidates = activeCandidates.length ? activeCandidates : flattenedCandidates;
+  const loopBreakerCandidates = (pendingTwoActorLoop || twoActorDominance) && !forcedUserGuidanceActorIds.length
+    ? baseSelectedCandidates.filter((candidate) => candidate.scoreBreakdown?.reasons.includes('unspoken_member'))
+    : [];
+  const selectedCandidates = loopBreakerCandidates.length ? loopBreakerCandidates : baseSelectedCandidates;
   return selectedCandidates.map((candidate) => ({
     characterId: candidate.characterId,
     weight: candidate.weight,

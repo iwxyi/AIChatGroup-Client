@@ -17,6 +17,7 @@ export interface UserGuidanceIntent {
   mentionedActorIds: string[];
   hardConstraintActorIds?: string[];
   suppressedActorIds?: string[];
+  deferredActorIds?: string[];
   hasHardConstraints?: boolean;
   mediaRequest?: UserGuidanceMediaRequest;
   focusText: string;
@@ -121,10 +122,27 @@ function needsShortTermTargetProtection(text: string) {
 }
 
 function shouldProtectTargetForMultipleTurns(text: string) {
-  if (/(刚才|之前|前面).{0,12}想听.{0,12}(说|讲|回答|发言).{0,24}(不是|并非|没想|不想).{0,12}(让|叫|替|代)/i.test(text)) return false;
   return needsShortTermTargetProtection(text)
     || isNegatedSpeakerCorrection(text)
-    || /(不用|别|不要).{0,6}先.{0,8}(照顾|顾及|管|理会)/i.test(text);
+    || /(直接说|直接讲|先说|说吧).{0,24}(不用|别|不要|不必).{0,16}(照顾|顾及|管|理会|口径)/i.test(text);
+}
+
+function resolveMinTargetTurns(text: string) {
+  if (isNegatedSpeakerCorrection(text) && /(刚才|之前|前面|想听|听).{0,18}(说|讲|回答|发言)/i.test(text)) return 2;
+  return shouldProtectTargetForMultipleTurns(text) ? 2 : undefined;
+}
+
+function resolveActorGuidanceMaxTurns(params: {
+  actorCount: number;
+  minTargetTurns?: number;
+  suppressedActorIds: string[];
+  deferredActorIds: string[];
+}) {
+  const base = Math.max(params.minTargetTurns || 1, params.actorCount);
+  if (params.suppressedActorIds.length || params.deferredActorIds.length) {
+    return Math.max(base, 3);
+  }
+  return base;
 }
 
 function isNegatedSpeakerCorrection(text: string) {
@@ -134,6 +152,10 @@ function isNegatedSpeakerCorrection(text: string) {
 function isCollectiveActorRequest(text: string) {
   return /(每个人|每位|每个成员|所有人|全员|大家都|你们都|各自|分别|一人一|每人)/i.test(text)
     && isDirectSpeakRequest(text);
+}
+
+function isGroupQuestionAboutSubject(text: string) {
+  return /(你们|大家|各位).{0,16}(觉得|认为|怎么看|咋看|什么看法|聊聊|说说)/i.test(text);
 }
 
 function allActorIds(characters: AICharacter[]) {
@@ -163,11 +185,24 @@ function namesAfterDirectivePrefix(text: string, mentioned: Array<{ character: A
 }
 
 function namesAfterNegatedDirectivePrefix(text: string, mentioned: Array<{ character: AICharacter; index: number }>) {
-  const negatedDirectivePattern = /(不是|并非|别|不要|不用|不该|不能|不想|没想).{0,4}(让|请|叫|安排|指定|点名|想让|替|代|照顾|管|理会)/gi;
+  const negatedDirectivePattern = /(不是|并非|别|不要|不用|不该|不能|不想|没想).{0,4}(让|请|叫|安排|指定|点名|想让|替|代|抢)/gi;
   const ids: string[] = [];
   for (const prefixMatch of text.matchAll(negatedDirectivePattern)) {
     const start = prefixMatch.index ?? 0;
     const end = Math.min(text.length, start + 36);
+    mentioned
+      .filter((item) => item.index >= start && item.index < end)
+      .forEach((item) => ids.push(item.character.id));
+  }
+  return unique(ids);
+}
+
+function namesAfterSoftFloorDefer(text: string, mentioned: Array<{ character: AICharacter; index: number }>) {
+  const softDeferPattern = /(不用|不必|别|不要).{0,6}(先)?(照顾|顾及|管|理会).{0,12}(口径|说法|汇报|解释|面子|意见|态度)?/gi;
+  const ids: string[] = [];
+  for (const match of text.matchAll(softDeferPattern)) {
+    const start = match.index ?? 0;
+    const end = Math.min(text.length, start + 42);
     mentioned
       .filter((item) => item.index >= start && item.index < end)
       .forEach((item) => ids.push(item.character.id));
@@ -235,12 +270,20 @@ export function parseUserGuidanceIntent(text: string, characters: AICharacter[])
   const mentionedActorIds = findMentionedActors(rawText, characters);
   const imageRequest = isImageRequest(rawText);
   const hasHardConstraints = hasHardConstraintText(rawText);
-  const minTargetTurns = shouldProtectTargetForMultipleTurns(rawText) ? 2 : undefined;
+  const minTargetTurns = resolveMinTargetTurns(rawText);
   const hardConstraintActorIds = hasHardConstraints ? mentionedActorIds : [];
   const collectiveActorIds = !imageRequest && isCollectiveActorRequest(rawText) ? allActorIds(characters) : [];
-  const actorIds = collectiveActorIds.length ? collectiveActorIds : resolveActionActors(rawText, characters, imageRequest);
-  const suppressedActorIds = namesAfterNegatedDirectivePrefix(rawText, sortByNamePosition(rawText, characters))
+  const groupSubjectQuestion = !imageRequest && !collectiveActorIds.length && mentionedActorIds.length > 0 && isGroupQuestionAboutSubject(rawText);
+  const actorIds = collectiveActorIds.length
+    ? collectiveActorIds
+    : groupSubjectQuestion
+      ? []
+      : resolveActionActors(rawText, characters, imageRequest);
+  const mentionedByPosition = sortByNamePosition(rawText, characters);
+  const suppressedActorIds = namesAfterNegatedDirectivePrefix(rawText, mentionedByPosition)
     .filter((id) => !actorIds.includes(id));
+  const deferredActorIds = namesAfterSoftFloorDefer(rawText, mentionedByPosition)
+    .filter((id) => !actorIds.includes(id) && !suppressedActorIds.includes(id));
   const subjectActorIds = imageRequest ? unique(mentionedActorIds.filter((id) => !actorIds.includes(id))) : [];
   const directRequest = Boolean(actorIds.length) || isDirectSpeakRequest(rawText);
   if (!imageRequest && !directRequest && !mentionedActorIds.length) {
@@ -251,6 +294,7 @@ export function parseUserGuidanceIntent(text: string, characters: AICharacter[])
       mentionedActorIds,
       hardConstraintActorIds,
       suppressedActorIds,
+      deferredActorIds,
       hasHardConstraints,
       focusText: rawText,
       beatType: rawText.length > 90 ? 'summarize' : 'invite',
@@ -271,6 +315,7 @@ export function parseUserGuidanceIntent(text: string, characters: AICharacter[])
       mentionedActorIds,
       hardConstraintActorIds,
       suppressedActorIds,
+      deferredActorIds,
       hasHardConstraints,
       mediaRequest: {
         kind: 'image',
@@ -295,11 +340,17 @@ export function parseUserGuidanceIntent(text: string, characters: AICharacter[])
       mentionedActorIds,
       hardConstraintActorIds,
       suppressedActorIds,
+      deferredActorIds,
       hasHardConstraints,
       focusText: rawText,
       beatType: actorIds.length ? 'answer' : 'invite',
       pressure: collectiveActorIds.length ? 0.96 : actorIds.length ? 0.92 : hasHardConstraints ? 0.84 : 0.7,
-      maxTurns: actorIds.length ? Math.max(minTargetTurns || 1, actorIds.length, suppressedActorIds.length ? 5 : 1) : hasHardConstraints ? 5 : 3,
+      maxTurns: actorIds.length ? resolveActorGuidanceMaxTurns({
+        actorCount: actorIds.length,
+        minTargetTurns,
+        suppressedActorIds,
+        deferredActorIds,
+      }) : hasHardConstraints ? 5 : 3,
       minTargetTurns,
       reason: collectiveActorIds.length
         ? '用户要求所有角色分别执行同一个任务。'

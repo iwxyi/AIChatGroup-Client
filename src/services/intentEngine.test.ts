@@ -58,6 +58,30 @@ describe('intentEngine soul state adaptation', () => {
     expect(intent.emotionalTone).toBe('warm');
   });
 
+  it('does not turn strong relationship warmth into automatic viewpoint backing in casual rooms', () => {
+    const intent = deriveSpeakIntent(character({
+      relationships: [{ characterId: 'b', warmth: 70, trust: 60, competence: 40, threat: 0, note: '', updatedAt: 1 }],
+    }), 'b', { conversationFamily: 'conversation', scenarioId: 'open-chat' });
+
+    expect(intent.reason).toContain('distinct angle');
+    expect(intent.target).toBe('b');
+    expect(intent.emotionalTone).toBe('warm');
+    expect(intent.stance).not.toBe('support');
+    expect(intent.stance).not.toBe('back_up');
+  });
+
+  it('does not promote target warmth into backing when the latest line mentions a target', () => {
+    const intent = deriveSpeakIntentFromContext(character({
+      emotionalState: { irritation: 0, affection: 32, insecurity: 0, excitement: 0, embarrassment: 0 },
+    }), 'b', '这句我认，先护住肯做事的人。', undefined, { conversationFamily: 'conversation', scenarioId: 'open-chat' });
+
+    expect(intent.reason).toContain('independent angle');
+    expect(intent.target).toBe('b');
+    expect(intent.emotionalTone).toBe('warm');
+    expect(intent.stance).not.toBe('support');
+    expect(intent.stance).not.toBe('back_up');
+  });
+
   it('keeps positive relationship warmth from becoming viewpoint agreement in analysis rooms', () => {
     const intent = deriveSpeakIntent(character({
       relationships: [{ characterId: 'b', warmth: 70, trust: 60, competence: 40, threat: 0, note: '', updatedAt: 1 }],
@@ -86,7 +110,7 @@ describe('intentEngine soul state adaptation', () => {
     expect(intent.stance).not.toBe('back_up');
   });
 
-  it('keeps ordinary director defend beats as backing outside analysis rooms', () => {
+  it('keeps ordinary director defend beats independent from viewpoint backing outside analysis rooms', () => {
     const intent = deriveSpeakIntentFromContext(character(), 'b', '这点我同意。', {
       source: 'faction',
       beatType: 'defend',
@@ -95,7 +119,9 @@ describe('intentEngine soul state adaptation', () => {
       reason: '阵营压力',
     }, { conversationFamily: 'conversation', scenarioId: 'open-chat' });
 
-    expect(intent.stance).toBe('back_up');
+    expect(intent.reason).toContain('without inheriting their viewpoint');
+    expect(intent.stance).toBe('probe');
+    expect(intent.stance).not.toBe('back_up');
   });
 
   it('lets moderate irritation carry into a challenged reply intent', () => {
