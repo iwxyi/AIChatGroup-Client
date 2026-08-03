@@ -27,9 +27,6 @@ export default function FloatingSegmentedTabs<T extends string | number>({ value
   const groupRef = useRef<HTMLDivElement | null>(null);
   const indicatorRef = useRef<HTMLDivElement | null>(null);
   const itemRefs = useRef(new Map<string, HTMLButtonElement>());
-  const draggingIndicatorRef = useRef(false);
-  const dragFrameRef = useRef<number | null>(null);
-  const pendingDragRef = useRef<{ clientX: number; targetValue: T } | null>(null);
   const pointerRef = useRef<{
     pointerId: number;
     startX: number;
@@ -51,7 +48,6 @@ export default function FloatingSegmentedTabs<T extends string | number>({ value
   }, []);
 
   const updateIndicator = useCallback(() => {
-    if (draggingIndicatorRef.current) return;
     const group = groupRef.current;
     const target = itemRefs.current.get(String(visualValue));
     const indicator = indicatorRef.current;
@@ -83,49 +79,6 @@ export default function FloatingSegmentedTabs<T extends string | number>({ value
     indicator.dataset.left = String(nextLeft);
   }, [visualValue]);
 
-  const applyPointerIndicatorPosition = useCallback((clientX: number, targetValue: T) => {
-    const group = groupRef.current;
-    const target = itemRefs.current.get(String(targetValue));
-    const indicator = indicatorRef.current;
-    if (!group || !target || !indicator) return;
-
-    const groupBounds = group.getBoundingClientRect();
-    const targetBounds = target.getBoundingClientRect();
-    const width = targetBounds.width;
-    const minLeft = 0;
-    const maxLeft = Math.max(0, group.scrollWidth - width);
-    const pointerLeft = clientX - groupBounds.left + group.scrollLeft - width / 2;
-    const nextLeft = Math.max(minLeft, Math.min(maxLeft, pointerLeft));
-
-    indicator.style.opacity = '1';
-    indicator.style.transition = transition(['transform', 'width', 'opacity'], motion.durations.instant, motion.softOut);
-    indicator.style.transform = `translateX(${nextLeft}px)`;
-    indicator.style.width = `${width}px`;
-    indicator.dataset.left = String(nextLeft);
-  }, []);
-
-  const moveIndicatorWithPointer = useCallback((clientX: number, targetValue: T) => {
-    pendingDragRef.current = { clientX, targetValue };
-    if (dragFrameRef.current !== null) return;
-
-    dragFrameRef.current = window.requestAnimationFrame(() => {
-      dragFrameRef.current = null;
-      const pending = pendingDragRef.current;
-      pendingDragRef.current = null;
-      if (!pending || !draggingIndicatorRef.current) return;
-      applyPointerIndicatorPosition(pending.clientX, pending.targetValue);
-    });
-  }, [applyPointerIndicatorPosition]);
-
-  const stopPointerIndicatorDrag = useCallback(() => {
-    draggingIndicatorRef.current = false;
-    pendingDragRef.current = null;
-    if (dragFrameRef.current !== null) {
-      window.cancelAnimationFrame(dragFrameRef.current);
-      dragFrameRef.current = null;
-    }
-  }, []);
-
   useLayoutEffect(() => {
     updateIndicator();
   }, [items, updateIndicator]);
@@ -147,13 +100,12 @@ export default function FloatingSegmentedTabs<T extends string | number>({ value
   useEffect(() => {
     const handleWindowBlur = () => {
       pointerRef.current = null;
-      stopPointerIndicatorDrag();
       suppressClickRef.current = false;
       setVisualPreview(null);
     };
     window.addEventListener('blur', handleWindowBlur);
     return () => window.removeEventListener('blur', handleWindowBlur);
-  }, [setVisualPreview, stopPointerIndicatorDrag]);
+  }, [setVisualPreview]);
 
   const itemValues = useMemo(() => items.map((item) => item.value), [items]);
 
@@ -205,7 +157,6 @@ export default function FloatingSegmentedTabs<T extends string | number>({ value
       allowDragPreview: event.pointerType !== 'touch' || !isHorizontallyScrollable(),
       scrollIntent: false,
     };
-    draggingIndicatorRef.current = false;
     latestPointerTypeRef.current = event.pointerType;
     suppressClickRef.current = true;
     setVisualPreview(itemValue);
@@ -225,7 +176,6 @@ export default function FloatingSegmentedTabs<T extends string | number>({ value
       && Math.abs(deltaX) > Math.abs(deltaY)
     ) {
       pointer.scrollIntent = true;
-      stopPointerIndicatorDrag();
       setVisualPreview(null);
       if (event.currentTarget.hasPointerCapture(pointer.pointerId)) {
         event.currentTarget.releasePointerCapture(pointer.pointerId);
@@ -235,12 +185,6 @@ export default function FloatingSegmentedTabs<T extends string | number>({ value
     if (pointer.scrollIntent || !pointer.allowDragPreview) return;
 
     const nextValue = resolveValueAtPoint(event.clientX, event.clientY);
-    if (nextValue !== null) {
-      draggingIndicatorRef.current = true;
-      moveIndicatorWithPointer(event.clientX, nextValue);
-    } else {
-      draggingIndicatorRef.current = false;
-    }
     setVisualPreview(nextValue);
   };
 
@@ -249,7 +193,6 @@ export default function FloatingSegmentedTabs<T extends string | number>({ value
     if (!pointer) return;
 
     pointerRef.current = null;
-    stopPointerIndicatorDrag();
     if (event.currentTarget.hasPointerCapture(pointer.pointerId)) {
       event.currentTarget.releasePointerCapture(pointer.pointerId);
     }
@@ -314,7 +257,6 @@ export default function FloatingSegmentedTabs<T extends string | number>({ value
   const handlePointerCancel = (event: ReactPointerEvent<HTMLButtonElement>) => {
     const pointer = pointerRef.current;
     pointerRef.current = null;
-    stopPointerIndicatorDrag();
     suppressClickRef.current = false;
     setVisualPreview(null);
     if (pointer && event.currentTarget.hasPointerCapture(pointer.pointerId)) {
