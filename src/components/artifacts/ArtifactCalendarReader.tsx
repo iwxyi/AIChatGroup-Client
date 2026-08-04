@@ -108,12 +108,13 @@ export default function ArtifactCalendarReader({
   onEnsureDetail,
 }: ArtifactCalendarReaderProps) {
   const isZh = language.startsWith('zh');
+  const today = useMemo(() => new Date(), []);
   const [selectedId, setSelectedId] = useState<string | null>(items[0]?.id || null);
   const selectedDeletedItem = deletedItems.find((item) => item.id === selectedId) || null;
   const selectedItem = items.find((item) => item.id === selectedId) || selectedDeletedItem || items[0] || null;
   const selectedItemDeleted = Boolean(selectedItem?.deletedAt);
   const selectedIndex = selectedItem ? items.findIndex((item) => item.id === selectedItem.id) : -1;
-  const selectedDate = selectedItem ? parseDateKey(getEntryDateKey(selectedItem)) : null;
+  const selectedDate = selectedItem ? parseDateKey(getEntryDateKey(selectedItem)) : today;
   const [calendarExpanded, setCalendarExpanded] = useState(true);
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
   const [loadingDetailId, setLoadingDetailId] = useState<string | null>(null);
@@ -125,6 +126,13 @@ export default function ArtifactCalendarReader({
       if (!map.has(dateKey)) map.set(dateKey, item);
     });
     return map;
+  }, [items]);
+  const unreadDateKeys = useMemo(() => {
+    const keys = new Set<string>();
+    items.forEach((item) => {
+      if (item.unread && item.deletedAt == null) keys.add(getEntryDateKey(item));
+    });
+    return keys;
   }, [items]);
 
   useEffect(() => {
@@ -203,21 +211,6 @@ export default function ArtifactCalendarReader({
     };
   }, [onEnsureDetail, selectedItem]);
 
-  if (!items.length && !selectedDeletedItem) {
-    return (
-      <PaperSurface variant={paperVariant} minHeight={220} contentInset={false}>
-        <Box className="paper-surface-content" sx={{ maxWidth: 560 }}>
-          <Typography variant="subtitle2" sx={{ fontWeight: 850 }}>{emptyTitle}</Typography>
-          {emptyDescription ? (
-            <Typography className="paper-surface-muted" variant="body2" sx={{ mt: 1.1, lineHeight: 1.8 }}>
-              {emptyDescription}
-            </Typography>
-          ) : null}
-        </Box>
-      </PaperSurface>
-    );
-  }
-
   return (
     <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: 'minmax(300px, 360px) minmax(0, 1fr)' }, gap: { xs: 1.5, lg: 2.25 }, alignItems: 'start' }}>
       <Box sx={{ position: { lg: 'sticky' }, top: { lg: 'calc(var(--app-floating-tab-top, 10px) + 64px)' }, alignSelf: 'start', minWidth: 0 }}>
@@ -244,12 +237,14 @@ export default function ArtifactCalendarReader({
                   const dateKey = toDateKey(day);
                   const item = itemsByDate.get(dateKey);
                   const selected = selectedItem ? getEntryDateKey(selectedItem) === dateKey : false;
+                  const hasUnreadItem = unreadDateKeys.has(dateKey);
                   return {
                     disabled: !item,
                     selected,
                     inMonth,
-                    hasDot: Boolean(item) && !selected,
+                    hasDot: Boolean(item),
                     eventCount: item ? 1 : 0,
+                    dotColors: hasUnreadItem ? ['error.main'] : ['primary.main'],
                   };
                 }}
               />
@@ -276,54 +271,74 @@ export default function ArtifactCalendarReader({
         >
           <Box className="paper-surface-content" sx={{ display: 'flex', justifyContent: 'space-between', gap: 1, alignItems: 'flex-start', mb: 0.5, flexShrink: 0 }}>
             <Box sx={{ minWidth: 0 }}>
-              <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>{selectedItem?.title}</Typography>
-              <Typography className="paper-surface-muted" variant="caption">
-                {getMeta ? getMeta(selectedItem) : getEntryDateKey(selectedItem)}
+              <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                {selectedItem ? selectedItem.title : emptyTitle}
+              </Typography>
+              {selectedItem ? (
+                <Typography className="paper-surface-muted" variant="caption">
+                  {getMeta ? getMeta(selectedItem) : getEntryDateKey(selectedItem)}
+                </Typography>
+              ) : null}
+            </Box>
+            {selectedItem ? (
+              selectedItemDeleted ? (
+                <Chip size="small" color="error" variant="outlined" icon={<DeleteIcon />} label={isZh ? '已删除' : 'Deleted'} sx={{ bgcolor: 'rgba(255,255,255,0.55)' }} />
+              ) : (
+                <Chip size="small" variant="outlined" label={`${selectedIndex >= 0 ? items.length - selectedIndex : 1}/${items.length}${countUnit}`} sx={{ bgcolor: 'rgba(255,255,255,0.55)' }} />
+              )
+            ) : null}
+          </Box>
+          {!selectedItem ? (
+            <Box className="paper-surface-content" sx={{ display: 'grid', gap: 1, flex: 1, minHeight: 0, overflow: 'auto' }}>
+              <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.8 }}>
+                {emptyDescription}
               </Typography>
             </Box>
-            {selectedItemDeleted ? (
-              <Chip size="small" color="error" variant="outlined" icon={<DeleteIcon />} label={isZh ? '已删除' : 'Deleted'} sx={{ bgcolor: 'rgba(255,255,255,0.55)' }} />
-            ) : (
-              <Chip size="small" variant="outlined" label={`${selectedIndex >= 0 ? items.length - selectedIndex : 1}/${items.length}${countUnit}`} sx={{ bgcolor: 'rgba(255,255,255,0.55)' }} />
-            )}
-          </Box>
-          {selectedItemDeleted ? (
+          ) : selectedItemDeleted ? (
             <Box className="paper-surface-content" sx={{ mb: 1, flexShrink: 0 }}>
               <Typography variant="body2" color="error" sx={{ fontWeight: 800 }}>
                 {isZh ? '这项内容已在其他设备删除，本地仅保留只读快照。' : 'This item was deleted on another device. This local copy is read-only.'}
               </Typography>
             </Box>
           ) : null}
-          <Box className="paper-surface-content" sx={{ mt: 1, typography: 'body2', userSelect: 'text', WebkitUserSelect: 'text', flex: 1, minHeight: 0, overflow: 'auto', pr: { xs: 0.5, sm: 1 } }}>
-            {selectedItem && loadingDetailId === selectedItem.id && !selectedItem.text ? (
-              <Box sx={{ height: '100%', minHeight: 180, display: 'grid', placeItems: 'center' }}>
-                <CircularProgress size={24} />
+          {selectedItem ? (
+            <>
+              <Box className="paper-surface-content" sx={{ mt: 1, typography: 'body2', userSelect: 'text', WebkitUserSelect: 'text', flex: 1, minHeight: 0, overflow: 'auto', pr: { xs: 0.5, sm: 1 } }}>
+                {loadingDetailId === selectedItem.id && !selectedItem.text ? (
+                  <Box sx={{ height: '100%', minHeight: 180, display: 'grid', placeItems: 'center' }}>
+                    <CircularProgress size={24} />
+                  </Box>
+                ) : (
+                  <MarkdownText text={selectedItem.text || ''} />
+                )}
               </Box>
-            ) : (
-              <MarkdownText text={selectedItem?.text || ''} />
-            )}
-          </Box>
-          {onRegenerateDebug && selectedItem && !selectedItemDeleted ? (
-            <Box className="paper-surface-content" sx={{ pt: 1.25, display: 'flex', justifyContent: 'flex-start', flexShrink: 0 }}>
-              <Button
-                size="small"
-                variant="outlined"
-                color="warning"
-                startIcon={<AutoAwesomeIcon fontSize="small" />}
-                disabled={Boolean(regeneratingId)}
-                onClick={handleRegenerateDebug}
-              >
-                {regeneratingId === selectedItem.id ? (isZh ? '重新生成中' : 'Regenerating') : (isZh ? '重新生成（调试）' : 'Regenerate (debug)')}
-              </Button>
-            </Box>
+              {onRegenerateDebug && !selectedItemDeleted ? (
+                <Box className="paper-surface-content" sx={{ pt: 1.25, display: 'flex', justifyContent: 'flex-start', flexShrink: 0 }}>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    color="warning"
+                    startIcon={<AutoAwesomeIcon fontSize="small" />}
+                    disabled={Boolean(regeneratingId)}
+                    onClick={handleRegenerateDebug}
+                  >
+                    {regeneratingId === selectedItem.id ? (isZh ? '重新生成中' : 'Regenerating') : (isZh ? '重新生成（调试）' : 'Regenerate (debug)')}
+                  </Button>
+                </Box>
+              ) : null}
+            </>
           ) : null}
         </PaperSurface>
-        <IconButton onClick={() => goToItem(1)} disabled={selectedIndex < 0 || selectedIndex >= items.length - 1} aria-label={isZh ? '上一项' : 'Previous'} sx={buildFloatingNavButtonSx('left')}>
-          <ChevronLeftIcon />
-        </IconButton>
-        <IconButton onClick={() => goToItem(-1)} disabled={selectedIndex <= 0} aria-label={isZh ? '下一项' : 'Next'} sx={buildFloatingNavButtonSx('right')}>
-          <ChevronRightIcon />
-        </IconButton>
+        {selectedItem ? (
+          <>
+            <IconButton onClick={() => goToItem(1)} disabled={selectedIndex < 0 || selectedIndex >= items.length - 1} aria-label={isZh ? '上一项' : 'Previous'} sx={buildFloatingNavButtonSx('left')}>
+              <ChevronLeftIcon />
+            </IconButton>
+            <IconButton onClick={() => goToItem(-1)} disabled={selectedIndex <= 0} aria-label={isZh ? '下一项' : 'Next'} sx={buildFloatingNavButtonSx('right')}>
+              <ChevronRightIcon />
+            </IconButton>
+          </>
+        ) : null}
       </Box>
     </Box>
   );

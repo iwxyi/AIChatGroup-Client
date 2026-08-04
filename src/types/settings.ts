@@ -15,6 +15,7 @@ export interface APIConfig {
   apiKey: string;
   baseUrl: string;
   model: string;
+  advancedOptions?: Partial<AIModelAdvancedOptions>;
 }
 
 export interface AIModelImageCapabilities {
@@ -33,6 +34,12 @@ export interface AIModelInputCapabilities {
   supportedMimeTypes: string[];
 }
 
+export type AIReasoningMode = 'auto' | 'enabled' | 'disabled';
+
+export interface AIModelAdvancedOptions {
+  reasoningMode: AIReasoningMode;
+}
+
 export interface AIModelProfile extends APIConfig {
   id: string;
   name: string;
@@ -40,6 +47,7 @@ export interface AIModelProfile extends APIConfig {
   isDefault?: boolean;
   imageCapabilities?: Partial<AIModelImageCapabilities>;
   inputCapabilities?: Partial<AIModelInputCapabilities>;
+  advancedOptions?: Partial<AIModelAdvancedOptions>;
 }
 
 export const DEFAULT_INPUT_CAPABILITIES: AIModelInputCapabilities = {
@@ -69,6 +77,7 @@ export function inferTextInputCapabilities(provider: AIProvider, model: string):
   const normalizedModel = model.trim().toLowerCase();
   const base = normalizeInputCapabilities();
   const multiImage = { ...base, imageInput: true, multiImageInput: true, maxAttachments: 10 };
+  const singleImage = { ...base, imageInput: true, multiImageInput: false, maxAttachments: 1 };
   const multiImageWithFiles = {
     ...multiImage,
     fileInput: true,
@@ -83,6 +92,12 @@ export function inferTextInputCapabilities(provider: AIProvider, model: string):
     || normalizedProvider === 'official-4'
   ) {
     return multiImage;
+  }
+  if (
+    (normalizedProvider === 'deepseek' || normalizedProvider === 'official-1' || normalizedProvider === 'official-deepseek')
+    && (normalizedModel.startsWith('deepseek-v4') || normalizedModel.includes('deepseek-v4'))
+  ) {
+    return singleImage;
   }
   if (!normalizedModel) return base;
   if (normalizedModel.includes('gemini')) return multiImageWithFiles;
@@ -107,6 +122,63 @@ export function inferTextInputCapabilities(provider: AIProvider, model: string):
   }
 
   return base;
+}
+
+function normalizeProviderKey(provider: AIProvider) {
+  const normalized = String(provider || '').trim().toLowerCase();
+  if (normalized === 'official-deepseek') return 'official-1';
+  if (normalized === 'official-gpt') return 'official-4';
+  if (normalized === 'official') return 'official-2';
+  return normalized;
+}
+
+export function inferReasoningModeSupport(provider: AIProvider, model: string) {
+  const normalizedProvider = normalizeProviderKey(provider);
+  const normalizedModel = model.trim().toLowerCase();
+  const isDeepSeekProvider = normalizedProvider === 'deepseek' || normalizedProvider === 'official-1';
+  const isDeepSeekV4 = normalizedModel.startsWith('deepseek-v4') || normalizedModel.includes('deepseek-v4');
+  return {
+    supported: isDeepSeekProvider && isDeepSeekV4,
+    source: isDeepSeekProvider && isDeepSeekV4 ? 'deepseek-v4' : 'unsupported',
+  } as const;
+}
+
+export function normalizeAIModelAdvancedOptions(
+  provider: AIProvider,
+  model: string,
+  input?: Partial<AIModelAdvancedOptions> | null,
+): AIModelAdvancedOptions {
+  const support = inferReasoningModeSupport(provider, model);
+  const requestedMode = input?.reasoningMode;
+  const reasoningMode: AIReasoningMode = support.supported
+    ? (requestedMode === 'enabled' || requestedMode === 'auto' || requestedMode === 'disabled' ? requestedMode : 'disabled')
+    : 'auto';
+  return { reasoningMode };
+}
+
+export function getReasoningModeUiMeta(profile?: Pick<AIModelProfile, 'provider' | 'model' | 'advancedOptions'> | null, language: Language = 'zh') {
+  const support = profile ? inferReasoningModeSupport(profile.provider, profile.model) : { supported: false, source: 'unsupported' as const };
+  const options = profile ? normalizeAIModelAdvancedOptions(profile.provider, profile.model, profile.advancedOptions) : { reasoningMode: 'auto' as AIReasoningMode };
+  if (language === 'zh') {
+    return {
+      supported: support.supported,
+      enabled: options.reasoningMode === 'enabled' || options.reasoningMode === 'auto',
+      label: '深度思考',
+      badge: support.supported ? 'DeepSeek V4 支持' : '当前模型未识别到支持',
+      tooltip: support.supported
+        ? '开启后允许模型返回更强推理过程，速度和消耗可能明显增加；关闭后会向 DeepSeek V4 发送 thinking.disabled。'
+        : '不同服务商参数不一致，当前模型未识别到可安全控制的深度思考开关。',
+    };
+  }
+  return {
+    supported: support.supported,
+    enabled: options.reasoningMode === 'enabled' || options.reasoningMode === 'auto',
+    label: 'Deep thinking',
+    badge: support.supported ? 'DeepSeek V4 supported' : 'Not detected',
+    tooltip: support.supported
+      ? 'Allows stronger reasoning but may increase latency and cost; disabling sends thinking.disabled to DeepSeek V4.'
+      : 'Provider parameters differ, and this model was not identified as safe to control.',
+  };
 }
 
 export function resolveAIModelInputCapabilities(profile?: Pick<AIModelProfile, 'provider' | 'model' | 'type' | 'inputCapabilities'> | null): AIModelInputCapabilities {
@@ -147,16 +219,17 @@ export function buildTextInputCapabilityPatch(provider: AIProvider, model: strin
 
 export function getAttachmentUiCapabilitySummary(profile?: Pick<AIModelProfile, 'provider' | 'model' | 'type' | 'inputCapabilities'> | null, language: Language = 'zh') {
   const capabilities = resolveAIModelInputCapabilities(profile);
+  const reasoningSupport = profile ? inferReasoningModeSupport(profile.provider, profile.model) : { source: 'unsupported' as const };
   if (language === 'zh') {
-    if (!capabilities.imageInput && !capabilities.fileInput) return '当前模型默认不支持图片/附件输入';
+    if (!capabilities.imageInput && !capabilities.fileInput) return '未开启图片/附件输入能力';
     const parts = [] as string[];
-    if (capabilities.imageInput) parts.push(capabilities.multiImageInput ? `图片（多图 ${capabilities.maxAttachments}）` : '图片');
+    if (capabilities.imageInput) parts.push(reasoningSupport.source === 'deepseek-v4' ? '图片文字识别' : (capabilities.multiImageInput ? `图片（多图 ${capabilities.maxAttachments}）` : '图片'));
     if (capabilities.fileInput) parts.push('附件');
     return parts.join(' / ');
   }
-  if (!capabilities.imageInput && !capabilities.fileInput) return 'Current model does not support image/file input by default';
+  if (!capabilities.imageInput && !capabilities.fileInput) return 'Image/file input not enabled';
   const parts = [] as string[];
-  if (capabilities.imageInput) parts.push(capabilities.multiImageInput ? `images (${capabilities.maxAttachments})` : 'image');
+  if (capabilities.imageInput) parts.push(reasoningSupport.source === 'deepseek-v4' ? 'image OCR' : (capabilities.multiImageInput ? `images (${capabilities.maxAttachments})` : 'image'));
   if (capabilities.fileInput) parts.push('file');
   return parts.join(' / ');
 }
@@ -173,6 +246,12 @@ export function getInputCapabilitySource(profile?: Pick<AIModelProfile, 'provide
 
 export function getInputCapabilityWarning(profile?: Pick<AIModelProfile, 'provider' | 'model'> | null, language: Language = 'zh') {
   if (getInputCapabilitySource(profile) !== 'third-party-inferred') return '';
+  const support = profile ? inferReasoningModeSupport(profile.provider, profile.model) : { source: 'unsupported' as const };
+  if (support.source === 'deepseek-v4') {
+    return language === 'zh'
+      ? 'DeepSeek V4 的图片输入主要用于识别图片中的文字，不等同于通用视觉理解。'
+      : 'DeepSeek V4 image input is mainly for OCR, not general visual understanding.';
+  }
   return language === 'zh'
     ? '按模型名推断当前第三方模型可能支持图片输入，但实际兼容性取决于服务商实现，发送失败时请关闭该能力。'
     : 'This third-party model is inferred by name to support image input, but actual compatibility depends on the provider implementation.';
@@ -180,7 +259,7 @@ export function getInputCapabilityWarning(profile?: Pick<AIModelProfile, 'provid
 
 export function getInputCapabilityBadge(profile?: Pick<AIModelProfile, 'provider' | 'model'> | null, language: Language = 'zh') {
   const source = getInputCapabilitySource(profile);
-  if (source === 'official') return language === 'zh' ? '官方支持' : 'Official';
+  if (source === 'official') return language === 'zh' ? '官方通道' : 'Official channel';
   if (source === 'third-party-inferred') return language === 'zh' ? '第三方推断' : '3rd-party inferred';
   return language === 'zh' ? '不支持' : 'Unsupported';
 }
@@ -414,6 +493,7 @@ export function normalizeAIProfiles(aiProfiles?: AIModelProfile[], api?: APIConf
       isDefault,
       imageCapabilities: type === 'image' ? normalizeImageCapabilities(profile.imageCapabilities) : undefined,
       inputCapabilities: type === 'text' ? resolveAIModelInputCapabilities(profile) : undefined,
+      advancedOptions: type === 'text' ? normalizeAIModelAdvancedOptions(provider, model, profile.advancedOptions) : undefined,
     };
   });
 

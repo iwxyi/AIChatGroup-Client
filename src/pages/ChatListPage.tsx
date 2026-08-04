@@ -283,6 +283,7 @@ export default function ChatListPage() {
     setDeletedAssistantNotice(null);
     try {
       await restoreChats([targetId]);
+      await prefetchChats();
     } catch (error) {
       setAssistantDeleteError(error instanceof Error ? error.message : '撤销删除失败');
     }

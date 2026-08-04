@@ -795,7 +795,6 @@ export default function ChatDetailPage() {
   const api = useSettingsStore((s) => s.api);
   const aiProfiles = useSettingsStore((s) => s.aiProfiles);
   const textProfile = getUsablePreferredAIProfile(aiProfiles, 'text');
-  const imageProfile = getUsablePreferredAIProfile(aiProfiles, 'image');
   const textInputCapabilities = resolveAIModelInputCapabilities(textProfile);
   const textInputCapabilityWarning = getInputCapabilityWarning(textProfile, isZh ? 'zh' : 'en');
   const { speakAsCharacterId, setSpeakAsCharacter, rightPanelOpen, toggleRightPanel, setRightPanelOpen, rightPanelTab, setRightPanelTab, chatReadingPositions, setChatReadingPosition } = useUIStore();
@@ -1331,22 +1330,13 @@ export default function ChatDetailPage() {
     }, 'info', 'chat-scroll');
   }, [currentChatMessages, id, initialStoryReadingPosition, shouldDelayStoryMessageListForRestore]);
   const effectiveTextInputCapabilities = useMemo(() => {
-    const baseCapabilities = isStoryRoom && !effectiveSpeakAsChar
+    return isStoryRoom && !effectiveSpeakAsChar
       ? buildStoryReaderTextInputCapabilities(textInputCapabilities)
       : textInputCapabilities;
-    if (!imageProfile) return baseCapabilities;
-    return {
-      ...baseCapabilities,
-      imageInput: true,
-      multiImageInput: true,
-      maxAttachments: Math.max(baseCapabilities.maxAttachments || 1, 9),
-    };
-  }, [effectiveSpeakAsChar, imageProfile, isStoryRoom, textInputCapabilities]);
+  }, [effectiveSpeakAsChar, isStoryRoom, textInputCapabilities]);
   const effectiveTextInputCapabilityWarning = isStoryRoom && !effectiveSpeakAsChar
     ? undefined
-    : imageProfile
-      ? undefined
-      : textInputCapabilityWarning;
+    : textInputCapabilityWarning;
   const storyReaderRole = isStoryRoom ? resolveStoryReaderRole(chat || undefined) : 'director';
   const effectiveComposerSurfaces = useMemo(() => {
     const primaryTextSurface = composerSurfaces.find((surface) => surface.type === 'text') || { key: 'member-guide-text', type: 'text' as const };

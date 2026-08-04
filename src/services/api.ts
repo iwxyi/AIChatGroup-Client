@@ -967,7 +967,7 @@ class ApiClient {
   }
 
   async getDeletedChatStats() {
-    return this.request<{ group: number; direct: number; aiDirect: number }>('GET', '/chats/recycle-bin/stats');
+    return this.request<{ group: number; direct: number; aiDirect: number; assistant: number }>('GET', '/chats/recycle-bin/stats');
   }
 
   async getMessages(chatId: string, options?: { limit?: number; before?: number; after?: number; aroundTimestamp?: number }) {

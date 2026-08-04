@@ -20,7 +20,7 @@ import { useAuthStore } from '../stores/useAuthStore';
 import { isLikelyBrowserCorsError, listAvailableModels, testConnection, type AvailableModelInfo } from '../services/aiClient';
 import { api, type OfficialAiProviderInfo } from '../services/api';
 import type { AIModelImageCapabilities, AIModelInputCapabilities, AIModelType, AIProvider } from '../types/settings';
-import { normalizeImageCapabilities, normalizeInputCapabilities, inferTextInputCapabilities, buildTextInputCapabilityPatch, getInputCapabilityLockState, getAttachmentUiCapabilitySummary, getInputCapabilityBadge, getInputCapabilityWarning, shouldShowInputCapabilityWarning } from '../types/settings';
+import { normalizeImageCapabilities, normalizeInputCapabilities, inferTextInputCapabilities, buildTextInputCapabilityPatch, getInputCapabilityLockState, getAttachmentUiCapabilitySummary, getInputCapabilityBadge, getInputCapabilityWarning, shouldShowInputCapabilityWarning, getReasoningModeUiMeta, normalizeAIModelAdvancedOptions } from '../types/settings';
 import { normalizeCharacterModelProfileIds } from '../types/character';
 import ConfirmDialog from '../components/common/ConfirmDialog';
 import PageSection from '../components/common/PageSection';
@@ -882,7 +882,10 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
     updateCurrentAIProfile(profileId, {
       model: value,
       ...(profile?.type === 'image' ? { imageCapabilities: inferImageCapabilities(profile.provider, value) } : {}),
-      ...(profile?.type === 'text' ? { inputCapabilities: inferTextInputCapabilities(profile.provider, value) } : {}),
+      ...(profile?.type === 'text' ? {
+        inputCapabilities: inferTextInputCapabilities(profile.provider, value),
+        advancedOptions: normalizeAIModelAdvancedOptions(profile.provider, value, profile.advancedOptions),
+      } : {}),
     });
   }, []);
 
@@ -1280,6 +1283,7 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
                               model: nextDefaults.model,
                               imageCapabilities: type === 'image' ? inferImageCapabilities(nextProvider, nextDefaults.model) : undefined,
                               inputCapabilities: type === 'text' ? inferTextInputCapabilities(nextProvider, nextDefaults.model) : undefined,
+                              advancedOptions: type === 'text' ? normalizeAIModelAdvancedOptions(nextProvider, nextDefaults.model, profile.advancedOptions) : undefined,
                             });
                           }}
                         >
@@ -1341,6 +1345,7 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
                           model: nextDefaults.model,
                           imageCapabilities: activeType === 'image' ? inferImageCapabilities(provider, nextDefaults.model) : profile.imageCapabilities,
                           inputCapabilities: activeType === 'text' ? inferTextInputCapabilities(provider, nextDefaults.model) : profile.inputCapabilities,
+                          advancedOptions: activeType === 'text' ? normalizeAIModelAdvancedOptions(provider, nextDefaults.model, profile.advancedOptions) : profile.advancedOptions,
                         });
                       }}
                     >
@@ -1519,6 +1524,39 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
                           );
                         })}
                       </Box>
+                      {(() => {
+                        const reasoningMeta = getReasoningModeUiMeta(profile, i18n.language.startsWith('zh') ? 'zh' : 'en');
+                        const normalizedAdvancedOptions = normalizeAIModelAdvancedOptions(profile.provider, profile.model, profile.advancedOptions);
+                        return (
+                          <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+                            <Tooltip title={reasoningMeta.tooltip}>
+                              <FormControlLabel
+                                sx={{ mr: 1, ml: 0, opacity: reasoningMeta.supported ? 1 : 0.58 }}
+                                control={(
+                                  <Checkbox
+                                    checked={reasoningMeta.supported && normalizedAdvancedOptions.reasoningMode !== 'disabled'}
+                                    disabled={!reasoningMeta.supported}
+                                    onChange={(e) => {
+                                      updateAIProfile(profile.id, {
+                                        advancedOptions: {
+                                          ...normalizedAdvancedOptions,
+                                          reasoningMode: e.target.checked ? 'enabled' : 'disabled',
+                                        },
+                                      });
+                                    }}
+                                  />
+                                )}
+                                label={reasoningMeta.label}
+                              />
+                            </Tooltip>
+                            {!reasoningMeta.supported ? (
+                              <Typography variant="caption" color="warning.main">
+                                {reasoningMeta.badge}
+                              </Typography>
+                            ) : null}
+                          </Box>
+                        );
+                      })()}
                     </Box>
                   ) : null}
 

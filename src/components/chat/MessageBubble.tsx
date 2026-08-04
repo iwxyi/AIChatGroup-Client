@@ -51,7 +51,45 @@ interface MenuPosition {
   mouseY: number;
 }
 
-const LONG_PRESS_MOVE_THRESHOLD = 12;
+interface LongPressTouchState extends MenuPosition {
+  scrollLeft: number;
+  scrollTop: number;
+  scrollElement: HTMLElement | Window;
+  cancelled: boolean;
+}
+
+const LONG_PRESS_DELAY_MS = 600;
+const LONG_PRESS_TAP_SLOP = 8;
+const LONG_PRESS_SCROLL_INTENT_Y = 6;
+const LONG_PRESS_SCROLL_RATIO = 1.15;
+const LONG_PRESS_SCROLL_SLOP = 2;
+
+function getScrollableAncestor(target: EventTarget | null): HTMLElement | Window {
+  if (!(target instanceof HTMLElement)) return window;
+  let element: HTMLElement | null = target;
+  while (element && element !== document.body) {
+    const style = window.getComputedStyle(element);
+    const overflowY = style.overflowY;
+    if ((overflowY === 'auto' || overflowY === 'scroll') && element.scrollHeight > element.clientHeight) {
+      return element;
+    }
+    element = element.parentElement;
+  }
+  return window;
+}
+
+function getScrollSnapshot(element: HTMLElement | Window) {
+  if (element instanceof Window) {
+    return {
+      scrollLeft: element.scrollX,
+      scrollTop: element.scrollY,
+    };
+  }
+  return {
+    scrollLeft: element.scrollLeft,
+    scrollTop: element.scrollTop,
+  };
+}
 
 function buildWithdrawalDebugTitle(withdrawal: NonNullable<Message['metadata']>['withdrawal'] | null) {
   if (!withdrawal?.originalContent) return '';
@@ -88,7 +126,7 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
   const [revisionEditorOpen, setRevisionEditorOpen] = useState(false);
   const [revisionDraft, setRevisionDraft] = useState(message.content);
   const pressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const touchStartRef = useRef<MenuPosition | null>(null);
+  const touchStartRef = useRef<LongPressTouchState | null>(null);
   const canDelete = useMemo(() => !pending && message.type !== 'system' && Boolean(onDelete), [message.type, onDelete, pending]);
   const canFeedback = useMemo(() => !pending && message.type === 'ai' && Boolean(onExpressionFeedback), [message.type, onExpressionFeedback, pending]);
   const canEditRevision = Boolean(onCreateRevision) && !pending && message.type !== 'system' && message.type !== 'event';
@@ -113,10 +151,38 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
     setMenuPosition(null);
   };
 
-  const handlePressStart = (x: number, y: number) => {
+  const cancelLongPress = () => {
+    if (touchStartRef.current) touchStartRef.current.cancelled = true;
     clearPressTimer();
-    touchStartRef.current = { mouseX: x, mouseY: y };
-    pressTimerRef.current = setTimeout(() => openMenuAt(x, y), 450);
+  };
+
+  const handlePressStart = (x: number, y: number, target: EventTarget | null) => {
+    clearPressTimer();
+    const scrollElement = getScrollableAncestor(target);
+    const scroll = getScrollSnapshot(scrollElement);
+    touchStartRef.current = {
+      mouseX: x,
+      mouseY: y,
+      scrollElement,
+      scrollLeft: scroll.scrollLeft,
+      scrollTop: scroll.scrollTop,
+      cancelled: false,
+    };
+    pressTimerRef.current = setTimeout(() => {
+      const start = touchStartRef.current;
+      if (!start || start.cancelled) return;
+      const nextScroll = getScrollSnapshot(start.scrollElement);
+      const scrolled = Math.abs(nextScroll.scrollTop - start.scrollTop) > LONG_PRESS_SCROLL_SLOP
+        || Math.abs(nextScroll.scrollLeft - start.scrollLeft) > LONG_PRESS_SCROLL_SLOP;
+      if (scrolled) {
+        touchStartRef.current = null;
+        pressTimerRef.current = null;
+        return;
+      }
+      openMenuAt(start.mouseX, start.mouseY);
+      touchStartRef.current = null;
+      pressTimerRef.current = null;
+    }, LONG_PRESS_DELAY_MS);
   };
 
   const handleTouchMove = (e: React.TouchEvent<HTMLElement>) => {
@@ -125,14 +191,20 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
     if (!touch || !start) return;
     const deltaX = touch.clientX - start.mouseX;
     const deltaY = touch.clientY - start.mouseY;
-    if (Math.hypot(deltaX, deltaY) > LONG_PRESS_MOVE_THRESHOLD) {
-      clearPressTimer();
+    const absX = Math.abs(deltaX);
+    const absY = Math.abs(deltaY);
+    const nextScroll = getScrollSnapshot(start.scrollElement);
+    const scrolled = Math.abs(nextScroll.scrollTop - start.scrollTop) > LONG_PRESS_SCROLL_SLOP
+      || Math.abs(nextScroll.scrollLeft - start.scrollLeft) > LONG_PRESS_SCROLL_SLOP;
+    const verticalScrollIntent = absY > LONG_PRESS_SCROLL_INTENT_Y && absY > absX * LONG_PRESS_SCROLL_RATIO;
+    if (scrolled || verticalScrollIntent || Math.hypot(deltaX, deltaY) > LONG_PRESS_TAP_SLOP) {
+      cancelLongPress();
       touchStartRef.current = null;
     }
   };
 
   const handleTouchEnd = () => {
-    clearPressTimer();
+    cancelLongPress();
     touchStartRef.current = null;
   };
 
@@ -213,7 +285,7 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
         onMouseMove: clearPressTimer,
         onTouchStart: (e: React.TouchEvent<HTMLElement>) => {
           const touch = e.touches[0];
-          if (touch) handlePressStart(touch.clientX, touch.clientY);
+          if (touch) handlePressStart(touch.clientX, touch.clientY, e.target);
         },
         onTouchMove: handleTouchMove,
         onTouchEnd: handleTouchEnd,

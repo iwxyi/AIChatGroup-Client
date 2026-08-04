@@ -25,6 +25,7 @@
     "test:ai-llm-acceptance": "node scripts/ai-llm-acceptance.mjs",
     "test:ai-chatflow-acceptance": "node scripts/ai-llm-acceptance.mjs --cases=chatflow",
     "test:ai-inner-life-lab": "node scripts/ai-inner-life-lab.mjs",
+    "test:ai-reasoning-ab": "node scripts/ai-reasoning-ab.mjs",
     "test:story-llm-acceptance": "node scripts/story-llm-acceptance.mjs",
     "preview": "vite preview"
   },

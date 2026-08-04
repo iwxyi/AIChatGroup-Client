@@ -459,6 +459,18 @@ function usesOpenAICompatibleChatApi(config: APIConfig) {
   return ['openai', 'xai', 'deepseek', 'moonshot', 'minimax', 'bytedance', 'custom'].includes(config.provider);
 }
 
+function buildOpenAICompatibleAdvancedRequestFields(config: APIConfig): Record<string, unknown> {
+  const reasoningMode = config.advancedOptions?.reasoningMode;
+  const normalizedProvider = String(config.provider || '').trim().toLowerCase();
+  const normalizedModel = config.model.trim().toLowerCase();
+  if ((normalizedProvider === 'deepseek' || normalizedProvider === 'official-1' || normalizedProvider === 'official-deepseek')
+    && (normalizedModel.startsWith('deepseek-v4') || normalizedModel.includes('deepseek-v4'))) {
+    if (reasoningMode === 'disabled') return { thinking: { type: 'disabled' } };
+    if (reasoningMode === 'enabled') return { thinking: { type: 'enabled' } };
+  }
+  return {};
+}
+
 async function parseSSEStream(
   response: Response,
   onData: (parsed: Record<string, unknown>) => void,
@@ -825,6 +837,7 @@ async function generateOpenAICompatibleResponse(
     stream: Boolean(onChunk),
     ...maxTokensConfig,
     temperature: 0.8,
+    ...buildOpenAICompatibleAdvancedRequestFields(config),
     response_format: options.responseFormat === 'json' ? { type: 'json_object' } : undefined,
   };
 
@@ -882,6 +895,7 @@ async function generateOfficialResponse(
     stream: Boolean(onChunk),
     max_tokens: options.maxTokens,
     response_format: options.responseFormat === 'json' ? { type: 'json_object' } : undefined,
+    modelOptions: config.advancedOptions,
     metadata: options.aiUsage ? { aiUsage: options.aiUsage } : undefined,
   };
   const response = await fetch('/api/ai/v1/chat/completions', {

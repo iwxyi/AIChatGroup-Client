@@ -124,6 +124,7 @@ function applyLocalChatRestore(chat: GroupChat) {
   return normalizeConversation({
     ...chat,
     deletedAt: null,
+    isActive: true,
     updatedAt: Date.now(),
   });
 }
@@ -1878,7 +1879,7 @@ export const useChatStore = create<ChatStore>()(
             }));
             return;
           }
-          await Promise.all(normalizedIds.map((chatId) => get().syncPatch(chatId, { deletedAt: null }, 'patch')));
+          await Promise.all(normalizedIds.map((chatId) => get().syncPatch(chatId, { deletedAt: null, isActive: true }, 'patch')));
         },
 
         purgeChats: async (ids) => {
