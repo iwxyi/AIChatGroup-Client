@@ -55,7 +55,7 @@ function applyLocalChatCreate(chatData: Omit<GroupChat, 'id' | 'createdAt' | 'up
 }
 
 function buildPatchedFieldVersions(chat: GroupChat, updates: Partial<GroupChat>, versionAt: number) {
-  const ignoredFields = new Set(['createdAt', 'updatedAt', 'lastMessageAt', 'latestMessage', 'runtimeDetailLoaded', 'worldRuntimeLoaded']);
+  const ignoredFields = new Set(['createdAt', 'updatedAt', 'lastMessageAt', 'latestMessage', 'runtimeDetailLoaded', 'runtimeDetailHydratedAt', 'worldRuntimeLoaded']);
   const fieldVersions = { ...(chat.fieldVersions || {}) };
   for (const field of Object.keys(updates)) {
     if (ignoredFields.has(field)) continue;
@@ -144,6 +144,7 @@ function createConflictCopyChatData(chat: GroupChat): Omit<GroupChat, 'id' | 'cr
   delete data.fieldVersions;
   delete data.latestMessage;
   delete data.runtimeDetailLoaded;
+  delete data.runtimeDetailHydratedAt;
   delete data.worldRuntimeLoaded;
   return {
     ...data,
@@ -436,6 +437,7 @@ function compactChatPatchForCloud(patch: PendingChatOperation['patch']) {
   const nextPatch = compactChatRuntimeFieldsForPersistence({ ...patch } as Partial<GroupChat>) as Record<string, unknown>;
   delete nextPatch.updatedAt;
   delete nextPatch.lastMessageAt;
+  delete nextPatch.runtimeDetailHydratedAt;
   return nextPatch;
 }
 
@@ -589,7 +591,8 @@ function hasRecordDetail(value: unknown): boolean {
 
 function hasChatRuntimeDetailEvidence(chat: GroupChat | undefined) {
   return Boolean(chat && (
-    hasText(chat.topicSeed)
+    (typeof chat.runtimeDetailHydratedAt === 'number' && chat.runtimeDetailHydratedAt > 0)
+    || hasText(chat.topicSeed)
     || hasArrayItems(chat.layeredMemories)
     || hasArrayItems(chat.runtimeTimeline)
     || hasArrayItems(chat.runtimeEventsV2)
@@ -603,6 +606,14 @@ function isChatRuntimeDetailLoaded(chat: GroupChat | undefined) {
   if (!chat) return false;
   if (chat.runtimeDetailLoaded === false) return false;
   return hasChatRuntimeDetailEvidence(chat);
+}
+
+function markChatRuntimeDetailLoaded(chat: GroupChat) {
+  return {
+    ...chat,
+    runtimeDetailLoaded: true,
+    runtimeDetailHydratedAt: chat.runtimeDetailHydratedAt || Date.now(),
+  };
 }
 
 function sortChats(chats: GroupChat[]) {
@@ -632,6 +643,7 @@ function buildChatListSignature(chats: GroupChat[]) {
       chat.latestMessage?.timestamp || 0,
       chat.latestMessage?.content || '',
       chat.runtimeDetailLoaded ? 1 : 0,
+      chat.runtimeDetailHydratedAt || 0,
       chat.worldRuntimeLoaded ? 1 : 0,
       JSON.stringify(chat.sessionKind || {}),
       JSON.stringify(chat.modeState || {}),
@@ -876,19 +888,19 @@ function chatDetailFromChanges(changes: Array<Record<string, unknown>> | undefin
   const change = changes.find((item) => item.entity === 'chat_detail' && item.id === id);
   if (!change) return null;
   if (change.op === 'delete') {
-    return normalizeConversation({
+    return markChatRuntimeDetailLoaded(normalizeConversation({
       id,
       ...(isRecord(change.patch) ? change.patch : {}),
       deletedAt: isRecord(change.patch) && typeof change.patch.deletedAt === 'number' ? change.patch.deletedAt : Date.now(),
       runtimeDetailLoaded: true,
-    } as unknown as GroupChat);
+    } as unknown as GroupChat));
   }
   if (!isRecord(change.patch)) return null;
-  return normalizeConversation({
+  return markChatRuntimeDetailLoaded(normalizeConversation({
     ...change.patch,
     id,
     runtimeDetailLoaded: true,
-  } as unknown as GroupChat);
+  } as unknown as GroupChat));
 }
 
 async function fetchChatSnapshot() {
@@ -898,10 +910,10 @@ async function fetchChatSnapshot() {
 
 async function fetchChatDetail(id: string) {
   const result = await api.getChat(id);
-  const detail = normalizeConversation({
+  const detail = markChatRuntimeDetailLoaded(normalizeConversation({
     ...(result as unknown as GroupChat),
     runtimeDetailLoaded: true,
-  });
+  }));
   if (detail.memberCharacterSummaries?.length) {
     useCharacterStore.getState().hydrateCharacterSummaries(detail.memberCharacterSummaries);
   }
@@ -1195,6 +1207,7 @@ export const useChatStore = create<ChatStore>()(
       };
       const flushRequestedChatScopes = async () => {
         const scopes = Array.from(requestedChatScopeChecks);
+        requestedChatScopeChecks.clear();
         for (const scope of scopes) {
           if (scope === CHAT_SUMMARY_SCOPE) {
             await get().loadChats();
@@ -1470,12 +1483,13 @@ export const useChatStore = create<ChatStore>()(
               if (getErrorStatus(error) === 404 && fallback) {
                 chatSyncScopes.markChecked(scope, { applied: false });
                 if (hasChatRuntimeDetailEvidence(fallback) && fallback.runtimeDetailLoaded !== true) {
+                  const loadedFallback = markChatRuntimeDetailLoaded(fallback);
                   set((state) => ({
                     chats: state.chats.map((chat) => (
-                      chat.id === id ? { ...chat, runtimeDetailLoaded: true } : chat
+                      chat.id === id ? loadedFallback : chat
                     )),
                   }));
-                  return { ...fallback, runtimeDetailLoaded: true };
+                  return loadedFallback;
                 }
                 return fallback;
               }

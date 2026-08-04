@@ -14,6 +14,12 @@ type DeepSeekPricingForm = {
   completion: string;
   cacheHit: string;
   cacheMiss: string;
+  flashCompletion: string;
+  flashCacheHit: string;
+  flashCacheMiss: string;
+  proCompletion: string;
+  proCacheHit: string;
+  proCacheMiss: string;
 };
 
 const DEFAULT_DEEPSEEK_PRICING_FORM: DeepSeekPricingForm = {
@@ -21,8 +27,14 @@ const DEFAULT_DEEPSEEK_PRICING_FORM: DeepSeekPricingForm = {
   billingMultiplier: '1.5',
   prompt: '1',
   completion: '2',
-  cacheHit: '0.1',
+  cacheHit: '0.02',
   cacheMiss: '1',
+  flashCompletion: '2',
+  flashCacheHit: '0.02',
+  flashCacheMiss: '1',
+  proCompletion: '6',
+  proCacheHit: '0.025',
+  proCacheMiss: '3',
 };
 
 const NANOBANANA_ASPECT_RATIOS = ['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'];
@@ -188,6 +200,8 @@ function toDeepSeekPricingForm(value: unknown): DeepSeekPricingForm {
   const pricing = getRecord(value);
   const models = getRecord(pricing.models);
   const defaultModel = getRecord(models.default);
+  const flashModel = getRecord(models['deepseek-v4-flash']);
+  const proModel = getRecord(models['deepseek-v4-pro']);
   return {
     pointValueCny: numberText(pricing.pointValueCny, DEFAULT_DEEPSEEK_PRICING_FORM.pointValueCny),
     billingMultiplier: numberText(pricing.billingMultiplier, DEFAULT_DEEPSEEK_PRICING_FORM.billingMultiplier),
@@ -195,6 +209,12 @@ function toDeepSeekPricingForm(value: unknown): DeepSeekPricingForm {
     completion: numberText(defaultModel.completion, DEFAULT_DEEPSEEK_PRICING_FORM.completion),
     cacheHit: numberText(defaultModel.cacheHit, DEFAULT_DEEPSEEK_PRICING_FORM.cacheHit),
     cacheMiss: numberText(defaultModel.cacheMiss, DEFAULT_DEEPSEEK_PRICING_FORM.cacheMiss),
+    flashCompletion: numberText(flashModel.completion ?? defaultModel.completion, DEFAULT_DEEPSEEK_PRICING_FORM.flashCompletion),
+    flashCacheHit: numberText(flashModel.cacheHit ?? defaultModel.cacheHit, DEFAULT_DEEPSEEK_PRICING_FORM.flashCacheHit),
+    flashCacheMiss: numberText(flashModel.cacheMiss ?? defaultModel.cacheMiss, DEFAULT_DEEPSEEK_PRICING_FORM.flashCacheMiss),
+    proCompletion: numberText(proModel.completion ?? defaultModel.completion, DEFAULT_DEEPSEEK_PRICING_FORM.proCompletion),
+    proCacheHit: numberText(proModel.cacheHit ?? defaultModel.cacheHit, DEFAULT_DEEPSEEK_PRICING_FORM.proCacheHit),
+    proCacheMiss: numberText(proModel.cacheMiss ?? defaultModel.cacheMiss, DEFAULT_DEEPSEEK_PRICING_FORM.proCacheMiss),
   };
 }
 
@@ -238,10 +258,22 @@ function buildNanoBananaPricing(form: { pointValue: string; billingMultiplier: s
 function buildInternalLedgerTokenPricing(providerCode: string, form: DeepSeekPricingForm) {
   const isMoacodeProvider = providerCode === 'moacode' || providerCode === 'moacode-team';
   const modelPricing = {
-    prompt: toNonNegativeNumber(form.prompt, Number(DEFAULT_DEEPSEEK_PRICING_FORM.prompt)),
+    prompt: toNonNegativeNumber(form.cacheMiss, Number(DEFAULT_DEEPSEEK_PRICING_FORM.cacheMiss)),
     completion: toNonNegativeNumber(form.completion, Number(DEFAULT_DEEPSEEK_PRICING_FORM.completion)),
     cacheHit: toNonNegativeNumber(form.cacheHit, Number(DEFAULT_DEEPSEEK_PRICING_FORM.cacheHit)),
     cacheMiss: toNonNegativeNumber(form.cacheMiss, Number(DEFAULT_DEEPSEEK_PRICING_FORM.cacheMiss)),
+  };
+  const flashPricing = {
+    prompt: toNonNegativeNumber(form.flashCacheMiss, Number(DEFAULT_DEEPSEEK_PRICING_FORM.flashCacheMiss)),
+    completion: toNonNegativeNumber(form.flashCompletion, Number(DEFAULT_DEEPSEEK_PRICING_FORM.flashCompletion)),
+    cacheHit: toNonNegativeNumber(form.flashCacheHit, Number(DEFAULT_DEEPSEEK_PRICING_FORM.flashCacheHit)),
+    cacheMiss: toNonNegativeNumber(form.flashCacheMiss, Number(DEFAULT_DEEPSEEK_PRICING_FORM.flashCacheMiss)),
+  };
+  const proPricing = {
+    prompt: toNonNegativeNumber(form.proCacheMiss, Number(DEFAULT_DEEPSEEK_PRICING_FORM.proCacheMiss)),
+    completion: toNonNegativeNumber(form.proCompletion, Number(DEFAULT_DEEPSEEK_PRICING_FORM.proCompletion)),
+    cacheHit: toNonNegativeNumber(form.proCacheHit, Number(DEFAULT_DEEPSEEK_PRICING_FORM.proCacheHit)),
+    cacheMiss: toNonNegativeNumber(form.proCacheMiss, Number(DEFAULT_DEEPSEEK_PRICING_FORM.proCacheMiss)),
   };
   return {
     unit: 'point',
@@ -252,8 +284,8 @@ function buildInternalLedgerTokenPricing(providerCode: string, form: DeepSeekPri
     models: {
       default: modelPricing,
       ...(providerCode === 'deepseek' ? {
-        'deepseek-v4-flash': modelPricing,
-        'deepseek-v4-pro': modelPricing,
+        'deepseek-v4-flash': flashPricing,
+        'deepseek-v4-pro': proPricing,
       } : {}),
     },
   };
@@ -1543,34 +1575,56 @@ export default function AdminAIProviderPage() {
                   </Box>
                   {!isMoacode ? (
                     <>
-                      <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.25}>
-                        <TextField
-                          label="输入成本价（元/百万 tokens）"
-                          value={form.deepseekPricing.prompt}
-                          onChange={(e) => updateDeepSeekPricing('prompt', e.target.value)}
-                          fullWidth
-                        />
-                        <TextField
-                          label="输出成本价（元/百万 tokens）"
-                          value={form.deepseekPricing.completion}
-                          onChange={(e) => updateDeepSeekPricing('completion', e.target.value)}
-                          fullWidth
-                        />
-                      </Stack>
-                      <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.25}>
-                        <TextField
-                          label="缓存命中价格（元/百万 tokens）"
-                          value={form.deepseekPricing.cacheHit}
-                          onChange={(e) => updateDeepSeekPricing('cacheHit', e.target.value)}
-                          fullWidth
-                        />
-                        <TextField
-                          label="缓存未命中价格（元/百万 tokens）"
-                          value={form.deepseekPricing.cacheMiss}
-                          onChange={(e) => updateDeepSeekPricing('cacheMiss', e.target.value)}
-                          fullWidth
-                        />
-                      </Stack>
+                      <Box sx={{ display: 'grid', gap: 0.75 }}>
+                        <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>
+                          deepseek-v4-flash
+                        </Typography>
+                        <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.25}>
+                          <TextField
+                            label="输入（缓存未命中，元/百万 tokens）"
+                            value={form.deepseekPricing.flashCacheMiss}
+                            onChange={(e) => updateDeepSeekPricing('flashCacheMiss', e.target.value)}
+                            fullWidth
+                          />
+                          <TextField
+                            label="输入（缓存命中，元/百万 tokens）"
+                            value={form.deepseekPricing.flashCacheHit}
+                            onChange={(e) => updateDeepSeekPricing('flashCacheHit', e.target.value)}
+                            fullWidth
+                          />
+                          <TextField
+                            label="输出（元/百万 tokens）"
+                            value={form.deepseekPricing.flashCompletion}
+                            onChange={(e) => updateDeepSeekPricing('flashCompletion', e.target.value)}
+                            fullWidth
+                          />
+                        </Stack>
+                      </Box>
+                      <Box sx={{ display: 'grid', gap: 0.75 }}>
+                        <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>
+                          deepseek-v4-pro
+                        </Typography>
+                        <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.25}>
+                          <TextField
+                            label="输入（缓存未命中，元/百万 tokens）"
+                            value={form.deepseekPricing.proCacheMiss}
+                            onChange={(e) => updateDeepSeekPricing('proCacheMiss', e.target.value)}
+                            fullWidth
+                          />
+                          <TextField
+                            label="输入（缓存命中，元/百万 tokens）"
+                            value={form.deepseekPricing.proCacheHit}
+                            onChange={(e) => updateDeepSeekPricing('proCacheHit', e.target.value)}
+                            fullWidth
+                          />
+                          <TextField
+                            label="输出（元/百万 tokens）"
+                            value={form.deepseekPricing.proCompletion}
+                            onChange={(e) => updateDeepSeekPricing('proCompletion', e.target.value)}
+                            fullWidth
+                          />
+                        </Stack>
+                      </Box>
                     </>
                   ) : null}
                 </Stack>

@@ -2958,6 +2958,27 @@ describe('chatEngine streaming preview', () => {
     expect(prompt).toContain('Never use an action + speech + action + speech wrapper');
   });
 
+  it('warns only when recent group chat overuses visible name-address openers', () => {
+    const surface = { kind: 'chat', allowMarkdown: false, preserveParagraphs: false, roleFit: 'ordinary', basis: [] } as const;
+    const repeated = __chatEngineTestUtils.buildNaturalChatSurfaceContract([
+      buildAiMessage('tea', '数据茶娘', '小铁，你今晚这单子接得也太顺了。', 1),
+      buildAiMessage('bot', '机械跑堂小铁', '茶娘，别把账都算我头上。', 2),
+      buildAiMessage('doc', '赛博茶博士', '小铁，杯底那点残汤可藏不住。', 3),
+      buildAiMessage('tea', '数据茶娘', '博士，壶出几次汤你都数得这么清。', 4),
+    ], surface, false);
+
+    expect(repeated).toContain('overusing visible name-addressing at the start');
+    expect(repeated).toContain('Do not open this turn with a participant name unless it is needed');
+
+    const varied = __chatEngineTestUtils.buildNaturalChatSurfaceContract([
+      buildAiMessage('tea', '数据茶娘', '这壶今晚倒成证物了是吧。', 1),
+      buildAiMessage('bot', '机械跑堂小铁', '别把我账本也扯进去。', 2),
+      buildAiMessage('doc', '赛博茶博士', '茶还喝不喝了？', 3),
+    ], surface, false);
+
+    expect(varied).not.toContain('overusing visible name-addressing');
+  });
+
   it('keeps natural chat surface contract out of non-chat surfaces', () => {
     const prompt = __chatEngineTestUtils.buildNaturalChatSurfaceContract([
       buildUserMessage('写一篇完整说明', 1),

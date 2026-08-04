@@ -1194,6 +1194,45 @@ ${signals.join('\n')}
 - Good reply test: the room can tell what changed, and the reply still solves the latest user or room pressure.`;
 }
 
+function buildNameAddressVariants(name?: string | null) {
+  const trimmed = (name || '').trim();
+  if (!trimmed) return [];
+  const variants = new Set<string>([trimmed]);
+  if (/[\u4e00-\u9fff]/.test(trimmed) && trimmed.length >= 3) {
+    variants.add(trimmed.slice(-2));
+    if (trimmed.length >= 4) variants.add(trimmed.slice(-3));
+  }
+  return [...variants].filter((item) => item.length >= 2);
+}
+
+function startsWithVisibleNameAddress(content: string, names: Set<string>) {
+  const trimmed = content.trimStart();
+  if (!trimmed) return false;
+  for (const name of names) {
+    if (trimmed.startsWith(name) && /^[\s,，、:：]/.test(trimmed.slice(name.length, name.length + 1))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function buildNameAddressingDriftLine(messages: Message[]) {
+  const recentAi = messages
+    .filter((message) => message.type === 'ai' && !message.isDeleted && message.content.trim())
+    .slice(-6);
+  if (recentAi.length < 3) return '';
+  const nameVariants = new Set<string>();
+  for (const message of recentAi) {
+    for (const variant of buildNameAddressVariants(message.senderName)) {
+      nameVariants.add(variant);
+    }
+  }
+  if (!nameVariants.size) return '';
+  const addressOpeners = recentAi.filter((message) => startsWithVisibleNameAddress(message.content, nameVariants));
+  if (addressOpeners.length < 3 || addressOpeners.length < Math.ceil(recentAi.length * 0.5)) return '';
+  return '\n- Recent room replies are overusing visible name-addressing at the start. Do not open this turn with a participant name unless it is needed to grab attention, disambiguate threads, pressure someone, repair, hand off, or make a deliberate social move.';
+}
+
 function buildNaturalChatSurfaceContract(messages: Message[], surface: ResponseSurface, showRoleActions?: boolean) {
   if (surface.kind !== 'chat') return '';
   const recentAiLengths = messages
@@ -1206,6 +1245,7 @@ function buildNaturalChatSurfaceContract(messages: Message[], surface: ResponseS
   const lengthLine = longRunRisk
     ? `\n- Recent room replies are getting long (${recentAiLengths.join(' / ')} chars). It is natural for the next turn to cool back down with one concrete line.`
     : '';
+  const nameAddressingLine = buildNameAddressingDriftLine(messages);
   const roleActionLine = showRoleActions
     ? '- Physical actions are usually omitted in ordinary group chat. If one truly changes meaning or social temperature, use at most one brief beat.'
     : '- Role actions are disabled here; keep the visible content as spoken chat.';
@@ -1213,7 +1253,7 @@ function buildNaturalChatSurfaceContract(messages: Message[], surface: ResponseS
 - This contract controls surface shape only. It must not override a focused job, handoff, direct answer, or decision/recommendation required above.
 - This is live chat, not an essay, speech, report, script page, or narrator prose.
 - Reply to one live point instead of recapping the whole debate or making a personal manifesto.
-- Heat may make a reply sharper or slightly longer, but it should not force every next speaker to write longer.${lengthLine}
+- Heat may make a reply sharper or slightly longer, but it should not force every next speaker to write longer.${lengthLine}${nameAddressingLine}
 ${roleActionLine}
 - Never use an action + speech + action + speech wrapper. Do not solve repetition by adding backstory, extra examples, or decorative actions.`;
 }

@@ -100,7 +100,7 @@ function describeEmotion(innerLife: InnerLifeProjection) {
 
 function describeRelationship(input: BuildTurnDirectiveInput, targetName?: string) {
   const posture = input.conversationMovePlan.socialPosture;
-  const target = targetName ? `toward ${targetName}` : 'toward the room';
+  const target = targetName ? `with ${targetName} in mind` : 'toward the room';
   if (input.intent.stance === 'support' || input.intent.stance === 'back_up') return `be warm ${target}, but do not automatically repeat their claim; support may sound like a joke, a gripe, a small rescue, or a partial concession`;
   if (input.intent.stance === 'challenge' || input.intent.stance === 'pile_on') return `be ${posture.directness} ${target}; challenge one point, not the whole person, and let irritation or disbelief show if it fits`;
   if (input.intent.stance === 'deflect' || input.innerLife.impulse === 'avoid') return `keep some distance ${target}; a partial reply, dodge, or tired aside is acceptable`;
@@ -164,7 +164,7 @@ export function buildTurnDirective(input: BuildTurnDirectiveInput): TurnDirectiv
 
 export function buildTurnDirectivePrompt(directive: TurnDirective | null | undefined) {
   if (!directive) return '';
-  const targetLine = directive.targetName ? `\n- Active target: ${directive.targetName}.` : '';
+  const targetLine = directive.targetName ? `\n- Attention target for interpretation only: ${directive.targetName}; this is not an instruction to visibly address them by name.` : '';
   const userLine = directive.userConstraint ? `\n- User constraint: ${directive.userConstraint}.` : '';
   return `\n## Turn Directive
 - This is the single behavior decision for this ordinary group-chat turn. Use detailed character, relationship, and memory blocks as facts, but let this block decide the visible move.

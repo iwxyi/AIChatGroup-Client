@@ -895,7 +895,7 @@ async function generateOfficialResponse(
     stream: Boolean(onChunk),
     max_tokens: options.maxTokens,
     response_format: options.responseFormat === 'json' ? { type: 'json_object' } : undefined,
-    modelOptions: config.advancedOptions,
+    ...buildOpenAICompatibleAdvancedRequestFields(config),
     metadata: options.aiUsage ? { aiUsage: options.aiUsage } : undefined,
   };
   const response = await fetch('/api/ai/v1/chat/completions', {

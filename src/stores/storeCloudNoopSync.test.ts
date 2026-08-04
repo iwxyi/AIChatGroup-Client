@@ -804,6 +804,56 @@ describe('cloud no-op sync', () => {
     expect(merged.runtimeSeed?.notes).toEqual(['云端详情前情']);
   });
 
+  it('does not refetch an already hydrated empty chat detail within the refresh ttl', async () => {
+    apiMocks.getChat.mockResolvedValue(chat({
+      id: 'chat-1',
+      name: '空运行态群聊',
+      topic: '',
+      runtimeDetailLoaded: true,
+      runtimeSeed: { notes: [], artifacts: [] },
+      layeredMemories: [],
+      runtimeTimeline: [],
+      runtimeEventsV2: [],
+      relationshipLedger: [],
+      updatedAt: 1,
+      lastMessageAt: 1,
+    }));
+    const { useChatStore } = await import('./useChatStore');
+    await useChatStore.persist.rehydrate();
+    useChatStore.setState({
+      chats: [chat({
+        id: 'chat-1',
+        name: '摘要群聊名',
+        topic: '',
+        runtimeDetailLoaded: false,
+        runtimeSeed: { notes: [], artifacts: [] },
+        layeredMemories: [],
+        runtimeTimeline: [],
+        runtimeEventsV2: [],
+        relationshipLedger: [],
+        updatedAt: 1,
+        lastMessageAt: 1,
+      })],
+      currentChatId: null,
+      lastSyncedAt: 1,
+      pendingOperations: [],
+      pendingEditSyncCount: 0,
+      pendingEditSyncError: null,
+      remoteDeletedChatIds: [],
+      remoteDeletedChats: [],
+      isLoading: false,
+    });
+
+    await useChatStore.getState().loadChat('chat-1');
+    await useChatStore.getState().loadChat('chat-1');
+
+    const merged = useChatStore.getState().chats[0];
+    expect(apiMocks.getChat).toHaveBeenCalledTimes(1);
+    expect(useChatStore.getState().hasChatLoaded('chat-1')).toBe(true);
+    expect(merged.runtimeDetailLoaded).toBe(true);
+    expect(merged.runtimeDetailHydratedAt).toBeGreaterThan(0);
+  });
+
   it('rechecks chats that were incorrectly marked loaded by legacy summary data', async () => {
     apiMocks.getChat.mockResolvedValueOnce(chat({
       id: 'chat-1',

@@ -161,7 +161,11 @@ describe('turnDirective', () => {
     expect(directive?.socialJob).toContain('condition');
     expect(directive?.relationshipEffect).toContain('do not automatically repeat their claim');
     expect(directive?.relationshipEffect).toContain('joke');
-    expect(buildTurnDirectivePrompt(directive)).toContain('single behavior decision');
+    const prompt = buildTurnDirectivePrompt(directive);
+    expect(prompt).toContain('single behavior decision');
+    expect(prompt).toContain('Attention target for interpretation only: 陈越');
+    expect(prompt).toContain('not an instruction to visibly address them by name');
+    expect(prompt).not.toContain('Active target: 陈越');
   });
 
   it('keeps user guidance above AI-to-AI room momentum', () => {

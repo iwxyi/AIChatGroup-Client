@@ -16,6 +16,7 @@ Required environment:
 Optional environment:
   PNEUMATA_TEST_LLM_BASE_URL      OpenAI-compatible base URL. Defaults to ${DEFAULT_BASE_URL}
   PNEUMATA_TEST_LLM_TIMEOUT_MS    Request timeout. Defaults to 60000
+  PNEUMATA_TEST_LLM_RETRY_COUNT   Retries for transient upstream errors. Defaults to 2
   PNEUMATA_TEST_LLM_REPORT_DIR    Defaults to tmp/reasoning-ab
   PNEUMATA_TEST_LLM_JUDGE_MODEL   Optional evaluator model. Defaults to the tested model.
   PNEUMATA_TEST_LLM_JUDGE_API_KEY Optional evaluator API key. Defaults to the tested key.
@@ -104,6 +105,11 @@ function parseTimeoutMs(value) {
   return Number.isFinite(parsed) ? Math.max(5000, parsed) : 60000;
 }
 
+function parseRetryCount(value) {
+  const parsed = Number(value || 2);
+  return Number.isFinite(parsed) ? Math.max(0, Math.min(8, Math.floor(parsed))) : 2;
+}
+
 function trimTrailingSlashes(value) {
   return value.replace(/\/+$/, '');
 }
@@ -159,6 +165,7 @@ const config = {
   model: process.env.PNEUMATA_TEST_LLM_MODEL || '',
   baseUrl: process.env.PNEUMATA_TEST_LLM_BASE_URL || DEFAULT_BASE_URL,
   timeoutMs: parseTimeoutMs(process.env.PNEUMATA_TEST_LLM_TIMEOUT_MS),
+  retryCount: parseRetryCount(process.env.PNEUMATA_TEST_LLM_RETRY_COUNT),
   reportDir: readArgValue('report-dir') || process.env.PNEUMATA_TEST_LLM_REPORT_DIR || 'tmp/reasoning-ab',
   scenarios: parseList(readArgValue('scenarios') || Object.keys(SCENARIOS).join(',')),
   modes: parseList(readArgValue('modes') || 'disabled,enabled'),
@@ -190,39 +197,55 @@ function reasoningFields(mode) {
 }
 
 async function callOpenAICompatible({ model, messages, mode, maxTokens = 700, apiKey = config.apiKey, baseUrl = config.baseUrl, json = false }) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
-  const startedAt = Date.now();
-  try {
-    const response = await fetch(chatUrl(baseUrl), {
-      method: 'POST',
-      signal: controller.signal,
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model,
-        temperature: 0.55,
-        max_tokens: maxTokens,
-        response_format: json ? { type: 'json_object' } : undefined,
-        ...reasoningFields(mode),
-        messages,
-      }),
-    });
-    const text = await response.text();
-    const latencyMs = Date.now() - startedAt;
-    if (!response.ok) throw new Error(`LLM request failed: ${response.status} ${text.slice(0, 1000)}`);
-    const payload = JSON.parse(text);
-    return {
-      content: String(payload.choices?.[0]?.message?.content || ''),
-      usage: payload.usage || null,
-      latencyMs,
-      rawBytes: Buffer.byteLength(text, 'utf8'),
-    };
-  } finally {
-    clearTimeout(timeout);
+  let lastError;
+  for (let attempt = 0; attempt <= config.retryCount; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
+    const startedAt = Date.now();
+    try {
+      const response = await fetch(chatUrl(baseUrl), {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model,
+          temperature: 0.55,
+          max_tokens: maxTokens,
+          response_format: json ? { type: 'json_object' } : undefined,
+          ...reasoningFields(mode),
+          messages,
+        }),
+      });
+      const text = await response.text();
+      const latencyMs = Date.now() - startedAt;
+      if (!response.ok) {
+        const retryable = response.status === 429 || response.status === 500 || response.status === 502 || response.status === 503 || response.status === 504;
+        const error = new Error(`LLM request failed: ${response.status} ${text.slice(0, 1000)}`);
+        if (!retryable || attempt >= config.retryCount) throw error;
+        lastError = error;
+      } else {
+        const payload = JSON.parse(text);
+        return {
+          content: String(payload.choices?.[0]?.message?.content || ''),
+          usage: payload.usage || null,
+          latencyMs,
+          rawBytes: Buffer.byteLength(text, 'utf8'),
+        };
+      }
+    } catch (error) {
+      lastError = error;
+      if (attempt >= config.retryCount) throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
+    const delayMs = 1200 * (attempt + 1);
+    logProgress('retrying transient request failure', { attempt: attempt + 1, delayMs, error: String(lastError?.message || lastError).slice(0, 180) });
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, delayMs));
   }
+  throw lastError || new Error('LLM request failed');
 }
 
 async function judgePair({ scenarioName, scenario, disabled, enabled }) {
@@ -278,14 +301,15 @@ async function judgePair({ scenarioName, scenario, disabled, enabled }) {
 }
 
 function summarize(rows) {
+  const reviewedRows = rows.filter((row) => row.review);
   const avg = (values) => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
-  const disabledWins = rows.filter((row) => row.review.winner === 'disabled').length;
-  const enabledWins = rows.filter((row) => row.review.winner === 'enabled').length;
-  const tie = rows.filter((row) => row.review.winner === 'tie').length;
-  const disabledScore = avg(rows.map((row) => row.review.disabledScore));
-  const enabledScore = avg(rows.map((row) => row.review.enabledScore));
-  const disabledLatency = avg(rows.map((row) => row.disabled.latencyMs));
-  const enabledLatency = avg(rows.map((row) => row.enabled.latencyMs));
+  const disabledWins = reviewedRows.filter((row) => row.review.winner === 'disabled').length;
+  const enabledWins = reviewedRows.filter((row) => row.review.winner === 'enabled').length;
+  const tie = reviewedRows.filter((row) => row.review.winner === 'tie').length;
+  const disabledScore = avg(reviewedRows.map((row) => row.review.disabledScore));
+  const enabledScore = avg(reviewedRows.map((row) => row.review.enabledScore));
+  const disabledLatency = avg(reviewedRows.map((row) => row.disabled.latencyMs));
+  const enabledLatency = avg(reviewedRows.map((row) => row.enabled.latencyMs));
   const latencyRatio = disabledLatency > 0 ? enabledLatency / disabledLatency : 0;
   const recommendation = enabledWins > disabledWins && enabledScore - disabledScore >= 4 && latencyRatio <= 1.6
     ? 'enabled'
@@ -299,6 +323,8 @@ function summarize(rows) {
     enabledLatencyMs: Math.round(enabledLatency),
     enabledLatencyRatio: Number(latencyRatio.toFixed(2)),
     wins: { disabled: disabledWins, enabled: enabledWins, tie },
+    reviewedCount: reviewedRows.length,
+    failedCount: rows.length - reviewedRows.length,
     recommendation,
   };
 }
@@ -306,12 +332,12 @@ function summarize(rows) {
 function renderMarkdown(report) {
   const rows = report.rows.map((row) => [
     row.scenarioName,
-    row.review.disabledScore,
-    row.review.enabledScore,
-    row.review.winner,
-    `${row.disabled.latencyMs} / ${row.enabled.latencyMs}`,
-    row.review.defaultRecommendation,
-    row.review.notes,
+    row.review?.disabledScore ?? 'failed',
+    row.review?.enabledScore ?? 'failed',
+    row.review?.winner ?? 'failed',
+    row.disabled && row.enabled ? `${row.disabled.latencyMs} / ${row.enabled.latencyMs}` : '-',
+    row.review?.defaultRecommendation ?? '-',
+    row.review?.notes || row.error || '',
   ]);
   return [
     '# Reasoning A/B Report',
@@ -333,11 +359,11 @@ function renderMarkdown(report) {
       '',
       '**disabled**',
       '',
-      row.disabled.content,
+      row.disabled?.content || row.error || '',
       '',
       '**enabled**',
       '',
-      row.enabled.content,
+      row.enabled?.content || row.error || '',
       '',
     ]),
   ].join('\n');
@@ -353,30 +379,43 @@ async function main() {
       ...scenario.messages,
     ];
     const samples = {};
-    for (const mode of config.modes) {
-      logProgress('calling model', { scenarioName, mode });
-      samples[mode] = await callOpenAICompatible({
-        model: config.model,
-        messages: baseMessages,
-        mode,
+    try {
+      for (const mode of config.modes) {
+        logProgress('calling model', { scenarioName, mode });
+        samples[mode] = await callOpenAICompatible({
+          model: config.model,
+          messages: baseMessages,
+          mode,
+        });
+      }
+      if (!samples.disabled || !samples.enabled) continue;
+      logProgress('judging pair', { scenarioName });
+      const review = await judgePair({
+        scenarioName,
+        scenario,
+        disabled: samples.disabled,
+        enabled: samples.enabled,
       });
+      rows.push({
+        scenarioName,
+        title: scenario.title,
+        category: scenario.category,
+        disabled: samples.disabled,
+        enabled: samples.enabled,
+        review,
+      });
+    } catch (error) {
+      rows.push({
+        scenarioName,
+        title: scenario.title,
+        category: scenario.category,
+        error: String(error?.message || error),
+        disabled: samples.disabled || null,
+        enabled: samples.enabled || null,
+        review: null,
+      });
+      logProgress('scenario failed; continuing', { scenarioName, error: String(error?.message || error).slice(0, 240) });
     }
-    if (!samples.disabled || !samples.enabled) continue;
-    logProgress('judging pair', { scenarioName });
-    const review = await judgePair({
-      scenarioName,
-      scenario,
-      disabled: samples.disabled,
-      enabled: samples.enabled,
-    });
-    rows.push({
-      scenarioName,
-      title: scenario.title,
-      category: scenario.category,
-      disabled: samples.disabled,
-      enabled: samples.enabled,
-      review,
-    });
   }
 
   const report = {

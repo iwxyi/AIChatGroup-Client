@@ -835,6 +835,8 @@ export interface GroupChat {
   fieldVersions?: Record<string, number>;
   latestMessage?: Message | null;
   runtimeDetailLoaded?: boolean;
+  /** Client cache marker: distinguishes a real detail fetch from legacy summary records. */
+  runtimeDetailHydratedAt?: number;
   worldRuntimeLoaded?: boolean;
   messageBranchState?: MessageBranchState | null;
   createdAt: number;
