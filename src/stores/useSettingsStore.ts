@@ -238,6 +238,7 @@ function buildApiFromProfiles(aiProfiles: AIModelProfile[]): APIConfig {
     apiKey: defaultProfile.apiKey,
     baseUrl: defaultProfile.baseUrl,
     model: defaultProfile.model,
+    advancedOptions: defaultProfile.advancedOptions,
   };
 }
 

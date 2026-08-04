@@ -142,6 +142,24 @@ describe('aiClient multimodal requests', () => {
     expect(body.modelOptions).toBeUndefined();
   });
 
+  it('defaults DeepSeek V4 thinking to disabled when advanced options are missing', async () => {
+    const calls: RequestInit[] = [];
+    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push(init || {});
+      return new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }) as typeof fetch;
+
+    await generateResponse(
+      { provider: 'official-1', apiKey: '', baseUrl: '/api/ai', model: 'deepseek-v4-flash' },
+      'system',
+      [{ role: 'user', content: '今晚茶馆聊什么？' }],
+    );
+
+    const body = JSON.parse(String(calls[0]?.body || '{}'));
+    expect(body.thinking).toEqual({ type: 'disabled' });
+    expect(body.modelOptions).toBeUndefined();
+  });
+
   it('sends DeepSeek V4 thinking enabled directly in official proxy requests', async () => {
     const calls: RequestInit[] = [];
     globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {

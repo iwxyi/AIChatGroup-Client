@@ -151,7 +151,7 @@ export function normalizeAIModelAdvancedOptions(
   const support = inferReasoningModeSupport(provider, model);
   const requestedMode = input?.reasoningMode;
   const reasoningMode: AIReasoningMode = support.supported
-    ? (requestedMode === 'enabled' || requestedMode === 'auto' || requestedMode === 'disabled' ? requestedMode : 'disabled')
+    ? (requestedMode === 'enabled' || requestedMode === 'disabled' ? requestedMode : 'disabled')
     : 'auto';
   return { reasoningMode };
 }
@@ -162,7 +162,7 @@ export function getReasoningModeUiMeta(profile?: Pick<AIModelProfile, 'provider'
   if (language === 'zh') {
     return {
       supported: support.supported,
-      enabled: options.reasoningMode === 'enabled' || options.reasoningMode === 'auto',
+      enabled: options.reasoningMode === 'enabled',
       label: '深度思考',
       badge: support.supported ? 'DeepSeek V4 支持' : '当前模型未识别到支持',
       tooltip: support.supported
@@ -172,7 +172,7 @@ export function getReasoningModeUiMeta(profile?: Pick<AIModelProfile, 'provider'
   }
   return {
     supported: support.supported,
-    enabled: options.reasoningMode === 'enabled' || options.reasoningMode === 'auto',
+    enabled: options.reasoningMode === 'enabled',
     label: 'Deep thinking',
     badge: support.supported ? 'DeepSeek V4 supported' : 'Not detected',
     tooltip: support.supported

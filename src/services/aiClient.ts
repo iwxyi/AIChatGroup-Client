@@ -1,4 +1,5 @@
 import type { APIConfig, AIModelProfile } from '../types/settings';
+import { normalizeAIModelAdvancedOptions } from '../types/settings';
 import { storageKey } from '../constants/brand';
 import { dispatchAuthSessionExpired } from './authSession';
 
@@ -460,11 +461,11 @@ function usesOpenAICompatibleChatApi(config: APIConfig) {
 }
 
 function buildOpenAICompatibleAdvancedRequestFields(config: APIConfig): Record<string, unknown> {
-  const reasoningMode = config.advancedOptions?.reasoningMode;
   const normalizedProvider = String(config.provider || '').trim().toLowerCase();
   const normalizedModel = config.model.trim().toLowerCase();
   if ((normalizedProvider === 'deepseek' || normalizedProvider === 'official-1' || normalizedProvider === 'official-deepseek')
     && (normalizedModel.startsWith('deepseek-v4') || normalizedModel.includes('deepseek-v4'))) {
+    const reasoningMode = normalizeAIModelAdvancedOptions(config.provider, config.model, config.advancedOptions).reasoningMode;
     if (reasoningMode === 'disabled') return { thinking: { type: 'disabled' } };
     if (reasoningMode === 'enabled') return { thinking: { type: 'enabled' } };
   }

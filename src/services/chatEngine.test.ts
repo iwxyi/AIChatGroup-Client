@@ -2552,6 +2552,7 @@ describe('chatEngine streaming preview', () => {
       apiKey: 'deepseek-key',
       baseUrl: 'https://api.deepseek.test',
       model: 'deepseek-v4-flash',
+      advancedOptions: { reasoningMode: 'disabled' },
       isDefault: true,
     }];
 
@@ -2572,6 +2573,11 @@ describe('chatEngine streaming preview', () => {
     });
 
     expect(generateResponseMock).toHaveBeenCalledTimes(1);
+    expect(generateResponseMock.mock.calls[0]?.[0]).toMatchObject({
+      provider: 'deepseek',
+      model: 'deepseek-v4-flash',
+      advancedOptions: { reasoningMode: 'disabled' },
+    });
     expect(onChunk).toHaveBeenCalledWith(expect.stringContaining('被动热闹依赖低警惕边界'));
     expect(message.content).toContain('被动热闹依赖低警惕边界');
     expect(onLocalInterception).toHaveBeenCalledWith(expect.objectContaining({

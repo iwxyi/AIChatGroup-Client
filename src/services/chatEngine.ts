@@ -2336,6 +2336,7 @@ function resolveApiConfigForCharacter(character: AICharacter, apiConfig: APIConf
       apiKey: matched.apiKey,
       baseUrl: matched.baseUrl,
       model: matched.model,
+      advancedOptions: matched.advancedOptions,
     } satisfies APIConfig;
   }
   return apiConfig as APIConfig;
