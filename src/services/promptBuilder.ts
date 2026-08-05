@@ -133,6 +133,7 @@ function cleanRecentEventPromptText(chat: GroupChat, text: string) {
 }
 
 function buildManualMemorySeedPrompt(character: AICharacter, members: DisplayTextMember[], chat?: GroupChat) {
+  if (chat?.type === 'group' && resolveSessionFamilyKey(chat) === 'conversation') return '';
   const memory = character.memory;
   if (!memory) return '';
   const canExposeUserMemoryText = !chat || chat.type === 'direct';
@@ -785,7 +786,7 @@ function buildCharacterMindAdapterOutput(character: AICharacter, chat: GroupChat
     visibleMemoryRecall: mapVisibleMemoryRecallSetting(),
     visibleRecallCues,
     maxRecallCues: chatMemoryConfig.maxCuesPerTurn,
-    maxCoreLines: 6,
+    maxCoreLines: isOrdinaryGroup ? 7 : 6,
     maxRoomLines: 5,
     includeActiveRoomLineSummaries: false,
     renderVisibleRecallCues: isOrdinaryGroup,

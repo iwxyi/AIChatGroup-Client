@@ -65,6 +65,17 @@ function uniqueText(items: Array<string | undefined | null>, max = 6) {
   return Array.from(new Set(items.map((item) => compactText(item)).filter(Boolean))).slice(0, max);
 }
 
+function authoredSelfContinuity(character: AICharacter) {
+  const memory = character.memory;
+  if (!memory) return [];
+  return uniqueText([
+    memory.shortTermSummary ? `近期自我状态：${memory.shortTermSummary}` : '',
+    ...(memory.longTerm || []).map((item) => `长期经历：${item}`),
+    ...(memory.obsessions || []).map((item) => `注意力偏好：${item}`),
+    ...(memory.tabooTopics || []).map((item) => `敏感触发：${item}`),
+  ], 10);
+}
+
 function characterName(id: string | undefined, characters: AICharacter[]) {
   if (id === USER_ACTOR_ID) return '用户';
   return characters.find((item) => item.id === id)?.name || '成员';
@@ -316,6 +327,7 @@ export function buildCharacterMindProjection(params: {
     now,
     memoryCandidates: params.memoryCandidates,
   });
+  const authoredContinuity = authoredSelfContinuity(params.character);
   const companionship = companionshipContinuity(params);
   const narrativeLines = projectNarrativeLines({
     chat: params.chat,
@@ -339,6 +351,7 @@ export function buildCharacterMindProjection(params: {
   const privacyGuards = uniqueText([
     ...companionship.privacyGuards,
     params.chat.type === 'group' && memories.userProfile.length ? '用户相关私密事实只能影响克制和关心，不要在公开房间直接说出。' : '',
+    params.character.memory?.secrets?.length ? '角色有未公开的自有内容，只能影响回避、克制或防御，不要主动揭露正文。' : '',
   ], 5);
   const conflictReasons = uniqueText([
     relationship && relationship.threat >= 20 ? '关系中的戒备与当前对话目标可能冲突。' : '',
@@ -365,7 +378,7 @@ export function buildCharacterMindProjection(params: {
     },
     continuity: {
       userProfile: uniqueText([...memories.userProfile, ...companionship.userProfile], 10),
-      selfMemories: memories.selfMemories,
+      selfMemories: uniqueText([...authoredContinuity, ...memories.selfMemories], 10),
       relationshipMemories: uniqueText([...memories.relationshipMemories, ...companionship.relationshipMemories], 8),
       sharedHistory: uniqueText([...memories.sharedHistory, ...companionship.sharedHistory], 8),
     },
@@ -394,7 +407,12 @@ export function buildCharacterMindProjection(params: {
       temperature: relationship?.threat && relationship.threat >= 20 ? '克制或带防备' : relationship?.warmth && relationship.warmth >= 12 ? '更容易柔和' : '由当前情绪和房间压力决定',
       attention: target ? `注意力暂时落在${target.name}及其刚才的发言上。` : '注意力落在当前话题和最新变化上。',
       length: params.character.soulState?.energy !== undefined && params.character.soulState.energy < 35 ? '允许短、半句或不完整回应。' : '不要为了完整而补齐所有观点，按当下注意力自然决定长度。',
-      omissions: privacyGuards.length ? ['私密用户事实', '内部状态分数', '没有自然触发的旧事'] : ['内部状态分数', '没有自然触发的旧事'],
+      omissions: [
+        privacyGuards.some((guard) => guard.includes('用户相关私密事实')) ? '私密用户事实' : '',
+        params.character.memory?.secrets?.length ? '未公开的角色自有内容' : '',
+        '内部状态分数',
+        '没有自然触发的旧事',
+      ].filter(Boolean),
     },
     hidden: {
       sourceIds: [

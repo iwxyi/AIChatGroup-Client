@@ -156,6 +156,35 @@ describe('characterMindProjection', () => {
     expect(projection.currentState.activeNeeds).toContain('希望被理解');
   });
 
+  it('projects authored character memory into self continuity without exposing secret text', () => {
+    const speaker = character({
+      memory: {
+        shortTermSummary: '最近对被误解这件事有点敏感。',
+        longTerm: ['曾经在雨夜替朋友守过店。'],
+        secrets: ['不愿承认自己曾经临阵退缩。'],
+        obsessions: ['会反复检查门有没有锁好。'],
+        tabooTopics: ['被拿失败经历开玩笑时会防御。'],
+        userMemories: [],
+      },
+    });
+    const projection = buildCharacterMindProjection({
+      chat: chat('group'),
+      character: speaker,
+      characters: [speaker],
+      messages: [message('今天先聊点轻松的。', 'char-b')],
+      now: 2000,
+    });
+
+    expect(projection.continuity.selfMemories).toEqual(expect.arrayContaining([
+      '近期自我状态：最近对被误解这件事有点敏感。',
+      '长期经历：曾经在雨夜替朋友守过店。',
+      '注意力偏好：会反复检查门有没有锁好。',
+      '敏感触发：被拿失败经历开玩笑时会防御。',
+    ]));
+    expect(projection.continuity.selfMemories.join('\n')).not.toContain('临阵退缩');
+    expect(projection.hidden.privacyGuards).toContain('角色有未公开的自有内容，只能影响回避、克制或防御，不要主动揭露正文。');
+  });
+
   it('combines group pressure, target relationship, and active room lines', () => {
     const target = character({ id: 'char-b', name: '小铁' });
     const speaker = character({

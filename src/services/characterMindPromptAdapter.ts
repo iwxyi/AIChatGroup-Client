@@ -102,9 +102,12 @@ function buildCoreContinuityLines(
     visibility,
     rawSharedHistory.length,
   );
+  const rawSelfContinuity = projection.continuity.selfMemories;
+  const selfContinuity = cleanValues(rawSelfContinuity, visibility, 4);
   const lines = [
     bullet('Stable self', cleanValues(projection.identity.selfModel, visibility, 3)),
     bullet('Voice and habits', cleanValues(projection.identity.stableVoice, visibility, 3)),
+    bullet('Self continuity', selfContinuity),
     bullet('Desires', cleanValues(projection.identity.desires, visibility, 2)),
     bullet('Fears and sensitivities', cleanValues(projection.identity.fears, visibility, 2)),
     bullet('User continuity', userContinuity),

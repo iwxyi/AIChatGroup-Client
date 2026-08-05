@@ -429,9 +429,7 @@ describe('buildSystemPromptWithContext', () => {
     ]));
 
     expect(prompt).not.toContain('## Active Continuity Pull');
-    expect(prompt).toContain('Private user continuity exists but this is not a pair-private channel');
     expect(prompt).toContain('User continuity: User continuity exists');
-    expect(prompt).toContain('do not expose the underlying user facts');
     expect(prompt).toContain('without revealing private facts');
     expect(prompt).not.toContain('用户私下说自己很怕明天面试');
   });
@@ -452,7 +450,7 @@ describe('buildSystemPromptWithContext', () => {
     expect(trace.targetReason).toBeUndefined();
   });
 
-  it('keeps private user memory text out of public room manual memory seeds', () => {
+  it('keeps private user memory text out of public room mind continuity', () => {
     const character = buildCharacter({
       memory: {
         shortTermSummary: '刚和用户聊过春季穿搭',
@@ -466,14 +464,58 @@ describe('buildSystemPromptWithContext', () => {
 
     const prompt = buildSystemPromptWithContext(character, buildChat(), 0, [], new Map([[character.id, character]]));
 
-    expect(prompt).toContain('## Manual Memory Seeds');
+    expect(prompt).toContain('## Character Mind Projection');
+    expect(prompt).toContain('Self continuity');
     expect(prompt).toContain('刚和用户聊过春季穿搭');
     expect(prompt).toContain('记得用户喜欢低饱和配色');
-    expect(prompt).toContain('不想承认自己接了商业合作');
     expect(prompt).toContain('总会关注鞋包搭配');
     expect(prompt).toContain('被质疑审美时会防御');
-    expect(prompt).toContain('Private user continuity exists');
+    expect(prompt).toContain('未公开的角色自有内容');
+    expect(prompt).not.toContain('## Manual Memory Seeds');
+    expect(prompt).not.toContain('不想承认自己接了商业合作');
     expect(prompt).not.toContain('用户预算有限但重视质感');
+  });
+
+  it('moves authored character continuity into the mind projection for ordinary groups', () => {
+    const character = buildCharacter({
+      memory: {
+        shortTermSummary: '最近不太想被人追问旧事。',
+        longTerm: ['曾经在雨夜替朋友守过店。'],
+        secrets: ['不愿承认自己曾经临阵退缩。'],
+        obsessions: ['会反复检查门有没有锁好。'],
+        tabooTopics: ['被拿失败经历开玩笑时会防御。'],
+        userMemories: [],
+      },
+    });
+    const ordinaryGroup = {
+      ...buildChat(),
+      memberIds: ['char-a', 'char-b'],
+      sessionKind: {
+        topology: 'group' as const,
+        family: 'conversation' as const,
+        scenarioId: 'open-chat',
+        surfaceProfile: 'text' as const,
+      },
+    };
+    const prompt = buildSystemPromptWithContext(
+      character,
+      ordinaryGroup,
+      0,
+      [buildMessage({ senderId: 'char-b', senderName: '阿远', content: '今晚先别聊太沉。' })],
+      new Map([
+        [character.id, character],
+        ['char-b', buildCharacter({ id: 'char-b', name: '阿远' })],
+      ]),
+    );
+
+    expect(prompt).toContain('## Character Mind Projection');
+    expect(prompt).toContain('## Core Character Continuity');
+    expect(prompt).toContain('Self continuity');
+    expect(prompt).toContain('长期经历：曾经在雨夜替朋友守过店');
+    expect(prompt).toContain('敏感触发：被拿失败经历开玩笑时会防御');
+    expect(prompt).toContain('未公开的角色自有内容');
+    expect(prompt).not.toContain('## Manual Memory Seeds');
+    expect(prompt).not.toContain('不愿承认自己曾经临阵退缩');
   });
 
   it('keeps direct chat user memory text available as pair-private context', () => {
@@ -492,6 +534,31 @@ describe('buildSystemPromptWithContext', () => {
 
     expect(prompt).toContain('Memories about the user');
     expect(prompt).toContain('用户预算有限但重视质感');
+  });
+
+  it('keeps authored character memory available in private direct prompts', () => {
+    const character = buildCharacter({
+      memory: {
+        shortTermSummary: '最近想把一件旧事说清楚。',
+        longTerm: ['曾经在雨夜替朋友守过店。'],
+        secrets: ['不愿承认自己曾经临阵退缩。'],
+        obsessions: ['会反复检查门有没有锁好。'],
+        tabooTopics: ['被拿失败经历开玩笑时会防御。'],
+        userMemories: [],
+      },
+    });
+
+    const prompt = buildSystemPromptWithContext(
+      character,
+      buildDirectChat(),
+      0,
+      [buildMessage({ type: 'user', senderId: 'user', senderName: '用户', content: '你今天怎么了？' })],
+      new Map([[character.id, character]]),
+    );
+
+    expect(prompt).toContain('## Manual Memory Seeds');
+    expect(prompt).toContain('曾经在雨夜替朋友守过店');
+    expect(prompt).toContain('不愿承认自己曾经临阵退缩');
   });
 
   it('keeps core continuity when visible old-memory callbacks are disabled', () => {
@@ -674,7 +741,7 @@ describe('buildSystemPromptWithContext', () => {
     expect(prompt).not.toContain('## Companionship Context');
     expect(prompt).toContain('## Character Mind Projection');
     expect(prompt).toContain('User continuity');
-    expect(prompt).toContain('underlying user facts');
+    expect(prompt).toContain('without revealing private facts');
     expect(prompt).not.toContain('用户下周要面试');
     expect(prompt).not.toContain('希望别被公开点名');
   });
@@ -719,7 +786,7 @@ describe('buildSystemPromptWithContext', () => {
     expect(prompt).not.toContain('## Companionship Context');
     expect(prompt).toContain('## Character Mind Projection');
     expect(prompt).toContain('User continuity');
-    expect(prompt).toContain('underlying user facts');
+    expect(prompt).toContain('without revealing private facts');
     expect(prompt).not.toContain('用户下周要面试');
     expect(prompt).not.toContain('希望别被公开点名');
   });
