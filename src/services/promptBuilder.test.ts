@@ -365,11 +365,10 @@ describe('buildSystemPromptWithContext', () => {
       [target.id, target],
     ]));
 
-    expect(prompt).toContain('## Active Continuity Pull');
-    expect(prompt).toContain('Active target: 灰太狼');
-    expect(prompt).toContain('warmth 56');
-    expect(prompt).toContain('trust 68');
-    expect(prompt).toContain('When the current line touches an active hook');
+    expect(prompt).not.toContain('## Active Continuity Pull');
+    expect(prompt).toContain('## Character Mind Projection');
+    expect(prompt).toContain('Stance toward 灰太狼');
+    expect(prompt).toContain('A relationship stance exists toward the current target');
   });
 
   it('does not render legacy influence state as a separate visible prompt block', () => {
@@ -401,7 +400,8 @@ describe('buildSystemPromptWithContext', () => {
 
     expect(prompt).not.toContain('## Influence State');
     expect(prompt).not.toContain('Topic bias:');
-    expect(prompt).toContain('## Active Continuity Pull');
+    expect(prompt).not.toContain('## Active Continuity Pull');
+    expect(prompt).toContain('## Character Mind Projection');
     expect(prompt).toContain('Stance toward 阿远');
   });
 
@@ -428,9 +428,12 @@ describe('buildSystemPromptWithContext', () => {
       [speaker.id, speaker],
     ]));
 
-    expect(prompt).toContain('If the current human line is the user');
-    expect(prompt).toContain('remembered boundaries and care topics');
-    expect(prompt).toContain('Do not expose private facts');
+    expect(prompt).not.toContain('## Active Continuity Pull');
+    expect(prompt).toContain('Private user continuity exists but this is not a pair-private channel');
+    expect(prompt).toContain('User continuity: User continuity exists');
+    expect(prompt).toContain('do not expose the underlying user facts');
+    expect(prompt).toContain('without revealing private facts');
+    expect(prompt).not.toContain('用户私下说自己很怕明天面试');
   });
 
   it('does not let stale human guidance retarget prompt memory after a newer user turn', () => {

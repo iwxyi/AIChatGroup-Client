@@ -504,6 +504,7 @@ function buildActiveContinuityPull(params: {
     adapter: CharacterMindPromptAdapterOutput;
   } | null;
 }) {
+  if (params.chat.type === 'group' && resolveSessionFamilyKey(params.chat) === 'conversation') return '';
   const members = buildPromptDisplayMembers(params.character, params.characters);
   const mindRecallHooks = params.mind?.adapter.visibleRecallInput
     .map((cue) => cleanPromptText(cue, members, 120))
