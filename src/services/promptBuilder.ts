@@ -691,10 +691,12 @@ function buildSharedSecretTraceLines(chat: GroupChat, character: AICharacter, ta
 }
 
 function buildPromptTargetingContext(chat: GroupChat, target: AICharacter | undefined, relationshipSnapshot: AICharacter['relationships'][number] | null, characters: Map<string, AICharacter>) {
+  if (chat.type === 'group') return '';
   return `${buildTargetedResponseContext(chat, target, relationshipSnapshot, characters)}${buildTargetedReplyBiasPrompt(chat, target)}`;
 }
 
 function buildTargetedInfluenceContext(chat: GroupChat, target: AICharacter | undefined, relationshipSnapshot: AICharacter['relationships'][number] | null, characters: Map<string, AICharacter>) {
+  if (chat.type === 'group') return '';
   const relation = buildRelationshipImpactText(target, relationshipSnapshot);
   const room = buildGroupTargetPressureSummary(chat, target, characters);
   const summary = [relation, room].filter(Boolean).join(' / ');
@@ -715,6 +717,9 @@ function buildConflictPromptBundle(chat: GroupChat, character: AICharacter, char
 }
 
 function buildPromptInfluenceContext(chat: GroupChat, character: AICharacter, target: AICharacter | undefined, relationshipSnapshot: AICharacter['relationships'][number] | null, mergedMemories: MemoryItem[], characters: Map<string, AICharacter>) {
+  if (chat.type === 'group') {
+    return `${buildInfluenceModePrompt(chat, target)}${buildConflictPromptBundle(chat, character, characters)}`;
+  }
   return `${buildInfluenceModePrompt(chat, target)}${buildRelationshipInfluencePrompt(target, relationshipSnapshot)}${buildRelationshipSemanticPrompt(chat, character, target, characters)}${buildMemoryInfluencePrompt(mergedMemories)}${buildGroupPressurePrompt(chat, target, characters)}${buildConflictPromptBundle(chat, character, characters)}`;
 }
 

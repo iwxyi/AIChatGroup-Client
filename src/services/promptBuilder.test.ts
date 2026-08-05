@@ -756,7 +756,7 @@ describe('buildSystemPromptWithContext', () => {
     expect(prompt).not.toContain('公开点名');
   });
 
-  it('redacts private facts from public relationship semantics for non-user targets', () => {
+  it('uses the character mind projection for public relationship stance without legacy duplicate blocks', () => {
     const speaker = buildCharacter();
     const target = buildCharacter({ id: 'char-b', name: '阿远' });
     const chat = {
@@ -788,10 +788,71 @@ describe('buildSystemPromptWithContext', () => {
       [target.id, target],
     ]));
 
-    expect(prompt).toContain('## Relationship Semantics');
-    expect(prompt).toContain('Toward 阿远: 互相信任：默契');
+    expect(prompt).not.toContain('## Relationship Semantics');
+    expect(prompt).toContain('## Character Mind Projection');
+    expect(prompt).toContain('Stance toward 阿远');
     expect(prompt).not.toContain('雨夜便利店');
     expect(prompt).not.toContain('不能公开说');
+  });
+
+  it('keeps legacy targeting and relationship influence blocks out of ordinary group prompts', () => {
+    const speaker = buildCharacter({
+      relationships: [{
+        characterId: 'char-b',
+        warmth: 50,
+        competence: 10,
+        trust: 46,
+        threat: 8,
+        note: '会替阿远留一点余地。',
+      }],
+      layeredMemories: [memory({
+        id: 'group-target-memory',
+        ownerId: 'char-a',
+        subjectIds: ['char-b'],
+        scope: 'relationship',
+        text: '苏苏记得阿远之前帮她圆过场。',
+        summary: '阿远之前帮她圆过场。',
+      })],
+    });
+    const target = buildCharacter({ id: 'char-b', name: '阿远' });
+    const chat = {
+      ...buildChat(),
+      memberIds: ['char-a', 'char-b'],
+      relationshipLedger: [{
+        pairKey: 'char-a->char-b',
+        actorId: 'char-a',
+        targetId: 'char-b',
+        current: { warmth: 50, competence: 10, trust: 46, threat: 8 },
+        derived: {
+          semantic: {
+            stage: '互相信任',
+            labels: ['默契'],
+            summary: '互相信任：默契',
+            intensity: 62,
+          },
+        },
+        trend: 'flat' as const,
+        recentEvents: [],
+        lastUpdatedAt: 30,
+      }],
+    };
+
+    const prompt = buildSystemPromptWithContext(speaker, chat, 0, [
+      buildMessage({ senderId: 'char-b', senderName: '阿远', content: '先别把话说太满。' }),
+    ], new Map([
+      [speaker.id, speaker],
+      [target.id, target],
+    ]));
+
+    expect(prompt).toContain('## Character Mind Projection');
+    expect(prompt).toContain('Stance toward 阿远');
+    expect(prompt).not.toContain('## Targeted Response Lens');
+    expect(prompt).not.toContain('## Targeted Reply Rule');
+    expect(prompt).not.toContain('## Targeted Influence Summary');
+    expect(prompt).not.toContain('## Relationship Influence');
+    expect(prompt).not.toContain('## Relationship Semantics');
+    expect(prompt).not.toContain('## Memory Influence');
+    expect(prompt).not.toContain('## Group Pressure');
   });
 
   it('keeps shared secrets masked in public group prompts', () => {
