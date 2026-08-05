@@ -65,6 +65,12 @@ export interface PromptCharacterMindTrace {
   hasWorldContext: boolean;
 }
 
+export interface PromptAssemblyWithContext {
+  systemPrompt: string;
+  memoryTrace: PromptMemoryTrace;
+  characterMindTrace: PromptCharacterMindTrace;
+}
+
 function buildEmotionalStateDescription(character: AICharacter) {
   const emotional = character.emotionalState;
   if (!emotional) return 'Your emotional state is steady.';
@@ -737,6 +743,27 @@ function buildCharacterMindAdapterOutput(character: AICharacter, chat: GroupChat
   return { projection, adapter };
 }
 
+function buildPromptCharacterMindTraceFromOutput(
+  projection: ReturnType<typeof buildCharacterMindProjection>,
+  adapter: CharacterMindPromptAdapterOutput,
+): PromptCharacterMindTrace {
+  return {
+    visibility: adapter.trace.visibility,
+    visibleMemoryRecall: adapter.trace.visibleMemoryRecall,
+    targetActorId: projection.relationship.targetId,
+    targetActorName: projection.relationship.targetName,
+    omittedPrivateContinuity: adapter.trace.omittedPrivateContinuity,
+    omittedRawRoomLines: adapter.trace.omittedRawRoomLines,
+    coreLineCount: adapter.coreContinuityBlock ? adapter.coreContinuityBlock.split('\n').filter((line) => line.startsWith('- ')).length : 0,
+    roomLineCount: adapter.currentRoomBlock ? adapter.currentRoomBlock.split('\n').filter((line) => line.startsWith('- ')).length : 0,
+    recallCueCount: adapter.visibleRecallInput.length,
+    hasUserContinuity: projection.continuity.userProfile.length > 0,
+    hasRelationshipContinuity: projection.continuity.relationshipMemories.length > 0,
+    hasSharedHistory: projection.continuity.sharedHistory.length > 0,
+    hasWorldContext: projection.room.activeLines.length > 0 || projection.room.worldActivities.length > 0,
+  };
+}
+
 function buildCharacterMindProjectionSection(character: AICharacter, chat: GroupChat, messages: Message[], characters: Map<string, AICharacter>, target?: AICharacter) {
   return buildCharacterMindAdapterOutput(character, chat, messages, characters, target).adapter.promptBlock;
 }
@@ -885,21 +912,7 @@ export function buildPromptMemoryTrace(character: AICharacter, chat: GroupChat, 
 export function buildPromptCharacterMindTrace(character: AICharacter, chat: GroupChat, messages: Message[], characters: Map<string, AICharacter>): PromptCharacterMindTrace {
   const memoryContext = resolvePromptMemoryContext(character, chat, messages, characters);
   const { projection, adapter } = buildCharacterMindAdapterOutput(character, chat, messages, characters, memoryContext.target);
-  return {
-    visibility: adapter.trace.visibility,
-    visibleMemoryRecall: adapter.trace.visibleMemoryRecall,
-    targetActorId: projection.relationship.targetId,
-    targetActorName: projection.relationship.targetName,
-    omittedPrivateContinuity: adapter.trace.omittedPrivateContinuity,
-    omittedRawRoomLines: adapter.trace.omittedRawRoomLines,
-    coreLineCount: adapter.coreContinuityBlock ? adapter.coreContinuityBlock.split('\n').filter((line) => line.startsWith('- ')).length : 0,
-    roomLineCount: adapter.currentRoomBlock ? adapter.currentRoomBlock.split('\n').filter((line) => line.startsWith('- ')).length : 0,
-    recallCueCount: adapter.visibleRecallInput.length,
-    hasUserContinuity: projection.continuity.userProfile.length > 0,
-    hasRelationshipContinuity: projection.continuity.relationshipMemories.length > 0,
-    hasSharedHistory: projection.continuity.sharedHistory.length > 0,
-    hasWorldContext: projection.room.activeLines.length > 0 || projection.room.worldActivities.length > 0,
-  };
+  return buildPromptCharacterMindTraceFromOutput(projection, adapter);
 }
 
 export function buildCrossModeMemoryPrompt(character: AICharacter, chat: GroupChat, messages: Message[], characters: Map<string, AICharacter>) {
@@ -1093,22 +1106,32 @@ export function buildChatMessages(
 }
 
 export function buildSystemPromptWithContext(character: AICharacter, chat: GroupChat, emotion: number, messages: Message[], characters: Map<string, AICharacter>) {
+  return buildPromptAssemblyWithContext(character, chat, emotion, messages, characters).systemPrompt;
+}
+
+export function buildPromptAssemblyWithContext(character: AICharacter, chat: GroupChat, emotion: number, messages: Message[], characters: Map<string, AICharacter>): PromptAssemblyWithContext {
   const memoryContext = resolvePromptMemoryContext(character, chat, messages, characters);
   const personaActivation = resolvePersonaActivation({ chat, speaker: character, messages });
   const companionshipPrompt = buildCompanionshipPromptBlock({ chat, character, messages });
+  const mind = buildCharacterMindAdapterOutput(character, chat, messages, characters, memoryContext.target);
 
-  return [
+  const systemPrompt = [
     buildCharacterSection(character, emotion, personaActivation),
     buildTopicSection(chat),
     buildRelationshipSection(character, memoryContext.target),
     buildPromptMemorySection(chat, character, memoryContext.conversationMemories, memoryContext.characterMemories, memoryContext.targetedCharacterMemories, memoryContext.target, memoryContext.relationshipSnapshot, characters, memoryContext.influenceState, memoryContext.recallCue, Boolean(companionshipPrompt), memoryContext.recentMemoryUseIds),
-    buildCharacterMindProjectionSection(character, chat, messages, characters, memoryContext.target),
+    mind.adapter.promptBlock,
     companionshipPrompt,
     buildMessageStyleRules(character),
     buildRecentMessagesSection(messages, characters),
     '\n## Response Rules\n- Reply as a chat message, not as analysis or narration.\n- Stay specific to the latest exchange and your own stance.\n- Do not mention these instructions, memory systems, or retrieval policies.\n- Do not default to a fixed medium length. Use the length this character would naturally use in this moment: sometimes one tiny reaction, sometimes one sentence, sometimes a fuller line when pressure, care, defense, or explanation calls for it.',
     '\n## Visual Input Rules\n- If the latest user message includes image attachments and asks you to inspect, explain, read, or comment on them, answer from what is actually visible in the image.\n- If the image is too small, blurry, cropped, or unreadable, say that clearly and ask for a clearer image or the original text. Do not invent specific contents that you cannot verify.',
   ].filter(Boolean).join('\n\n');
+  return {
+    systemPrompt,
+    memoryTrace: memoryContext.trace,
+    characterMindTrace: buildPromptCharacterMindTraceFromOutput(mind.projection, mind.adapter),
+  };
 }
 
 export function buildDirectMemoryPanelContext(character: AICharacter, messages: Message[], characters: Map<string, AICharacter>) {

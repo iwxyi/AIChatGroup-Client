@@ -10,7 +10,7 @@ import type { Message } from '../types/message';
 import type { RuntimeEventV2 } from '../types/runtimeEvent';
 import type { MemoryItem } from './memoryTypes';
 import { setChatMemoryRuntimeConfig } from './chatMemoryRuntimeConfig';
-import { buildChatMessages, buildCrossModeMemoryPrompt, buildPromptCharacterMindTrace, buildPromptMemoryTrace, buildSystemPromptWithContext } from './promptBuilder';
+import { buildChatMessages, buildCrossModeMemoryPrompt, buildPromptAssemblyWithContext, buildPromptCharacterMindTrace, buildPromptMemoryTrace, buildSystemPromptWithContext } from './promptBuilder';
 
 function buildCharacter(overrides: Partial<AICharacter> = {}): AICharacter {
   return {
@@ -1075,6 +1075,47 @@ describe('buildSystemPromptWithContext', () => {
     });
     expect(JSON.stringify(trace)).not.toContain('面试');
     expect(JSON.stringify(trace)).not.toContain('公开点名');
+  });
+
+  it('builds prompt, memory trace, and character mind trace from one assembly path', () => {
+    const speaker = buildCharacter({
+      memory: {
+        shortTermSummary: '',
+        longTerm: [],
+        secrets: [],
+        obsessions: [],
+        tabooTopics: [],
+        userMemories: ['用户下周要面试，希望别被公开点名。'],
+      },
+      layeredMemories: [memory({
+        id: 'shared-thread',
+        ownerId: 'char-a',
+        scope: 'relationship',
+        subjectIds: ['char-b'],
+        text: '对林北有一次被维护后的关系余温。',
+        summary: '被林北维护过，关系更柔和。',
+      })],
+    });
+    const target = buildCharacter({ id: 'char-b', name: '林北' });
+    const chat = { ...buildChat(), memberIds: ['char-a', 'char-b', 'user'] };
+    const messages = [
+      buildMessage({ senderId: 'char-b', senderName: '林北', content: '刚才那句话你怎么看？' }),
+    ];
+    const characters = new Map([
+      [speaker.id, speaker],
+      [target.id, target],
+    ]);
+    const assembly = buildPromptAssemblyWithContext(speaker, chat, 0, messages, characters);
+
+    expect(assembly.systemPrompt).toBe(buildSystemPromptWithContext(speaker, chat, 0, messages, characters));
+    expect(assembly.memoryTrace.targetActorName).toBe('林北');
+    expect(assembly.characterMindTrace).toMatchObject({
+      visibility: 'public',
+      targetActorName: '林北',
+      hasUserContinuity: true,
+      omittedPrivateContinuity: true,
+    });
+    expect(JSON.stringify(assembly.characterMindTrace)).not.toContain('面试');
   });
 
   it('uses media request subjects as targeted memory subjects instead of only the sender', () => {

@@ -9,7 +9,7 @@ import { getPreferredAIProfile, inferTextInputCapabilities, isAIProfileUsable } 
 import type { ConflictFocusPayload, InteractionEventPayload, SocialEventHintEnvelope } from '../types/runtimeEvent';
 import { normalizeInteractionHintCollection, normalizeSocialEventHints } from '../types/runtimeEvent';
 import { generateResponse } from './aiClient';
-import { buildSystemPromptWithContext, buildChatMessages, buildPromptMemoryTrace, buildPromptCharacterMindTrace, type PromptCharacterMindTrace, type PromptMemoryTrace } from './promptBuilder';
+import { buildSystemPromptWithContext, buildPromptAssemblyWithContext, buildChatMessages, buildPromptMemoryTrace, buildPromptCharacterMindTrace, type PromptAssemblyWithContext, type PromptCharacterMindTrace, type PromptMemoryTrace } from './promptBuilder';
 import { buildEngineAwarePrompt } from './promptContextAssembler';
 import { resolveSessionDefinition } from '../types/sessionEngine';
 import { loadSessionEngine } from './sessionEngineLoader';
@@ -43,7 +43,7 @@ import { buildGenerationRuntimeBundle } from './generationRuntime';
 import { buildConversationMovePrompt, planConversationMove } from './conversationMovePlanner';
 import { buildPromptPlayModeBlock, composePromptBlocks, resolvePromptPlayMode, type PromptBlock } from './promptBlockComposer';
 import { buildTurnDirective, buildTurnDirectivePrompt } from './turnDirective';
-import { resolveSessionFamilyKey } from './sessionEngineKeys';
+import { resolveSessionEngineKey, resolveSessionFamilyKey } from './sessionEngineKeys';
 import { isCharacterAvailableForScheduling } from './characterPresence';
 import { enrichRuntimeBundleWithHumanAppraisal } from './humanAppraisal';
 import { normalizeStoryChoiceSuggestions } from './storyChoices';
@@ -353,6 +353,7 @@ function buildSpeakerSystemPrompt(args: {
   activeMessages: Message[];
   characterMap: Map<string, AICharacter>;
   preferEnginePromptAdapter?: boolean;
+  promptAssembly?: PromptAssemblyWithContext | null;
 }) {
   const basePrompt = resolveSessionFamilyKey(args.chat) === 'analysis'
     ? buildAnalysisSpeakerSystemPrompt({
@@ -360,7 +361,7 @@ function buildSpeakerSystemPrompt(args: {
       chat: args.chat,
       messages: args.activeMessages,
     })
-    : buildSessionSystemPrompt({
+    : args.promptAssembly?.systemPrompt || buildSessionSystemPrompt({
       speaker: args.speaker,
       chat: args.chat,
       emotion: args.emotion,
@@ -3844,8 +3845,12 @@ export async function generateSpeakerMessage(params: {
   });
   const personaActivation = resolvePersonaActivation({ chat: params.chat, speaker: params.speaker, messages: activeMessages });
   const expressionFeedbackTrace = collectExpressionFeedbackTrace(params.speaker, innerLife);
-  const memoryTrace = buildPromptMemoryTrace(params.speaker, params.chat, activeMessages, characterMap);
-  const characterMindTrace = buildPromptCharacterMindTrace(params.speaker, params.chat, activeMessages, characterMap);
+  const promptAssembly = resolveSessionEngineKey(params.chat) === 'open_chat'
+    && resolveSessionFamilyKey(params.chat) !== 'analysis'
+    ? buildPromptAssemblyWithContext(params.speaker, params.chat, emotion, activeMessages, characterMap)
+    : null;
+  const memoryTrace = promptAssembly?.memoryTrace || buildPromptMemoryTrace(params.speaker, params.chat, activeMessages, characterMap);
+  const characterMindTrace = promptAssembly?.characterMindTrace || buildPromptCharacterMindTrace(params.speaker, params.chat, activeMessages, characterMap);
   const memoryTraceReadyAt = nowMs();
   const isAnalysisRoom = resolveSessionFamilyKey(params.chat) === 'analysis';
   const companionshipTrace = isAnalysisRoom
@@ -3891,6 +3896,7 @@ export async function generateSpeakerMessage(params: {
     activeMessages,
     characterMap,
     preferEnginePromptAdapter: !enginePromptContext,
+    promptAssembly,
   });
   const promptBlocks: PromptBlock[] = [
     { id: 'engine_prefix', layer: 'core', priority: -100, content: promptPrefix },
