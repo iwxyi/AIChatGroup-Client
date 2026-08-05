@@ -111,6 +111,21 @@ describe('characterMindPromptAdapter', () => {
     expect(output.promptBlock).toContain('## Core Character Continuity');
   });
 
+  it('can render externally constrained recall cues inside the mind projection', () => {
+    const output = adaptCharacterMindProjectionForPrompt(projection(), {
+      chatType: 'group',
+      visibility: 'public',
+      visibleMemoryRecall: 'natural',
+      visibleRecallCues: ['阿远上次主动给紧张的人留过台阶。 | Visible rule: 只作为语气和分寸参考。'],
+      renderVisibleRecallCues: true,
+    });
+
+    expect(output.promptBlock).toContain('## Visible Recall Cues');
+    expect(output.promptBlock).toContain('阿远上次主动给紧张的人留过台阶');
+    expect(output.promptBlock).toContain('Visible rule');
+    expect(output.visibleRecallInput).toHaveLength(1);
+  });
+
   it('keeps room, world, and growth context available within a small budget', () => {
     const output = adaptCharacterMindProjectionForPrompt(projection(), {
       chatType: 'group',

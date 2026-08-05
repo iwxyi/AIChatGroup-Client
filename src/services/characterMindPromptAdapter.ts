@@ -8,6 +8,7 @@ export interface CharacterMindPromptAdapterOptions {
   chatType: GroupChat['type'];
   visibility?: CharacterMindPromptVisibility;
   visibleMemoryRecall?: VisibleMemoryRecallSetting;
+  visibleRecallCues?: string[];
   maxCoreLines?: number;
   maxRoomLines?: number;
   maxRecallCues?: number;
@@ -155,8 +156,13 @@ function selectRecallCues(
   visibility: CharacterMindPromptVisibility,
   visibleMemoryRecall: VisibleMemoryRecallSetting,
   maxRecallCues: number,
+  suppliedRecallCues?: string[],
 ) {
   if (visibleMemoryRecall === 'off') return [];
+  if (suppliedRecallCues?.length) {
+    return Array.from(new Set(suppliedRecallCues.map((cue) => stripInternalIds(compactText(cue, 220))).filter(Boolean)))
+      .slice(0, maxRecallCues);
+  }
   const privateCueSources = [
     ...projection.continuity.userProfile,
     ...projection.continuity.relationshipMemories,
@@ -191,6 +197,7 @@ export function adaptCharacterMindProjectionForPrompt(
     visibility,
     visibleMemoryRecall,
     options.maxRecallCues || DEFAULT_RECALL_CUES,
+    options.visibleRecallCues,
   );
   const recallLines = options.renderVisibleRecallCues !== false && visibleRecallInput.length
     ? ['## Visible Recall Cues', ...visibleRecallInput.map((cue) => `- ${cue}`)]

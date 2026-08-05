@@ -158,6 +158,16 @@ function buildConstrainedMemoryCueLine(cue: ConstrainedMemoryCue, members: Displ
   return `- ${cue.id} [${cue.mode}, score=${cue.score}]: ${text}\n  Visible rule: ${rule}`;
 }
 
+function buildConstrainedMemoryMindCueLines(cues: ConstrainedMemoryCue[], members: DisplayTextMember[]) {
+  return cues
+    .map((cue) => {
+      const text = cleanPromptText(cue.text, members, 180);
+      const rule = cleanPromptText(cue.rule, members, 220);
+      return [text, rule ? `Visible rule: ${rule}` : ''].filter(Boolean).join(' | ');
+    })
+    .filter(Boolean);
+}
+
 function buildRecallCue(messages: Message[], target?: AICharacter | null) {
   const recentText = messages
     .filter((item) => !item.isDeleted && item.type !== 'system' && item.type !== 'event')
@@ -758,8 +768,9 @@ function mapVisibleMemoryRecallSetting(): VisibleMemoryRecallSetting {
   return config.visibleRecallMode === 'implicit' ? 'implicit' : 'natural';
 }
 
-function buildCharacterMindAdapterOutput(character: AICharacter, chat: GroupChat, messages: Message[], characters: Map<string, AICharacter>, target?: AICharacter, memoryCandidates?: MemoryItem[]) {
+function buildCharacterMindAdapterOutput(character: AICharacter, chat: GroupChat, messages: Message[], characters: Map<string, AICharacter>, target?: AICharacter, memoryCandidates?: MemoryItem[], visibleRecallCues?: string[]) {
   const chatMemoryConfig = getChatMemoryRuntimeConfig();
+  const isOrdinaryGroup = chat.type === 'group' && resolveSessionFamilyKey(chat) === 'conversation';
   const projection = buildCharacterMindProjection({
     chat,
     character,
@@ -772,11 +783,12 @@ function buildCharacterMindAdapterOutput(character: AICharacter, chat: GroupChat
   const adapter = adaptCharacterMindProjectionForPrompt(projection, {
     chatType: chat.type,
     visibleMemoryRecall: mapVisibleMemoryRecallSetting(),
+    visibleRecallCues,
     maxRecallCues: chatMemoryConfig.maxCuesPerTurn,
     maxCoreLines: 6,
     maxRoomLines: 5,
     includeActiveRoomLineSummaries: false,
-    renderVisibleRecallCues: false,
+    renderVisibleRecallCues: isOrdinaryGroup,
   });
   return { projection, adapter };
 }
@@ -807,6 +819,7 @@ function buildPromptMemorySection(chat: GroupChat, character: AICharacter, conve
   const merged = buildMergedMemories([...targetedCharacterMemories, ...characterMemories, ...conversationMemories]);
   const members = buildPromptDisplayMembers(character, characters);
   const chatMemoryConfig = getChatMemoryRuntimeConfig();
+  const isOrdinaryGroup = chat.type === 'group' && resolveSessionFamilyKey(chat) === 'conversation';
   const memoryCues = chatMemoryConfig.enabled ? selectConstrainedMemoryCues(merged, {
     cueText,
     isPublicChannel: chat.type === 'group',
@@ -815,7 +828,10 @@ function buildPromptMemorySection(chat: GroupChat, character: AICharacter, conve
     visibleRecallMode: chatMemoryConfig.visibleRecallMode,
     targetActorIds: target ? [target.id] : [],
   }) : [];
-  return `${buildManualMemorySeedPrompt(character, members, chat)}${buildPromptMemoryBundle(chat, conversationMemories, characterMemories, targetedCharacterMemories, members, memoryCues)}${buildPromptInfluenceContext(chat, character, target, relationshipSnapshot, merged, characters)}${buildPromptTargetingContext(chat, target, relationshipSnapshot, characters)}${buildTargetedInfluenceContext(chat, target, relationshipSnapshot, characters)}${buildSharedSecretPromptBlock(chat, character, target, characters)}${buildActiveContinuityPull({ chat, character, target, relationshipSnapshot, memoryCues, characters, hasCompanionshipContext, mind })}${buildPromptReasoningSummary(chat)}${buildMemoryPriorityPrompt(chat)}`;
+  const memoryBundle = isOrdinaryGroup
+    ? ''
+    : buildPromptMemoryBundle(chat, conversationMemories, characterMemories, targetedCharacterMemories, members, memoryCues);
+  return `${buildManualMemorySeedPrompt(character, members, chat)}${memoryBundle}${buildPromptInfluenceContext(chat, character, target, relationshipSnapshot, merged, characters)}${buildPromptTargetingContext(chat, target, relationshipSnapshot, characters)}${buildTargetedInfluenceContext(chat, target, relationshipSnapshot, characters)}${buildSharedSecretPromptBlock(chat, character, target, characters)}${buildActiveContinuityPull({ chat, character, target, relationshipSnapshot, memoryCues, characters, hasCompanionshipContext, mind })}${buildPromptReasoningSummary(chat)}${buildMemoryPriorityPrompt(chat)}`;
 }
 
 function traceMemoryItem(item: MemoryItem, members: DisplayTextMember[]): PromptMemoryTraceItem {
@@ -936,6 +952,11 @@ export function buildPromptMemoryTrace(character: AICharacter, chat: GroupChat, 
   return resolvePromptMemoryContext(character, chat, messages, characters).trace;
 }
 
+function buildVisibleMindRecallCuesForPrompt(chat: GroupChat, character: AICharacter, characters: Map<string, AICharacter>, memoryCues: ConstrainedMemoryCue[]) {
+  if (chat.type !== 'group' || resolveSessionFamilyKey(chat) !== 'conversation') return undefined;
+  return buildConstrainedMemoryMindCueLines(memoryCues, buildPromptDisplayMembers(character, characters));
+}
+
 export function buildPromptCharacterMindTrace(character: AICharacter, chat: GroupChat, messages: Message[], characters: Map<string, AICharacter>): PromptCharacterMindTrace {
   const memoryContext = resolvePromptMemoryContext(character, chat, messages, characters);
   const memoryCandidates = buildMergedMemories([
@@ -943,7 +964,15 @@ export function buildPromptCharacterMindTrace(character: AICharacter, chat: Grou
     ...memoryContext.characterMemories,
     ...memoryContext.conversationMemories,
   ]);
-  const { projection, adapter } = buildCharacterMindAdapterOutput(character, chat, messages, characters, memoryContext.target, memoryCandidates);
+  const { projection, adapter } = buildCharacterMindAdapterOutput(
+    character,
+    chat,
+    messages,
+    characters,
+    memoryContext.target,
+    memoryCandidates,
+    buildVisibleMindRecallCuesForPrompt(chat, character, characters, memoryContext.memoryCues),
+  );
   return buildPromptCharacterMindTraceFromOutput(projection, adapter);
 }
 
@@ -957,8 +986,19 @@ export function buildCrossModeMemoryPrompt(character: AICharacter, chat: GroupCh
   const members = buildPromptDisplayMembers(character, characters);
   const companionshipPrompt = buildCompanionshipPromptBlock({ chat, character, messages });
   const renderedCompanionshipPrompt = chat.type === 'group' ? '' : companionshipPrompt;
-  const mind = buildCharacterMindAdapterOutput(character, chat, messages, characters, memoryContext.target, merged);
-  return `${buildManualMemorySeedPrompt(character, members, chat)}${buildPromptMemoryBundle(chat, memoryContext.conversationMemories, memoryContext.characterMemories, memoryContext.targetedCharacterMemories, members, memoryContext.memoryCues)}${buildPromptInfluenceContext(chat, character, memoryContext.target, memoryContext.relationshipSnapshot, merged, characters)}${buildPromptTargetingContext(chat, memoryContext.target, memoryContext.relationshipSnapshot, characters)}${buildTargetedInfluenceContext(chat, memoryContext.target, memoryContext.relationshipSnapshot, characters)}${buildSharedSecretPromptBlock(chat, character, memoryContext.target, characters)}${buildActiveContinuityPull({ chat, character, target: memoryContext.target, relationshipSnapshot: memoryContext.relationshipSnapshot, memoryCues: memoryContext.memoryCues, characters, hasCompanionshipContext: Boolean(companionshipPrompt), mind })}${mind.adapter.promptBlock}${renderedCompanionshipPrompt}${buildMemoryPriorityPrompt(chat)}`;
+  const mind = buildCharacterMindAdapterOutput(
+    character,
+    chat,
+    messages,
+    characters,
+    memoryContext.target,
+    merged,
+    buildVisibleMindRecallCuesForPrompt(chat, character, characters, memoryContext.memoryCues),
+  );
+  const memoryBundle = chat.type === 'group' && resolveSessionFamilyKey(chat) === 'conversation'
+    ? ''
+    : buildPromptMemoryBundle(chat, memoryContext.conversationMemories, memoryContext.characterMemories, memoryContext.targetedCharacterMemories, members, memoryContext.memoryCues);
+  return `${buildManualMemorySeedPrompt(character, members, chat)}${memoryBundle}${buildPromptInfluenceContext(chat, character, memoryContext.target, memoryContext.relationshipSnapshot, merged, characters)}${buildPromptTargetingContext(chat, memoryContext.target, memoryContext.relationshipSnapshot, characters)}${buildTargetedInfluenceContext(chat, memoryContext.target, memoryContext.relationshipSnapshot, characters)}${buildSharedSecretPromptBlock(chat, character, memoryContext.target, characters)}${buildActiveContinuityPull({ chat, character, target: memoryContext.target, relationshipSnapshot: memoryContext.relationshipSnapshot, memoryCues: memoryContext.memoryCues, characters, hasCompanionshipContext: Boolean(companionshipPrompt), mind })}${mind.adapter.promptBlock}${renderedCompanionshipPrompt}${buildMemoryPriorityPrompt(chat)}`;
 }
 
 function buildTopicSection(chat: GroupChat) {
@@ -1153,7 +1193,15 @@ export function buildPromptAssemblyWithContext(character: AICharacter, chat: Gro
     ...memoryContext.characterMemories,
     ...memoryContext.conversationMemories,
   ]);
-  const mind = buildCharacterMindAdapterOutput(character, chat, messages, characters, memoryContext.target, memoryCandidates);
+  const mind = buildCharacterMindAdapterOutput(
+    character,
+    chat,
+    messages,
+    characters,
+    memoryContext.target,
+    memoryCandidates,
+    buildVisibleMindRecallCuesForPrompt(chat, character, characters, memoryContext.memoryCues),
+  );
 
   const systemPrompt = [
     buildCharacterSection(character, emotion, personaActivation),

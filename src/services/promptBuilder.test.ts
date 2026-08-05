@@ -859,7 +859,19 @@ describe('buildSystemPromptWithContext', () => {
   });
 
   it('lets the character mind projection own ordinary group reasoning, influence, and memory priority', () => {
-    const speaker = buildCharacter();
+    const speaker = buildCharacter({
+      layeredMemories: [
+        memory({
+          id: 'cue-memory',
+          archivedAt: null,
+          text: '苏苏记得阿远上次主动给紧张的人留过台阶。',
+          summary: '阿远上次主动给紧张的人留过台阶。',
+          evidenceText: '阿远没有公开追问。',
+          updatedAt: 50,
+          recency: 0.9,
+        }),
+      ],
+    });
     const target = buildCharacter({ id: 'char-b', name: '阿远' });
     const prompt = buildSystemPromptWithContext(speaker, {
       ...buildChat(),
@@ -879,6 +891,10 @@ describe('buildSystemPromptWithContext', () => {
     ]));
 
     expect(prompt).toContain('## Character Mind Projection');
+    expect(prompt).toContain('## Visible Recall Cues');
+    expect(prompt).toContain('阿远上次主动给紧张的人留过台阶');
+    expect(prompt).toContain('Visible rule');
+    expect(prompt).not.toContain('## Group-Influenced Memories');
     expect(prompt).not.toContain('## Channel Bias');
     expect(prompt).not.toContain('## Influence Mode');
     expect(prompt).not.toContain('## Reasoning Bias');
