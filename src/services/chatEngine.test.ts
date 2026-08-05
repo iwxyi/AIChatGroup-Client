@@ -3973,6 +3973,7 @@ describe('chatEngine streaming preview', () => {
       characterMindTrace: {
         visibility: 'public',
         visibleMemoryRecall: 'natural',
+        memorySource: 'assembly_candidates',
         targetActorId: 'hui',
         targetActorName: '灰太狼',
         omittedPrivateContinuity: true,
@@ -3989,6 +3990,7 @@ describe('chatEngine streaming preview', () => {
 
     expect(runtimeDecision?.characterMind).toMatchObject({
       visibility: 'public',
+      memorySource: 'assembly_candidates',
       targetActorName: '灰太狼',
       coreLineCount: 6,
       omittedPrivateContinuity: true,

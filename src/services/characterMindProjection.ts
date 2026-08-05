@@ -52,6 +52,7 @@ export interface CharacterMindProjection {
     conflictReasons: string[];
     privacyGuards: string[];
     recallCandidates: string[];
+    memorySource: 'assembly_candidates' | 'fallback_retrieval';
   };
 }
 
@@ -408,6 +409,7 @@ export function buildCharacterMindProjection(params: {
         ...memories.relationshipMemories,
         ...memories.sharedHistory,
       ], 12),
+      memorySource: params.memoryCandidates ? 'assembly_candidates' : 'fallback_retrieval',
     },
   };
 }

@@ -1192,6 +1192,7 @@ describe('buildSystemPromptWithContext', () => {
 
     expect(trace).toMatchObject({
       visibility: 'public',
+      memorySource: 'assembly_candidates',
       omittedPrivateContinuity: true,
       hasUserContinuity: true,
     });
@@ -1233,6 +1234,7 @@ describe('buildSystemPromptWithContext', () => {
     expect(assembly.memoryTrace.targetActorName).toBe('林北');
     expect(assembly.characterMindTrace).toMatchObject({
       visibility: 'public',
+      memorySource: 'assembly_candidates',
       targetActorName: '林北',
       hasUserContinuity: true,
       omittedPrivateContinuity: true,

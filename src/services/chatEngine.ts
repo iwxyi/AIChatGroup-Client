@@ -2659,6 +2659,7 @@ function buildRuntimeDecisionMetadata(params: {
     characterMind: params.characterMindTrace ? {
       visibility: params.characterMindTrace.visibility,
       visibleMemoryRecall: params.characterMindTrace.visibleMemoryRecall,
+      memorySource: params.characterMindTrace.memorySource,
       targetActorId: params.characterMindTrace.targetActorId,
       targetActorName: params.characterMindTrace.targetActorName,
       omittedPrivateContinuity: params.characterMindTrace.omittedPrivateContinuity || undefined,

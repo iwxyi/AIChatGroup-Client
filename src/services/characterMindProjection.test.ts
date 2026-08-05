@@ -150,6 +150,7 @@ describe('characterMindProjection', () => {
     });
 
     expect(projection.continuity.userProfile).toContain('用户不喜欢太甜的饮料。');
+    expect(projection.hidden.memorySource).toBe('fallback_retrieval');
     expect(projection.relationship.targetName).toBe('用户');
     expect(projection.relationship.stance).toContain('更容易靠近、维护或给对方留余地');
     expect(projection.currentState.activeNeeds).toContain('希望被理解');
@@ -289,6 +290,7 @@ describe('characterMindProjection', () => {
     });
 
     expect(projection.continuity.userProfile).toContain('用户最近在准备一个重要面试。');
+    expect(projection.hidden.memorySource).toBe('assembly_candidates');
   });
 
   it('renders a compact model-facing block without exposing hidden trace fields', () => {

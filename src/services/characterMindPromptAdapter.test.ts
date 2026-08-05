@@ -45,6 +45,7 @@ function projection(overrides: Partial<CharacterMindProjection> = {}): Character
       conflictReasons: ['想靠近与想防备同时存在。'],
       privacyGuards: ['用户相关私密事实只能影响克制和关心。'],
       recallCandidates: ['用户不喜欢太甜的饮料。'],
+      memorySource: 'fallback_retrieval',
     },
     ...overrides,
   };

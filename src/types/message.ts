@@ -306,6 +306,7 @@ export interface MessageMetadata {
     characterMind?: {
       visibility: 'public' | 'private';
       visibleMemoryRecall: 'off' | 'implicit' | 'natural';
+      memorySource?: 'assembly_candidates' | 'fallback_retrieval';
       targetActorId?: string;
       targetActorName?: string;
       omittedPrivateContinuity?: boolean;

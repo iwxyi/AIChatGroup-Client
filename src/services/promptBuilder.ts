@@ -52,6 +52,7 @@ export interface PromptMemoryTrace {
 export interface PromptCharacterMindTrace {
   visibility: CharacterMindPromptAdapterOutput['trace']['visibility'];
   visibleMemoryRecall: CharacterMindPromptAdapterOutput['trace']['visibleMemoryRecall'];
+  memorySource: ReturnType<typeof buildCharacterMindProjection>['hidden']['memorySource'];
   targetActorId?: string;
   targetActorName?: string;
   omittedPrivateContinuity: boolean;
@@ -784,6 +785,7 @@ function buildPromptCharacterMindTraceFromOutput(
   return {
     visibility: adapter.trace.visibility,
     visibleMemoryRecall: adapter.trace.visibleMemoryRecall,
+    memorySource: projection.hidden.memorySource,
     targetActorId: projection.relationship.targetId,
     targetActorName: projection.relationship.targetName,
     omittedPrivateContinuity: adapter.trace.omittedPrivateContinuity,
