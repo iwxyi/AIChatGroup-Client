@@ -728,6 +728,7 @@ function buildPromptInfluenceContext(chat: GroupChat, character: AICharacter, ta
 function buildChatInfluenceSummary(chat: GroupChat) {
   if (chat.type === 'direct') return '\n## Channel Bias\n- This is a private user-facing channel: intimacy, continuity, and personal stance matter more than room theatrics.\n- The latest User line is what you are answering. Do not output it as your own line unless the user explicitly asked you to repeat or quote it.';
   if (chat.type === 'ai_direct') return '\n## Channel Bias\n- This is a pair-private AI thread: reciprocal dynamics and unfinished tension between the pair matter more than group consensus.';
+  if (chat.type === 'group' && resolveSessionFamilyKey(chat) === 'conversation') return '';
   return '\n## Channel Bias\n- This is a public group room: local momentum, alliances, pressure, and contradiction shape what feels natural to say next.';
 }
 

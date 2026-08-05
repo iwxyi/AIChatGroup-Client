@@ -876,6 +876,7 @@ describe('buildSystemPromptWithContext', () => {
     ]));
 
     expect(prompt).toContain('## Character Mind Projection');
+    expect(prompt).not.toContain('## Channel Bias');
     expect(prompt).not.toContain('## Reasoning Bias');
     expect(prompt).not.toContain('## Memory Priority');
     expect(prompt).toContain('## Influence Mode');
