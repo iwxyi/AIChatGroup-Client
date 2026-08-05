@@ -858,7 +858,7 @@ describe('buildSystemPromptWithContext', () => {
     expect(prompt).not.toContain('## Group Pressure');
   });
 
-  it('lets the character mind projection own reasoning and memory priority in ordinary group prompts', () => {
+  it('lets the character mind projection own ordinary group reasoning, influence, and memory priority', () => {
     const speaker = buildCharacter();
     const target = buildCharacter({ id: 'char-b', name: '阿远' });
     const prompt = buildSystemPromptWithContext(speaker, {
@@ -880,9 +880,9 @@ describe('buildSystemPromptWithContext', () => {
 
     expect(prompt).toContain('## Character Mind Projection');
     expect(prompt).not.toContain('## Channel Bias');
+    expect(prompt).not.toContain('## Influence Mode');
     expect(prompt).not.toContain('## Reasoning Bias');
     expect(prompt).not.toContain('## Memory Priority');
-    expect(prompt).toContain('## Influence Mode');
   });
 
   it('keeps shared secrets masked in public group prompts', () => {

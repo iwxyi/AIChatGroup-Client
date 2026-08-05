@@ -421,6 +421,7 @@ function buildInfluenceModePrompt(chat: GroupChat, target: AICharacter | undefin
   if (chat.type === 'ai_direct') {
     return `\n## Influence Mode\n- In this AI private thread, prioritize your evolving stance toward ${target?.name || 'the other AI'}, reciprocal relationship memory, and pair-specific carryover over generic room balance.`;
   }
+  if (chat.type === 'group' && resolveSessionFamilyKey(chat) === 'conversation') return '';
   return '\n## Influence Mode\n- In group chat, balance room context with your own biases: react locally to the latest exchange, but let long-term relationship and self-memory bend your tone and alliances.';
 }
 
