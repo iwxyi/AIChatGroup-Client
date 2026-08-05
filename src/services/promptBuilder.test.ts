@@ -9,6 +9,7 @@ import {
 import type { Message } from '../types/message';
 import type { RuntimeEventV2 } from '../types/runtimeEvent';
 import type { MemoryItem } from './memoryTypes';
+import { setChatMemoryRuntimeConfig } from './chatMemoryRuntimeConfig';
 import { buildChatMessages, buildCrossModeMemoryPrompt, buildPromptMemoryTrace, buildSystemPromptWithContext } from './promptBuilder';
 
 function buildCharacter(overrides: Partial<AICharacter> = {}): AICharacter {
@@ -455,6 +456,34 @@ describe('buildSystemPromptWithContext', () => {
 
     expect(prompt).toContain('Memories about the user');
     expect(prompt).toContain('用户预算有限但重视质感');
+  });
+
+  it('keeps core continuity when visible old-memory callbacks are disabled', () => {
+    setChatMemoryRuntimeConfig({ enabled: false });
+    try {
+      const character = buildCharacter({
+        memory: {
+          shortTermSummary: '',
+          longTerm: [],
+          secrets: [],
+          obsessions: [],
+          tabooTopics: [],
+          userMemories: ['用户预算有限但重视质感'],
+        },
+      });
+
+      const prompt = buildSystemPromptWithContext(character, buildDirectChat(), 0, [
+        buildMessage({ type: 'user', senderId: 'user', senderName: '用户', content: '今天想买一件外套。' }),
+      ], new Map([[character.id, character]]));
+
+      expect(prompt).toContain('## Character Mind Projection');
+      expect(prompt).toContain('## Core Character Continuity');
+      expect(prompt).toContain('User continuity');
+      expect(prompt).toContain('用户预算有限但重视质感');
+      expect(prompt).not.toContain('## Visible Recall Cues');
+    } finally {
+      setChatMemoryRuntimeConfig(null);
+    }
   });
 
   it('carries character-owned memories from other chats into a later direct chat', () => {

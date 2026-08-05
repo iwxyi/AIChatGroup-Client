@@ -2398,10 +2398,10 @@ export default function SettingsPage() {
                 control={<Switch checked={settings.chatMemory.enabled} onChange={(e) => settings.setChatMemory({ enabled: e.target.checked })} />}
                 label={(
                   <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
-                    <span>{i18n.language.startsWith('zh') ? '启用聊天记忆召回' : 'Enable chat memory recall'}</span>
+                    <span>{i18n.language.startsWith('zh') ? '允许自然提起旧事' : 'Allow natural old-memory callbacks'}</span>
                     <Tooltip title={i18n.language.startsWith('zh')
-                      ? '开启后，AI 会在相关聊天里想起已经保存的偏好、旧事和关系细节，让回复更连贯、更像熟人。它不会读取全部聊天记录，也不负责主动问候、私聊或其他陪伴行为。'
-                      : 'When enabled, the AI can bring relevant saved preferences, past moments, and relationship details into a reply so the conversation feels more continuous. It does not read the full chat history or control proactive companionship, check-ins, or private threads.'}>
+                      ? '控制角色是否可以在当前回复里自然提起已经保存的偏好、旧事和关系细节。关闭后，核心用户画像、关系边界和角色连续性仍会作为潜台词影响语气与选择。'
+                      : 'Controls whether the character may naturally mention saved preferences, past moments, and relationship details in the current reply. When off, core user profile, relationship boundaries, and character continuity can still shape tone and choices as subtext.'}>
                       <HelpOutlineIcon sx={{ fontSize: 17, color: 'text.secondary' }} />
                     </Tooltip>
                   </Box>

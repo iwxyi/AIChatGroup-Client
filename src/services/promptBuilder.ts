@@ -15,6 +15,8 @@ import { resolvePersonaActivation, type PersonaActivation } from './personaActiv
 import { buildInfluenceState, type InfluenceState } from './influenceState';
 import { selectConstrainedMemoryCues, type ConstrainedMemoryCue } from './memoryCueSelection';
 import { getChatMemoryRuntimeConfig } from './chatMemoryRuntimeConfig';
+import { buildCharacterMindProjection } from './characterMindProjection';
+import { adaptCharacterMindProjectionForPrompt, type VisibleMemoryRecallSetting } from './characterMindPromptAdapter';
 import { userProfileMemoryPayloadOf } from './directUserProfileMemory';
 import { getCurrentRetentionLimits } from './retentionLimits';
 import type { SharedMemoryAnchor, UserProfileMemoryEventItem, UserProfileMemoryKind } from '../types/companionship';
@@ -691,6 +693,29 @@ function buildMemoryPriorityPrompt(chat: GroupChat) {
   return '\n## Memory Priority\n- Priority: local room context first, then relationship memory and self bias, then older background memory.';
 }
 
+function mapVisibleMemoryRecallSetting(): VisibleMemoryRecallSetting {
+  const config = getChatMemoryRuntimeConfig();
+  if (!config.enabled || config.maxCuesPerTurn <= 0) return 'off';
+  return config.visibleRecallMode === 'implicit' ? 'implicit' : 'natural';
+}
+
+function buildCharacterMindProjectionSection(character: AICharacter, chat: GroupChat, messages: Message[], characters: Map<string, AICharacter>) {
+  const chatMemoryConfig = getChatMemoryRuntimeConfig();
+  const projection = buildCharacterMindProjection({
+    chat,
+    character,
+    characters: Array.from(characters.values()),
+    messages,
+    now: chat.updatedAt || Date.now(),
+  });
+  return adaptCharacterMindProjectionForPrompt(projection, {
+    chatType: chat.type,
+    visibleMemoryRecall: mapVisibleMemoryRecallSetting(),
+    maxRecallCues: chatMemoryConfig.maxCuesPerTurn,
+    includeActiveRoomLineSummaries: false,
+  }).promptBlock;
+}
+
 function buildPromptMemorySection(chat: GroupChat, character: AICharacter, conversationMemories: MemoryItem[], characterMemories: MemoryItem[], targetedCharacterMemories: MemoryItem[], target: AICharacter | undefined, relationshipSnapshot: AICharacter['relationships'][number] | null, characters: Map<string, AICharacter>, influenceState: import('./influenceState').InfluenceState, cueText = '', hasCompanionshipContext = false, recentMemoryUseIds: string[] = []) {
   const merged = buildMergedMemories([...targetedCharacterMemories, ...characterMemories, ...conversationMemories]);
   const members = buildPromptDisplayMembers(character, characters);
@@ -1032,6 +1057,7 @@ export function buildSystemPromptWithContext(character: AICharacter, chat: Group
     buildTopicSection(chat),
     buildRelationshipSection(character, memoryContext.target),
     buildPromptMemorySection(chat, character, memoryContext.conversationMemories, memoryContext.characterMemories, memoryContext.targetedCharacterMemories, memoryContext.target, memoryContext.relationshipSnapshot, characters, memoryContext.influenceState, memoryContext.recallCue, Boolean(companionshipPrompt), memoryContext.recentMemoryUseIds),
+    buildCharacterMindProjectionSection(character, chat, messages, characters),
     companionshipPrompt,
     buildMessageStyleRules(character),
     buildRecentMessagesSection(messages, characters),
