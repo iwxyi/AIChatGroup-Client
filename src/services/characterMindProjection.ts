@@ -75,7 +75,11 @@ function resolveTarget(params: {
   character: AICharacter;
   messages: Message[];
   characters: AICharacter[];
+  target?: { id: string; name?: string } | null;
 }) {
+  if (params.target) {
+    return { id: params.target.id, name: params.target.name || characterName(params.target.id, params.characters) };
+  }
   if (params.chat.type === 'direct') return { id: USER_ACTOR_ID, name: '用户' };
 
   const latestOther = visibleMessages(params.messages)
@@ -260,6 +264,7 @@ export function buildCharacterMindProjection(params: {
   character: AICharacter;
   characters: AICharacter[];
   messages: Message[];
+  target?: { id: string; name?: string } | null;
   now?: number;
 }): CharacterMindProjection {
   const now = params.now || Date.now();

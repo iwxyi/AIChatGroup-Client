@@ -148,6 +148,26 @@ describe('characterMindProjection', () => {
     expect(projection.expression.omissions).toContain('内部状态分数');
   });
 
+  it('uses an upstream resolved target instead of re-picking the latest speaker', () => {
+    const latestSpeaker = character({ id: 'char-b', name: '阿远' });
+    const guidedTarget = character({ id: 'char-c', name: '林北' });
+    const speaker = character({
+      relationships: [{ characterId: 'char-c', warmth: 28, competence: 10, trust: 22, threat: 0, note: '愿意替林北留一点余地。' }],
+    });
+    const projection = buildCharacterMindProjection({
+      chat: chat('group'),
+      character: speaker,
+      characters: [speaker, latestSpeaker, guidedTarget],
+      messages: [message('继续刚才那个梗。', 'char-b')],
+      target: { id: 'char-c', name: '林北' },
+      now: 2000,
+    });
+
+    expect(projection.relationship.targetName).toBe('林北');
+    expect(projection.relationship.stance).toContain('更容易靠近、维护或给对方留余地');
+    expect(projection.expression.attention).toContain('林北');
+  });
+
   it('renders a compact model-facing block without exposing hidden trace fields', () => {
     const speaker = character();
     const projection = buildCharacterMindProjection({

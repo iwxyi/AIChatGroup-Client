@@ -1056,6 +1056,14 @@ describe('buildSystemPromptWithContext', () => {
     const sender = buildCharacter({
       id: 'char-a',
       name: '美羊羊',
+      relationships: [{
+        characterId: 'char-c',
+        warmth: 24,
+        competence: 8,
+        trust: 20,
+        threat: 0,
+        note: '愿意替灰太狼留一点余地。',
+      }],
       layeredMemories: [memory({
         id: 'gray-wolf-portrait-memory',
         ownerId: 'char-a',
@@ -1076,6 +1084,14 @@ describe('buildSystemPromptWithContext', () => {
       [latestSpeaker.id, latestSpeaker],
       [subject.id, subject],
     ]));
+    const prompt = buildSystemPromptWithContext(sender, chat, 0, [
+      buildMessage({ id: 'ai-latest', senderId: 'char-b', senderName: '懒羊羊', content: '我想继续聊零食。', timestamp: 2 }),
+      buildMessage({ id: 'user-image', type: 'god', senderId: 'user', senderName: '开发者', content: '美羊羊发个灰太狼证件照的图片', timestamp: 3 }),
+    ], new Map([
+      [sender.id, sender],
+      [latestSpeaker.id, latestSpeaker],
+      [subject.id, subject],
+    ]));
 
     expect(trace.injectedIds).toContain('gray-wolf-portrait-memory');
     expect(trace).toMatchObject({
@@ -1084,6 +1100,8 @@ describe('buildSystemPromptWithContext', () => {
       targetReason: '来自人工发图请求的图片对象',
     });
     expect(trace.recalledArchives[0]?.summary).toContain('灰太狼');
+    expect(prompt).toContain('Stance toward 灰太狼');
+    expect(prompt).not.toContain('Stance toward 懒羊羊');
   });
 
   it('injects readable memory context into generation prompts without raw ids or enum labels', () => {

@@ -699,20 +699,24 @@ function mapVisibleMemoryRecallSetting(): VisibleMemoryRecallSetting {
   return config.visibleRecallMode === 'implicit' ? 'implicit' : 'natural';
 }
 
-function buildCharacterMindProjectionSection(character: AICharacter, chat: GroupChat, messages: Message[], characters: Map<string, AICharacter>) {
+function buildCharacterMindProjectionSection(character: AICharacter, chat: GroupChat, messages: Message[], characters: Map<string, AICharacter>, target?: AICharacter) {
   const chatMemoryConfig = getChatMemoryRuntimeConfig();
   const projection = buildCharacterMindProjection({
     chat,
     character,
     characters: Array.from(characters.values()),
     messages,
+    target: target ? { id: target.id, name: target.name } : undefined,
     now: chat.updatedAt || Date.now(),
   });
   return adaptCharacterMindProjectionForPrompt(projection, {
     chatType: chat.type,
     visibleMemoryRecall: mapVisibleMemoryRecallSetting(),
     maxRecallCues: chatMemoryConfig.maxCuesPerTurn,
+    maxCoreLines: 6,
+    maxRoomLines: 5,
     includeActiveRoomLineSummaries: false,
+    renderVisibleRecallCues: false,
   }).promptBlock;
 }
 
@@ -866,7 +870,7 @@ export function buildCrossModeMemoryPrompt(character: AICharacter, chat: GroupCh
   ]);
   const members = buildPromptDisplayMembers(character, characters);
   const companionshipPrompt = buildCompanionshipPromptBlock({ chat, character, messages });
-  return `${buildManualMemorySeedPrompt(character, members, chat)}${buildPromptMemoryBundle(chat, memoryContext.conversationMemories, memoryContext.characterMemories, memoryContext.targetedCharacterMemories, members, memoryContext.memoryCues)}${buildPromptInfluenceContext(chat, character, memoryContext.target, memoryContext.relationshipSnapshot, merged, characters)}${buildPromptTargetingContext(chat, memoryContext.target, memoryContext.relationshipSnapshot, characters)}${buildTargetedInfluenceContext(chat, memoryContext.target, memoryContext.relationshipSnapshot, characters)}${buildSharedSecretPromptBlock(chat, character, memoryContext.target, characters)}${buildActiveContinuityPull({ chat, character, target: memoryContext.target, relationshipSnapshot: memoryContext.relationshipSnapshot, memories: merged, memoryCues: memoryContext.memoryCues, influenceState: memoryContext.influenceState, characters, hasCompanionshipContext: Boolean(companionshipPrompt) })}${companionshipPrompt}${buildMemoryPriorityPrompt(chat)}`;
+  return `${buildManualMemorySeedPrompt(character, members, chat)}${buildPromptMemoryBundle(chat, memoryContext.conversationMemories, memoryContext.characterMemories, memoryContext.targetedCharacterMemories, members, memoryContext.memoryCues)}${buildPromptInfluenceContext(chat, character, memoryContext.target, memoryContext.relationshipSnapshot, merged, characters)}${buildPromptTargetingContext(chat, memoryContext.target, memoryContext.relationshipSnapshot, characters)}${buildTargetedInfluenceContext(chat, memoryContext.target, memoryContext.relationshipSnapshot, characters)}${buildSharedSecretPromptBlock(chat, character, memoryContext.target, characters)}${buildActiveContinuityPull({ chat, character, target: memoryContext.target, relationshipSnapshot: memoryContext.relationshipSnapshot, memories: merged, memoryCues: memoryContext.memoryCues, influenceState: memoryContext.influenceState, characters, hasCompanionshipContext: Boolean(companionshipPrompt) })}${buildCharacterMindProjectionSection(character, chat, messages, characters, memoryContext.target)}${companionshipPrompt}${buildMemoryPriorityPrompt(chat)}`;
 }
 
 function buildTopicSection(chat: GroupChat) {
@@ -1057,7 +1061,7 @@ export function buildSystemPromptWithContext(character: AICharacter, chat: Group
     buildTopicSection(chat),
     buildRelationshipSection(character, memoryContext.target),
     buildPromptMemorySection(chat, character, memoryContext.conversationMemories, memoryContext.characterMemories, memoryContext.targetedCharacterMemories, memoryContext.target, memoryContext.relationshipSnapshot, characters, memoryContext.influenceState, memoryContext.recallCue, Boolean(companionshipPrompt), memoryContext.recentMemoryUseIds),
-    buildCharacterMindProjectionSection(character, chat, messages, characters),
+    buildCharacterMindProjectionSection(character, chat, messages, characters, memoryContext.target),
     companionshipPrompt,
     buildMessageStyleRules(character),
     buildRecentMessagesSection(messages, characters),

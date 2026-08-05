@@ -12,6 +12,7 @@ export interface CharacterMindPromptAdapterOptions {
   maxRoomLines?: number;
   maxRecallCues?: number;
   includeActiveRoomLineSummaries?: boolean;
+  renderVisibleRecallCues?: boolean;
 }
 
 export interface CharacterMindPromptAdapterOutput {
@@ -191,7 +192,7 @@ export function adaptCharacterMindProjectionForPrompt(
     visibleMemoryRecall,
     options.maxRecallCues || DEFAULT_RECALL_CUES,
   );
-  const recallLines = visibleRecallInput.length
+  const recallLines = options.renderVisibleRecallCues !== false && visibleRecallInput.length
     ? ['## Visible Recall Cues', ...visibleRecallInput.map((cue) => `- ${cue}`)]
     : [];
   const coreContinuityBlock = coreLines.length ? `## Core Character Continuity\n${coreLines.join('\n')}` : '';

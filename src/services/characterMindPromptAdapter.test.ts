@@ -97,6 +97,19 @@ describe('characterMindPromptAdapter', () => {
     expect(output.promptBlock).toContain('用户不喜欢太甜的饮料。');
   });
 
+  it('can suppress visible recall rendering while keeping selected cues for trace or migration', () => {
+    const output = adaptCharacterMindProjectionForPrompt(projection(), {
+      chatType: 'direct',
+      visibility: 'private',
+      visibleMemoryRecall: 'natural',
+      renderVisibleRecallCues: false,
+    });
+
+    expect(output.visibleRecallInput.length).toBeGreaterThan(0);
+    expect(output.promptBlock).not.toContain('## Visible Recall Cues');
+    expect(output.promptBlock).toContain('## Core Character Continuity');
+  });
+
   it('keeps room, world, and growth context available within a small budget', () => {
     const output = adaptCharacterMindProjectionForPrompt(projection(), {
       chatType: 'group',
