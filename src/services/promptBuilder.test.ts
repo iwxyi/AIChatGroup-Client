@@ -855,6 +855,32 @@ describe('buildSystemPromptWithContext', () => {
     expect(prompt).not.toContain('## Group Pressure');
   });
 
+  it('lets the character mind projection own reasoning and memory priority in ordinary group prompts', () => {
+    const speaker = buildCharacter();
+    const target = buildCharacter({ id: 'char-b', name: '阿远' });
+    const prompt = buildSystemPromptWithContext(speaker, {
+      ...buildChat(),
+      mode: 'open_chat',
+      memberIds: ['char-a', 'char-b'],
+      sessionKind: {
+        topology: 'group',
+        family: 'conversation',
+        scenarioId: 'open-chat',
+        surfaceProfile: 'text',
+      },
+    }, 0, [
+      buildMessage({ senderId: 'char-b', senderName: '阿远', content: '这杯茶先放这儿。' }),
+    ], new Map([
+      [speaker.id, speaker],
+      [target.id, target],
+    ]));
+
+    expect(prompt).toContain('## Character Mind Projection');
+    expect(prompt).not.toContain('## Reasoning Bias');
+    expect(prompt).not.toContain('## Memory Priority');
+    expect(prompt).toContain('## Influence Mode');
+  });
+
   it('keeps shared secrets masked in public group prompts', () => {
     const speaker = buildCharacter({
       relationships: [{

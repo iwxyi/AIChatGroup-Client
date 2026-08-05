@@ -23,6 +23,7 @@ import type { RelationshipLedgerEntry, RuntimeEventV2 } from '../types/runtimeEv
 import { buildPublicSafeRelationshipSemanticSummary } from './relationshipSemanticPrivacy';
 import { CHAT_STYLE_PROMPT_DESCRIPTIONS } from '../constants/chatStyles';
 import { getPromptSpeakerLabel, getPromptTurnTypeLabel, isHumanDirectedMessage } from './chatMessageSemantics';
+import { resolveSessionFamilyKey } from './sessionEngineKeys';
 
 const COMPANIONSHIP_SHARED_ANCHOR_SOURCE_TAG = 'companionship_shared_anchor';
 const COMPANIONSHIP_USER_PROFILE_SOURCE_TAG = 'companionship_user_profile';
@@ -732,6 +733,7 @@ function buildChatInfluenceSummary(chat: GroupChat) {
 function buildPromptReasoningBias(chat: GroupChat) {
   if (chat.type === 'direct') return '\n## Reasoning Bias\n- Answer from lived continuity and personal stance first; do not reconstruct a public-room transcript unless it is genuinely necessary.';
   if (chat.type === 'ai_direct') return '\n## Reasoning Bias\n- Think through the pair history first; prioritize what the other AI means to you over generic topic analysis.';
+  if (chat.type === 'group' && resolveSessionFamilyKey(chat) === 'conversation') return '';
   return '\n## Reasoning Bias\n- Think like someone inside an unfolding room dynamic: react to contradiction, tone shifts, and alliances before abstract synthesis.';
 }
 
@@ -742,6 +744,7 @@ function buildPromptReasoningSummary(chat: GroupChat) {
 function buildMemoryPriorityPrompt(chat: GroupChat) {
   if (chat.type === 'direct') return '\n## Memory Priority\n- Priority: self-memory and relationship-memory first, direct-thread continuity second, public-room carryover last.';
   if (chat.type === 'ai_direct') return '\n## Memory Priority\n- Priority: pair relationship memory first, pair-thread continuity second, general self-model third.';
+  if (chat.type === 'group' && resolveSessionFamilyKey(chat) === 'conversation') return '';
   return '\n## Memory Priority\n- Priority: local room context first, then relationship memory and self bias, then older background memory.';
 }
 
