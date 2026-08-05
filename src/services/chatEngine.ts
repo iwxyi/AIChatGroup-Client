@@ -9,7 +9,7 @@ import { getPreferredAIProfile, inferTextInputCapabilities, isAIProfileUsable } 
 import type { ConflictFocusPayload, InteractionEventPayload, SocialEventHintEnvelope } from '../types/runtimeEvent';
 import { normalizeInteractionHintCollection, normalizeSocialEventHints } from '../types/runtimeEvent';
 import { generateResponse } from './aiClient';
-import { buildSystemPromptWithContext, buildChatMessages, buildPromptMemoryTrace, type PromptMemoryTrace } from './promptBuilder';
+import { buildSystemPromptWithContext, buildChatMessages, buildPromptMemoryTrace, buildPromptCharacterMindTrace, type PromptCharacterMindTrace, type PromptMemoryTrace } from './promptBuilder';
 import { buildEngineAwarePrompt } from './promptContextAssembler';
 import { resolveSessionDefinition } from '../types/sessionEngine';
 import { loadSessionEngine } from './sessionEngineLoader';
@@ -2550,6 +2550,7 @@ function buildRuntimeDecisionMetadata(params: {
   personaActivation?: PersonaActivation | null;
   intentionalRepeat?: boolean;
   memoryTrace?: PromptMemoryTrace | null;
+  characterMindTrace?: PromptCharacterMindTrace | null;
   companionshipTrace?: NonNullable<MessageMetadata['runtimeDecision']>['companionshipContext'] | null;
   expressionFeedback?: ExpressionFeedbackTrace;
   guidanceExecution?: GuidanceExecutionTrace | null;
@@ -2572,7 +2573,7 @@ function buildRuntimeDecisionMetadata(params: {
       recalledArchives: params.memoryTrace.recalledArchives.slice(0, 4),
     }
     : undefined;
-  if (!params.directorIntent && !params.narrativeLines?.length && !params.speakerSelection && !params.speakerScore && !params.innerLife && !params.surface && !params.turnPlan && !params.personaActivation && !params.intentionalRepeat && !memoryContext && !params.companionshipTrace && !params.expressionFeedback?.length && !params.guidanceExecution && !params.worldInfluence?.activeRuleIds?.length && !params.runtimeBundle?.turnPlan && !params.runtimeBundle?.expressionPlan && !params.runtimeBundle?.trace) return undefined;
+  if (!params.directorIntent && !params.narrativeLines?.length && !params.speakerSelection && !params.speakerScore && !params.innerLife && !params.surface && !params.turnPlan && !params.personaActivation && !params.intentionalRepeat && !memoryContext && !params.characterMindTrace && !params.companionshipTrace && !params.expressionFeedback?.length && !params.guidanceExecution && !params.worldInfluence?.activeRuleIds?.length && !params.runtimeBundle?.turnPlan && !params.runtimeBundle?.expressionPlan && !params.runtimeBundle?.trace) return undefined;
   return {
     directorIntent: params.directorIntent ? {
       source: params.directorIntent.source,
@@ -2654,6 +2655,21 @@ function buildRuntimeDecisionMetadata(params: {
     } : undefined,
     intentionalRepeat: params.intentionalRepeat || undefined,
     memoryContext,
+    characterMind: params.characterMindTrace ? {
+      visibility: params.characterMindTrace.visibility,
+      visibleMemoryRecall: params.characterMindTrace.visibleMemoryRecall,
+      targetActorId: params.characterMindTrace.targetActorId,
+      targetActorName: params.characterMindTrace.targetActorName,
+      omittedPrivateContinuity: params.characterMindTrace.omittedPrivateContinuity || undefined,
+      omittedRawRoomLines: params.characterMindTrace.omittedRawRoomLines || undefined,
+      coreLineCount: params.characterMindTrace.coreLineCount,
+      roomLineCount: params.characterMindTrace.roomLineCount,
+      recallCueCount: params.characterMindTrace.recallCueCount,
+      hasUserContinuity: params.characterMindTrace.hasUserContinuity || undefined,
+      hasRelationshipContinuity: params.characterMindTrace.hasRelationshipContinuity || undefined,
+      hasSharedHistory: params.characterMindTrace.hasSharedHistory || undefined,
+      hasWorldContext: params.characterMindTrace.hasWorldContext || undefined,
+    } : undefined,
     companionshipContext: params.companionshipTrace || undefined,
     guidanceExecution: params.guidanceExecution ? {
       status: params.guidanceExecution.status,
@@ -3829,6 +3845,7 @@ export async function generateSpeakerMessage(params: {
   const personaActivation = resolvePersonaActivation({ chat: params.chat, speaker: params.speaker, messages: activeMessages });
   const expressionFeedbackTrace = collectExpressionFeedbackTrace(params.speaker, innerLife);
   const memoryTrace = buildPromptMemoryTrace(params.speaker, params.chat, activeMessages, characterMap);
+  const characterMindTrace = buildPromptCharacterMindTrace(params.speaker, params.chat, activeMessages, characterMap);
   const memoryTraceReadyAt = nowMs();
   const isAnalysisRoom = resolveSessionFamilyKey(params.chat) === 'analysis';
   const companionshipTrace = isAnalysisRoom
@@ -4113,6 +4130,7 @@ export async function generateSpeakerMessage(params: {
           personaActivation,
           intentionalRepeat: Boolean(generated.parsedEnvelope?.intentionalRepeat),
           memoryTrace,
+          characterMindTrace,
           companionshipTrace,
           expressionFeedback: expressionFeedbackTrace,
           guidanceExecution,

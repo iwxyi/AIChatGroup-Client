@@ -10,7 +10,7 @@ import type { Message } from '../types/message';
 import type { RuntimeEventV2 } from '../types/runtimeEvent';
 import type { MemoryItem } from './memoryTypes';
 import { setChatMemoryRuntimeConfig } from './chatMemoryRuntimeConfig';
-import { buildChatMessages, buildCrossModeMemoryPrompt, buildPromptMemoryTrace, buildSystemPromptWithContext } from './promptBuilder';
+import { buildChatMessages, buildCrossModeMemoryPrompt, buildPromptCharacterMindTrace, buildPromptMemoryTrace, buildSystemPromptWithContext } from './promptBuilder';
 
 function buildCharacter(overrides: Partial<AICharacter> = {}): AICharacter {
   return {
@@ -1050,6 +1050,31 @@ describe('buildSystemPromptWithContext', () => {
       id: 'about-target',
       recallReason: expect.stringContaining('旧档'),
     });
+  });
+
+  it('builds a compact character mind trace without private memory text', () => {
+    const speaker = buildCharacter({
+      memory: {
+        shortTermSummary: '',
+        longTerm: [],
+        secrets: [],
+        obsessions: [],
+        tabooTopics: [],
+        userMemories: ['用户下周要面试，希望别被公开点名。'],
+      },
+    });
+    const groupWithUser = { ...buildChat(), memberIds: ['char-a', 'user'] };
+    const trace = buildPromptCharacterMindTrace(speaker, groupWithUser, [
+      buildMessage({ type: 'user', senderId: 'user', senderName: '用户', content: '我也在群里听着。' }),
+    ], new Map([[speaker.id, speaker]]));
+
+    expect(trace).toMatchObject({
+      visibility: 'public',
+      omittedPrivateContinuity: true,
+      hasUserContinuity: true,
+    });
+    expect(JSON.stringify(trace)).not.toContain('面试');
+    expect(JSON.stringify(trace)).not.toContain('公开点名');
   });
 
   it('uses media request subjects as targeted memory subjects instead of only the sender', () => {

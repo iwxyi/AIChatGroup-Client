@@ -303,6 +303,21 @@ export interface MessageMetadata {
         recallScore?: number;
       }>;
     };
+    characterMind?: {
+      visibility: 'public' | 'private';
+      visibleMemoryRecall: 'off' | 'implicit' | 'natural';
+      targetActorId?: string;
+      targetActorName?: string;
+      omittedPrivateContinuity?: boolean;
+      omittedRawRoomLines?: boolean;
+      coreLineCount?: number;
+      roomLineCount?: number;
+      recallCueCount?: number;
+      hasUserContinuity?: boolean;
+      hasRelationshipContinuity?: boolean;
+      hasSharedHistory?: boolean;
+      hasWorldContext?: boolean;
+    };
     companionshipContext?: CompanionshipRuntimeTrace;
     guidanceExecution?: {
       status: 'accepted' | 'accepted_after_retry' | 'failed_after_retry';

@@ -958,7 +958,8 @@ describe('chatEngine streaming preview', () => {
 
     expect(prompt).toContain('## Room Floor State');
     expect(prompt).toContain('Phase: continue the same floor');
-    expect(prompt).toContain('Low-information social signals are valid');
+    expect(prompt).toContain('Some real chat turns mainly change social temperature');
+    expect(prompt).toContain('## Turn Directive');
     expect(prompt).toContain('do not manufacture a new thesis');
     expect(prompt).not.toContain('可是');
     expect(prompt).not.toContain('唉');
@@ -2103,7 +2104,7 @@ describe('chatEngine streaming preview', () => {
     expect(message.extraMessages ?? null).toBeNull();
   });
 
-  it('allows multiline chat while warning against repeated visible layouts', async () => {
+  it('keeps multiline chat available while ordinary group mode uses the unified directive', async () => {
     generateResponseMock.mockReset();
     generateResponseMock.mockResolvedValue(JSON.stringify({
       content: '（轻叹一声，目光落向窗外竹影）\n\n热闹自有热闹的好，冷清也有冷清的趣。\n\n（转回视线，语气淡了几分）你且去别处热闹罢。',
@@ -2127,9 +2128,10 @@ describe('chatEngine streaming preview', () => {
     });
     const prompt = String(generateResponseMock.mock.calls[0]?.[1] || '');
 
-    expect(prompt).toContain('## Turn Format Variety');
-    expect(prompt).toContain('Keep any format that the current content genuinely needs');
-    expect(prompt).toContain('not a ban on any specific punctuation');
+    expect(prompt).toContain('## Turn Directive');
+    expect(prompt).toContain('Expression shape:');
+    expect(prompt).not.toContain('## Turn Format Variety');
+    expect(prompt).not.toContain('## Expression Surface Choice');
     expect(message.content).toBe('（轻叹一声，目光落向窗外竹影）\n\n热闹自有热闹的好，冷清也有冷清的趣。\n\n（转回视线，语气淡了几分）你且去别处热闹罢。');
   });
 
@@ -2901,11 +2903,10 @@ describe('chatEngine streaming preview', () => {
 
     expect(generateResponseMock).toHaveBeenCalledTimes(1);
     expect(onLocalInterception).not.toHaveBeenCalled();
-    expect(prompt).toContain('opening-frame history');
-    expect(prompt).toContain('acknowledgement-then-framework move');
-    expect(prompt).toContain('Do not solve repetition by swapping one stock phrase for another');
-    expect(prompt).toContain('## Turn Length Variety');
-    expect(prompt).toContain('Do not target a fixed middle length');
+    expect(prompt).toContain('## Turn Directive');
+    expect(prompt).toContain('do not make agreement the whole move');
+    expect(prompt).not.toContain('opening-frame history');
+    expect(prompt).not.toContain('## Turn Length Variety');
     expect(prompt).not.toContain('你这个问题问到了实务中的痛点');
     expect(prompt).not.toContain('你这个问题问到了实务中的另一个关键点');
     expect(prompt).not.toContain('你这个问题问到了实务中的核心困境');
@@ -3052,12 +3053,10 @@ describe('chatEngine streaming preview', () => {
 
     expect(generateResponseMock).toHaveBeenCalledTimes(1);
     expect(onLocalInterception).not.toHaveBeenCalled();
-    expect(prompt).toContain('## Expression Surface Choice');
-    expect(prompt).toContain('decorative-marker turns');
-    expect(prompt).toContain('This is not output filtering');
-    expect(prompt).toContain('Relation to previous turn');
-    expect(prompt).toContain('Persona lens for this turn');
-    expect(prompt).toContain('A character profile is not a job interview');
+    expect(prompt).toContain('## Turn Directive');
+    expect(prompt).toContain('Expression shape:');
+    expect(prompt).not.toContain('## Expression Surface Choice');
+    expect(prompt).not.toContain('## Turn Format Variety');
     expect(message.content).toBe('我也有点想排队了😂');
   });
 
@@ -3967,6 +3966,34 @@ describe('chatEngine streaming preview', () => {
       activeRuleIds: ['comfort_first', 'urgent_calendar_first'],
     });
     expect(runtimeDecision?.worldInfluence?.activeRuleTexts?.length).toBe(2);
+  });
+
+  it('stores compact character mind trace in runtime decision metadata', () => {
+    const runtimeDecision = __chatEngineTestUtils.buildRuntimeDecisionMetadata({
+      characterMindTrace: {
+        visibility: 'public',
+        visibleMemoryRecall: 'natural',
+        targetActorId: 'hui',
+        targetActorName: '灰太狼',
+        omittedPrivateContinuity: true,
+        omittedRawRoomLines: true,
+        coreLineCount: 6,
+        roomLineCount: 4,
+        recallCueCount: 2,
+        hasUserContinuity: true,
+        hasRelationshipContinuity: true,
+        hasSharedHistory: false,
+        hasWorldContext: true,
+      },
+    });
+
+    expect(runtimeDecision?.characterMind).toMatchObject({
+      visibility: 'public',
+      targetActorName: '灰太狼',
+      coreLineCount: 6,
+      omittedPrivateContinuity: true,
+    });
+    expect(JSON.stringify(runtimeDecision?.characterMind)).not.toContain('## Character Mind Projection');
   });
 
   it('adds a larger typing delay for repair and withdrawal pressure', () => {

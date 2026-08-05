@@ -16,7 +16,7 @@ import { buildInfluenceState, type InfluenceState } from './influenceState';
 import { selectConstrainedMemoryCues, type ConstrainedMemoryCue } from './memoryCueSelection';
 import { getChatMemoryRuntimeConfig } from './chatMemoryRuntimeConfig';
 import { buildCharacterMindProjection } from './characterMindProjection';
-import { adaptCharacterMindProjectionForPrompt, type VisibleMemoryRecallSetting } from './characterMindPromptAdapter';
+import { adaptCharacterMindProjectionForPrompt, type CharacterMindPromptAdapterOutput, type VisibleMemoryRecallSetting } from './characterMindPromptAdapter';
 import { userProfileMemoryPayloadOf } from './directUserProfileMemory';
 import { getCurrentRetentionLimits } from './retentionLimits';
 import type { SharedMemoryAnchor, UserProfileMemoryEventItem, UserProfileMemoryKind } from '../types/companionship';
@@ -47,6 +47,22 @@ export interface PromptMemoryTrace {
   targetActorId?: string;
   targetActorName?: string;
   targetReason?: string;
+}
+
+export interface PromptCharacterMindTrace {
+  visibility: CharacterMindPromptAdapterOutput['trace']['visibility'];
+  visibleMemoryRecall: CharacterMindPromptAdapterOutput['trace']['visibleMemoryRecall'];
+  targetActorId?: string;
+  targetActorName?: string;
+  omittedPrivateContinuity: boolean;
+  omittedRawRoomLines: boolean;
+  coreLineCount: number;
+  roomLineCount: number;
+  recallCueCount: number;
+  hasUserContinuity: boolean;
+  hasRelationshipContinuity: boolean;
+  hasSharedHistory: boolean;
+  hasWorldContext: boolean;
 }
 
 function buildEmotionalStateDescription(character: AICharacter) {
@@ -699,7 +715,7 @@ function mapVisibleMemoryRecallSetting(): VisibleMemoryRecallSetting {
   return config.visibleRecallMode === 'implicit' ? 'implicit' : 'natural';
 }
 
-function buildCharacterMindProjectionSection(character: AICharacter, chat: GroupChat, messages: Message[], characters: Map<string, AICharacter>, target?: AICharacter) {
+function buildCharacterMindAdapterOutput(character: AICharacter, chat: GroupChat, messages: Message[], characters: Map<string, AICharacter>, target?: AICharacter) {
   const chatMemoryConfig = getChatMemoryRuntimeConfig();
   const projection = buildCharacterMindProjection({
     chat,
@@ -709,7 +725,7 @@ function buildCharacterMindProjectionSection(character: AICharacter, chat: Group
     target: target ? { id: target.id, name: target.name } : undefined,
     now: chat.updatedAt || Date.now(),
   });
-  return adaptCharacterMindProjectionForPrompt(projection, {
+  const adapter = adaptCharacterMindProjectionForPrompt(projection, {
     chatType: chat.type,
     visibleMemoryRecall: mapVisibleMemoryRecallSetting(),
     maxRecallCues: chatMemoryConfig.maxCuesPerTurn,
@@ -717,7 +733,12 @@ function buildCharacterMindProjectionSection(character: AICharacter, chat: Group
     maxRoomLines: 5,
     includeActiveRoomLineSummaries: false,
     renderVisibleRecallCues: false,
-  }).promptBlock;
+  });
+  return { projection, adapter };
+}
+
+function buildCharacterMindProjectionSection(character: AICharacter, chat: GroupChat, messages: Message[], characters: Map<string, AICharacter>, target?: AICharacter) {
+  return buildCharacterMindAdapterOutput(character, chat, messages, characters, target).adapter.promptBlock;
 }
 
 function buildPromptMemorySection(chat: GroupChat, character: AICharacter, conversationMemories: MemoryItem[], characterMemories: MemoryItem[], targetedCharacterMemories: MemoryItem[], target: AICharacter | undefined, relationshipSnapshot: AICharacter['relationships'][number] | null, characters: Map<string, AICharacter>, influenceState: import('./influenceState').InfluenceState, cueText = '', hasCompanionshipContext = false, recentMemoryUseIds: string[] = []) {
@@ -859,6 +880,26 @@ function resolvePromptMemoryContext(character: AICharacter, chat: GroupChat, mes
 
 export function buildPromptMemoryTrace(character: AICharacter, chat: GroupChat, messages: Message[], characters: Map<string, AICharacter>): PromptMemoryTrace {
   return resolvePromptMemoryContext(character, chat, messages, characters).trace;
+}
+
+export function buildPromptCharacterMindTrace(character: AICharacter, chat: GroupChat, messages: Message[], characters: Map<string, AICharacter>): PromptCharacterMindTrace {
+  const memoryContext = resolvePromptMemoryContext(character, chat, messages, characters);
+  const { projection, adapter } = buildCharacterMindAdapterOutput(character, chat, messages, characters, memoryContext.target);
+  return {
+    visibility: adapter.trace.visibility,
+    visibleMemoryRecall: adapter.trace.visibleMemoryRecall,
+    targetActorId: projection.relationship.targetId,
+    targetActorName: projection.relationship.targetName,
+    omittedPrivateContinuity: adapter.trace.omittedPrivateContinuity,
+    omittedRawRoomLines: adapter.trace.omittedRawRoomLines,
+    coreLineCount: adapter.coreContinuityBlock ? adapter.coreContinuityBlock.split('\n').filter((line) => line.startsWith('- ')).length : 0,
+    roomLineCount: adapter.currentRoomBlock ? adapter.currentRoomBlock.split('\n').filter((line) => line.startsWith('- ')).length : 0,
+    recallCueCount: adapter.visibleRecallInput.length,
+    hasUserContinuity: projection.continuity.userProfile.length > 0,
+    hasRelationshipContinuity: projection.continuity.relationshipMemories.length > 0,
+    hasSharedHistory: projection.continuity.sharedHistory.length > 0,
+    hasWorldContext: projection.room.activeLines.length > 0 || projection.room.worldActivities.length > 0,
+  };
 }
 
 export function buildCrossModeMemoryPrompt(character: AICharacter, chat: GroupChat, messages: Message[], characters: Map<string, AICharacter>) {
