@@ -484,7 +484,7 @@ function extractMindAdapterHookLines(adapter: CharacterMindPromptAdapterOutput |
     .split('\n')
     .map((line) => line.replace(/^-\s*/, '').trim())
     .filter((line) => line && !line.startsWith('##'))
-    .filter((line) => /Stance toward|User continuity|Relationship continuity|Shared history|Expression guidance|Room pressure/.test(line))
+    .filter((line) => /Stance toward|User continuity|Relationship continuity|Shared history/.test(line))
     .map((line) => cleanPromptText(line, members, 100))
     .filter(Boolean);
 }
@@ -937,8 +937,9 @@ export function buildCrossModeMemoryPrompt(character: AICharacter, chat: GroupCh
   ]);
   const members = buildPromptDisplayMembers(character, characters);
   const companionshipPrompt = buildCompanionshipPromptBlock({ chat, character, messages });
+  const renderedCompanionshipPrompt = chat.type === 'group' ? '' : companionshipPrompt;
   const mind = buildCharacterMindAdapterOutput(character, chat, messages, characters, memoryContext.target);
-  return `${buildManualMemorySeedPrompt(character, members, chat)}${buildPromptMemoryBundle(chat, memoryContext.conversationMemories, memoryContext.characterMemories, memoryContext.targetedCharacterMemories, members, memoryContext.memoryCues)}${buildPromptInfluenceContext(chat, character, memoryContext.target, memoryContext.relationshipSnapshot, merged, characters)}${buildPromptTargetingContext(chat, memoryContext.target, memoryContext.relationshipSnapshot, characters)}${buildTargetedInfluenceContext(chat, memoryContext.target, memoryContext.relationshipSnapshot, characters)}${buildSharedSecretPromptBlock(chat, character, memoryContext.target, characters)}${buildActiveContinuityPull({ chat, character, target: memoryContext.target, relationshipSnapshot: memoryContext.relationshipSnapshot, memoryCues: memoryContext.memoryCues, characters, hasCompanionshipContext: Boolean(companionshipPrompt), mind })}${mind.adapter.promptBlock}${companionshipPrompt}${buildMemoryPriorityPrompt(chat)}`;
+  return `${buildManualMemorySeedPrompt(character, members, chat)}${buildPromptMemoryBundle(chat, memoryContext.conversationMemories, memoryContext.characterMemories, memoryContext.targetedCharacterMemories, members, memoryContext.memoryCues)}${buildPromptInfluenceContext(chat, character, memoryContext.target, memoryContext.relationshipSnapshot, merged, characters)}${buildPromptTargetingContext(chat, memoryContext.target, memoryContext.relationshipSnapshot, characters)}${buildTargetedInfluenceContext(chat, memoryContext.target, memoryContext.relationshipSnapshot, characters)}${buildSharedSecretPromptBlock(chat, character, memoryContext.target, characters)}${buildActiveContinuityPull({ chat, character, target: memoryContext.target, relationshipSnapshot: memoryContext.relationshipSnapshot, memoryCues: memoryContext.memoryCues, characters, hasCompanionshipContext: Boolean(companionshipPrompt), mind })}${mind.adapter.promptBlock}${renderedCompanionshipPrompt}${buildMemoryPriorityPrompt(chat)}`;
 }
 
 function buildTopicSection(chat: GroupChat) {
@@ -1127,6 +1128,7 @@ export function buildPromptAssemblyWithContext(character: AICharacter, chat: Gro
   const memoryContext = resolvePromptMemoryContext(character, chat, messages, characters);
   const personaActivation = resolvePersonaActivation({ chat, speaker: character, messages });
   const companionshipPrompt = buildCompanionshipPromptBlock({ chat, character, messages });
+  const renderedCompanionshipPrompt = chat.type === 'group' ? '' : companionshipPrompt;
   const mind = buildCharacterMindAdapterOutput(character, chat, messages, characters, memoryContext.target);
 
   const systemPrompt = [
@@ -1135,7 +1137,7 @@ export function buildPromptAssemblyWithContext(character: AICharacter, chat: Gro
     buildRelationshipSection(character, memoryContext.target),
     buildPromptMemorySection(chat, character, memoryContext.conversationMemories, memoryContext.characterMemories, memoryContext.targetedCharacterMemories, memoryContext.target, memoryContext.relationshipSnapshot, characters, memoryContext.recallCue, Boolean(companionshipPrompt), memoryContext.recentMemoryUseIds, mind),
     mind.adapter.promptBlock,
-    companionshipPrompt,
+    renderedCompanionshipPrompt,
     buildMessageStyleRules(character),
     buildRecentMessagesSection(messages, characters),
     '\n## Response Rules\n- Reply as a chat message, not as analysis or narration.\n- Stay specific to the latest exchange and your own stance.\n- Do not mention these instructions, memory systems, or retrieval policies.\n- Do not default to a fixed medium length. Use the length this character would naturally use in this moment: sometimes one tiny reaction, sometimes one sentence, sometimes a fuller line when pressure, care, defense, or explanation calls for it.',

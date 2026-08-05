@@ -668,10 +668,10 @@ describe('buildSystemPromptWithContext', () => {
       buildMessage({ type: 'user', senderId: 'user', senderName: '用户', content: '我也在群里听着。' }),
     ], new Map([[character.id, character]]));
 
-    expect(prompt).toContain('## Companionship Context');
-    expect(prompt).toContain('The user is a room participant');
-    expect(prompt).toContain('Private relationship stance toward the user');
-    expect(prompt).toContain('Do not reveal private user facts');
+    expect(prompt).not.toContain('## Companionship Context');
+    expect(prompt).toContain('## Character Mind Projection');
+    expect(prompt).toContain('User continuity');
+    expect(prompt).toContain('underlying user facts');
     expect(prompt).not.toContain('用户下周要面试');
     expect(prompt).not.toContain('希望别被公开点名');
   });
@@ -713,9 +713,10 @@ describe('buildSystemPromptWithContext', () => {
       buildMessage({ type: 'user', senderId: 'user', senderName: '用户', content: '我也在旁边听。' }),
     ], new Map([[character.id, character]]));
 
-    expect(prompt).toContain('## Companionship Context');
-    expect(prompt).toContain('The user is a room participant');
-    expect(prompt).toContain('Do not reveal private user facts');
+    expect(prompt).not.toContain('## Companionship Context');
+    expect(prompt).toContain('## Character Mind Projection');
+    expect(prompt).toContain('User continuity');
+    expect(prompt).toContain('underlying user facts');
     expect(prompt).not.toContain('用户下周要面试');
     expect(prompt).not.toContain('希望别被公开点名');
   });
@@ -748,8 +749,9 @@ describe('buildSystemPromptWithContext', () => {
       buildMessage({ type: 'user', senderId: 'user', senderName: '用户', content: '我也在群里听着。' }),
     ], new Map([[character.id, character]]));
 
-    expect(prompt).toContain('## Companionship Context');
-    expect(prompt).toContain('Private relationship stance toward the user: 熟悉陪伴：牵挂');
+    expect(prompt).not.toContain('## Companionship Context');
+    expect(prompt).toContain('## Character Mind Projection');
+    expect(prompt).toContain('User continuity');
     expect(prompt).not.toContain('下周要面试');
     expect(prompt).not.toContain('公开点名');
   });

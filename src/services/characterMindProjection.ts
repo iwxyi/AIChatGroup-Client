@@ -1,7 +1,7 @@
 import type { AICharacter } from '../types/character';
 import type { GroupChat } from '../types/chat';
 import type { Message } from '../types/message';
-import { buildUserCompanionshipProjection } from './companionshipProjection';
+import { buildPublicRoomUserCompanionshipLines, buildUserCompanionshipProjection } from './companionshipProjection';
 import { projectNarrativeLines, type NarrativeLineProjection } from './narrativeProjection';
 import { normalizeRelationshipLedgerEntry } from './relationshipLedger';
 
@@ -170,24 +170,18 @@ function companionshipContinuity(params: {
   character: AICharacter;
   messages: Message[];
 }) {
-  if (params.chat.type !== 'direct') {
-    return {
-      userProfile: [],
-      relationshipMemories: [],
-      sharedHistory: [],
-      privacyGuards: [] as string[],
-    };
-  }
-
   const projection = buildUserCompanionshipProjection({
     chat: params.chat,
     character: params.character,
     messages: params.messages,
   });
   const bond = projection.userBond;
+  const publicLines = params.chat.type === 'group'
+    ? buildPublicRoomUserCompanionshipLines(params.chat, params.character)
+    : [];
   if (!bond) {
     return {
-      userProfile: [],
+      userProfile: uniqueText(publicLines, 8),
       relationshipMemories: [],
       sharedHistory: [],
       privacyGuards: [],
@@ -196,6 +190,7 @@ function companionshipContinuity(params: {
 
   return {
     userProfile: uniqueText([
+      ...publicLines,
       bond.userProfile.displayName,
       bond.userProfile.addressPreference,
       ...bond.userProfile.preferences,

@@ -3207,7 +3207,7 @@ export function buildCompanionshipPromptBlock(params: {
   return `\n## Companionship Context\n${publicLines.join('\n')}`;
 }
 
-function buildPublicRoomUserCompanionshipLines(chat: GroupChat, character: AICharacter) {
+export function buildPublicRoomUserCompanionshipLines(chat: GroupChat, character: AICharacter) {
   if (chat.type === 'direct') return [];
   if (!(chat.memberIds || []).includes(USER_ACTOR_ID)) return [];
   const ledger = getCharacterToUserLedger(chat, character.id);
