@@ -6,6 +6,7 @@ import type { Message } from '../types/message';
 import type { AssistantArtifactItem } from '../types/assistantArtifact';
 import { storageKey } from '../constants/brand';
 import { dispatchAuthSessionExpired } from './authSession';
+import { backendUrl } from './backendUrl';
 
 const API_BASE = '/api';
 const AI_BALANCE_CACHE_TTL_MS = 60_000;
@@ -545,7 +546,7 @@ class ApiClient {
   }
 
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
-    const url = `${API_BASE}${path}`;
+    const url = backendUrl(`${API_BASE}${path}`);
     const options: RequestInit = {
       method,
       headers: this.getHeaders(),

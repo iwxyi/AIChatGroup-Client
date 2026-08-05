@@ -87,7 +87,11 @@ export default function AppLayout() {
   const isMasterDetailRoute = supportsMasterDetail && isThreeColumn && !detailCollapsed;
   const showMobileTopBar = shouldShowMenuButton && !isMasterDetailRoute && !isChatDetailRoute;
   const showDesktopTopBar = !shouldShowMenuButton && !isMasterDetailRoute && !isChatDetailRoute;
-  const headerOffset = isChatDetailRoute && !isMasterDetailRoute ? 0 : showMobileTopBar ? 65 : showDesktopTopBar ? 49 : 0;
+  const headerOffset = isChatDetailRoute && !isMasterDetailRoute
+    ? 0
+    : showMobileTopBar
+      ? `calc(${GLASS_HEADER_HEIGHT}px + env(safe-area-inset-top, 0px))`
+      : showDesktopTopBar ? 49 : 0;
   const { hidden: headerHidden, reset: resetHeaderHidden, handleScrollTop: handleHeaderScrollTop } = useAutoHideHeader(isChatDetailRoute || isMasterDetailRoute || sidebarOpen);
   const effectiveHeaderHidden = headerHidden;
   const floatingTabTopOffset = effectiveHeaderHidden
@@ -146,6 +150,7 @@ export default function AppLayout() {
     <GlassHeader
       title={effectiveHeaderTitle}
       hidden={effectiveHeaderHidden}
+      safeAreaTop
       zIndex={sidebarOpen ? 1099 : 1199}
       leading={
         <IconButton
@@ -261,7 +266,7 @@ export default function AppLayout() {
               '--app-floating-tab-top': `${floatingTabTopOffset}px`,
             }}
           >
-            {headerOffset ? <Box aria-hidden sx={{ height: `${headerOffset}px`, flexShrink: 0, pointerEvents: 'none' }} /> : null}
+            {headerOffset ? <Box aria-hidden sx={{ height: headerOffset, flexShrink: 0, pointerEvents: 'none' }} /> : null}
             <Box
               sx={isChatDetailRoute || isMasterDetailRoute
                 ? { flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }

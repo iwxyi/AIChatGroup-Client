@@ -1,4 +1,5 @@
 import { storageKey } from '../constants/brand';
+import { backendUrl } from './backendUrl';
 
 const API_BASE = '/api';
 const ANONYMOUS_ID_KEY = 'pneumata.appUsage.anonymousId';
@@ -63,7 +64,7 @@ export function currentUsagePath() {
 }
 
 async function postJson<T>(path: string, body: Record<string, unknown>): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await fetch(backendUrl(`${API_BASE}${path}`), {
     method: 'POST',
     headers: getAuthHeaders(),
     body: JSON.stringify(body),
@@ -110,7 +111,7 @@ export class AppUsageSessionClient {
     const sessionId = this.sessionId;
     this.sessionId = null;
     const body = JSON.stringify({ anonymousId: getAppUsageAnonymousId(), path });
-    const url = `${API_BASE}/usage/sessions/${encodeURIComponent(sessionId)}/end`;
+    const url = backendUrl(`${API_BASE}/usage/sessions/${encodeURIComponent(sessionId)}/end`);
     if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
       const blob = new Blob([body], { type: 'application/json' });
       if (navigator.sendBeacon(url, blob)) return;

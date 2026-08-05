@@ -2,6 +2,7 @@ import type { APIConfig, AIModelProfile } from '../types/settings';
 import { normalizeAIModelAdvancedOptions } from '../types/settings';
 import { storageKey } from '../constants/brand';
 import { dispatchAuthSessionExpired } from './authSession';
+import { backendUrl } from './backendUrl';
 
 type ChatRole = 'user' | 'assistant' | 'system';
 export interface ChatMessageImageAttachment {
@@ -899,7 +900,7 @@ async function generateOfficialResponse(
     ...buildOpenAICompatibleAdvancedRequestFields(config),
     metadata: options.aiUsage ? { aiUsage: options.aiUsage } : undefined,
   };
-  const response = await fetch('/api/ai/v1/chat/completions', {
+  const response = await fetch(backendUrl('/api/ai/v1/chat/completions'), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -969,7 +970,7 @@ async function listOpenAICompatibleModels(config: APIConfig) {
 
 async function listOfficialModels(config: APIConfig): Promise<AvailableModelInfo[]> {
   const provider = resolveOfficialBackendProvider(config.provider);
-  const response = await fetch(`/api/ai/models?provider=${encodeURIComponent(provider)}`, {
+  const response = await fetch(backendUrl(`/api/ai/models?provider=${encodeURIComponent(provider)}`), {
     headers: getAuthHeaders(),
   });
   if (response.status === 401) {
@@ -1181,7 +1182,7 @@ async function generateGeminiImage(config: APIConfig, options: ImageGenerationOp
   const timed = withTimeoutSignal(options.signal, DEFAULT_IMAGE_REQUEST_TIMEOUT_MS, '图片生成超时，请稍后重试。');
   try {
     const response = await fetch(officialProxy
-      ? buildOfficialGeminiGenerateContentUrl(config.baseUrl || '/api/ai', config.model)
+      ? backendUrl(buildOfficialGeminiGenerateContentUrl(config.baseUrl || '/api/ai', config.model))
       : `${buildGeminiUrl(config.baseUrl, config.model, false)}?key=${encodeURIComponent(config.apiKey)}`, {
       method: 'POST',
       headers: {

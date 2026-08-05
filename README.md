@@ -397,6 +397,83 @@ rtk npm run build --workspace=Pneumata-Client
 rtk npm run test --workspace=Pneumata-Client
 ```
 
+### 桌面版 / Android 版
+
+当前前端已经支持通过环境变量切到云后端：
+
+```bash
+VITE_BACKEND_ORIGIN=http://sense.lyixi.com:5170
+```
+
+这意味着 Electron 和 Capacitor 壳都可以复用同一套前端代码，只要它们最终发出的请求能访问这个后端地址。
+
+补充约束：
+
+- 桌面壳建议用本地 `http://localhost` 启动承载页。
+- Android 壳如果继续连 `http://sense.lyixi.com:5170`，需要在原生侧放行明文 HTTP。
+- 后端已放行 `localhost`、`127.0.0.1`、`capacitor://localhost`、`ionic://localhost`、`tauri://localhost`、`app://sense-murmur` 这类壳来源。
+
+桌面版脚本：
+
+```bash
+npm run dev
+npm run dev:desktop
+npm run build:desktop
+```
+
+Android 版脚本：
+
+```bash
+npm run build:android:web
+npx cap add android
+npm run android:sync
+npm run android:open
+```
+
+说明：
+
+- `dev:desktop` 连接本地 Vite 开发服务器，适合开发调试。
+- `build:desktop` 会把前端按桌面壳方式构建后交给 Electron Builder 输出安装包。
+- `android:sync` 会把 `dist` 同步到 Capacitor Android 工程。
+- 首次做 Android 需要先执行 `npx cap add android` 生成原生工程。
+
+更新代码后的一键打包：
+
+```bash
+npm run package:all
+```
+
+这个命令会按当前主机环境自动执行：
+
+- 构建使用云后端 `http://sense.lyixi.com:5170` 的前端资源。
+- Linux 主机生成 AppImage；安装了 Wine 时同时生成 Windows NSIS 安装包。
+- Windows 主机生成 Windows NSIS 安装包。
+- 同步 Capacitor Android 工程并生成 `debug` APK。
+
+只查看将要执行的命令：
+
+```bash
+npm run package:all:dry
+```
+
+可选环境变量和参数：
+
+- `ANDROID_BUILD_TYPE=release npm run package:all`：生成 Android release 变体；正式发布前需要先配置自己的签名。
+- `VITE_BACKEND_ORIGIN=http://example npm run package:all`：临时切换云后端地址。
+- `npm run package:all -- --skip-windows`：跳过 Windows 包。
+- `npm run package:all -- --skip-linux`：跳过 Linux 包。
+- `npm run package:all -- --skip-android`：跳过 Android 包。
+
+最终产物统一放在客户端工作区的 `release/` 根目录中，文件名类似：
+
+```text
+release/SenseMurmur-v1.0.0-linux-x64.AppImage
+release/SenseMurmur-v1.0.0-windows-x64.exe
+release/SenseMurmur-v1.0.0-android-debug.apk
+```
+
+`release/`、`dist/`、Android/Gradle 构建目录和 Electron 临时解包目录都已加入 `.gitignore`。这些文件会保留在本机，方便手动上传到网盘、服务器或发布页，不会提交到 GitHub。
+
 ---
 
 ## 相关文档

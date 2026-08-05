@@ -1,5 +1,6 @@
 import { ApiError } from './api';
 import type { SitePublicConfig } from './api';
+import { backendUrl } from './backendUrl';
 
 const ADMIN_BASE = '/api/admin';
 const ADMIN_TOKEN_KEY = 'pneumata-admin-token';
@@ -178,7 +179,7 @@ class AdminApiClient {
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
     let response: Response;
     try {
-      response = await fetch(`${ADMIN_BASE}${path}`, {
+      response = await fetch(backendUrl(`${ADMIN_BASE}${path}`), {
         method,
         headers: this.getHeaders(),
         body: body === undefined ? undefined : JSON.stringify(body),

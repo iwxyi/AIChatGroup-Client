@@ -1,6 +1,7 @@
 import { storageKey } from '../constants/brand';
 import { ApiError } from './api';
 import { dispatchAuthSessionExpired } from './authSession';
+import { backendUrl } from './backendUrl';
 
 const API_BASE = '/api';
 
@@ -54,7 +55,7 @@ async function parseJsonResponse<T>(response: Response): Promise<T> {
 }
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await fetch(backendUrl(`${API_BASE}${path}`), {
     method,
     headers: getHeaders(),
     body: body === undefined ? undefined : JSON.stringify(body),

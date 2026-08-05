@@ -250,15 +250,45 @@ function buildPaperToggleSx() {
 }
 
 function buildActionGridSx() {
-  return { display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' }, gap: 1 };
+  return {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+    gap: 1,
+    '& .MuiButton-root': {
+      minWidth: 0,
+      px: { xs: 1, sm: 1.5 },
+      whiteSpace: 'nowrap',
+    },
+  };
 }
 
 function buildCardBodySx() {
-  return { p: { xs: 1.75, sm: 2 }, '&:last-child': { pb: { xs: 1.75, sm: 2 } } };
+  return { p: { xs: 2, sm: 2.25, md: 2.5 }, '&:last-child': { pb: { xs: 2, sm: 2.25, md: 2.5 } } };
 }
 
 function buildSectionBodySx() {
-  return { display: 'flex', flexDirection: 'column', gap: 2.25 };
+  return {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: { xs: 1.25, sm: 1.45 },
+    '& > .MuiBox-root:first-of-type': {
+      mb: 0,
+    },
+    '& > .MuiBox-root:first-of-type .MuiTypography-caption': {
+      mt: 0.25,
+      lineHeight: 1.45,
+    },
+  };
+}
+
+function buildSettingsTabContentSx() {
+  return {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    gap: { xs: 2, sm: 2.25, md: 2.5 },
+    minWidth: 0,
+  };
 }
 
 function buildDeveloperBodySx() {
@@ -334,10 +364,6 @@ function buildDeveloperSwitchListSx() {
       lineHeight: 1.35,
     },
   };
-}
-
-function buildDataChips(language: string) {
-  return [language.startsWith('zh') ? '备份 / 恢复' : 'Backup / Restore', language.startsWith('zh') ? '回收站' : 'Recycle Bin'];
 }
 
 type BackupSelection = Record<BackupSectionKey, boolean>;
@@ -1427,6 +1453,7 @@ export default function SettingsPage() {
   const [expandedRestoreKeys, setExpandedRestoreKeys] = useState<BackupSectionKey[]>(DEFAULT_EXPANDED_KEYS);
   const [showAllThemePresets, setShowAllThemePresets] = useState(false);
   const [localWorkspaceBusy, setLocalWorkspaceBusy] = useState(false);
+  const [localWorkspaceExpanded, setLocalWorkspaceExpanded] = useState(() => localWorkspaceDirectories.length > 0);
   const [developerEntitlementRefreshRequested, setDeveloperEntitlementRefreshRequested] = useState(false);
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
     open: false,
@@ -1497,6 +1524,10 @@ export default function SettingsPage() {
   useEffect(() => {
     if (!localWorkspaceDirectories.length) return;
     void useLocalWorkspaceStore.getState().refreshDirectoryStatuses().catch(() => undefined);
+  }, [localWorkspaceDirectories.length]);
+
+  useEffect(() => {
+    setLocalWorkspaceExpanded(localWorkspaceDirectories.length > 0);
   }, [localWorkspaceDirectories.length]);
 
   useEffect(() => {
@@ -1865,105 +1896,124 @@ export default function SettingsPage() {
           <Box sx={buildSectionBodySx()}>
             <SectionHeader
               title={i18n.language.startsWith('zh') ? '本地工作区' : 'Local workspace'}
-              subtitle={i18n.language.startsWith('zh')
-                ? '授权本机文件夹后，助手产物会直接保存到默认文件夹的 chat/聊天名/产物名 中；未授权时继续使用应用内本地存储。'
-                : 'Authorize local folders to save assistant artifacts under chat/chat name/artifact name. Without authorization, artifacts stay in app storage.'}
-            />
-            {!localWorkspaceSupported ? (
-              <Alert severity="info">
-                {i18n.language.startsWith('zh')
-                  ? localWorkspaceSupport.message
-                  : localWorkspaceSupport.reason === 'insecure_context'
-                    ? 'Local folder authorization requires a secure context. Open the app from https://, http://localhost, or http://127.0.0.1 instead of a LAN IP or plain HTTP domain.'
-                    : 'This browser environment cannot authorize local folders. Desktop Chrome/Edge usually supports this; Safari, Firefox, iOS, and embedded browsers usually do not.'}
-              </Alert>
-            ) : null}
-            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
-              <Button
-                variant="outlined"
-                startIcon={<FolderOpenOutlinedIcon />}
-                onClick={handleAddLocalWorkspaceDirectory}
-                disabled={!localWorkspaceSupported || localWorkspaceBusy}
-              >
-                {i18n.language.startsWith('zh') ? '授权文件夹' : 'Authorize folder'}
-              </Button>
-              <Typography variant="caption" color="text.secondary">
-                {localWorkspaceDirectories.length
+              subtitle={localWorkspaceExpanded
+                ? (i18n.language.startsWith('zh')
+                  ? '授权本机文件夹后，助手产物会直接保存到默认文件夹的 chat/聊天名/产物名 中；未授权时继续使用应用内本地存储。'
+                  : 'Authorize local folders to save assistant artifacts under chat/chat name/artifact name. Without authorization, artifacts stay in app storage.')
+                : (localWorkspaceDirectories.length
                   ? (i18n.language.startsWith('zh') ? `已授权 ${localWorkspaceDirectories.length} 个文件夹` : `${localWorkspaceDirectories.length} folder(s) authorized`)
-                  : (i18n.language.startsWith('zh') ? '尚未授权文件夹' : 'No folder authorized')}
-              </Typography>
-            </Box>
-            {localWorkspaceDirectories.length ? (
-              <Box sx={{ display: 'grid', gap: 1 }}>
-                {!selectedLocalWorkspaceDirectoryId ? (
-                  <Alert severity="info" icon={false} sx={{ py: 0.75 }}>
+                  : (i18n.language.startsWith('zh') ? '尚未授权文件夹' : 'No folder authorized'))}
+              action={
+                <Tooltip title={localWorkspaceExpanded ? (i18n.language.startsWith('zh') ? '收起' : 'Collapse') : (i18n.language.startsWith('zh') ? '展开' : 'Expand')}>
+                  <IconButton
+                    size="small"
+                    onClick={() => setLocalWorkspaceExpanded((value) => !value)}
+                    aria-label={localWorkspaceExpanded ? (i18n.language.startsWith('zh') ? '收起本地工作区' : 'Collapse local workspace') : (i18n.language.startsWith('zh') ? '展开本地工作区' : 'Expand local workspace')}
+                  >
+                    <ExpandMoreIcon sx={{ transform: localWorkspaceExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 180ms cubic-bezier(0.4, 0, 0.2, 1)' }} />
+                  </IconButton>
+                </Tooltip>
+              }
+            />
+            <Collapse in={localWorkspaceExpanded} timeout={180} unmountOnExit>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.25 }}>
+                {!localWorkspaceSupported ? (
+                  <Alert severity="info">
                     {i18n.language.startsWith('zh')
-                      ? '当前未选择本地默认产物目录，助手产物会继续保存在应用内本地存储。'
-                      : 'No local default artifact folder is selected. Assistant artifacts will stay in app storage.'}
+                      ? localWorkspaceSupport.message
+                      : localWorkspaceSupport.reason === 'insecure_context'
+                        ? 'Local folder authorization requires a secure context. Open the app from https://, http://localhost, or http://127.0.0.1 instead of a LAN IP or plain HTTP domain.'
+                        : 'This browser environment cannot authorize local folders. Desktop Chrome/Edge usually supports this; Safari, Firefox, iOS, and embedded browsers usually do not.'}
                   </Alert>
                 ) : null}
-                {localWorkspaceDirectories.map((directory, index) => {
-                  const isDefault = directory.id === selectedLocalWorkspaceDirectoryId;
-                  return (
-                    <Box
-                      key={directory.id}
-                      sx={{
-                        display: 'grid',
-                        gridTemplateColumns: { xs: '1fr auto', sm: 'minmax(0, 1fr) auto auto' },
-                        gap: 1,
-                        alignItems: 'center',
-                        p: 1.25,
-                        borderRadius: 2,
-                        border: '1px solid',
-                        borderColor: isDefault ? 'primary.main' : 'divider',
-                        bgcolor: isDefault ? 'primary.main' : 'background.default',
-                        color: isDefault ? 'primary.contrastText' : 'text.primary',
-                      }}
-                    >
-                      <Box sx={{ minWidth: 0 }}>
-                        <Typography variant="body2" sx={{ fontWeight: 800 }} noWrap>
-                          {directory.name}
-                        </Typography>
-                        <Typography variant="caption" sx={{ display: 'block', opacity: 0.75 }} noWrap>
-                          {isDefault
-                            ? (i18n.language.startsWith('zh') ? '默认产物目录' : 'Default artifact folder')
-                            : (i18n.language.startsWith('zh') ? `候选目录 ${index + 1} · 点击星标启用本地保存` : `Folder ${index + 1} · Click the star to enable local saving`)}
-                        </Typography>
-                        {directory.lastError ? (
-                          <Typography variant="caption" sx={{ display: 'block', mt: 0.35, color: isDefault ? 'inherit' : 'error.main', opacity: isDefault ? 0.92 : 1 }} noWrap>
-                            {directory.lastError}
-                          </Typography>
-                        ) : null}
-                      </Box>
-                      <Tooltip title={isDefault ? (i18n.language.startsWith('zh') ? '取消默认，改用应用内存储' : 'Unset default and use app storage') : (i18n.language.startsWith('zh') ? '设为默认产物目录' : 'Set as default artifact folder')}>
-                        <span>
-                          <IconButton
-                            size="small"
-                            color={isDefault ? 'inherit' : 'default'}
-                            disabled={localWorkspaceBusy}
-                            onClick={() => handleToggleDefaultLocalWorkspaceDirectory(directory.id)}
-                          >
-                            {isDefault ? <StarIcon fontSize="small" /> : <StarBorderIcon fontSize="small" />}
-                          </IconButton>
-                        </span>
-                      </Tooltip>
-                      <Tooltip title={i18n.language.startsWith('zh') ? '移除授权' : 'Remove authorization'}>
-                        <span>
-                          <IconButton
-                            size="small"
-                            color={isDefault ? 'inherit' : 'error'}
-                            disabled={localWorkspaceBusy}
-                            onClick={() => void handleRemoveLocalWorkspaceDirectory(directory.id)}
-                          >
-                            <DeleteOutlineOutlinedIcon fontSize="small" />
-                          </IconButton>
-                        </span>
-                      </Tooltip>
-                    </Box>
-                  );
-                })}
+                <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <Button
+                    variant="outlined"
+                    startIcon={<FolderOpenOutlinedIcon />}
+                    onClick={handleAddLocalWorkspaceDirectory}
+                    disabled={!localWorkspaceSupported || localWorkspaceBusy}
+                  >
+                    {i18n.language.startsWith('zh') ? '授权文件夹' : 'Authorize folder'}
+                  </Button>
+                  <Typography variant="caption" color="text.secondary">
+                    {localWorkspaceDirectories.length
+                      ? (i18n.language.startsWith('zh') ? `已授权 ${localWorkspaceDirectories.length} 个文件夹` : `${localWorkspaceDirectories.length} folder(s) authorized`)
+                      : (i18n.language.startsWith('zh') ? '尚未授权文件夹' : 'No folder authorized')}
+                  </Typography>
+                </Box>
+                {localWorkspaceDirectories.length ? (
+                  <Box sx={{ display: 'grid', gap: 1 }}>
+                    {!selectedLocalWorkspaceDirectoryId ? (
+                      <Alert severity="info" icon={false} sx={{ py: 0.75 }}>
+                        {i18n.language.startsWith('zh')
+                          ? '当前未选择本地默认产物目录，助手产物会继续保存在应用内本地存储。'
+                          : 'No local default artifact folder is selected. Assistant artifacts will stay in app storage.'}
+                      </Alert>
+                    ) : null}
+                    {localWorkspaceDirectories.map((directory, index) => {
+                      const isDefault = directory.id === selectedLocalWorkspaceDirectoryId;
+                      return (
+                        <Box
+                          key={directory.id}
+                          sx={{
+                            display: 'grid',
+                            gridTemplateColumns: { xs: '1fr auto', sm: 'minmax(0, 1fr) auto auto' },
+                            gap: 1,
+                            alignItems: 'center',
+                            p: 1.25,
+                            borderRadius: 2,
+                            border: '1px solid',
+                            borderColor: isDefault ? 'primary.main' : 'divider',
+                            bgcolor: isDefault ? 'primary.main' : 'background.default',
+                            color: isDefault ? 'primary.contrastText' : 'text.primary',
+                          }}
+                        >
+                          <Box sx={{ minWidth: 0 }}>
+                            <Typography variant="body2" sx={{ fontWeight: 800 }} noWrap>
+                              {directory.name}
+                            </Typography>
+                            <Typography variant="caption" sx={{ display: 'block', opacity: 0.75 }} noWrap>
+                              {isDefault
+                                ? (i18n.language.startsWith('zh') ? '默认产物目录' : 'Default artifact folder')
+                                : (i18n.language.startsWith('zh') ? `候选目录 ${index + 1} · 点击星标启用本地保存` : `Folder ${index + 1} · Click the star to enable local saving`)}
+                            </Typography>
+                            {directory.lastError ? (
+                              <Typography variant="caption" sx={{ display: 'block', mt: 0.35, color: isDefault ? 'inherit' : 'error.main', opacity: isDefault ? 0.92 : 1 }} noWrap>
+                                {directory.lastError}
+                              </Typography>
+                            ) : null}
+                          </Box>
+                          <Tooltip title={isDefault ? (i18n.language.startsWith('zh') ? '取消默认，改用应用内存储' : 'Unset default and use app storage') : (i18n.language.startsWith('zh') ? '设为默认产物目录' : 'Set as default artifact folder')}>
+                            <span>
+                              <IconButton
+                                size="small"
+                                color={isDefault ? 'inherit' : 'default'}
+                                disabled={localWorkspaceBusy}
+                                onClick={() => handleToggleDefaultLocalWorkspaceDirectory(directory.id)}
+                              >
+                                {isDefault ? <StarIcon fontSize="small" /> : <StarBorderIcon fontSize="small" />}
+                              </IconButton>
+                            </span>
+                          </Tooltip>
+                          <Tooltip title={i18n.language.startsWith('zh') ? '移除授权' : 'Remove authorization'}>
+                            <span>
+                              <IconButton
+                                size="small"
+                                color={isDefault ? 'inherit' : 'error'}
+                                disabled={localWorkspaceBusy}
+                                onClick={() => void handleRemoveLocalWorkspaceDirectory(directory.id)}
+                              >
+                                <DeleteOutlineOutlinedIcon fontSize="small" />
+                              </IconButton>
+                            </span>
+                          </Tooltip>
+                        </Box>
+                      );
+                    })}
+                  </Box>
+                ) : null}
               </Box>
-            ) : null}
+            </Collapse>
           </Box>
         </SurfaceCard>
 
@@ -2178,7 +2228,6 @@ export default function SettingsPage() {
         <SurfaceCard id="settings-card-data" contentSx={buildCardBodySx()}>
           <Box sx={buildSectionBodySx()}>
             <SectionHeader title={t('settings.dataManagement')} />
-            <StatChipRow items={buildDataChips(i18n.language)} />
             <Box sx={buildActionGridSx()}>
               <Button startIcon={<BackupIcon />} variant="outlined" onClick={handleBackup}>{t('settings.backup')}</Button>
               <Button startIcon={<RestoreIcon />} variant="outlined" onClick={handleRestore}>{t('settings.restore')}</Button>
@@ -2347,7 +2396,16 @@ export default function SettingsPage() {
             <Box sx={{ display: 'grid', gap: 1 }}>
               <FormControlLabel
                 control={<Switch checked={settings.chatMemory.enabled} onChange={(e) => settings.setChatMemory({ enabled: e.target.checked })} />}
-                label={i18n.language.startsWith('zh') ? '启用聊天记忆召回' : 'Enable chat memory recall'}
+                label={(
+                  <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
+                    <span>{i18n.language.startsWith('zh') ? '启用聊天记忆召回' : 'Enable chat memory recall'}</span>
+                    <Tooltip title={i18n.language.startsWith('zh')
+                      ? '开启后，AI 会在相关聊天里想起已经保存的偏好、旧事和关系细节，让回复更连贯、更像熟人。它不会读取全部聊天记录，也不负责主动问候、私聊或其他陪伴行为。'
+                      : 'When enabled, the AI can bring relevant saved preferences, past moments, and relationship details into a reply so the conversation feels more continuous. It does not read the full chat history or control proactive companionship, check-ins, or private threads.'}>
+                      <HelpOutlineIcon sx={{ fontSize: 17, color: 'text.secondary' }} />
+                    </Tooltip>
+                  </Box>
+                )}
               />
               <Box sx={{ opacity: settings.chatMemory.enabled ? 1 : 0.55 }}>
                 <Typography variant="body2" sx={{ fontWeight: 500 }} gutterBottom>{i18n.language.startsWith('zh') ? '可见回忆强度' : 'Visible recall style'}</Typography>
@@ -2432,7 +2490,11 @@ export default function SettingsPage() {
     ),
   } satisfies Record<SettingsTabKey, () => ReactNode>;
 
-  const settingsTabContent = settingsTabRenderers[activeSettingsTab]();
+  const settingsTabContent = (
+    <Box sx={buildSettingsTabContentSx()}>
+      {settingsTabRenderers[activeSettingsTab]()}
+    </Box>
+  );
 
   return (
     <Box sx={buildPageSx(activeSettingsTab)}>

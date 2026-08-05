@@ -1,0 +1,12 @@
+{
+  "appId": "com.lyixi.sensemurmur",
+  "appName": "生息",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "http",
+    "cleartext": true
+  },
+  "android": {
+    "allowMixedContent": true
+  }
+}

@@ -1,5 +1,5 @@
 import { lazy, Suspense, useMemo, useEffect, useRef, useState } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { BrowserRouter, HashRouter, Routes, Route, Navigate, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, LinearProgress, ThemeProvider, CssBaseline, Typography, useMediaQuery } from '@mui/material';
 import { createAppTheme } from './theme';
 import { useSettingsStore } from './stores/useSettingsStore';
@@ -152,6 +152,7 @@ const AdminNotificationsPage = lazy(loadAdminNotificationsPage);
 const AdminUsagePage = lazy(loadAdminUsagePage);
 const AdminSendRecordsPage = lazy(loadAdminSendRecordsPage);
 const AdminProfilePage = lazy(loadAdminProfilePage);
+const AppRouter = import.meta.env.VITE_APP_ROUTER === 'hash' ? HashRouter : BrowserRouter;
 
 function RouteFallback() {
   return (
@@ -653,7 +654,7 @@ export default function App() {
       <DevUpdatePrompt />
       <PwaUpdatePrompt />
       {settingsHydrated ? (
-        <BrowserRouter>
+        <AppRouter>
           <SiteConfigBootstrap onThemeColor={setSiteThemeColor} />
           <AuthBootstrap />
           <AuthSessionRedirectHandler />
@@ -665,7 +666,7 @@ export default function App() {
           <DataLoader>
             <RoutedApp />
           </DataLoader>
-        </BrowserRouter>
+        </AppRouter>
       ) : (
         <RouteFallback />
       )}

@@ -17,6 +17,25 @@ function resolveAppUpdateMode(env: Record<string, string>) {
   return env.VITE_APP_UPDATE_MODE === 'prompt' ? 'prompt' : 'auto'
 }
 
+function resolveDisablePwa(env: Record<string, string>) {
+  return env.VITE_DISABLE_PWA === '1' || env.VITE_DISABLE_PWA === 'true'
+}
+
+function disabledPwaRegisterPlugin(): Plugin {
+  const moduleId = 'virtual:pwa-register'
+  const resolvedModuleId = `\0${moduleId}`
+  return {
+    name: 'pneumata-disabled-pwa-register',
+    resolveId(id) {
+      return id === moduleId ? resolvedModuleId : null
+    },
+    load(id) {
+      if (id !== resolvedModuleId) return null
+      return 'export function registerSW() { return () => undefined }'
+    },
+  }
+}
+
 function manualDevUpdatePlugin(): Plugin {
   let updateVersion = Date.now()
 
@@ -118,6 +137,8 @@ export default defineConfig(({ mode }) => {
   const env = loadClientEnv(mode)
   const appUpdateMode = resolveAppUpdateMode(env)
   const allowedHosts = resolveAllowedHosts(env)
+  const appBase = env.VITE_APP_BASE || '/'
+  const disablePwa = resolveDisablePwa(env)
   const proxy: Record<string, string | ProxyOptions> = {
     '/api': {
       target: 'http://localhost:5170',
@@ -179,6 +200,7 @@ export default defineConfig(({ mode }) => {
   }
 
   return {
+    base: appBase,
     server: {
       host: '0.0.0.0',
       port: 5173,
@@ -191,7 +213,8 @@ export default defineConfig(({ mode }) => {
       publicAiProxyCorsPlugin(),
       react(),
       manualDevUpdatePlugin(),
-      VitePWA({
+      ...(disablePwa ? [disabledPwaRegisterPlugin()] : []),
+      ...(disablePwa ? [] : [VitePWA({
         registerType: appUpdateMode === 'prompt' ? 'prompt' : 'autoUpdate',
         includeAssets: ['favicon.svg', 'logo-192.png', 'logo-512.png'],
         manifest: {
@@ -242,7 +265,7 @@ export default defineConfig(({ mode }) => {
             },
           ],
         },
-      }) as unknown as PluginOption,
+      }) as unknown as PluginOption]),
     ],
     resolve: {
       alias: {
