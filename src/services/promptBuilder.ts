@@ -13,6 +13,8 @@ import { buildCompanionshipPromptBlock, buildSharedMemoryAnchors, buildSharedSec
 import { projectConversationForModel, type ConversationProjectionOptions } from './conversationProjection';
 import { resolvePersonaActivation, type PersonaActivation } from './personaActivation';
 import { buildInfluenceState, type InfluenceState } from './influenceState';
+import { selectConstrainedMemoryCues, type ConstrainedMemoryCue } from './memoryCueSelection';
+import { getChatMemoryRuntimeConfig } from './chatMemoryRuntimeConfig';
 import { userProfileMemoryPayloadOf } from './directUserProfileMemory';
 import { getCurrentRetentionLimits } from './retentionLimits';
 import type { SharedMemoryAnchor, UserProfileMemoryEventItem, UserProfileMemoryKind } from '../types/companionship';
@@ -105,58 +107,6 @@ function cleanRecentEventPromptText(chat: GroupChat, text: string) {
   return stripLongStageAsidesForPrompt(compact) || compactPromptText(text.replace(/[（(]/g, '').replace(/[）)]/g, ''), 180);
 }
 
-function getPromptMemoryKindLabel(kind: MemoryItem['kind']) {
-  const labels: Record<MemoryItem['kind'], string> = {
-    trait_evidence: 'trait evidence',
-    obsession: 'persistent fixation',
-    taboo: 'sensitive boundary',
-    bond: 'bond',
-    resentment: 'resentment',
-    bias: 'bias',
-    decision: 'decision',
-    conflict: 'conflict',
-    status_shift: 'state shift',
-    artifact: 'artifact',
-    thread_effect: 'thread residue',
-  };
-  return labels[kind] || sanitizeUserFacingText(kind);
-}
-
-function getPromptMemoryLayerLabel(layer: MemoryItem['layer']) {
-  const labels: Record<MemoryItem['layer'], string> = {
-    long_term: 'long-term',
-    episodic: 'episode',
-    working: 'recent working',
-  };
-  return labels[layer] || sanitizeUserFacingText(layer);
-}
-
-function getPromptMemoryScopeLabel(scope: MemoryItem['scope']) {
-  const labels: Record<MemoryItem['scope'], string> = {
-    character_self: 'self',
-    relationship: 'relationship',
-    conversation: 'conversation',
-    thread: 'thread',
-    system_runtime: 'room state',
-  };
-  return labels[scope] || sanitizeUserFacingText(scope);
-}
-
-function getPromptMemoryLens(item: MemoryItem) {
-  return getExperienceLensLabel(item.sourceTag, 'en') || getPromptMemoryKindLabel(item.kind);
-}
-
-function buildPromptMemoryLine(item: MemoryItem, members: DisplayTextMember[]) {
-  const lens = getPromptMemoryLens(item);
-  const scope = getPromptMemoryScopeLabel(item.scope);
-  const layer = getPromptMemoryLayerLabel(item.layer);
-  const sourceText = item.summary || item.text;
-  const text = cleanPromptText(sourceText, members, 260);
-  const evidence = item.evidenceText ? cleanPromptText(item.evidenceText, members, 180) : '';
-  const tags = [lens, scope, layer].filter(Boolean).join(' · ');
-  return evidence ? `- ${tags}: ${text} Evidence: ${evidence}` : `- ${tags}: ${text}`;
-}
-
 function buildManualMemorySeedPrompt(character: AICharacter, members: DisplayTextMember[], chat?: GroupChat) {
   const memory = character.memory;
   if (!memory) return '';
@@ -177,9 +127,10 @@ function buildManualMemorySeedPrompt(character: AICharacter, members: DisplayTex
   return `\n## Manual Memory Seeds\n${lines.join('\n')}\n- Treat these as authored character continuity. Let them shape tone, attention, omissions, and reactions; do not list them unless the conversation naturally calls for it.`;
 }
 
-function buildLayeredMemoryPrompt(items: MemoryItem[], members: DisplayTextMember[], title = 'Relevant Memories') {
-  if (!items.length) return '';
-  return `\n## ${title}\n${items.map((item) => buildPromptMemoryLine(item, members)).join('\n')}`;
+function buildConstrainedMemoryCueLine(cue: ConstrainedMemoryCue, members: DisplayTextMember[]) {
+  const text = cleanPromptText(cue.text, members, 180);
+  const rule = cleanPromptText(cue.rule, members, 220);
+  return `- ${cue.id} [${cue.mode}, score=${cue.score}]: ${text}\n  Visible rule: ${rule}`;
 }
 
 function buildRecallCue(messages: Message[], target?: AICharacter | null) {
@@ -189,6 +140,19 @@ function buildRecallCue(messages: Message[], target?: AICharacter | null) {
     .map((item) => item.content)
     .join('\n');
   return [target?.name, recentText].filter(Boolean).join('\n').slice(-900);
+}
+
+function collectRecentPromptMemoryUseIds(messages: Message[], limit = 8) {
+  const ids = new Set<string>();
+  messages
+    .filter((item) => !item.isDeleted)
+    .slice(-limit)
+    .forEach((message) => {
+      (message.metadata?.runtimeDecision?.memoryContext?.injectedIds || [])
+        .filter(Boolean)
+        .forEach((id) => ids.add(id));
+    });
+  return [...ids];
 }
 
 function buildGroupMemoryPolicyTags() {
@@ -415,12 +379,14 @@ function buildPromptMemoryTitle(chat: GroupChat) {
   return chat.type === 'direct' ? 'Private-Channel Memories' : chat.type === 'ai_direct' ? 'Pair-Thread Memories' : 'Group-Influenced Memories';
 }
 
-function buildScopedMemoryBreakdown(conversationMemories: MemoryItem[], characterMemories: MemoryItem[], targetedCharacterMemories: MemoryItem[], members: DisplayTextMember[]) {
-  return `${buildLayeredMemoryPrompt(targetedCharacterMemories, members, 'Targeted Relationship Memories')}${buildLayeredMemoryPrompt(characterMemories, members, 'Character-State Memories')}${buildLayeredMemoryPrompt(conversationMemories, members, 'Conversation Memories')}`;
-}
-
-function buildPromptMemoryBundle(chat: GroupChat, conversationMemories: MemoryItem[], characterMemories: MemoryItem[], targetedCharacterMemories: MemoryItem[], members: DisplayTextMember[]) {
-  return `${buildLayeredMemoryPrompt(buildMergedMemories([...targetedCharacterMemories, ...characterMemories, ...conversationMemories]), members, buildPromptMemoryTitle(chat))}${buildScopedMemoryBreakdown(conversationMemories, characterMemories, targetedCharacterMemories, members)}`;
+function buildPromptMemoryBundle(chat: GroupChat, conversationMemories: MemoryItem[], characterMemories: MemoryItem[], targetedCharacterMemories: MemoryItem[], members: DisplayTextMember[], cues: ConstrainedMemoryCue[]) {
+  const merged = buildMergedMemories([...targetedCharacterMemories, ...characterMemories, ...conversationMemories]);
+  if (!cues.length) {
+    return merged.length
+      ? `\n## ${buildPromptMemoryTitle(chat)}\n- Candidate memories exist, but none are relevant or safe enough to surface this turn. Do not invent prior user facts or quote memory contents.`
+      : '';
+  }
+  return `\n## ${buildPromptMemoryTitle(chat)}\n- Use only the constrained cues below. Relevance decides whether they affect this turn; do not expose raw memory text outside these rules.\n${cues.map((cue) => buildConstrainedMemoryCueLine(cue, members)).join('\n')}`;
 }
 
 function buildInfluenceModePrompt(chat: GroupChat, target: AICharacter | undefined) {
@@ -491,14 +457,14 @@ function buildActiveContinuityPull(params: {
   target: AICharacter | undefined;
   relationshipSnapshot: AICharacter['relationships'][number] | null;
   memories: MemoryItem[];
+  memoryCues?: ConstrainedMemoryCue[];
   influenceState: InfluenceState;
   characters: Map<string, AICharacter>;
   hasCompanionshipContext?: boolean;
 }) {
   const members = buildPromptDisplayMembers(params.character, params.characters);
-  const memoryHooks = buildMergedMemories(params.memories)
-    .slice(0, 4)
-    .map((item) => cleanPromptText(item.summary || item.text, members, 120))
+  const memoryHooks = (params.memoryCues || [])
+    .map((cue) => cleanPromptText(cue.text, members, 120))
     .filter(Boolean);
   const relationPull = buildRelationshipAxisPull(params.relationshipSnapshot);
   const influenceHooks = [
@@ -725,12 +691,21 @@ function buildMemoryPriorityPrompt(chat: GroupChat) {
   return '\n## Memory Priority\n- Priority: local room context first, then relationship memory and self bias, then older background memory.';
 }
 
-function buildPromptMemorySection(chat: GroupChat, character: AICharacter, conversationMemories: MemoryItem[], characterMemories: MemoryItem[], targetedCharacterMemories: MemoryItem[], target: AICharacter | undefined, relationshipSnapshot: AICharacter['relationships'][number] | null, characters: Map<string, AICharacter>, influenceState: import('./influenceState').InfluenceState, hasCompanionshipContext = false) {
+function buildPromptMemorySection(chat: GroupChat, character: AICharacter, conversationMemories: MemoryItem[], characterMemories: MemoryItem[], targetedCharacterMemories: MemoryItem[], target: AICharacter | undefined, relationshipSnapshot: AICharacter['relationships'][number] | null, characters: Map<string, AICharacter>, influenceState: import('./influenceState').InfluenceState, cueText = '', hasCompanionshipContext = false, recentMemoryUseIds: string[] = []) {
   const merged = buildMergedMemories([...targetedCharacterMemories, ...characterMemories, ...conversationMemories]);
   const members = buildPromptDisplayMembers(character, characters);
+  const chatMemoryConfig = getChatMemoryRuntimeConfig();
+  const memoryCues = chatMemoryConfig.enabled ? selectConstrainedMemoryCues(merged, {
+    cueText,
+    isPublicChannel: chat.type === 'group',
+    maxCues: chatMemoryConfig.maxCuesPerTurn,
+    recentMemoryUseIds: recentMemoryUseIds.slice(0, chatMemoryConfig.cueCooldownTurns),
+    visibleRecallMode: chatMemoryConfig.visibleRecallMode,
+    targetActorIds: target ? [target.id] : [],
+  }) : [];
   const cleanInfluence = (item: string) => cleanPromptText(item, members, 80);
   const influenceSummary = `\n## Influence State\n${influenceState.topicBias.map((item: string) => `- Topic bias: ${cleanInfluence(item)}`).join('\n')}${influenceState.relationshipBias.map((item: string) => `\n- Relationship bias: ${cleanInfluence(item)}`).join('')}${influenceState.careBias.map((item: string) => `\n- Care bias: ${cleanInfluence(item)}`).join('')}${influenceState.avoidanceBias.map((item: string) => `\n- Avoidance bias: ${cleanInfluence(item)}`).join('')}${influenceState.noveltyBias !== 'neutral' ? `\n- Novelty bias: ${influenceState.noveltyBias}` : ''}`;
-  return `${buildManualMemorySeedPrompt(character, members, chat)}${buildPromptMemoryBundle(chat, conversationMemories, characterMemories, targetedCharacterMemories, members)}${influenceSummary}${buildPromptInfluenceContext(chat, character, target, relationshipSnapshot, merged, characters)}${buildPromptTargetingContext(chat, target, relationshipSnapshot, characters)}${buildTargetedInfluenceContext(chat, target, relationshipSnapshot, characters)}${buildSharedSecretPromptBlock(chat, character, target, characters)}${buildActiveContinuityPull({ chat, character, target, relationshipSnapshot, memories: merged, influenceState, characters, hasCompanionshipContext })}${buildPromptReasoningSummary(chat)}${buildMemoryPriorityPrompt(chat)}`;
+  return `${buildManualMemorySeedPrompt(character, members, chat)}${buildPromptMemoryBundle(chat, conversationMemories, characterMemories, targetedCharacterMemories, members, memoryCues)}${influenceSummary}${buildPromptInfluenceContext(chat, character, target, relationshipSnapshot, merged, characters)}${buildPromptTargetingContext(chat, target, relationshipSnapshot, characters)}${buildTargetedInfluenceContext(chat, target, relationshipSnapshot, characters)}${buildSharedSecretPromptBlock(chat, character, target, characters)}${buildActiveContinuityPull({ chat, character, target, relationshipSnapshot, memories: merged, memoryCues, influenceState, characters, hasCompanionshipContext })}${buildPromptReasoningSummary(chat)}${buildMemoryPriorityPrompt(chat)}`;
 }
 
 function traceMemoryItem(item: MemoryItem, members: DisplayTextMember[]): PromptMemoryTraceItem {
@@ -746,10 +721,10 @@ function traceMemoryItem(item: MemoryItem, members: DisplayTextMember[]): Prompt
   };
 }
 
-function buildTraceFromPromptMemories(items: MemoryItem[], members: DisplayTextMember[], sharedSecretGuards: string[], target?: { actorId: string; actorName: string; reason: string }): PromptMemoryTrace {
+function buildTraceFromPromptMemories(items: MemoryItem[], members: DisplayTextMember[], sharedSecretGuards: string[], target?: { actorId: string; actorName: string; reason: string }, cues?: ConstrainedMemoryCue[]): PromptMemoryTrace {
   const merged = buildMergedMemories(items);
   return {
-    injectedIds: merged.map((item) => item.id),
+    injectedIds: (cues || []).map((cue) => cue.id),
     recalledArchives: merged
       .filter((item) => item.archivedAt && item.recallReason)
       .map((item) => traceMemoryItem(item, members))
@@ -775,6 +750,8 @@ function resolvePromptMemoryContext(character: AICharacter, chat: GroupChat, mes
   ]);
   const members = buildPromptDisplayMembers(character, characters);
   const recallCue = buildRecallCue(messages, target);
+  const chatMemoryConfig = getChatMemoryRuntimeConfig();
+  const recentMemoryUseIds = collectRecentPromptMemoryUseIds(messages, chatMemoryConfig.cueCooldownTurns);
   const conversationMemories = getMemoryContext(
     allMemories,
     character.id,
@@ -819,6 +796,14 @@ function resolvePromptMemoryContext(character: AICharacter, chat: GroupChat, mes
     targetedCharacterMemories,
   });
   const mergedMemories = buildMergedMemories([...targetedCharacterMemories, ...characterMemories, ...conversationMemories]);
+  const memoryCues = chatMemoryConfig.enabled ? selectConstrainedMemoryCues(mergedMemories, {
+    cueText: recallCue,
+    isPublicChannel: chat.type === 'group',
+    maxCues: chatMemoryConfig.maxCuesPerTurn,
+    recentMemoryUseIds,
+    visibleRecallMode: chatMemoryConfig.visibleRecallMode,
+    targetActorIds: target ? [target.id] : [],
+  }) : [];
   return {
     target,
     relationshipSnapshot,
@@ -826,6 +811,9 @@ function resolvePromptMemoryContext(character: AICharacter, chat: GroupChat, mes
     characterMemories,
     targetedCharacterMemories,
     influenceState,
+    recallCue,
+    recentMemoryUseIds,
+    memoryCues,
     trace: buildTraceFromPromptMemories(
       mergedMemories,
       members,
@@ -835,6 +823,7 @@ function resolvePromptMemoryContext(character: AICharacter, chat: GroupChat, mes
         actorName: target.name,
         reason: targetResolution.reason,
       } : undefined,
+      memoryCues,
     ),
   };
 }
@@ -852,7 +841,7 @@ export function buildCrossModeMemoryPrompt(character: AICharacter, chat: GroupCh
   ]);
   const members = buildPromptDisplayMembers(character, characters);
   const companionshipPrompt = buildCompanionshipPromptBlock({ chat, character, messages });
-  return `${buildManualMemorySeedPrompt(character, members, chat)}${buildPromptMemoryBundle(chat, memoryContext.conversationMemories, memoryContext.characterMemories, memoryContext.targetedCharacterMemories, members)}${buildPromptInfluenceContext(chat, character, memoryContext.target, memoryContext.relationshipSnapshot, merged, characters)}${buildPromptTargetingContext(chat, memoryContext.target, memoryContext.relationshipSnapshot, characters)}${buildTargetedInfluenceContext(chat, memoryContext.target, memoryContext.relationshipSnapshot, characters)}${buildSharedSecretPromptBlock(chat, character, memoryContext.target, characters)}${buildActiveContinuityPull({ chat, character, target: memoryContext.target, relationshipSnapshot: memoryContext.relationshipSnapshot, memories: merged, influenceState: memoryContext.influenceState, characters, hasCompanionshipContext: Boolean(companionshipPrompt) })}${companionshipPrompt}${buildMemoryPriorityPrompt(chat)}`;
+  return `${buildManualMemorySeedPrompt(character, members, chat)}${buildPromptMemoryBundle(chat, memoryContext.conversationMemories, memoryContext.characterMemories, memoryContext.targetedCharacterMemories, members, memoryContext.memoryCues)}${buildPromptInfluenceContext(chat, character, memoryContext.target, memoryContext.relationshipSnapshot, merged, characters)}${buildPromptTargetingContext(chat, memoryContext.target, memoryContext.relationshipSnapshot, characters)}${buildTargetedInfluenceContext(chat, memoryContext.target, memoryContext.relationshipSnapshot, characters)}${buildSharedSecretPromptBlock(chat, character, memoryContext.target, characters)}${buildActiveContinuityPull({ chat, character, target: memoryContext.target, relationshipSnapshot: memoryContext.relationshipSnapshot, memories: merged, memoryCues: memoryContext.memoryCues, influenceState: memoryContext.influenceState, characters, hasCompanionshipContext: Boolean(companionshipPrompt) })}${companionshipPrompt}${buildMemoryPriorityPrompt(chat)}`;
 }
 
 function buildTopicSection(chat: GroupChat) {
@@ -1042,7 +1031,7 @@ export function buildSystemPromptWithContext(character: AICharacter, chat: Group
     buildCharacterSection(character, emotion, personaActivation),
     buildTopicSection(chat),
     buildRelationshipSection(character, memoryContext.target),
-    buildPromptMemorySection(chat, character, memoryContext.conversationMemories, memoryContext.characterMemories, memoryContext.targetedCharacterMemories, memoryContext.target, memoryContext.relationshipSnapshot, characters, memoryContext.influenceState, Boolean(companionshipPrompt)),
+    buildPromptMemorySection(chat, character, memoryContext.conversationMemories, memoryContext.characterMemories, memoryContext.targetedCharacterMemories, memoryContext.target, memoryContext.relationshipSnapshot, characters, memoryContext.influenceState, memoryContext.recallCue, Boolean(companionshipPrompt), memoryContext.recentMemoryUseIds),
     companionshipPrompt,
     buildMessageStyleRules(character),
     buildRecentMessagesSection(messages, characters),

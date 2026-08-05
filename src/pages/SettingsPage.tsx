@@ -384,7 +384,7 @@ function collectNodeStats(data: BackupFileShape): BackupNodeStats {
   stats['settings.aiProfiles'] = Array.isArray(settings?.aiProfiles) ? settings.aiProfiles.length : 0;
   stats['settings.aiProfiles.credentials'] = Array.isArray(settings?.aiProfiles) ? settings.aiProfiles.filter((profile) => profile.apiKey).length : 0;
   stats['settings.appearance'] = settings && ('theme' in settings || 'themePreset' in settings || 'themeColor' in settings || 'language' in settings || 'customBubbleStyles' in settings || 'userBubbleStyleId' in settings || 'userBubbleStyle' in settings || 'artifactAppearance' in settings) ? 1 : 0;
-  stats['settings.generation'] = settings && ('avatarGeneration' in settings || 'aiGeneration' in settings || 'companionship' in settings) ? 1 : 0;
+  stats['settings.generation'] = settings && ('avatarGeneration' in settings || 'aiGeneration' in settings || 'companionship' in settings || 'chatMemory' in settings) ? 1 : 0;
   stats['settings.chatDraftDefaults'] = settings && ('defaultSpeed' in settings || 'chatDraftDefaults' in settings) ? 1 : 0;
   stats['settings.developer'] = settings && ('developerMode' in settings || 'developerUI' in settings || 'memoryUI' in settings) ? 1 : 0;
   stats['settings.usageStats'] = settings && 'usageStats' in settings ? 1 : 0;
@@ -725,6 +725,7 @@ function buildBackupPayload(selection: BackupSelection, source: {
       settingsPayload.avatarGeneration = source.settings.avatarGeneration;
       settingsPayload.aiGeneration = source.settings.aiGeneration;
       settingsPayload.companionship = source.settings.companionship;
+      settingsPayload.chatMemory = source.settings.chatMemory;
     }
     if (selection['settings.chatDraftDefaults']) {
       settingsPayload.defaultSpeed = source.settings.defaultSpeed;
@@ -1136,6 +1137,7 @@ function filterSettingsForRestore(data: NonNullable<BackupFileShape['settings']>
     if (data.avatarGeneration !== undefined) nextSettings.avatarGeneration = data.avatarGeneration;
     if (data.aiGeneration !== undefined) nextSettings.aiGeneration = data.aiGeneration;
     if (data.companionship !== undefined) nextSettings.companionship = data.companionship;
+    if (data.chatMemory !== undefined) nextSettings.chatMemory = data.chatMemory;
   }
   if (selection['settings.chatDraftDefaults']) {
     if (data.defaultSpeed !== undefined) nextSettings.defaultSpeed = data.defaultSpeed;
@@ -1208,7 +1210,7 @@ const BACKUP_TREE: BackupTreeNode[] = [
         ],
       },
       { key: 'settings.appearance', labelZh: '外观与界面', labelEn: 'Appearance & UI', descriptionZh: '主题、颜色、语言、用户气泡、信纸样式、自定义气泡', descriptionEn: 'Theme, color, language, user bubble, letter background, custom bubbles' },
-      { key: 'settings.generation', labelZh: '生成与陪伴', labelEn: 'Generation & companionship', descriptionZh: '头像生成、朋友圈、日记、主动陪伴等', descriptionEn: 'Avatar generation, moments, diaries, proactive companionship' },
+      { key: 'settings.generation', labelZh: '生成、陪伴与记忆', labelEn: 'Generation, companionship & memory', descriptionZh: '头像生成、朋友圈、日记、主动陪伴、聊天记忆等', descriptionEn: 'Avatar generation, moments, diaries, proactive companionship, chat memory' },
       { key: 'settings.chatDraftDefaults', labelZh: '聊天默认行为', labelEn: 'Chat defaults', descriptionZh: '默认聊天草稿与群聊变化强度', descriptionEn: 'Default chat draft behavior and evolution intensity' },
       { key: 'settings.developer', labelZh: '开发者与调试', labelEn: 'Developer & debug', descriptionZh: '开发者模式、调试面板、记忆调试开关', descriptionEn: 'Developer mode, debug panels, memory debug toggles' },
       { key: 'settings.usageStats', labelZh: '使用统计', labelEn: 'Usage stats', descriptionZh: '本地使用统计与计数', descriptionEn: 'Local usage stats and counters' },
@@ -1754,9 +1756,6 @@ export default function SettingsPage() {
       <Box sx={buildDeveloperBodySx()}>
         <SectionHeader
           title={i18n.language.startsWith('zh') ? '开发者模式' : 'Developer mode'}
-          subtitle={i18n.language.startsWith('zh')
-            ? '这些开关用于排查运行逻辑，会显示事件、证据、分数和调试提示。普通使用可以保持关闭。'
-            : 'These switches expose events, evidence, metrics, and debug hints for runtime inspection. Leave them off for everyday use.'}
         />
         <FormControlLabel
           sx={{ m: 0 }}
@@ -2333,6 +2332,62 @@ export default function SettingsPage() {
           </Box>
         </SurfaceCard>
 
+        <SurfaceCard id="settings-card-chat-memory" contentSx={buildCardBodySx()}>
+          <Box sx={buildSectionBodySx()}>
+            <SectionHeader
+              title={i18n.language.startsWith('zh') ? '记忆' : 'Memory'}
+              action={(
+                <Tooltip title={i18n.language.startsWith('zh') ? '隐私过滤、第三方归属和矛盾记忆保护始终生效。这里控制的是长期记忆在聊天生成中的召回方式，不影响主动陪伴。' : 'Privacy filtering, third-party ownership checks, and contradicted-memory guards always stay on. These settings control chat recall, not proactive companionship.'}>
+                  <IconButton size="small" aria-label={i18n.language.startsWith('zh') ? '记忆说明' : 'Memory help'}>
+                    <HelpOutlineIcon sx={{ fontSize: 18 }} />
+                  </IconButton>
+                </Tooltip>
+              )}
+            />
+            <Box sx={{ display: 'grid', gap: 1 }}>
+              <FormControlLabel
+                control={<Switch checked={settings.chatMemory.enabled} onChange={(e) => settings.setChatMemory({ enabled: e.target.checked })} />}
+                label={i18n.language.startsWith('zh') ? '启用聊天记忆召回' : 'Enable chat memory recall'}
+              />
+              <Box sx={{ opacity: settings.chatMemory.enabled ? 1 : 0.55 }}>
+                <Typography variant="body2" sx={{ fontWeight: 500 }} gutterBottom>{i18n.language.startsWith('zh') ? '可见回忆强度' : 'Visible recall style'}</Typography>
+                <ToggleButtonGroup
+                  value={settings.chatMemory.visibleRecallMode}
+                  exclusive
+                  onChange={(_, v) => v && settings.setChatMemory({ visibleRecallMode: v })}
+                  size="small"
+                  sx={buildToggleGroupSx()}
+                  disabled={!settings.chatMemory.enabled}
+                >
+                  <ToggleButton value="implicit">{i18n.language.startsWith('zh') ? '只作潜台词' : 'Implicit'}</ToggleButton>
+                  <ToggleButton value="balanced">{i18n.language.startsWith('zh') ? '自然提及' : 'Balanced'}</ToggleButton>
+                  <ToggleButton value="direct">{i18n.language.startsWith('zh') ? '更愿意明说' : 'Direct'}</ToggleButton>
+                </ToggleButtonGroup>
+              </Box>
+              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' }, gap: 1, opacity: settings.chatMemory.enabled ? 1 : 0.55 }}>
+                <TextField
+                  type="number"
+                  size="small"
+                  label={i18n.language.startsWith('zh') ? '每轮最多召回条数' : 'Max cues per turn'}
+                  value={settings.chatMemory.maxCuesPerTurn}
+                  onChange={(e) => settings.setChatMemory({ maxCuesPerTurn: Math.max(0, Math.min(3, Math.round(Number(e.target.value) || 0))) })}
+                  disabled={!settings.chatMemory.enabled}
+                  slotProps={{ htmlInput: { min: 0, max: 3, step: 1 } }}
+                />
+                <TextField
+                  type="number"
+                  size="small"
+                  label={i18n.language.startsWith('zh') ? '重复召回冷却轮数' : 'Cue cooldown turns'}
+                  value={settings.chatMemory.cueCooldownTurns}
+                  onChange={(e) => settings.setChatMemory({ cueCooldownTurns: Math.max(0, Math.min(24, Math.round(Number(e.target.value) || 0))) })}
+                  disabled={!settings.chatMemory.enabled}
+                  slotProps={{ htmlInput: { min: 0, max: 24, step: 1 } }}
+                />
+              </Box>
+            </Box>
+          </Box>
+        </SurfaceCard>
+
         <SurfaceCard id="settings-card-chat-defaults" contentSx={buildCardBodySx()}>
           <Box sx={buildSectionBodySx()}>
             <SectionHeader title={i18n.language.startsWith('zh') ? '群聊默认行为' : 'Chat defaults'} />
@@ -2353,13 +2408,25 @@ export default function SettingsPage() {
             <Box sx={buildSectionBodySx()}>
               <SectionHeader
                 title={i18n.language.startsWith('zh') ? '插件' : 'Plugins'}
-                subtitle={i18n.language.startsWith('zh')
-                  ? '插件能力还在设计中。后续可在这里管理插件、权限和作用范围。'
-                  : 'Plugin support is still being designed. Installed plugins, permissions, and scopes will be managed here.'}
               />
-              <Alert severity="info" variant="outlined">
-                {i18n.language.startsWith('zh') ? '暂无插件。' : 'No plugins yet.'}
-              </Alert>
+              <Box sx={{ display: 'grid', gap: 1.25 }}>
+                <Box sx={{ p: 1.5, borderRadius: 2, border: '1px solid', borderColor: 'divider', bgcolor: 'background.default' }}>
+                  <Typography variant="body2" sx={{ fontWeight: 700, mb: 0.75 }}>
+                    {i18n.language.startsWith('zh') ? '实验' : 'Experiments'}
+                  </Typography>
+                  <Box sx={{ display: 'grid', gap: 0.25 }}>
+                    {[
+                      i18n.language.startsWith('zh') ? 'LLM 记忆闸门' : 'LLM memory gate',
+                      i18n.language.startsWith('zh') ? '向量召回' : 'Vector recall',
+                    ].map((label) => (
+                      <Box key={label} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+                        <FormControlLabel sx={{ m: 0 }} control={<Switch size="small" disabled />} label={label} />
+                        <Chip size="small" variant="outlined" label={i18n.language.startsWith('zh') ? '评估中' : 'Evaluating'} />
+                      </Box>
+                    ))}
+                  </Box>
+                </Box>
+              </Box>
             </Box>
           </SurfaceCard>
     ),

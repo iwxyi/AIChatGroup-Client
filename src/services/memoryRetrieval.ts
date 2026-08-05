@@ -45,6 +45,8 @@ function buildMemoryHaystack(item: MemoryItem) {
     item.scope,
     item.sourceTag,
     ...(item.subjectIds || []),
+    ...(item.semanticTags || []),
+    ...(item.associations || []),
   ].filter(Boolean).join('\n').toLowerCase();
 }
 
@@ -55,12 +57,24 @@ function matchedCueTokens(item: MemoryItem, context: MemoryRetrievalContext) {
   return tokens.filter((token) => haystack.includes(token)).slice(0, 6);
 }
 
+function metadataCueTokens(item: MemoryItem, context: MemoryRetrievalContext) {
+  const tokens = normalizeCueTokens(context.cueText);
+  if (!tokens.length) return [];
+  const metadata = [...(item.semanticTags || []), ...(item.associations || [])].join('\n').toLowerCase();
+  if (!metadata) return [];
+  return tokens.filter((token) => metadata.includes(token)).slice(0, 4);
+}
+
 function cueScore(item: MemoryItem, context: MemoryRetrievalContext) {
   const matches = matchedCueTokens(item, context);
+  const metadataMatches = metadataCueTokens(item, context);
   let score = 0;
   if (context.targetId && item.subjectIds?.includes(context.targetId)) score += 0.75;
   for (const token of matches) {
     score += token.length >= 4 ? 0.32 : 0.18;
+  }
+  for (const token of metadataMatches) {
+    score += token.length >= 4 ? 0.34 : 0.35;
   }
   return Math.min(2.2, score);
 }

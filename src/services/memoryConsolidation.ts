@@ -1,4 +1,4 @@
-import type { MemoryCandidate, MemoryEvidenceEntry, MemoryItem } from './memoryTypes';
+import type { MemoryCandidate, MemoryEvidenceEntry, MemoryItem, MemoryValidity, MemoryVisibility } from './memoryTypes';
 import { sanitizeMemoryText } from './distillationText';
 import { compactMemoryItems } from './memoryLifecycle';
 
@@ -118,6 +118,38 @@ function mergeSourceEventIds(item: MemoryItem, candidate: MemoryCandidate) {
 
 function mergeDistilledFromIds(item: MemoryItem, candidate: MemoryCandidate) {
   return Array.from(new Set([...(item.distilledFromIds || []), ...(candidate.distilledFromIds || [])])).slice(-24);
+}
+
+function mergeTextList(left: string[] | undefined, right: string[] | undefined, maxItems = 16) {
+  return Array.from(new Set([...(left || []), ...(right || [])].map((item) => item.trim()).filter(Boolean))).slice(0, maxItems);
+}
+
+function stricterVisibility(left: MemoryVisibility | undefined, right: MemoryVisibility | undefined) {
+  const rank: Record<MemoryVisibility, number> = {
+    public_safe: 0,
+    pair_private: 1,
+    private: 2,
+    never_surface: 3,
+  };
+  if (!left) return right;
+  if (!right) return left;
+  return rank[right] > rank[left] ? right : left;
+}
+
+function stricterValidity(left: MemoryValidity | undefined, right: MemoryValidity | undefined) {
+  const rank: Record<MemoryValidity, number> = {
+    active: 0,
+    uncertain: 1,
+    stale: 2,
+    contradicted: 3,
+  };
+  if (!left) return right;
+  if (!right) return left;
+  return rank[right] > rank[left] ? right : left;
+}
+
+function normalizePrivacyRisk(value: number | undefined) {
+  return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : undefined;
 }
 
 function normalizeEvidenceText(text: string | undefined) {
@@ -240,6 +272,13 @@ function createMemoryItem(candidate: MemoryCandidate, score: number, now: number
     distilledFromIds: candidate.distilledFromIds || [],
     distilledAt: candidate.distilledAt || null,
     distillationVersion: candidate.distillationVersion || null,
+    subjectOwner: candidate.subjectOwner,
+    sourceType: candidate.sourceType || (candidate.origin === 'distilled' ? 'distilled' : 'runtime'),
+    privacyRisk: normalizePrivacyRisk(candidate.privacyRisk),
+    visibility: candidate.visibility,
+    validity: candidate.validity || 'active',
+    semanticTags: mergeTextList(undefined, candidate.semanticTags),
+    associations: mergeTextList(undefined, candidate.associations),
     createdAt: now,
     updatedAt: now,
     lastActivatedAt: null,
@@ -279,6 +318,13 @@ function mergeMemoryItem(item: MemoryItem, candidate: MemoryCandidate, score: nu
     distilledFromIds: mergeDistilledFromIds(item, candidate),
     distilledAt: candidate.distilledAt || item.distilledAt || null,
     distillationVersion: candidate.distillationVersion || item.distillationVersion || null,
+    subjectOwner: candidate.subjectOwner || item.subjectOwner,
+    sourceType: candidate.sourceType || item.sourceType || (candidate.origin === 'distilled' ? 'distilled' : undefined),
+    privacyRisk: Math.max(normalizePrivacyRisk(item.privacyRisk) ?? 0, normalizePrivacyRisk(candidate.privacyRisk) ?? 0) || undefined,
+    visibility: stricterVisibility(item.visibility, candidate.visibility),
+    validity: stricterValidity(item.validity, candidate.validity) || 'active',
+    semanticTags: mergeTextList(item.semanticTags, candidate.semanticTags),
+    associations: mergeTextList(item.associations, candidate.associations),
     updatedAt: refresh ? now : item.updatedAt,
     archivedAt: null,
   };

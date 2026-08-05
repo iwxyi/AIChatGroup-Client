@@ -240,4 +240,40 @@ describe('consolidateMemoryCandidates', () => {
 
     expect(first[0]?.id).toBe(second[0]?.id);
   });
+
+  it('preserves and conservatively merges memory recall metadata', () => {
+    const first = consolidateMemoryCandidates([], [
+      buildDistilledCandidate({
+        text: '用户不喜欢太甜的饮品。',
+        subjectOwner: 'user',
+        sourceType: 'serious',
+        privacyRisk: 0.18,
+        visibility: 'public_safe',
+        validity: 'active',
+        semanticTags: ['低糖偏好'],
+        associations: ['奶茶', '饮料'],
+        sourceEventIds: ['meta-1'],
+        decision: 'create',
+      }),
+    ]);
+    const second = consolidateMemoryCandidates(first, [
+      buildDistilledCandidate({
+        text: '用户不喜欢太甜的饮品，公开场景里不要刻意强调。',
+        privacyRisk: 0.42,
+        visibility: 'private',
+        semanticTags: ['饮品偏好'],
+        associations: ['甜品'],
+        sourceEventIds: ['meta-2'],
+        decision: 'revise',
+      }),
+    ]);
+
+    expect(second).toHaveLength(1);
+    expect(second[0]?.subjectOwner).toBe('user');
+    expect(second[0]?.privacyRisk).toBe(0.42);
+    expect(second[0]?.visibility).toBe('private');
+    expect(second[0]?.validity).toBe('active');
+    expect(second[0]?.semanticTags).toEqual(expect.arrayContaining(['低糖偏好', '饮品偏好']));
+    expect(second[0]?.associations).toEqual(expect.arrayContaining(['奶茶', '饮料', '甜品']));
+  });
 });

@@ -3,7 +3,7 @@ import { normalizeCharacter } from '../types/character';
 import type { GroupChat } from '../types/chat';
 import { toRelationshipLedgerRecentEvent } from '../types/runtimeEvent';
 import { DEFAULT_ARTIFACT_APPEARANCE_SETTINGS, PAPER_SURFACE_VARIANTS } from '../types/artifactAppearance';
-import { DEFAULT_CHAT_APPEARANCE_SETTINGS, DEFAULT_DEVELOPER_UI_PREFS, DEFAULT_SETTINGS } from '../types/settings';
+import { DEFAULT_CHAT_APPEARANCE_SETTINGS, DEFAULT_DEVELOPER_UI_PREFS, DEFAULT_SETTINGS, normalizeChatMemorySettings } from '../types/settings';
 
 type VersionedPersistedState<T> = T | undefined;
 
@@ -191,6 +191,7 @@ export function migrateSettingsStoreState<T extends Record<string, unknown>>(per
       enableHumanAppraisal: developerUI.enableHumanAppraisal ?? DEFAULT_DEVELOPER_UI_PREFS.enableHumanAppraisal,
       dramaBoost: Boolean(developerUI.dramaBoost),
     },
+    chatMemory: normalizeChatMemorySettings((persisted as { chatMemory?: Parameters<typeof normalizeChatMemorySettings>[0] }).chatMemory),
     artifactAppearance: {
       ...DEFAULT_ARTIFACT_APPEARANCE_SETTINGS,
       paperVariant: PAPER_SURFACE_VARIANTS.includes(artifactAppearance.paperVariant as never)

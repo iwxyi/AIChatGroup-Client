@@ -203,6 +203,100 @@ describe('llmMemoryDistillation', () => {
     ]));
   });
 
+  it('keeps multiple subject-specific LLM memories with normalized recall metadata', async () => {
+    generateJsonResponseMock.mockResolvedValue(JSON.stringify({
+      relationshipImprints: [
+        {
+          scope: 'relationship',
+          kind: 'bond',
+          subjectIds: ['char-a', 'char-b'],
+          text: '甲开始把乙当作能在关键时刻接住自己的人。',
+          confidence: 0.88,
+          decision: 'create',
+          semanticTags: ['信任', '互相支持'],
+          associations: ['求助', '配合', '关键时刻', '站边', '安全感', '复盘', '任务', '聊天', '关系', '靠得住'],
+        },
+        {
+          scope: 'relationship',
+          kind: 'resentment',
+          subjectIds: ['char-c', 'char-d'],
+          text: '丙对丁的玩笑开始形成稳定戒备。',
+          confidence: 0.82,
+          decision: 'create',
+          visibility: 'private',
+          privacyRisk: 0.4,
+          validity: 'active',
+        },
+        {
+          scope: 'relationship',
+          kind: 'bond',
+          subjectIds: ['char-e', 'char-a'],
+          text: '戊和甲形成了轻松互相递话的默契。',
+          confidence: 0.8,
+          decision: 'create',
+        },
+        {
+          scope: 'relationship',
+          kind: 'resentment',
+          subjectIds: ['char-b', 'char-c'],
+          text: '乙开始厌烦丙总在公开场合抢话。',
+          confidence: 0.81,
+          decision: 'create',
+        },
+        {
+          scope: 'conversation',
+          kind: 'status_shift',
+          subjectIds: ['char-a', 'char-b', 'char-c'],
+          text: '群聊在互相维护与拆台之间形成了新的站队惯性。',
+          confidence: 0.84,
+          decision: 'create',
+        },
+        {
+          scope: 'relationship',
+          kind: 'bond',
+          subjectIds: ['char-d', 'char-e'],
+          text: '丁和戊在连续配合后形成了低调同盟。',
+          confidence: 0.79,
+          decision: 'create',
+        },
+        {
+          scope: 'relationship',
+          kind: 'bond',
+          subjectIds: ['char-x', 'char-y'],
+          text: '超过上限的第七条不应进入候选。',
+          confidence: 0.79,
+          decision: 'create',
+        },
+      ],
+    }));
+    const source = buildRuntimeBatch({ prefix: 'multi', eventStart: 70, count: 18, updatedAt: 600, eventsPerItem: 1 });
+    const chat = buildChat(source);
+
+    const result = await distillChatMemoriesWithLlm(DEFAULT_API_CONFIG, chat, { now: 1777000000000 });
+
+    expect(result).toHaveLength(6);
+    expect(result.map((item) => item.subjectIds?.join(':'))).toEqual(expect.arrayContaining([
+      'char-a:char-b',
+      'char-c:char-d',
+      'char-e:char-a',
+      'char-b:char-c',
+      'char-a:char-b:char-c',
+      'char-d:char-e',
+    ]));
+    expect(result.map((item) => item.text).join('\n')).not.toContain('第七条');
+    const first = result.find((item) => item.subjectIds?.join(':') === 'char-a:char-b');
+    expect(first?.subjectOwner).toBe('target');
+    expect(first?.sourceType).toBe('distilled');
+    expect(first?.visibility).toBe('pair_private');
+    expect(first?.validity).toBe('active');
+    expect(first?.privacyRisk).toBeGreaterThan(0);
+    expect(first?.semanticTags).toEqual(expect.arrayContaining(['信任', '互相支持']));
+    expect(first?.associations?.length).toBeLessThanOrEqual(12);
+    const privateItem = result.find((item) => item.subjectIds?.join(':') === 'char-c:char-d');
+    expect(privateItem?.visibility).toBe('private');
+    expect(privateItem?.privacyRisk).toBe(0.4);
+  });
+
   it('does not rerun chat LLM distillation when post-distillation updates only reuse covered evidence', () => {
     const coveredSource = buildRuntimeBatch({ prefix: 'covered', eventStart: 1, count: 12, updatedAt: 3200, eventsPerItem: 2 });
     const coveredEventIds = Array.from(new Set(coveredSource.flatMap((item) => item.sourceEventIds)));

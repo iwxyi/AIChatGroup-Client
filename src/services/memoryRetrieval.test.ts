@@ -28,6 +28,8 @@ function memory(overrides: Partial<MemoryItem>): MemoryItem {
     evidenceText: overrides.evidenceText,
     summary: overrides.summary,
     relatedConversationId: overrides.relatedConversationId,
+    semanticTags: overrides.semanticTags,
+    associations: overrides.associations,
   };
 }
 
@@ -139,5 +141,28 @@ describe('retrieveRelevantMemories', () => {
     });
 
     expect(result[0]?.lastActivatedAt).toBe(1777000000000);
+  });
+
+  it('uses semantic tags and associations as coarse recall signals', () => {
+    const result = retrieveRelevantMemories([
+      memory({
+        id: 'low-sweet',
+        text: '用户不喜欢太甜的东西。',
+        subjectIds: ['user'],
+        semanticTags: ['低糖偏好'],
+        associations: ['奶茶', '饮料', '甜品'],
+        archivedAt: 10,
+      }),
+    ], {
+      speakerId: 'char-a',
+      targetId: null,
+      conversationId: 'chat-1',
+      maxItems: 4,
+      cueText: '今天想点杯奶茶',
+      includeArchivedRecall: true,
+    });
+
+    expect(result[0]?.id).toBe('low-sweet');
+    expect(result[0]?.recallTokens).toContain('奶茶');
   });
 });

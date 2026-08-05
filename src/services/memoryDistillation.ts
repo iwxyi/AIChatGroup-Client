@@ -295,6 +295,13 @@ export function distillChatMemoryCandidates(
       distilledFromIds: source.map((item) => item.id),
       distilledAt: now,
       distillationVersion: DISTILLATION_VERSION,
+      subjectOwner: 'target',
+      sourceType: 'distilled',
+      privacyRisk: 0.22,
+      visibility: 'pair_private',
+      validity: 'active',
+      semanticTags: ['关系趋势'],
+      associations: ['关系', '态度', '群聊气氛'],
       scoreBreakdown: { stability: 0.8, recurrence: 0.7, impact: 0.72, specificity: 0.74, durability: 0.84 },
     });
   }
@@ -313,6 +320,13 @@ export function distillChatMemoryCandidates(
       distilledFromIds: source.map((item) => item.id),
       distilledAt: now,
       distillationVersion: DISTILLATION_VERSION,
+      subjectOwner: 'unknown',
+      sourceType: 'distilled',
+      privacyRisk: 0.12,
+      visibility: 'public_safe',
+      validity: 'active',
+      semanticTags: ['群聊主线'],
+      associations: ['冲突', '关系', '群聊气氛'],
       scoreBreakdown: { stability: 0.82, recurrence: 0.74, impact: 0.78, specificity: 0.76, durability: 0.86 },
     });
   }
@@ -345,6 +359,13 @@ export function distillCharacterMemoryCandidates(
       distilledFromIds: source.map((item) => item.id),
       distilledAt: now,
       distillationVersion: DISTILLATION_VERSION,
+      subjectOwner: 'target',
+      sourceType: 'distilled',
+      privacyRisk: 0.22,
+      visibility: 'pair_private',
+      validity: 'active',
+      semanticTags: ['关系判断'],
+      associations: ['关系', '态度', '印象'],
       scoreBreakdown: { stability: 0.84, recurrence: 0.72, impact: 0.76, specificity: 0.8, durability: 0.88 },
     });
   }

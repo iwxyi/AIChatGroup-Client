@@ -835,6 +835,7 @@ export interface AIGenerationSettings {
 
 export type CompanionshipCareIntensity = 'restrained' | 'balanced' | 'expressive';
 export type CompanionshipRitualKind = 'daily_greeting' | 'anniversary' | 'inside_joke' | 'pet_name' | 'reconciliation' | 'milestone';
+export type MemoryVisibleRecallMode = 'implicit' | 'balanced' | 'direct';
 
 export interface CompanionshipSettings {
   enableProactiveCare: boolean;
@@ -863,6 +864,13 @@ export interface CompanionshipSettings {
     suppressStatusHints: boolean;
     suppressProactiveCare: boolean;
   };
+}
+
+export interface ChatMemorySettings {
+  enabled: boolean;
+  visibleRecallMode: MemoryVisibleRecallMode;
+  maxCuesPerTurn: number;
+  cueCooldownTurns: number;
 }
 
 export interface UsageStats {
@@ -895,6 +903,7 @@ export interface AppSettings {
   avatarGeneration: AvatarGenerationSettings;
   aiGeneration: AIGenerationSettings;
   companionship: CompanionshipSettings;
+  chatMemory: ChatMemorySettings;
   developerUI: DeveloperUIPrefs;
   chatDraftDefaults: ChatDraftDefaults;
   customBubbleStyles: BubbleStyleDefinition[];
@@ -970,6 +979,25 @@ export const DEFAULT_COMPANIONSHIP_SETTINGS: CompanionshipSettings = {
     suppressProactiveCare: true,
   },
 };
+
+export const DEFAULT_CHAT_MEMORY_SETTINGS: ChatMemorySettings = {
+  enabled: true,
+  visibleRecallMode: 'balanced',
+  maxCuesPerTurn: 3,
+  cueCooldownTurns: 8,
+};
+
+export function normalizeChatMemorySettings(input?: Partial<ChatMemorySettings> | null): ChatMemorySettings {
+  const visibleRecallMode: MemoryVisibleRecallMode = input?.visibleRecallMode === 'implicit' || input?.visibleRecallMode === 'direct'
+    ? input.visibleRecallMode
+    : 'balanced';
+  return {
+    enabled: input?.enabled ?? DEFAULT_CHAT_MEMORY_SETTINGS.enabled,
+    visibleRecallMode,
+    maxCuesPerTurn: Math.max(0, Math.min(3, Math.round(Number(input?.maxCuesPerTurn ?? DEFAULT_CHAT_MEMORY_SETTINGS.maxCuesPerTurn)))),
+    cueCooldownTurns: Math.max(0, Math.min(24, Math.round(Number(input?.cueCooldownTurns ?? DEFAULT_CHAT_MEMORY_SETTINGS.cueCooldownTurns)))),
+  };
+}
 
 export const DEFAULT_USAGE_STATS: UsageStats = {
   aiMessageCount: 0,
@@ -1101,6 +1129,7 @@ export const DEFAULT_SETTINGS: AppSettingsWithMemory = {
   avatarGeneration: DEFAULT_AVATAR_GENERATION_SETTINGS,
   aiGeneration: DEFAULT_AI_GENERATION_SETTINGS,
   companionship: DEFAULT_COMPANIONSHIP_SETTINGS,
+  chatMemory: DEFAULT_CHAT_MEMORY_SETTINGS,
   developerUI: DEFAULT_DEVELOPER_UI_PREFS,
   chatDraftDefaults: DEFAULT_CHAT_DRAFT_DEFAULTS,
   customBubbleStyles: [],

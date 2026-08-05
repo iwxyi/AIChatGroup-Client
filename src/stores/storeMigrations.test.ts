@@ -88,6 +88,24 @@ describe('storeMigrations', () => {
     });
   });
 
+  it('normalizes chat memory settings during migration', () => {
+    const migrated = migrateSettingsStoreState({
+      chatMemory: {
+        enabled: false,
+        visibleRecallMode: 'direct',
+        maxCuesPerTurn: 99,
+        cueCooldownTurns: -4,
+      },
+    });
+
+    expect(migrated?.chatMemory).toMatchObject({
+      enabled: false,
+      visibleRecallMode: 'direct',
+      maxCuesPerTurn: 3,
+      cueCooldownTurns: 0,
+    });
+  });
+
   it('infers full character detail for legacy persisted records with detail fields', () => {
     const migrated = migrateCharacterStoreState({
       characters: [{

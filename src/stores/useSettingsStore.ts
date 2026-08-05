@@ -1,11 +1,11 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { AppSettingsWithMemory, ThemeMode, ThemePresetId, Language, APIConfig, AIModelProfile, ChatDraftDefaults, DeveloperUIPrefs, AvatarGenerationSettings, AIGenerationSettings, CompanionshipSettings, UsageStats, ChatAppearanceSettings } from '../types/settings';
+import type { AppSettingsWithMemory, ThemeMode, ThemePresetId, Language, APIConfig, AIModelProfile, ChatDraftDefaults, DeveloperUIPrefs, AvatarGenerationSettings, AIGenerationSettings, CompanionshipSettings, ChatMemorySettings, UsageStats, ChatAppearanceSettings } from '../types/settings';
 import type { ArtifactAppearanceSettings } from '../types/artifactAppearance';
 
 type AppSettings = AppSettingsWithMemory;
 import type { BubbleStyleDefinition } from '../types/bubbleStyle';
-import { DEFAULT_SETTINGS, DEFAULT_AI_PROFILE, DEFAULT_AVATAR_GENERATION_SETTINGS, DEFAULT_AI_GENERATION_SETTINGS, DEFAULT_COMPANIONSHIP_SETTINGS, DEFAULT_CHAT_DRAFT_DEFAULTS, DEFAULT_DEVELOPER_UI_PREFS, DEFAULT_USAGE_STATS, DEFAULT_CHAT_APPEARANCE_SETTINGS, getPreferredAIProfile, normalizeAIProfiles } from '../types/settings';
+import { DEFAULT_SETTINGS, DEFAULT_AI_PROFILE, DEFAULT_AVATAR_GENERATION_SETTINGS, DEFAULT_AI_GENERATION_SETTINGS, DEFAULT_COMPANIONSHIP_SETTINGS, DEFAULT_CHAT_MEMORY_SETTINGS, DEFAULT_CHAT_DRAFT_DEFAULTS, DEFAULT_DEVELOPER_UI_PREFS, DEFAULT_USAGE_STATS, DEFAULT_CHAT_APPEARANCE_SETTINGS, getPreferredAIProfile, normalizeAIProfiles, normalizeChatMemorySettings } from '../types/settings';
 import { DEFAULT_ARTIFACT_APPEARANCE_SETTINGS, PAPER_SURFACE_VARIANTS } from '../types/artifactAppearance';
 import { api, type SyncChangeScope } from '../services/api';
 import { buildApiErrorUserMessage } from '../services/apiErrorMessage';
@@ -16,6 +16,7 @@ import { scopedStorageKey } from '../constants/brand';
 import { getLocalDataUserId } from '../services/authStorageScope';
 import { setAIGenerationRuntimeConfig } from '../services/aiGenerationRuntimeConfig';
 import { setCompanionshipRuntimeConfig } from '../services/companionshipRuntimeConfig';
+import { setChatMemoryRuntimeConfig } from '../services/chatMemoryRuntimeConfig';
 import { setHumanAppraisalRuntimeConfig } from '../services/humanAppraisalRuntimeConfig';
 import { isCloudSyncEnabled } from '../services/cloudSyncPreference';
 import { createSyncScopeMetadata, type SyncScopeSnapshot } from './syncScopeMetadata';
@@ -32,6 +33,7 @@ interface SettingsStore extends AppSettings {
   setAvatarGeneration: (prefs: Partial<AvatarGenerationSettings>) => void;
   setAIGeneration: (prefs: Partial<AIGenerationSettings>) => void;
   setCompanionship: (prefs: Partial<CompanionshipSettings>) => void;
+  setChatMemory: (prefs: Partial<ChatMemorySettings>) => void;
   setChatAppearance: (prefs: Partial<ChatAppearanceSettings>) => void;
   setAutoGenerateCharacterAvatar: (enabled: boolean) => void;
   setDeveloperUI: (prefs: Partial<DeveloperUIPrefs>) => void;
@@ -262,6 +264,7 @@ export function buildSettingsPayload(state: AppSettings) {
     avatarGeneration: state.avatarGeneration,
     aiGeneration: state.aiGeneration,
     companionship: state.companionship,
+    chatMemory: state.chatMemory,
     developerUI: state.developerUI,
     memoryUI: state.memoryUI,
     artifactAppearance: state.artifactAppearance,
@@ -318,6 +321,7 @@ function syncState(state: Partial<AppSettings> & { api?: APIConfig; aiProfiles?:
         ...(state.companionship?.quietHours || {}),
       },
     },
+    chatMemory: normalizeChatMemorySettings(state.chatMemory || DEFAULT_CHAT_MEMORY_SETTINGS),
     developerUI,
     memoryUI: {
       showDeveloperMemory: developerModeAllowed && (state.developerUI?.showMemoryDebug ?? legacyShowMemoryDebug),
@@ -359,6 +363,7 @@ function syncState(state: Partial<AppSettings> & { api?: APIConfig; aiProfiles?:
   };
   setAIGenerationRuntimeConfig(normalized.aiGeneration);
   setCompanionshipRuntimeConfig(normalized.companionship);
+  setChatMemoryRuntimeConfig(normalized.chatMemory);
   setHumanAppraisalRuntimeConfig({ enabled: normalized.developerUI.enableHumanAppraisal });
   return normalized;
 }
@@ -464,6 +469,7 @@ export const useSettingsStore = create<SettingsStore>()(
                   ...((settings as { companionship?: CompanionshipSettings }).companionship?.quietHours || {}),
                 },
               },
+              chatMemory: normalizeChatMemorySettings((settings as { chatMemory?: ChatMemorySettings }).chatMemory),
               developerUI: settings.developerUI as DeveloperUIPrefs | undefined,
               memoryUI: settings.memoryUI as { showDeveloperMemory?: boolean } | undefined,
               chatDraftDefaults: {
@@ -672,6 +678,23 @@ export const useSettingsStore = create<SettingsStore>()(
             lastSyncedAt: Date.now(),
           };
           setCompanionshipRuntimeConfig(nextCompanionship);
+          syncToServer(buildSettingsPayload(next), set);
+          return next;
+        });
+      },
+
+      setChatMemory: (prefs) => {
+        set((state) => {
+          const chatMemory = normalizeChatMemorySettings({
+            ...state.chatMemory,
+            ...prefs,
+          });
+          const next = {
+            ...state,
+            chatMemory,
+            lastSyncedAt: Date.now(),
+          };
+          setChatMemoryRuntimeConfig(chatMemory);
           syncToServer(buildSettingsPayload(next), set);
           return next;
         });
@@ -920,6 +943,7 @@ export const useSettingsStore = create<SettingsStore>()(
         avatarGeneration: state.avatarGeneration,
         aiGeneration: state.aiGeneration,
         companionship: state.companionship,
+        chatMemory: state.chatMemory,
         developerUI: state.developerUI,
         memoryUI: state.memoryUI,
         chatDraftDefaults: state.chatDraftDefaults,

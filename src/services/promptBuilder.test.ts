@@ -162,7 +162,7 @@ describe('buildSystemPromptWithContext', () => {
         role: 'user',
         content: 'Conversation transcript for context only:\nThe complete recent transcript is provided separately as chat messages and is not repeated here.\nRecent transcript is room state and thread evidence, not a style sample to imitate.',
       },
-      { role: 'user', content: '用户: 新话题：狼抓羊有过错吗？' },
+      { role: 'user', content: '话题引导: 新话题：狼抓羊有过错吗？' },
     ]);
   });
 

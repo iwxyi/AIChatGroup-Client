@@ -4,6 +4,10 @@ export type MemoryKind = 'decision' | 'conflict' | 'bond' | 'resentment' | 'stat
 
 export type MemoryOrigin = 'runtime' | 'distilled' | 'seeded';
 export type MemoryDecision = 'create' | 'reinforce' | 'revise' | 'merge' | 'archive' | 'ignore';
+export type MemorySubjectOwner = 'user' | 'speaker' | 'target' | 'third_party' | 'unknown';
+export type MemorySourceType = 'serious' | 'joke' | 'test' | 'correction' | 'temporary' | 'distilled' | 'runtime';
+export type MemoryVisibility = 'private' | 'pair_private' | 'public_safe' | 'never_surface';
+export type MemoryValidity = 'active' | 'stale' | 'contradicted' | 'uncertain';
 
 export interface MemoryEvidenceEntry {
   id?: string;
@@ -47,6 +51,13 @@ export interface MemoryItem {
   recallCue?: string;
   recallReason?: string;
   recallTokens?: string[];
+  subjectOwner?: MemorySubjectOwner;
+  sourceType?: MemorySourceType;
+  privacyRisk?: number;
+  visibility?: MemoryVisibility;
+  validity?: MemoryValidity;
+  semanticTags?: string[];
+  associations?: string[];
 }
 
 export interface MemoryCandidate {
@@ -64,6 +75,13 @@ export interface MemoryCandidate {
   distilledFromIds?: string[];
   distilledAt?: number | null;
   distillationVersion?: string | null;
+  subjectOwner?: MemorySubjectOwner;
+  sourceType?: MemorySourceType;
+  privacyRisk?: number;
+  visibility?: MemoryVisibility;
+  validity?: MemoryValidity;
+  semanticTags?: string[];
+  associations?: string[];
   scoreBreakdown: {
     stability: number;
     recurrence: number;

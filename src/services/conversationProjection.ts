@@ -119,14 +119,14 @@ export function projectConversationForModel(input: ConversationProjectionInput):
       projected.push({
         role: 'assistant',
         content: buildAssistantHistoryPrompt(compactTranscriptContent(message.content)),
-        attachments,
+        ...(attachments ? { attachments } : {}),
       });
       continue;
     }
     projected.push({
       role: 'user',
       content: buildTranscriptLine(message, input.characters, currentSpeakerId),
-      attachments,
+      ...(attachments ? { attachments } : {}),
     });
   }
   return projected;
