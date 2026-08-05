@@ -157,20 +157,23 @@ function collectMemoryText(params: {
   messages: Message[];
   targetId?: string;
   now: number;
+  memoryCandidates?: MemoryItem[];
 }) {
-  const memories = retrieveRelevantMemories(params.character.layeredMemories || [], {
-    speakerId: params.character.id,
-    targetId: params.targetId,
-    conversationId: params.chat.id,
-    cueText: buildMemoryCueText(params.chat, params.messages),
-    maxItems: 30,
-    maxArchivedItems: 3,
-    includeArchivedRecall: true,
-    relationshipBoost: Boolean(params.targetId),
-    selfMemoryBoost: true,
-    conversationBoost: true,
-    now: params.now,
-  });
+  const memories = params.memoryCandidates
+    ? params.memoryCandidates
+    : retrieveRelevantMemories(params.character.layeredMemories || [], {
+      speakerId: params.character.id,
+      targetId: params.targetId,
+      conversationId: params.chat.id,
+      cueText: buildMemoryCueText(params.chat, params.messages),
+      maxItems: 30,
+      maxArchivedItems: 3,
+      includeArchivedRecall: true,
+      relationshipBoost: Boolean(params.targetId),
+      selfMemoryBoost: true,
+      conversationBoost: true,
+      now: params.now,
+    });
   const userProfile = [
     ...(params.character.memory?.userMemories || []),
     ...memories
@@ -294,6 +297,7 @@ export function buildCharacterMindProjection(params: {
   characters: AICharacter[];
   messages: Message[];
   target?: { id: string; name?: string } | null;
+  memoryCandidates?: MemoryItem[];
   now?: number;
 }): CharacterMindProjection {
   const now = params.now || Date.now();
@@ -309,6 +313,7 @@ export function buildCharacterMindProjection(params: {
     messages: params.messages,
     targetId: target?.id,
     now,
+    memoryCandidates: params.memoryCandidates,
   });
   const companionship = companionshipContinuity(params);
   const narrativeLines = projectNarrativeLines({

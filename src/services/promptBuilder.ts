@@ -754,7 +754,7 @@ function mapVisibleMemoryRecallSetting(): VisibleMemoryRecallSetting {
   return config.visibleRecallMode === 'implicit' ? 'implicit' : 'natural';
 }
 
-function buildCharacterMindAdapterOutput(character: AICharacter, chat: GroupChat, messages: Message[], characters: Map<string, AICharacter>, target?: AICharacter) {
+function buildCharacterMindAdapterOutput(character: AICharacter, chat: GroupChat, messages: Message[], characters: Map<string, AICharacter>, target?: AICharacter, memoryCandidates?: MemoryItem[]) {
   const chatMemoryConfig = getChatMemoryRuntimeConfig();
   const projection = buildCharacterMindProjection({
     chat,
@@ -762,6 +762,7 @@ function buildCharacterMindAdapterOutput(character: AICharacter, chat: GroupChat
     characters: Array.from(characters.values()),
     messages,
     target: target ? { id: target.id, name: target.name } : undefined,
+    memoryCandidates,
     now: chat.updatedAt || Date.now(),
   });
   const adapter = adaptCharacterMindProjectionForPrompt(projection, {
@@ -932,7 +933,12 @@ export function buildPromptMemoryTrace(character: AICharacter, chat: GroupChat, 
 
 export function buildPromptCharacterMindTrace(character: AICharacter, chat: GroupChat, messages: Message[], characters: Map<string, AICharacter>): PromptCharacterMindTrace {
   const memoryContext = resolvePromptMemoryContext(character, chat, messages, characters);
-  const { projection, adapter } = buildCharacterMindAdapterOutput(character, chat, messages, characters, memoryContext.target);
+  const memoryCandidates = buildMergedMemories([
+    ...memoryContext.targetedCharacterMemories,
+    ...memoryContext.characterMemories,
+    ...memoryContext.conversationMemories,
+  ]);
+  const { projection, adapter } = buildCharacterMindAdapterOutput(character, chat, messages, characters, memoryContext.target, memoryCandidates);
   return buildPromptCharacterMindTraceFromOutput(projection, adapter);
 }
 
@@ -946,7 +952,7 @@ export function buildCrossModeMemoryPrompt(character: AICharacter, chat: GroupCh
   const members = buildPromptDisplayMembers(character, characters);
   const companionshipPrompt = buildCompanionshipPromptBlock({ chat, character, messages });
   const renderedCompanionshipPrompt = chat.type === 'group' ? '' : companionshipPrompt;
-  const mind = buildCharacterMindAdapterOutput(character, chat, messages, characters, memoryContext.target);
+  const mind = buildCharacterMindAdapterOutput(character, chat, messages, characters, memoryContext.target, merged);
   return `${buildManualMemorySeedPrompt(character, members, chat)}${buildPromptMemoryBundle(chat, memoryContext.conversationMemories, memoryContext.characterMemories, memoryContext.targetedCharacterMemories, members, memoryContext.memoryCues)}${buildPromptInfluenceContext(chat, character, memoryContext.target, memoryContext.relationshipSnapshot, merged, characters)}${buildPromptTargetingContext(chat, memoryContext.target, memoryContext.relationshipSnapshot, characters)}${buildTargetedInfluenceContext(chat, memoryContext.target, memoryContext.relationshipSnapshot, characters)}${buildSharedSecretPromptBlock(chat, character, memoryContext.target, characters)}${buildActiveContinuityPull({ chat, character, target: memoryContext.target, relationshipSnapshot: memoryContext.relationshipSnapshot, memoryCues: memoryContext.memoryCues, characters, hasCompanionshipContext: Boolean(companionshipPrompt), mind })}${mind.adapter.promptBlock}${renderedCompanionshipPrompt}${buildMemoryPriorityPrompt(chat)}`;
 }
 
@@ -1137,7 +1143,12 @@ export function buildPromptAssemblyWithContext(character: AICharacter, chat: Gro
   const personaActivation = resolvePersonaActivation({ chat, speaker: character, messages });
   const companionshipPrompt = buildCompanionshipPromptBlock({ chat, character, messages });
   const renderedCompanionshipPrompt = chat.type === 'group' ? '' : companionshipPrompt;
-  const mind = buildCharacterMindAdapterOutput(character, chat, messages, characters, memoryContext.target);
+  const memoryCandidates = buildMergedMemories([
+    ...memoryContext.targetedCharacterMemories,
+    ...memoryContext.characterMemories,
+    ...memoryContext.conversationMemories,
+  ]);
+  const mind = buildCharacterMindAdapterOutput(character, chat, messages, characters, memoryContext.target, memoryCandidates);
 
   const systemPrompt = [
     buildCharacterSection(character, emotion, personaActivation),

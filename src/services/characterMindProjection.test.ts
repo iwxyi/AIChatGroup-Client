@@ -265,6 +265,32 @@ describe('characterMindProjection', () => {
     expect(projection.hidden.recallCandidates[0]).toContain('低甜饮品');
   });
 
+  it('accepts the prompt assembly memory candidates instead of requiring them on the character', () => {
+    const speaker = character({
+      memory: { shortTermSummary: '', longTerm: [], secrets: [], obsessions: [], tabooTopics: [], userMemories: [] },
+      layeredMemories: [],
+    });
+    const injectedMemory = memory({
+      id: 'assembly-user-memory',
+      subjectIds: ['user'],
+      text: '用户最近在准备一个重要面试。',
+      summary: '用户最近在准备一个重要面试。',
+      sourceTag: 'companionship_user_profile',
+      visibility: 'private',
+    });
+
+    const projection = buildCharacterMindProjection({
+      chat: chat('direct'),
+      character: speaker,
+      characters: [speaker],
+      messages: [message('今天有点累。')],
+      memoryCandidates: [injectedMemory],
+      now: 2000,
+    });
+
+    expect(projection.continuity.userProfile).toContain('用户最近在准备一个重要面试。');
+  });
+
   it('renders a compact model-facing block without exposing hidden trace fields', () => {
     const speaker = character();
     const projection = buildCharacterMindProjection({
