@@ -2,6 +2,7 @@ import type { AICharacter } from '../types/character';
 import type { GroupChat } from '../types/chat';
 import type { Message } from '../types/message';
 import { buildPublicRoomUserCompanionshipLines, buildUserCompanionshipProjection } from './companionshipProjection';
+import { adaptCharacterMindProjectionForPrompt } from './characterMindPromptAdapter';
 import { retrieveRelevantMemories } from './memoryRetrieval';
 import type { MemoryItem } from './memoryTypes';
 import { projectNarrativeLines, type NarrativeLineProjection } from './narrativeProjection';
@@ -406,99 +407,16 @@ export function buildCharacterMindProjection(params: {
   };
 }
 
-function line(label: string, values: string[]) {
-  return values.length ? `- ${label}: ${values.join(' / ')}` : '';
-}
-
 export interface CharacterMindProjectionPromptOptions {
   visibility?: 'public' | 'private';
   includeActiveRoomLineSummaries?: boolean;
 }
 
-function hasPrivateSurfaceRisk(text: string) {
-  return /(不要|不想|别|公开|隐私|边界|禁忌|压力|焦虑|面试|考试|生日|纪念|私下|只告诉|秘密|住址|地址|电话|手机号|微信|QQ|生病|不舒服|失眠|抑郁|创伤|计划|下周|明天|今晚|昨晚|约定|承诺|称呼|暗号|失约)/.test(text);
-}
-
-function stripInternalIds(text: string) {
-  return text
-    .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '成员')
-    .replace(/\b(local-character|draft|evt|msg)-[A-Za-z0-9_-]{6,}\b/g, '成员')
-    .replace(/\bstatus_shift\b/g, 'state shift')
-    .replace(/\brelationship_delta\b/g, 'relationship change')
-    .replace(/\bunknown_internal_source\b/g, 'memory source')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function promptValues(values: string[], options: Required<CharacterMindProjectionPromptOptions>) {
-  return values
-    .map((value) => stripInternalIds(value))
-    .filter(Boolean)
-    .filter((value) => options.visibility === 'private' || !hasPrivateSurfaceRisk(value))
-    .slice(0, 4);
-}
-
-function visibilityScopedValues(values: string[], publicFallback: string, options: Required<CharacterMindProjectionPromptOptions>) {
-  const safe = promptValues(values, options);
-  if (options.visibility === 'private') return safe;
-  return values.length ? [publicFallback] : [];
-}
-
 export function buildCharacterMindProjectionPromptBlock(projection: CharacterMindProjection, options: CharacterMindProjectionPromptOptions = {}) {
-  const promptOptions: Required<CharacterMindProjectionPromptOptions> = {
+  return adaptCharacterMindProjectionForPrompt(projection, {
+    chatType: options.visibility === 'private' ? 'direct' : 'group',
     visibility: options.visibility || 'public',
     includeActiveRoomLineSummaries: options.includeActiveRoomLineSummaries ?? false,
-  };
-  const userContinuity = visibilityScopedValues(
-    projection.continuity.userProfile,
-    'User-related continuity exists; use it as restraint, care, or familiarity without exposing private facts.',
-    promptOptions,
-  );
-  const relationshipMemories = visibilityScopedValues(
-    projection.continuity.relationshipMemories,
-    'Relationship continuity exists; show it through stance, timing, omission, or protection rather than private exposition.',
-    promptOptions,
-  );
-  const sharedHistory = visibilityScopedValues(
-    projection.continuity.sharedHistory,
-    'Shared history exists; use only as subtext unless the current room already makes it public.',
-    promptOptions,
-  );
-  const stance = promptOptions.visibility === 'private'
-    ? promptValues(projection.relationship.stance, promptOptions)
-    : visibilityScopedValues(
-      projection.relationship.stance,
-      'A relationship stance exists toward the current target; let it bend tone without revealing private evidence.',
-      promptOptions,
-    );
-  const activeRoomLines = promptOptions.includeActiveRoomLineSummaries
-    ? promptValues(projection.room.activeLines, promptOptions)
-    : projection.room.activeLines.length
-      ? ['Active room lines exist; react to their pressure without copying recent transcript text.']
-      : [];
-  const lines = [
-    line('Stable self', promptValues(projection.identity.selfModel, promptOptions)),
-    line('Voice and habits', promptValues(projection.identity.stableVoice, promptOptions)),
-    line('Desires', promptValues(projection.identity.desires, promptOptions)),
-    line('Fears and sensitivities', promptValues(projection.identity.fears, promptOptions)),
-    line('Continuity about the user', userContinuity),
-    line('Relationship memories', relationshipMemories),
-    line('Shared history', sharedHistory),
-    projection.relationship.targetName ? line(`Stance toward ${projection.relationship.targetName}`, stance) : '',
-    line('Current emotional undercurrent', promptValues(projection.currentState.emotionalUndercurrent, promptOptions)),
-    line('Active needs', promptValues(projection.currentState.activeNeeds, promptOptions)),
-    projection.currentState.selfAppraisal ? `- Self-appraisal: ${stripInternalIds(projection.currentState.selfAppraisal)}` : '',
-    projection.room.topic ? `- Current room topic: ${projection.room.topic}` : '',
-    line('Active room lines', activeRoomLines),
-    line('World or scenario context', promptValues(projection.room.worldActivities, promptOptions)),
-    line('Expression guidance', [
-      projection.expression.socialMove,
-      projection.expression.temperature,
-      projection.expression.attention,
-      projection.expression.length,
-    ].map(stripInternalIds)),
-    projection.expression.omissions.length ? `- Keep implicit or omit unless naturally triggered: ${projection.expression.omissions.join(' / ')}.` : '',
-    '- This is the character\'s current inner context, not a checklist. Let it bend attention, wording, omissions, and timing without reciting it.',
-  ].filter(Boolean);
-  return lines.length ? `\n## Character Mind Projection\n${lines.join('\n')}` : '';
+    renderVisibleRecallCues: false,
+  }).promptBlock;
 }
