@@ -2,6 +2,8 @@ import type { AICharacter } from '../types/character';
 import type { GroupChat } from '../types/chat';
 import type { Message } from '../types/message';
 import { buildPublicRoomUserCompanionshipLines, buildUserCompanionshipProjection } from './companionshipProjection';
+import { retrieveRelevantMemories } from './memoryRetrieval';
+import type { MemoryItem } from './memoryTypes';
 import { projectNarrativeLines, type NarrativeLineProjection } from './narrativeProjection';
 import { normalizeRelationshipLedgerEntry } from './relationshipLedger';
 
@@ -140,10 +142,36 @@ function formatRelationshipStance(relationship: ReturnType<typeof resolveRelatio
   return uniqueText(stance, 4);
 }
 
-function collectMemoryText(character: AICharacter, targetId?: string) {
-  const memories = character.layeredMemories || [];
+function buildMemoryCueText(chat: GroupChat, messages: Message[]) {
+  const recentLines = visibleMessages(messages)
+    .slice(-4)
+    .map((item) => `${item.senderName || item.senderId}: ${item.content}`)
+    .join('\n');
+  return compactText([chat.topic, chat.worldState.focus, chat.worldState.recentEvent, recentLines].filter(Boolean).join('\n'), 500);
+}
+
+function collectMemoryText(params: {
+  character: AICharacter;
+  chat: GroupChat;
+  messages: Message[];
+  targetId?: string;
+  now: number;
+}) {
+  const memories = retrieveRelevantMemories(params.character.layeredMemories || [], {
+    speakerId: params.character.id,
+    targetId: params.targetId,
+    conversationId: params.chat.id,
+    cueText: buildMemoryCueText(params.chat, params.messages),
+    maxItems: 30,
+    maxArchivedItems: 3,
+    includeArchivedRecall: true,
+    relationshipBoost: Boolean(params.targetId),
+    selfMemoryBoost: true,
+    conversationBoost: true,
+    now: params.now,
+  });
   const userProfile = [
-    ...(character.memory?.userMemories || []),
+    ...(params.character.memory?.userMemories || []),
     ...memories
       .filter((item) => item.subjectIds?.includes(USER_ACTOR_ID) || item.sourceTag?.includes('direct_user') || item.text.includes('用户'))
       .map((item) => item.summary || item.text),
@@ -152,7 +180,7 @@ function collectMemoryText(character: AICharacter, targetId?: string) {
     .filter((item) => item.scope === 'character_self')
     .map((item) => item.summary || item.text);
   const relationshipMemories = memories
-    .filter((item) => item.scope === 'relationship' && (!targetId || item.subjectIds?.includes(targetId)))
+    .filter((item) => item.scope === 'relationship' && (!params.targetId || item.subjectIds?.includes(params.targetId)))
     .map((item) => item.summary || item.text);
   const sharedHistory = memories
     .filter((item) => item.scope === 'conversation' || item.scope === 'thread')
@@ -162,7 +190,12 @@ function collectMemoryText(character: AICharacter, targetId?: string) {
     selfMemories: uniqueText(selfMemories, 6),
     relationshipMemories: uniqueText(relationshipMemories, 6),
     sharedHistory: uniqueText(sharedHistory, 6),
+    sourceIds: memories.map((item) => item.id),
   };
+}
+
+function memorySourceEventIds(items: MemoryItem[]) {
+  return items.flatMap((item) => item.sourceEventIds || []);
 }
 
 function companionshipContinuity(params: {
@@ -269,7 +302,13 @@ export function buildCharacterMindProjection(params: {
     chat: params.chat,
     targetId: target?.id,
   });
-  const memories = collectMemoryText(params.character, target?.id);
+  const memories = collectMemoryText({
+    character: params.character,
+    chat: params.chat,
+    messages: params.messages,
+    targetId: target?.id,
+    now,
+  });
   const companionship = companionshipContinuity(params);
   const narrativeLines = projectNarrativeLines({
     chat: params.chat,
@@ -352,7 +391,8 @@ export function buildCharacterMindProjection(params: {
     },
     hidden: {
       sourceIds: [
-        ...(params.character.layeredMemories || []).flatMap((item) => item.sourceEventIds || []),
+        ...memories.sourceIds,
+        ...memorySourceEventIds(params.character.layeredMemories || []).slice(-12),
         ...(params.chat.runtimeEventsV2 || []).slice(-12).map((event) => event.id),
       ].filter((id, index, list) => list.indexOf(id) === index).slice(0, 24),
       conflictReasons,

@@ -3,6 +3,7 @@ import { DEFAULT_CHARACTER_BEHAVIOR, DEFAULT_EMOTIONAL_STATE, type AICharacter }
 import { normalizeConversation } from '../types/chat';
 import type { Message } from '../types/message';
 import { buildCharacterMindProjection, buildCharacterMindProjectionPromptBlock } from './characterMindProjection';
+import type { MemoryItem } from './memoryTypes';
 
 function character(overrides: Partial<AICharacter> = {}): AICharacter {
   return {
@@ -52,6 +53,32 @@ function message(content: string, senderId = 'user'): Message {
     emotion: 0,
     timestamp: 1000,
     isDeleted: false,
+  };
+}
+
+function memory(overrides: Partial<MemoryItem> = {}): MemoryItem {
+  return {
+    id: overrides.id || 'memory-1',
+    ownerId: 'char-a',
+    scope: 'relationship',
+    layer: 'long_term',
+    kind: 'bond',
+    subjectIds: ['char-b'],
+    text: '一条普通记忆。',
+    salience: 0.6,
+    confidence: 0.75,
+    recency: 0.4,
+    reinforcementCount: 1,
+    sourceEventIds: [],
+    sourceTag: 'test',
+    origin: 'runtime',
+    createdAt: 1,
+    updatedAt: 1,
+    archivedAt: null,
+    distilledAt: null,
+    distilledFromIds: [],
+    distillationVersion: null,
+    ...overrides,
   };
 }
 
@@ -166,6 +193,76 @@ describe('characterMindProjection', () => {
     expect(projection.relationship.targetName).toBe('林北');
     expect(projection.relationship.stance).toContain('更容易靠近、维护或给对方留余地');
     expect(projection.expression.attention).toContain('林北');
+  });
+
+  it('ranks relevant memories before older unrelated memories in the mind projection', () => {
+    const target = character({ id: 'char-b', name: '阿远' });
+    const unrelated = Array.from({ length: 12 }, (_, index) => memory({
+      id: `old-${index}`,
+      subjectIds: ['char-x'],
+      text: `旧闲聊记忆 ${index}`,
+      summary: `旧闲聊记忆 ${index}`,
+      salience: 0.2,
+      confidence: 0.5,
+      recency: 0.1,
+    }));
+    const speaker = character({
+      layeredMemories: [
+        ...unrelated,
+        memory({
+          id: 'relevant-target-memory',
+          subjectIds: ['char-b'],
+          text: '阿远之前帮苏苏圆过一次场，所以苏苏会给他留余地。',
+          summary: '阿远之前帮她圆过场。',
+          salience: 0.82,
+          confidence: 0.9,
+          recency: 0.7,
+          reinforcementCount: 3,
+        }),
+      ],
+    });
+
+    const projection = buildCharacterMindProjection({
+      chat: chat('group'),
+      character: speaker,
+      characters: [speaker, target],
+      messages: [message('先别把话说太满。', 'char-b')],
+      now: 2000,
+    });
+
+    expect(projection.continuity.relationshipMemories[0]).toContain('阿远之前帮她圆过场');
+    expect(projection.hidden.recallCandidates.some((item) => item.includes('阿远之前帮她圆过场'))).toBe(true);
+  });
+
+  it('uses memory associations to wake related user continuity without exact keyword overlap', () => {
+    const speaker = character({
+      memory: { shortTermSummary: '', longTerm: [], secrets: [], obsessions: [], tabooTopics: [], userMemories: [] },
+      layeredMemories: [
+        memory({
+          id: 'user-drink-preference',
+          scope: 'relationship',
+          subjectIds: ['user'],
+          text: '用户不喜欢太甜的饮料。',
+          summary: '用户偏好低甜饮品。',
+          semanticTags: ['饮品偏好'],
+          associations: ['奶茶', '柠檬茶', '饮料'],
+          salience: 0.86,
+          confidence: 0.92,
+          recency: 0.62,
+        }),
+      ],
+    });
+
+    const projection = buildCharacterMindProjection({
+      chat: chat('direct'),
+      character: speaker,
+      characters: [speaker],
+      messages: [message('我想喝奶茶。')],
+      now: 2000,
+    });
+
+    expect(projection.continuity.userProfile[0]).toContain('低甜饮品');
+    expect(projection.hidden.recallCandidates[0]).toContain('低甜饮品');
   });
 
   it('renders a compact model-facing block without exposing hidden trace fields', () => {
