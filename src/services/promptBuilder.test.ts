@@ -372,6 +372,39 @@ describe('buildSystemPromptWithContext', () => {
     expect(prompt).toContain('When the current line touches an active hook');
   });
 
+  it('does not render legacy influence state as a separate visible prompt block', () => {
+    const speaker = buildCharacter({
+      relationships: [{
+        characterId: 'char-b',
+        warmth: 42,
+        competence: 0,
+        trust: 35,
+        threat: 0,
+        note: '会替阿远留一点余地。',
+      }],
+      layeredMemories: [memory({
+        id: 'target-memory',
+        ownerId: 'char-a',
+        subjectIds: ['char-b'],
+        scope: 'relationship',
+        text: '苏苏记得阿远之前帮她圆过场。',
+        summary: '阿远之前帮她圆过场。',
+      })],
+    });
+    const target = buildCharacter({ id: 'char-b', name: '阿远' });
+    const prompt = buildSystemPromptWithContext(speaker, buildChat({ memberIds: ['char-a', 'char-b'] }), 0, [
+      buildMessage({ senderId: 'char-b', senderName: '阿远', content: '那我先说一句。' }),
+    ], new Map([
+      [speaker.id, speaker],
+      [target.id, target],
+    ]));
+
+    expect(prompt).not.toContain('## Influence State');
+    expect(prompt).not.toContain('Topic bias:');
+    expect(prompt).toContain('## Active Continuity Pull');
+    expect(prompt).toContain('Stance toward 阿远');
+  });
+
   it('adds a group-specific user boundary reminder when user continuity is present', () => {
     const speaker = buildCharacter({
       id: 'char-a',
