@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { Accordion, AccordionDetails, AccordionSummary, Box, Button, Chip, Divider, MenuItem, Stack, TextField, Typography } from '@mui/material';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import SurfaceCard from '../common/SurfaceCard';
 import type { RoomTemplateConfigGroup, RoomTemplateDefinition, RoomTemplateFieldDefinition, RoomTemplateKey, RoomTemplateStructure } from '../../services/roomTemplates';
 import {
@@ -35,6 +36,7 @@ interface GameplaySectionProps {
   lockPresetSelection?: boolean;
   onSaveAsChat?: () => void;
   saveAsChatDisabled?: boolean;
+  onOpenBatchGenerate?: () => void;
   runtimeEvolutionIntensity: 'slow' | 'balanced' | 'fast';
   onRuntimeEvolutionIntensityChange: (value: 'slow' | 'balanced' | 'fast') => void;
   topic: string;
@@ -437,6 +439,17 @@ export default function GameplaySection(props: GameplaySectionProps) {
                   ? (isZh ? '可在“设定”页填写一句开局灵感；完整故事设定在这里编辑。' : 'Add a short opening seed in Config; edit full story settings here.')
                   : (isZh ? '请先到“设定”页填写群名下方的话题/目标。' : 'Fill the topic/goal field in the Config tab first.'))}
               </Typography>
+              {selectedTemplate.sessionKind.scenarioId === 'story-reader' && props.onOpenBatchGenerate ? (
+                <Button
+                  variant="text"
+                  size="small"
+                  startIcon={<AutoAwesomeIcon />}
+                  onClick={props.onOpenBatchGenerate}
+                  sx={{ mt: 0.75, px: 0, minWidth: 0, alignSelf: 'flex-start' }}
+                >
+                  {isZh ? '批量生成角色' : 'Batch generate characters'}
+                </Button>
+              ) : null}
             </Box>
             {(selectedTemplate.configGroups || []).map((group) => renderConfigGroup(
               group,

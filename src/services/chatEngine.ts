@@ -4249,7 +4249,7 @@ export const runOneRound = async (
   const candidates = calculateWeights(autoSpeakableMembers, activeMessages, effectiveCooldownMap, chat.speed, BASE_COOLDOWN_MS, pendingReplyContext, chat, directorIntent);
   const lockedGuidanceSpeaker = resolveUserGuidanceLockedSpeaker(autoSpeakableMembers, directorIntent);
   const roundtableTurnSpeaker = resolveRoundtableTurnSpeaker(chat, autoSpeakableMembers);
-  const speakerSelection = storyNarrator
+  let speakerSelection = storyNarrator
     ? {
       speakerId: storyNarrator.id,
       reason: null,
@@ -4434,6 +4434,11 @@ export const runOneRound = async (
         throw error;
       }
       activeSpeaker = rotated;
+      speakerSelection = {
+        speakerId: activeSpeaker.id,
+        reason: null,
+        bypassNotice: 'fallback_after_empty_generation',
+      };
       const rotatedCandidate = candidates.find((candidate) => candidate.characterId === activeSpeaker.id);
       callbacks.onSpeakerSelected(activeSpeaker.id, activeSpeaker);
       const rotatedHydrateStartedAt = nowMs();

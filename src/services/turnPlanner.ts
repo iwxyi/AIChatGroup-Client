@@ -238,7 +238,7 @@ export function deriveTurnPlan(input: TurnPlanInput): TurnPlan {
     };
   }
 
-  if (!latestIsHuman && (input.intent.messageShape === 'fragment' || input.intent.messageShape === 'question_only' || latestLength <= 12)) {
+  if (!latestIsHuman && (input.intent.messageShape === 'fragment' || latestLength <= 12)) {
     return {
       rhythm: 'micro_ack',
       targetBubbleCount: 1,

@@ -1548,6 +1548,7 @@ export default function CreateChatPage() {
             lockPresetSelection={gameplayRuntimeLocked}
             onSaveAsChat={editingChat ? handleSaveAsChatAction : undefined}
             saveAsChatDisabled={saving || saveAsChatSaving}
+            onOpenBatchGenerate={openBatchGenerate}
             runtimeEvolutionIntensity={runtimeEvolutionIntensity}
             onRuntimeEvolutionIntensityChange={setRuntimeEvolutionIntensity}
             topic={topic}

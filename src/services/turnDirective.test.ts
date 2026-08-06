@@ -180,11 +180,85 @@ describe('turnDirective', () => {
       innerLife,
       conversationMovePlan: movePlan,
       turnPlan,
-      userGuidance: { kind: 'topic_shift', rawText: '预算别超过 200。', actorIds: ['rui'], targetIds: [], confidence: 0.9 },
+      userGuidance: {
+        kind: 'topic_shift',
+        rawText: '预算别超过 200。',
+        actorIds: ['rui'],
+        mentionedActorIds: ['rui'],
+        focusText: '预算别超过 200。',
+        beatType: 'invite',
+        pressure: 0.9,
+        maxTurns: 4,
+        reason: '用户给出预算约束。',
+        hasHardConstraints: true,
+      },
     });
 
     expect(directive?.userConstraint).toContain('user steered the topic');
     expect(buildTurnDirectivePrompt(directive)).toContain('User constraint');
+  });
+
+  it('keeps user decision pressure ahead of AI-to-AI logistics', () => {
+    const directive = buildTurnDirective({
+      chat: chat(),
+      speaker: character('rui', '瑞瑞'),
+      members: [character('rui', '瑞瑞'), character('chen', '陈越')],
+      messages: [
+        message({
+          type: 'user',
+          senderId: 'user',
+          senderName: '用户',
+          content: '周五想找个像精酿吧一样热闹、有木桌和音乐的地方，你们帮我选。',
+        }),
+        message({ id: 'm2', senderId: 'chen', senderName: '陈越', content: '北门那家要先问低消。', timestamp: 2 }),
+      ],
+      styleProfile: 'casual_room',
+      intent,
+      innerLife,
+      conversationMovePlan: movePlan,
+      turnPlan,
+      userGuidance: {
+        kind: 'topic_shift',
+        rawText: '周五想找个像精酿吧一样热闹、有木桌和音乐的地方，你们帮我选。',
+        actorIds: [],
+        mentionedActorIds: [],
+        focusText: '帮我选热闹的地方',
+        beatType: 'invite',
+        pressure: 0.78,
+        maxTurns: 4,
+        reason: '用户要求群聊给出选择。',
+      },
+    });
+
+    const prompt = buildTurnDirectivePrompt(directive);
+    expect(prompt).toContain('state one concrete preference or shortlist first');
+    expect(prompt).toContain('do not pass the choice back to the room');
+  });
+
+  it('does not repeat broad clarification after a user asked the room to choose', () => {
+    const directive = buildTurnDirective({
+      chat: chat(),
+      speaker: character('rui', '瑞瑞'),
+      members: [character('rui', '瑞瑞'), character('chen', '陈越')],
+      messages: [
+        message({
+          type: 'user',
+          senderId: 'user',
+          senderName: '用户',
+          content: '周五想找个像精酿吧一样热闹、有木桌和音乐的地方，你们帮我选。',
+        }),
+        message({ id: 'm2', senderId: 'chen', senderName: '陈越', content: '你先说你要的是哪种闹？', timestamp: 2 }),
+      ],
+      styleProfile: 'casual_room',
+      intent,
+      innerLife,
+      conversationMovePlan: movePlan,
+      turnPlan,
+    });
+
+    const prompt = buildTurnDirectivePrompt(directive);
+    expect(prompt).toContain('previous AI already pushed a broad clarification');
+    expect(prompt).toContain('add a concrete option');
   });
 
   it('folds situational floor and handoff pressure into the directive', () => {

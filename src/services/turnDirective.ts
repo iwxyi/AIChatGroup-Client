@@ -53,6 +53,13 @@ function latestHumanPressure(messages: Message[], speakerName?: string) {
   };
 }
 
+function looksLikeBroadUserClarification(text?: string | null) {
+  const normalized = (text || '').trim();
+  if (!normalized) return false;
+  return /[？?]/.test(normalized)
+    || /你先(说|定|选)|你是哪种|你要的是哪种|先把.+定了|再看/.test(normalized);
+}
+
 function visibleLength(text: string) {
   return text.replace(/（[^）]{0,80}）|\([^)]{0,80}\)/g, '').trim().length;
 }
@@ -205,9 +212,13 @@ function describeSituationalConstraints(input: BuildTurnDirectiveInput) {
     .filter((message) => message.type === 'ai' && message.senderId === input.speaker.id)
     .slice(-3).length;
   const latestHuman = latestHumanPressure(visible, input.speaker.name);
+  const previousAskedUserFollowup = latestHuman.asksDecision
+    && previous?.type === 'ai'
+    && looksLikeBroadUserClarification(previous.content);
   const constraints = [
     previousSpeakerSame ? 'the previous visible speaker was also this character; continue only if the situation has moved' : '',
-    latestHuman.asksDecision ? 'the latest user asks for a decision or recommendation; prefer one recommendation or a conditional decision over another broad preference question' : '',
+    latestHuman.asksDecision ? 'the latest user asks for a decision or recommendation; state one concrete preference or shortlist first, and do not pass the choice back to the room before giving the user something usable' : '',
+    previousAskedUserFollowup ? 'the previous AI already pushed a broad clarification back to the user; do not repeat that move, add a concrete option, condition, or recommendation instead' : '',
     latestHuman.namesSomeone && !latestHuman.namesCurrent ? 'the latest user appears to name someone else; if this character is not that person, make a short clean handoff instead of taking over' : '',
     latestHuman.allowsIntentionalRepeat ? 'the latest user allows deliberate repeat, quote, chant, fixed answer, or call-and-response when that is the natural move' : '',
     recentOwnCount ? `this character has ${recentOwnCount} recent own visible line(s); use them only as no-repeat evidence` : '',
@@ -216,6 +227,9 @@ function describeSituationalConstraints(input: BuildTurnDirectiveInput) {
   ].filter(Boolean);
   if (constraints.length) {
     constraints.push('preserve the current unresolved need; do not switch to a fresh logistical action, new fact, deadline, or softening move merely to be different');
+    if (input.userGuidance?.hasHardConstraints || input.userGuidance?.kind === 'topic_shift') {
+      constraints.push('if the user corrected a premise, preference, budget, boundary, or topic, explicitly apply that constraint before returning to AI-to-AI planning');
+    }
   }
   return constraints;
 }

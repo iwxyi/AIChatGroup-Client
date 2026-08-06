@@ -286,6 +286,29 @@ describe('deriveTurnPlan', () => {
     expect(plan.reasons).not.toContain('fragment_or_tiny_context');
   });
 
+  it('does not label a normal AI follow-up as micro_ack solely because the intent is question-shaped', () => {
+    const plan = deriveTurnPlan({
+      chat: chat({ type: 'group', memberIds: ['char-a', 'char-b'] }),
+      speaker: character(),
+      messages: [
+        message({
+          id: 'ai-1',
+          type: 'ai',
+          senderId: 'char-b',
+          senderName: '郝然',
+          content: '北门那家我熟一点，木桌靠窗那两排，去晚了只剩高脚凳。',
+          timestamp: 10,
+        }),
+      ],
+      intent: { ...intent, messageShape: 'question_only', delivery: 'quick_question' },
+      surface: { kind: 'chat' },
+      now: 20,
+    });
+
+    expect(plan.rhythm).not.toBe('micro_ack');
+    expect(plan.lengthBand).not.toBe('micro');
+  });
+
   it('does not turn the internal length band into a fixed prompt target', () => {
     const prompt = buildTurnPlanPrompt({
       rhythm: 'short_reply',

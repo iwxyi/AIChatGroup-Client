@@ -558,7 +558,7 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
                   disabled={disabled || isSending || attachments.length >= maxAttachments}
                   sx={{ flexShrink: 0, width: 42, height: 42 }}
                 >
-                  <ImageIcon />
+                  <ImageIcon sx={{ fontSize: 20 }} />
                 </IconButton>
               </span>
             </Tooltip>

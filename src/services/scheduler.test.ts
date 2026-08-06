@@ -871,6 +871,51 @@ describe('scheduler speaker scoring', () => {
     expect(candidates.map((candidate) => candidate.characterId)).toEqual(['a']);
   });
 
+  it('penalizes repeated speakers after a user guidance turn so the room does not plan around the user', () => {
+    const intent: DirectorIntent = {
+      source: 'user_message',
+      beatType: 'answer',
+      targetActorIds: [],
+      pressure: 0.82,
+      reason: '用户给出了现场约束。',
+      userGuidance: {
+        kind: 'topic_shift',
+        rawText: '我不是想喝酒，只是想找有无酒精选项的热闹地方。',
+        actorIds: [],
+        mentionedActorIds: [],
+        focusText: '有无酒精选项的热闹地方',
+        beatType: 'answer',
+        pressure: 0.82,
+        maxTurns: 4,
+        reason: '用户给出了现场约束。',
+        hasHardConstraints: true,
+      },
+    };
+    const candidates = calculateWeights(
+      [
+        buildCharacter('a', '甲', { behavior: { proactivity: 80, aggressiveness: 40, humorIntensity: 40, empathyLevel: 50, summarizing: 50, offTopic: 20 } }),
+        buildCharacter('b', '乙', { behavior: { proactivity: 55, aggressiveness: 40, humorIntensity: 40, empathyLevel: 50, summarizing: 50, offTopic: 20 } }),
+      ],
+      [
+        buildMessage({ type: 'user', senderId: 'user', senderName: '用户', content: '我不是想喝酒，只是想找有无酒精选项的热闹地方。', timestamp: 10 }),
+        buildMessage({ senderId: 'a', senderName: '甲', content: '那我先问问老板。', timestamp: 20 }),
+        buildMessage({ senderId: 'a', senderName: '甲', content: '价格也得问清楚。', timestamp: 30 }),
+        buildMessage({ senderId: 'b', senderName: '乙', content: '还要确认音乐是不是太吵。', timestamp: 40 }),
+      ],
+      {},
+      1,
+      0,
+      null,
+      { ...buildChat(), memberIds: ['a', 'b'] },
+      intent,
+    );
+
+    const repeated = candidates.find((candidate) => candidate.characterId === 'a');
+    expect(repeated).toBeTruthy();
+    expect(repeated?.scoreBreakdown?.reasons).toContain('user_presence_rotation');
+    expect(repeated?.scoreBreakdown?.cooldownPenalty).toBeGreaterThan(0);
+  });
+
   it('keeps the previous AI speaker when no other member can speak', () => {
     const candidates = calculateWeights(
       [buildCharacter('a', '甲')],

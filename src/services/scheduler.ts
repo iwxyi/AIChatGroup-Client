@@ -286,6 +286,22 @@ export function calculateWeights(
     acc[speakerId] = (acc[speakerId] || 0) + 1;
     return acc;
   }, {});
+  const latestHumanIndex = (() => {
+    for (let index = recentMessages.length - 1; index >= 0; index -= 1) {
+      const message = recentMessages[index];
+      if (!message.isDeleted && (message.type === 'user' || message.type === 'god') && message.content.trim()) return index;
+    }
+    return -1;
+  })();
+  const postUserAiMessages = latestHumanIndex >= 0
+    ? recentMessages.slice(latestHumanIndex + 1).filter((message) => message.type === 'ai' && !message.isDeleted)
+    : [];
+  const postUserSpeakCounts = postUserAiMessages.slice(-6).reduce<Record<string, number>>((acc, message) => {
+    acc[message.senderId] = (acc[message.senderId] || 0) + 1;
+    return acc;
+  }, {});
+  const hasFreshPostUserCandidate = recentMessages.length > 0
+    && recentMessages.some((message) => message.type === 'ai' && !message.isDeleted && (postUserSpeakCounts[message.senderId] || 0) === 0);
   const consecutiveByLastSpeaker = (() => {
     if (!lastSpeakerId) return 0;
     let count = 0;
@@ -410,6 +426,15 @@ export function calculateWeights(
       if (recentCount === 0) weight += 0.06;
       weight += unspokenMemberBias;
       if (recentCount >= 2) weight -= 0.18;
+      const postUserSpeakCount = postUserSpeakCounts[char.id] || 0;
+      const userPresenceRotationPenalty = chat?.type === 'group'
+        && directorIntent?.source === 'user_message'
+        && postUserAiMessages.length >= 1
+        && postUserSpeakCount > 0
+        && !forcedUserGuidanceActorIds.includes(char.id)
+        ? Math.min(0.42, 0.18 + postUserSpeakCount * 0.12 + (hasFreshPostUserCandidate ? 0.22 : 0))
+        : 0;
+      weight -= userPresenceRotationPenalty;
       weight += pendingReplyBoost;
       weight += conflictBias;
       weight += directorBias.bias;
@@ -532,6 +557,7 @@ export function calculateWeights(
           novelty: recentCount === 0 ? 0.06 : 0,
           silencePressure: (recentCount === 0 ? 0.06 : 0) + unspokenMemberBias,
           repetitionPenalty: repetitionMultiplier < 1 ? weight * (1 - repetitionMultiplier) : 0,
+          cooldownPenalty: userPresenceRotationPenalty,
           finalScore,
           reasons: [
             pendingReplyBoost ? 'pending_reply' : '',
@@ -543,6 +569,7 @@ export function calculateWeights(
             innerLifeBias.bias ? innerLifeBias.reason : '',
             attentionStateBias ? 'attention_state' : '',
             relationshipPressure ? 'relationship' : '',
+            userPresenceRotationPenalty ? 'user_presence_rotation' : '',
             repetitionMultiplier < 1 ? 'repetition_penalty' : '',
           ].filter(Boolean),
         }),
