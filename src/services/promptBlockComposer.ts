@@ -110,6 +110,7 @@ export function resolvePromptPlayMode(chat: GroupChat): PromptPlayModePolicy {
           'response_surface',
           'turn_plan',
           'runtime_role_constraint',
+          'focused_situational_job_contract',
         ],
         notes: [
           'General group rooms keep social momentum, relationships, and room pressure available.',

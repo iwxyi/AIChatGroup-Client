@@ -161,6 +161,7 @@ describe('turnDirective', () => {
     expect(directive?.socialJob).toContain('condition');
     expect(directive?.relationshipEffect).toContain('do not automatically repeat their claim');
     expect(directive?.relationshipEffect).toContain('joke');
+    expect(directive?.situationalConstraints).toEqual([]);
     const prompt = buildTurnDirectivePrompt(directive);
     expect(prompt).toContain('single behavior decision');
     expect(prompt).toContain('Attention target for interpretation only: 陈越');
@@ -184,6 +185,28 @@ describe('turnDirective', () => {
 
     expect(directive?.userConstraint).toContain('user steered the topic');
     expect(buildTurnDirectivePrompt(directive)).toContain('User constraint');
+  });
+
+  it('folds situational floor and handoff pressure into the directive', () => {
+    const directive = buildTurnDirective({
+      chat: chat(),
+      speaker: character('rui', '瑞瑞'),
+      members: [character('rui', '瑞瑞'), character('chen', '陈越')],
+      messages: [
+        message({ type: 'ai', senderId: 'rui', senderName: '瑞瑞', content: '那先别定。' }),
+        message({ id: 'm2', type: 'user', senderId: 'user', senderName: '用户', content: '陈越，你怎么看？我想听你的意见。', timestamp: 2 }),
+      ],
+      styleProfile: 'casual_room',
+      intent,
+      innerLife,
+      conversationMovePlan: movePlan,
+      turnPlan,
+    });
+
+    expect(directive?.situationalConstraints.join('\n')).toContain('name someone else');
+    expect(directive?.situationalConstraints.join('\n')).toContain('short clean handoff');
+    expect(directive?.situationalConstraints.join('\n')).toContain('recent own visible line');
+    expect(buildTurnDirectivePrompt(directive)).toContain('Situational constraints');
   });
 
   it('does not expose raw runtime field names in the visible prompt block', () => {

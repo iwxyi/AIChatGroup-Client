@@ -18,6 +18,7 @@ export interface TurnDirective {
   relationshipEffect: string;
   expressionShape: string;
   userConstraint?: string;
+  situationalConstraints: string[];
   forbiddenDrift: string[];
 }
 
@@ -37,6 +38,19 @@ export interface BuildTurnDirectiveInput {
 
 function latestVisible(messages: Message[]) {
   return messages.filter((message) => !message.isDeleted && message.type !== 'system' && message.type !== 'event').at(-1) || null;
+}
+
+function latestHumanPressure(messages: Message[], speakerName?: string) {
+  const latestHuman = messages
+    .filter((message) => !message.isDeleted && (message.type === 'user' || message.type === 'god') && message.content.trim())
+    .at(-1);
+  const text = latestHuman?.content || '';
+  return {
+    asksDecision: /帮我选|替我选|你们帮我选|直接选|别再问|不用问|给个结论|推荐一个|定一个|怎么选|怎么办/.test(text),
+    namesCurrent: Boolean(speakerName && text.includes(speakerName)),
+    namesSomeone: /[^\s，。！？、]{1,12}[，,、 ]*(你怎么看|你来说|你说|想听你|直接说)/.test(text) || /我想听/.test(text),
+    allowsIntentionalRepeat: /复读|重复|照着说|原话|一起说|接下一句|下一句|口号|喊出来|call[- ]?and[- ]?response/i.test(text),
+  };
 }
 
 function speakerName(members: AICharacter[], id?: string) {
@@ -136,6 +150,27 @@ function describeUserConstraint(userGuidance?: UserGuidanceIntent | null) {
   return 'user guidance is active; do not let AI-to-AI momentum override it';
 }
 
+function describeSituationalConstraints(input: BuildTurnDirectiveInput) {
+  const visible = input.messages.filter((message) => !message.isDeleted && message.type !== 'system' && message.type !== 'event');
+  const previous = visible.at(-1);
+  const previousSpeakerSame = previous?.type === 'ai' && previous.senderId === input.speaker.id;
+  const recentOwnCount = visible
+    .filter((message) => message.type === 'ai' && message.senderId === input.speaker.id)
+    .slice(-3).length;
+  const latestHuman = latestHumanPressure(visible, input.speaker.name);
+  const constraints = [
+    previousSpeakerSame ? 'the previous visible speaker was also this character; continue only if the situation has moved' : '',
+    latestHuman.asksDecision ? 'the latest user asks for a decision or recommendation; prefer one recommendation or a conditional decision over another broad preference question' : '',
+    latestHuman.namesSomeone && !latestHuman.namesCurrent ? 'the latest user appears to name someone else; if this character is not that person, make a short clean handoff instead of taking over' : '',
+    latestHuman.allowsIntentionalRepeat ? 'the latest user allows deliberate repeat, quote, chant, fixed answer, or call-and-response when that is the natural move' : '',
+    recentOwnCount ? `this character has ${recentOwnCount} recent own visible line(s); use them only as no-repeat evidence` : '',
+  ].filter(Boolean);
+  if (constraints.length) {
+    constraints.push('preserve the current unresolved need; do not switch to a fresh logistical action, new fact, deadline, or softening move merely to be different');
+  }
+  return constraints;
+}
+
 export function buildTurnDirective(input: BuildTurnDirectiveInput): TurnDirective | null {
   if (!shouldUseUnifiedTurnDirective(input.chat)) return null;
   const targetName = speakerName(input.members, input.conversationMovePlan.targetActorId || input.intent.target);
@@ -158,6 +193,7 @@ export function buildTurnDirective(input: BuildTurnDirectiveInput): TurnDirectiv
     relationshipEffect: describeRelationship(input, targetName),
     expressionShape: describeExpression(input),
     userConstraint: describeUserConstraint(input.userGuidance),
+    situationalConstraints: describeSituationalConstraints(input),
     forbiddenDrift,
   };
 }
@@ -166,12 +202,15 @@ export function buildTurnDirectivePrompt(directive: TurnDirective | null | undef
   if (!directive) return '';
   const targetLine = directive.targetName ? `\n- Attention target for interpretation only: ${directive.targetName}; this is not an instruction to visibly address them by name.` : '';
   const userLine = directive.userConstraint ? `\n- User constraint: ${directive.userConstraint}.` : '';
+  const situationalLine = directive.situationalConstraints.length
+    ? `\n- Situational constraints: ${directive.situationalConstraints.join('; ')}.`
+    : '';
   return `\n## Turn Directive
 - This is the single behavior decision for this ordinary group-chat turn. Use detailed character, relationship, and memory blocks as facts, but let this block decide the visible move.
 - Room style: ${directive.roomStyle}.${targetLine}
 - Social job: ${directive.socialJob}.
 - Relationship effect: ${directive.relationshipEffect}.
-- Inner undercurrent: ${directive.emotionalUndercurrent}.
+- Inner undercurrent: ${directive.emotionalUndercurrent}.${situationalLine}
 - Expression shape: ${directive.expressionShape}.${userLine}
 - Forbidden drift: ${directive.forbiddenDrift.join('; ')}.`;
 }
