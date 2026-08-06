@@ -817,6 +817,7 @@ describe('chatEngine streaming preview', () => {
     expect(prompt).toContain('do not sprawl to keep airtime');
     expect(prompt).not.toContain('Current speaking intent');
     expect(prompt).not.toContain('Focused Situational Job Contract');
+    expect(prompt).not.toContain('Natural Chat Surface Contract');
     expect(prompt).not.toContain('Runtime Role Constraint');
   });
 

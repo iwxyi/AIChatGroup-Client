@@ -230,4 +230,28 @@ describe('turnDirective', () => {
     expect(prompt).toContain('clean correct statement');
     expect(prompt).toContain('performance of depth');
   });
+
+  it('folds long-run and name-addressing drift into situational constraints', () => {
+    const longLine = '这件事如果认真讲，'.repeat(24);
+    const directive = buildTurnDirective({
+      chat: chat(),
+      speaker: character('rui', '瑞瑞'),
+      members: [character('rui', '瑞瑞'), character('chen', '陈越')],
+      messages: [
+        message({ id: 'm1', type: 'ai', senderId: 'rui', senderName: '瑞瑞', content: `陈越，${longLine}`, timestamp: 1 }),
+        message({ id: 'm2', type: 'ai', senderId: 'chen', senderName: '陈越', content: `瑞瑞，${longLine}`, timestamp: 2 }),
+        message({ id: 'm3', type: 'ai', senderId: 'rui', senderName: '瑞瑞', content: `陈越，${longLine}`, timestamp: 3 }),
+      ],
+      styleProfile: 'casual_room',
+      intent,
+      innerLife,
+      conversationMovePlan: movePlan,
+      turnPlan,
+    });
+    const constraints = directive?.situationalConstraints.join('\n') || '';
+
+    expect(constraints).toContain('recent room replies are getting long');
+    expect(constraints).toContain('overusing visible name-addressing');
+    expect(buildTurnDirectivePrompt(directive)).toContain('Situational constraints');
+  });
 });

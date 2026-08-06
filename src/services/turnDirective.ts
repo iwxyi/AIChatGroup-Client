@@ -53,6 +53,46 @@ function latestHumanPressure(messages: Message[], speakerName?: string) {
   };
 }
 
+function visibleLength(text: string) {
+  return text.replace(/（[^）]{0,80}）|\([^)]{0,80}\)/g, '').trim().length;
+}
+
+function nameAddressVariants(name?: string | null) {
+  const trimmed = (name || '').trim();
+  if (!trimmed) return [];
+  const variants = new Set<string>([trimmed]);
+  if (/[\u4e00-\u9fff]/.test(trimmed) && trimmed.length >= 3) {
+    variants.add(trimmed.slice(-2));
+    if (trimmed.length >= 4) variants.add(trimmed.slice(-3));
+  }
+  return [...variants].filter((item) => item.length >= 2);
+}
+
+function startsWithNameAddress(content: string, names: Set<string>) {
+  const trimmed = content.trimStart();
+  if (!trimmed) return false;
+  for (const name of names) {
+    if (trimmed.startsWith(name) && /^[\s,，、:：]/.test(trimmed.slice(name.length, name.length + 1))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function nameAddressingDrift(messages: Message[]) {
+  const recentAi = messages
+    .filter((message) => message.type === 'ai' && !message.isDeleted && message.content.trim())
+    .slice(-6);
+  if (recentAi.length < 3) return false;
+  const names = new Set<string>();
+  for (const message of recentAi) {
+    for (const variant of nameAddressVariants(message.senderName)) names.add(variant);
+  }
+  if (!names.size) return false;
+  const addressOpeners = recentAi.filter((message) => startsWithNameAddress(message.content, names));
+  return addressOpeners.length >= 3 && addressOpeners.length >= Math.ceil(recentAi.length * 0.5);
+}
+
 function speakerName(members: AICharacter[], id?: string) {
   if (!id || id === 'group') return undefined;
   if (id === 'user') return '用户';
@@ -154,6 +194,13 @@ function describeSituationalConstraints(input: BuildTurnDirectiveInput) {
   const visible = input.messages.filter((message) => !message.isDeleted && message.type !== 'system' && message.type !== 'event');
   const previous = visible.at(-1);
   const previousSpeakerSame = previous?.type === 'ai' && previous.senderId === input.speaker.id;
+  const recentAiLengths = visible
+    .filter((message) => message.type === 'ai')
+    .slice(-6)
+    .map((message) => visibleLength(message.content))
+    .filter((length) => length > 0);
+  const longCount = recentAiLengths.filter((length) => length >= 120).length;
+  const longRunRisk = recentAiLengths.length >= 3 && longCount >= Math.ceil(recentAiLengths.length * 0.5);
   const recentOwnCount = visible
     .filter((message) => message.type === 'ai' && message.senderId === input.speaker.id)
     .slice(-3).length;
@@ -164,6 +211,8 @@ function describeSituationalConstraints(input: BuildTurnDirectiveInput) {
     latestHuman.namesSomeone && !latestHuman.namesCurrent ? 'the latest user appears to name someone else; if this character is not that person, make a short clean handoff instead of taking over' : '',
     latestHuman.allowsIntentionalRepeat ? 'the latest user allows deliberate repeat, quote, chant, fixed answer, or call-and-response when that is the natural move' : '',
     recentOwnCount ? `this character has ${recentOwnCount} recent own visible line(s); use them only as no-repeat evidence` : '',
+    longRunRisk ? `recent room replies are getting long (${recentAiLengths.join(' / ')} chars); it is natural to cool back down with one concrete line if the current need allows it` : '',
+    nameAddressingDrift(visible) ? 'recent room replies are overusing visible name-addressing at the start; do not open with a participant name unless it changes attention, disambiguates the thread, applies pressure, repairs, hands off, or makes a deliberate social move' : '',
   ].filter(Boolean);
   if (constraints.length) {
     constraints.push('preserve the current unresolved need; do not switch to a fresh logistical action, new fact, deadline, or softening move merely to be different');

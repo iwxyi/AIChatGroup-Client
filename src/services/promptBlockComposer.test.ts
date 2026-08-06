@@ -78,6 +78,7 @@ describe('promptBlockComposer', () => {
       { id: 'response_surface', layer: 'style', priority: 2, content: '[surface]' },
       { id: 'turn_plan', layer: 'runtime', priority: 0, content: '[turn plan]' },
       { id: 'focused_situational_job_contract', layer: 'output', priority: 0, content: '[focused job]' },
+      { id: 'natural_chat_surface_contract', layer: 'output', priority: 1, content: '[natural surface]' },
     ], policy);
 
     expect(policy.id).toBe('general_group');
