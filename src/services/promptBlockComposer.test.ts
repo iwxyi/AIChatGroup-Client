@@ -73,6 +73,7 @@ describe('promptBlockComposer', () => {
       { id: 'humanization', layer: 'character', priority: 0, content: '[humanization]' },
       { id: 'inner_life', layer: 'character', priority: 1, content: '[inner life]' },
       { id: 'natural_chat_rhythm', layer: 'style', priority: 0, content: '[chat rhythm]' },
+      { id: 'current_intent', layer: 'task', priority: 0, content: '[intent]' },
       { id: 'conversation_move', layer: 'task', priority: 1, content: '[move]' },
       { id: 'response_surface', layer: 'style', priority: 2, content: '[surface]' },
       { id: 'turn_plan', layer: 'runtime', priority: 0, content: '[turn plan]' },

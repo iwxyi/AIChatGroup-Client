@@ -102,6 +102,7 @@ export function resolvePromptPlayMode(chat: GroupChat): PromptPlayModePolicy {
           'humanization',
           'inner_life',
           'natural_chat_rhythm',
+          'current_intent',
           'conversation_move',
           'expression_surface_choice',
           'turn_length_variety',

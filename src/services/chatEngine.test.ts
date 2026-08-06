@@ -558,7 +558,9 @@ describe('chatEngine streaming preview', () => {
     });
     const prompt = String(generateResponseMock.mock.calls[0]?.[1] || '');
 
-    expect(prompt).toContain('Decide the visible length yourself');
+    expect(prompt).toContain('## Turn Directive');
+    expect(prompt).toContain('Use the depth the moment needs');
+    expect(prompt).not.toContain('Current speaking intent');
     expect(prompt).not.toContain('Professional form is available');
     expect(message.content).toContain('每个实例单独分支');
   });
@@ -813,6 +815,7 @@ describe('chatEngine streaming preview', () => {
     expect(prompt).toContain('## Turn Directive');
     expect(prompt).toContain('single behavior decision');
     expect(prompt).toContain('do not sprawl to keep airtime');
+    expect(prompt).not.toContain('Current speaking intent');
     expect(prompt).not.toContain('Runtime Role Constraint');
   });
 
