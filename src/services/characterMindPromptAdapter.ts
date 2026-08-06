@@ -86,6 +86,7 @@ function buildCoreContinuityLines(
   const rawUserContinuity = projection.continuity.userProfile;
   const rawRelationshipContinuity = projection.continuity.relationshipMemories;
   const rawSharedHistory = projection.continuity.sharedHistory;
+  const companionshipOwnsUserTargetDetails = summarizeUserContinuity && projection.relationship.targetId === 'user';
   const userContinuity = publicContinuityFallback(
     summarizeUserContinuity && rawUserContinuity.length
       ? ['User details are handled by the companionship context; let them affect care, restraint, familiarity, and omissions without repeating them here.']
@@ -95,13 +96,17 @@ function buildCoreContinuityLines(
     rawUserContinuity.length,
   );
   const relationshipContinuity = publicContinuityFallback(
-    cleanValues(rawRelationshipContinuity, visibility, 3),
+    companionshipOwnsUserTargetDetails && rawRelationshipContinuity.length
+      ? ['User relationship details are handled by the companionship context; keep the stance active without repeating shared-anchor evidence here.']
+      : cleanValues(rawRelationshipContinuity, visibility, 3),
     'Relationship continuity exists; let it bend stance and timing without reciting private evidence.',
     visibility,
     rawRelationshipContinuity.length,
   );
   const sharedHistory = publicContinuityFallback(
-    cleanValues(rawSharedHistory, visibility, 2),
+    companionshipOwnsUserTargetDetails && rawSharedHistory.length
+      ? ['Shared user history is handled by the companionship context; use it as subtext without repeating the scene details here.']
+      : cleanValues(rawSharedHistory, visibility, 2),
     'Shared history exists; use it as subtext unless the room has already made it public.',
     visibility,
     rawSharedHistory.length,

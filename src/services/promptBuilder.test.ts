@@ -802,6 +802,9 @@ describe('buildSystemPromptWithContext', () => {
     expect(prompt).toContain('第一次深夜聊天');
     expect(prompt).not.toContain('User continuity: 第一次深夜聊天');
     expect(prompt).not.toContain('## Visible Recall Cues');
+    const mindBeforeCompanionship = prompt.split('## Companionship Context')[0];
+    expect(mindBeforeCompanionship).not.toContain('第一次深夜聊天');
+    expect(mindBeforeCompanionship).toContain('Shared user history is handled by the companionship context');
     expect(prompt).not.toContain('只有他们知道的暗号');
   });
 

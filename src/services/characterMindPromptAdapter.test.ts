@@ -111,6 +111,30 @@ describe('characterMindPromptAdapter', () => {
   });
 
   it('can summarize user continuity when companionship context owns the details', () => {
+    const output = adaptCharacterMindProjectionForPrompt(projection({
+      relationship: {
+        targetId: 'user',
+        targetName: '用户',
+        stance: ['更容易靠近、维护或给对方留余地。'],
+        currentRoomPressure: [],
+      },
+    }), {
+      chatType: 'direct',
+      visibility: 'private',
+      visibleMemoryRecall: 'off',
+      summarizeUserContinuity: true,
+    });
+
+    expect(output.coreContinuityBlock).toContain('User details are handled by the companionship context');
+    expect(output.coreContinuityBlock).toContain('User relationship details are handled by the companionship context');
+    expect(output.coreContinuityBlock).toContain('Shared user history is handled by the companionship context');
+    expect(output.coreContinuityBlock).not.toContain('用户不喜欢太甜的饮料。');
+    expect(output.coreContinuityBlock).not.toContain('和阿远有雨夜失约的旧事。');
+    expect(output.coreContinuityBlock).not.toContain('一起修过一次聊天节奏');
+    expect(output.visibleRecallInput).toEqual([]);
+  });
+
+  it('does not summarize non-user target relationship details just because direct companionship is active', () => {
     const output = adaptCharacterMindProjectionForPrompt(projection(), {
       chatType: 'direct',
       visibility: 'private',
@@ -119,8 +143,8 @@ describe('characterMindPromptAdapter', () => {
     });
 
     expect(output.coreContinuityBlock).toContain('User details are handled by the companionship context');
-    expect(output.coreContinuityBlock).not.toContain('用户不喜欢太甜的饮料。');
-    expect(output.visibleRecallInput).toEqual([]);
+    expect(output.coreContinuityBlock).toContain('和阿远有雨夜失约的旧事。');
+    expect(output.coreContinuityBlock).toContain('一起修过一次聊天节奏');
   });
 
   it('can suppress visible recall rendering while keeping selected cues for trace or migration', () => {
