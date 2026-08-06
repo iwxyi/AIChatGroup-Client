@@ -166,7 +166,7 @@ function buildManualMemorySeedPrompt(character: AICharacter, members: DisplayTex
 function buildConstrainedMemoryCueLine(cue: ConstrainedMemoryCue, members: DisplayTextMember[]) {
   const text = cleanPromptText(cue.text, members, 180);
   const rule = cleanPromptText(cue.rule, members, 220);
-  return `- ${cue.id} [${cue.mode}, score=${cue.score}]: ${text}\n  Visible rule: ${rule}`;
+  return `- ${text}${rule ? `\n  Visible rule: ${rule}` : ''}`;
 }
 
 function buildConstrainedMemoryMindCueLines(cues: ConstrainedMemoryCue[], members: DisplayTextMember[]) {

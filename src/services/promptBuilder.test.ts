@@ -1411,6 +1411,32 @@ describe('buildSystemPromptWithContext', () => {
     });
   });
 
+  it('keeps memory ids and recall scores out of visible legacy memory cue prompts', () => {
+    const speaker = buildCharacter({ layeredMemories: [memory()] });
+    const target = buildCharacter({ id: 'char-b', name: '阿远' });
+    const chat = {
+      ...buildChat(),
+      mode: 'werewolf' as const,
+      memberIds: ['char-a', 'char-b'],
+      sessionKind: { topology: 'group' as const, family: 'deduction' as const, scenarioId: 'werewolf-classic', surfaceProfile: 'hybrid' as const },
+    };
+    const message = buildMessage() as Message & { addressedTargetIds: string[]; primaryAddressedTargetId: string };
+    message.addressedTargetIds = [speaker.id];
+    message.primaryAddressedTargetId = speaker.id;
+    const prompt = buildSystemPromptWithContext(speaker, chat, 0, [message], new Map([
+      [speaker.id, speaker],
+      [target.id, target],
+    ]));
+
+    expect(prompt).toContain('## Group-Influenced Memories');
+    expect(prompt).toContain('Visible rule');
+    expect(prompt).toContain('雨夜失约');
+    expect(prompt).not.toContain('old-memory');
+    expect(prompt).not.toContain('score=');
+    expect(prompt).not.toContain('[natural');
+    expect(prompt).not.toContain('[implicit');
+  });
+
   it('prioritizes the person named by human guidance over the latest AI speaker', () => {
     const speaker = buildCharacter({
       id: 'char-a',
