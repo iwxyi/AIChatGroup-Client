@@ -251,9 +251,12 @@ describe('chatEngine streaming preview', () => {
       now,
     });
     expect(prompt).toContain('World event context:');
-    expect(prompt).toContain('Attention state:');
+    expect(prompt).toContain('Attention context:');
     expect(prompt).toContain('Upcoming schedule:');
     expect(prompt).toContain('Recent social signal:');
+    expect(prompt).not.toContain('score');
+    expect(prompt).not.toContain('restraint');
+    expect(prompt).not.toContain('suggested actions');
   });
 
   it('builds world influence rules prompt for comfort-first and restraint', () => {

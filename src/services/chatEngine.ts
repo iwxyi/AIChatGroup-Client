@@ -1894,7 +1894,15 @@ function buildWorldEventContextPrompt(input: {
   if (!attention && !upcomingCalendar.length && !recentMoments.length) return '';
   const lines: string[] = [];
   if (attention) {
-    lines.push(`- Attention state: score ${Math.round(attention.attentionScore * 100)}%, restraint ${Math.round(attention.restraint * 100)}%, suggested actions ${attention.suggestedActions.slice(0, 3).join(', ')}.`);
+    const targetName = attention.targetId === 'user'
+      ? '用户'
+      : input.members.find((member) => member.id === attention.targetId)?.name || '相关成员';
+    const pressure = attention.restraint >= 0.72
+      ? '保持低压力，不要反复催促'
+      : attention.attentionScore >= 0.68
+        ? '可以在合适时自然接一下'
+        : '只作为轻微背景';
+    lines.push(`- Attention context: ${targetName} may need ${pressure}.`);
   }
   upcomingCalendar.forEach((item) => {
     lines.push(`- Upcoming schedule: ${item.title}${item.timeHint ? ` @ ${item.timeHint}` : ''}${item.locationHint ? ` at ${item.locationHint}` : ''}.`);
