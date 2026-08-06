@@ -668,7 +668,7 @@ function mapVisibleMemoryRecallSetting(): VisibleMemoryRecallSetting {
   return config.visibleRecallMode === 'implicit' ? 'implicit' : 'natural';
 }
 
-function buildCharacterMindAdapterOutput(character: AICharacter, chat: GroupChat, messages: Message[], characters: Map<string, AICharacter>, target?: AICharacter, memoryCandidates?: MemoryItem[], visibleRecallCues?: string[]) {
+function buildCharacterMindAdapterOutput(character: AICharacter, chat: GroupChat, messages: Message[], characters: Map<string, AICharacter>, target?: AICharacter, memoryCandidates?: MemoryItem[], visibleRecallCues?: string[], options: { summarizeUserContinuity?: boolean } = {}) {
   const chatMemoryConfig = getChatMemoryRuntimeConfig();
   const isOrdinaryGroup = chat.type === 'group' && resolveSessionFamilyKey(chat) === 'conversation';
   const projection = buildCharacterMindProjection({
@@ -684,6 +684,7 @@ function buildCharacterMindAdapterOutput(character: AICharacter, chat: GroupChat
     chatType: chat.type,
     visibleMemoryRecall: mapVisibleMemoryRecallSetting(),
     visibleRecallCues,
+    summarizeUserContinuity: options.summarizeUserContinuity,
     maxRecallCues: chatMemoryConfig.maxCuesPerTurn,
     maxCoreLines: isOrdinaryGroup ? 7 : usesMindOwnedConversationContract(chat) ? 9 : 6,
     maxRoomLines: 5,
@@ -894,6 +895,7 @@ export function buildCrossModeMemoryPrompt(character: AICharacter, chat: GroupCh
     memoryContext.target,
     merged,
     buildVisibleMindRecallCuesForPrompt(chat, character, characters, memoryContext.memoryCues),
+    { summarizeUserContinuity: chat.type === 'direct' && Boolean(companionshipPrompt) },
   );
   const memoryBundle = chat.type === 'group' && resolveSessionFamilyKey(chat) === 'conversation'
     ? ''
@@ -1102,6 +1104,7 @@ export function buildPromptAssemblyWithContext(character: AICharacter, chat: Gro
     memoryContext.target,
     memoryCandidates,
     buildVisibleMindRecallCuesForPrompt(chat, character, characters, memoryContext.memoryCues),
+    { summarizeUserContinuity: chat.type === 'direct' && Boolean(companionshipPrompt) },
   );
 
   const systemPrompt = [

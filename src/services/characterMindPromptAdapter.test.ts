@@ -110,6 +110,19 @@ describe('characterMindPromptAdapter', () => {
     expect(output.promptBlock).toContain('用户不喜欢太甜的饮料。');
   });
 
+  it('can summarize user continuity when companionship context owns the details', () => {
+    const output = adaptCharacterMindProjectionForPrompt(projection(), {
+      chatType: 'direct',
+      visibility: 'private',
+      visibleMemoryRecall: 'off',
+      summarizeUserContinuity: true,
+    });
+
+    expect(output.coreContinuityBlock).toContain('User details are handled by the companionship context');
+    expect(output.coreContinuityBlock).not.toContain('用户不喜欢太甜的饮料。');
+    expect(output.visibleRecallInput).toEqual([]);
+  });
+
   it('can suppress visible recall rendering while keeping selected cues for trace or migration', () => {
     const output = adaptCharacterMindProjectionForPrompt(projection(), {
       chatType: 'direct',

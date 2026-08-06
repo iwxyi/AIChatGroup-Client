@@ -9,6 +9,7 @@ export interface CharacterMindPromptAdapterOptions {
   visibility?: CharacterMindPromptVisibility;
   visibleMemoryRecall?: VisibleMemoryRecallSetting;
   visibleRecallCues?: string[];
+  summarizeUserContinuity?: boolean;
   maxCoreLines?: number;
   maxRoomLines?: number;
   maxRecallCues?: number;
@@ -80,12 +81,15 @@ function buildCoreContinuityLines(
   projection: CharacterMindProjection,
   visibility: CharacterMindPromptVisibility,
   maxLines: number,
+  summarizeUserContinuity = false,
 ) {
   const rawUserContinuity = projection.continuity.userProfile;
   const rawRelationshipContinuity = projection.continuity.relationshipMemories;
   const rawSharedHistory = projection.continuity.sharedHistory;
   const userContinuity = publicContinuityFallback(
-    cleanValues(rawUserContinuity, visibility, 3),
+    summarizeUserContinuity && rawUserContinuity.length
+      ? ['User details are handled by the companionship context; let them affect care, restraint, familiarity, and omissions without repeating them here.']
+      : cleanValues(rawUserContinuity, visibility, 3),
     'User continuity exists; let it affect care, restraint, familiarity, and omissions without revealing private facts.',
     visibility,
     rawUserContinuity.length,
@@ -194,7 +198,12 @@ export function adaptCharacterMindProjectionForPrompt(
   const visibility = options.visibility
     || (options.chatType === 'direct' || options.chatType === 'ai_direct' ? 'private' : 'public');
   const visibleMemoryRecall = options.visibleMemoryRecall || 'implicit';
-  const coreLines = buildCoreContinuityLines(projection, visibility, options.maxCoreLines || DEFAULT_CORE_LINES);
+  const coreLines = buildCoreContinuityLines(
+    projection,
+    visibility,
+    options.maxCoreLines || DEFAULT_CORE_LINES,
+    options.summarizeUserContinuity,
+  );
   const roomLines = buildRoomLines(
     projection,
     visibility,

@@ -535,6 +535,10 @@ describe('buildSystemPromptWithContext', () => {
 
     expect(prompt).toContain('## Character Mind Projection');
     expect(prompt).toContain('User continuity');
+    expect(prompt).toContain('User details are handled by the companionship context');
+    expect(prompt).not.toContain('User continuity: 用户预算有限但重视质感');
+    expect(prompt).toContain('## Companionship Context');
+    expect(prompt).toContain('Remembered user cues');
     expect(prompt).toContain('用户预算有限但重视质感');
     expect(prompt).not.toContain('Memories about the user');
   });
@@ -679,6 +683,9 @@ describe('buildSystemPromptWithContext', () => {
       expect(prompt).toContain('## Character Mind Projection');
       expect(prompt).toContain('## Core Character Continuity');
       expect(prompt).toContain('User continuity');
+      expect(prompt).toContain('User details are handled by the companionship context');
+      expect(prompt).not.toContain('User continuity: 用户预算有限但重视质感');
+      expect(prompt).toContain('Remembered user cues');
       expect(prompt).toContain('用户预算有限但重视质感');
       expect(prompt).not.toContain('## Visible Recall Cues');
     } finally {

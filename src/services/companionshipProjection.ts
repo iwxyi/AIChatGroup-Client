@@ -1067,6 +1067,7 @@ function buildCarePolicy(phase: CompanionshipPhase, style: PreferredIntimacyStyl
 function getUserMemoryTexts(character: AICharacter) {
   const manual = character.memory?.userMemories || [];
   const layered = (character.layeredMemories || [])
+    .filter((item) => item.kind !== 'bond' && item.kind !== 'artifact')
     .filter((item) => item.subjectIds?.includes(USER_ACTOR_ID) || item.sourceTag?.includes('direct_user') || item.text.includes('用户'))
     .sort((a, b) => (b.salience + b.confidence + b.updatedAt / DAY_MS) - (a.salience + a.confidence + a.updatedAt / DAY_MS))
     .slice(0, 4)
@@ -3055,18 +3056,22 @@ export function buildHomeCompanionshipSnapshot(params: {
 function buildPromptLines(bond: UserBondState, carePolicy: CarePolicy, evidence: string[], sharedAnchors: SharedMemoryAnchor[], sharedPhrases: SharedPhrase[]) {
   const intimacy = bond.intimacy;
   const profile = bond.userProfile;
+  const profileCueGroups = [
+    profile.addressPreference ? `address ${profile.addressPreference}` : '',
+    profile.scheduleHints.length ? `schedule ${profile.scheduleHints.join(' / ')}` : '',
+    profile.preferences.length ? `preferences ${profile.preferences.join(' / ')}` : '',
+    profile.dislikes.length ? `dislikes ${profile.dislikes.join(' / ')}` : '',
+    profile.boundaries.length ? `boundaries ${profile.boundaries.join(' / ')}` : '',
+    profile.pressureSources.length ? `pressure ${profile.pressureSources.join(' / ')}` : '',
+    profile.importantDates.length ? `important dates ${profile.importantDates.join(' / ')}` : '',
+    profile.recentPlans.length ? `plans ${profile.recentPlans.join(' / ')}` : '',
+    profile.emotionalPatterns.length ? `emotional patterns ${profile.emotionalPatterns.join(' / ')}` : '',
+  ].filter(Boolean);
   const lines = [
     `- Bond style: ${bond.style}; phase: ${phaseLabel(bond.phase)}.`,
     `- Intimacy cues: attraction ${intimacy.attraction}, intimacy ${intimacy.intimacy}, attachment ${intimacy.attachment}, longing ${intimacy.longing}, security ${intimacy.security}. Use them as internal guidance, not as words to reveal.`,
-    profile.sourceTexts.length ? `- High-confidence user profile cues: ${[
-      profile.scheduleHints.length ? `schedule ${profile.scheduleHints.join(' / ')}` : '',
-      profile.preferences.length ? `preferences ${profile.preferences.join(' / ')}` : '',
-      profile.dislikes.length ? `dislikes ${profile.dislikes.join(' / ')}` : '',
-      profile.pressureSources.length ? `pressure ${profile.pressureSources.join(' / ')}` : '',
-      profile.importantDates.length ? `important dates ${profile.importantDates.join(' / ')}` : '',
-      profile.recentPlans.length ? `plans ${profile.recentPlans.join(' / ')}` : '',
-      profile.emotionalPatterns.length ? `emotional patterns ${profile.emotionalPatterns.join(' / ')}` : '',
-    ].filter(Boolean).join('; ')}.` : '',
+    profileCueGroups.length ? `- High-confidence user profile cues: ${profileCueGroups.join('; ')}.` : '',
+    profile.sourceTexts.length && !profileCueGroups.length ? `- Remembered user cues: ${profile.sourceTexts.slice(0, 3).join(' / ')}.` : '',
     profile.boundaries.length ? `- User boundaries: ${profile.boundaries.join(' / ')}. These override intimacy and proactive care.` : '',
     `- Address the user naturally as "${bond.addressing.currentAddress}" unless the latest message suggests another appropriate address.`,
     sharedAnchors.length ? `- Shared memory anchors with the user: ${sharedAnchors.map(formatSharedAnchorForPrompt).join(' / ')}. Use as relationship texture only when relevant; do not expose internal labels.` : '',
