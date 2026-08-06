@@ -561,6 +561,35 @@ describe('buildSystemPromptWithContext', () => {
     expect(prompt).toContain('不愿承认自己曾经临阵退缩');
   });
 
+  it('keeps authored character memory available in AI-private prompts', () => {
+    const character = buildCharacter({
+      memory: {
+        shortTermSummary: '最近想把一件旧事说清楚。',
+        longTerm: ['曾经在雨夜替朋友守过店。'],
+        secrets: ['不愿承认自己曾经临阵退缩。'],
+        obsessions: [],
+        tabooTopics: [],
+        userMemories: [],
+      },
+    });
+    const target = buildCharacter({ id: 'char-b', name: '阿远' });
+
+    const prompt = buildSystemPromptWithContext(
+      character,
+      buildAiDirectChat(),
+      0,
+      [buildMessage({ senderId: target.id, senderName: target.name, content: '你今天怎么了？' })],
+      new Map([
+        [character.id, character],
+        [target.id, target],
+      ]),
+    );
+
+    expect(prompt).toContain('## Manual Memory Seeds');
+    expect(prompt).toContain('曾经在雨夜替朋友守过店');
+    expect(prompt).toContain('不愿承认自己曾经临阵退缩');
+  });
+
   it('keeps core continuity when visible old-memory callbacks are disabled', () => {
     setChatMemoryRuntimeConfig({ enabled: false });
     try {
