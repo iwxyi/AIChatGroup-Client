@@ -559,7 +559,8 @@ describe('chatEngine streaming preview', () => {
     const prompt = String(generateResponseMock.mock.calls[0]?.[1] || '');
 
     expect(prompt).toContain('## Turn Directive');
-    expect(prompt).toContain('Use the depth the moment needs');
+    expect(prompt).toContain('Stay compact enough for ordinary group flow');
+    expect(prompt).not.toContain('Use the depth the moment needs');
     expect(prompt).not.toContain('Current speaking intent');
     expect(prompt).not.toContain('Professional form is available');
     expect(message.content).toContain('每个实例单独分支');
@@ -2791,7 +2792,6 @@ describe('chatEngine streaming preview', () => {
     expect(prompt).toContain('Response surface: live chat');
     expect(prompt).toContain('Let the situation decide length');
     expect(prompt).toContain('must not override a user request');
-    expect(prompt).toContain('Use the depth the moment needs');
     expect(prompt).toContain('The length tendency is not a cap');
     expect(prompt).toContain('user tasks and scene obligations still need complete answers');
     expect(prompt).not.toContain('Usually write one sentence');
@@ -2871,6 +2871,7 @@ describe('chatEngine streaming preview', () => {
     expect(onLocalInterception).not.toHaveBeenCalled();
     expect(prompt).toContain('## Style Quarantine');
     expect(prompt).toContain('use your own opening, rhythm, sentence architecture, and ending');
+    expect(prompt).toContain('Prefer sentence breaks, commas, or plain full stops over em dash');
     expect(prompt).toContain('The complete recent transcript is provided separately as chat messages');
     expect(prompt).not.toContain('这话扎心');
     expect(prompt).not.toContain('镜头到底对着谁');

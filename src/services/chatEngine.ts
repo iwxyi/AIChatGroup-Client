@@ -1567,7 +1567,7 @@ function buildAnalysisRoomContractPrompt(chat: GroupChat) {
 - Keep character voice as wording only. The role's job this turn is deliberation, not self-display.`;
 }
 
-function buildGenerationConstraints(messages: Message[], speakerId: string, surface: ResponseSurface) {
+function buildGenerationConstraints(chat: GroupChat, messages: Message[], speakerId: string, surface: ResponseSurface) {
   const recentLines = collectRecentConstraintLines(messages, speakerId);
   const forbiddenBlock = recentLines.length ? `\nForbidden semantic overlap:\n${recentLines.join('\n')}` : '';
   if (surface.kind !== 'chat') {
@@ -1582,7 +1582,7 @@ function buildGenerationConstraints(messages: Message[], speakerId: string, surf
 - Do not repeat, paraphrase, summarize, or restate the same semantic point from the forbidden lines.
 - Recent transcript is context, not a style template. Avoid copied openings, endings, emoji habits, or sentence shapes.
 - Avoid generic assistant scaffolding unless the user asked for structured explanation.
-- Use the depth the moment needs: detailed asks deserve substance; casual banter should stay light.${forbiddenBlock}`;
+- ${chat.type === 'group' && resolveSessionFamilyKey(chat) === 'conversation' ? 'Stay compact enough for ordinary group flow unless the current task clearly needs depth.' : 'Use the depth the moment needs: detailed asks deserve substance; casual banter should stay light.'}${forbiddenBlock}`;
 }
 
 function buildRuntimeRoleConstraintPrompt(runtimeBundle?: import('../types/sessionEngine').SessionGenerationRuntimeBundle | null) {
@@ -1608,11 +1608,15 @@ function buildStyleQuarantinePrompt(surface: ResponseSurface) {
   const surfaceLine = surface.kind === 'chat'
     ? '- In chat, continuity means following the social situation, not copying the room’s sentence architecture.'
     : '- In more serious discussion, continuity means advancing the argument, not inheriting the transcript’s rhetorical mold.';
+  const dashLine = surface.kind === 'chat'
+    ? '- Prefer sentence breaks, commas, or plain full stops over em dash as a default pause or turn hinge.'
+    : '- Prefer ordinary punctuation over em dash unless the speaker or task naturally calls for it.';
   return `\n## Style Quarantine
 - Recent messages are facts/positions/pressure, not writing samples.
 - Keep the semantic thread but use your own opening, rhythm, sentence architecture, and ending.
 - If your draft is just a name-swapped recent line, rewrite it before returning JSON.
-${surfaceLine}`;
+${surfaceLine}
+${dashLine}`;
 }
 
 function buildCurrentIntentPrompt(params: {
@@ -3937,7 +3941,7 @@ export async function generateSpeakerMessage(params: {
     { id: 'visible_message_surface_contract', layer: 'output', priority: 0, content: buildVisibleMessageSurfaceContractPrompt(params.chat, showRoleActions) },
     { id: 'focused_situational_job_contract', layer: 'output', priority: 5, content: buildFocusedSituationalJobContract(activeMessages, params.speaker, responseSurface) },
     { id: 'natural_chat_surface_contract', layer: 'output', priority: 7, content: buildNaturalChatSurfaceContract(activeMessages, responseSurface, showRoleActions) },
-    { id: 'generation_constraints', layer: 'output', priority: 10, content: buildGenerationConstraints(activeMessages, params.speaker.id, responseSurface) },
+    { id: 'generation_constraints', layer: 'output', priority: 10, content: buildGenerationConstraints(params.chat, activeMessages, params.speaker.id, responseSurface) },
     { id: 'inline_interaction_contract', layer: 'output', priority: 20, content: buildInlineInteractionContract({ chat: params.chat, speaker: params.speaker, characters: effectiveMembers, recentMessages: activeMessages, turnPlan, mediaCapabilities, mediaRequested: Boolean(userGuidance?.mediaRequest), webSearchEnabled }) },
     { id: 'engine_suffix', layer: 'suffix', priority: 100, content: promptSuffix },
   ];
