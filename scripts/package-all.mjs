@@ -41,6 +41,7 @@ if (!['debug', 'release'].includes(androidBuildType)) {
 }
 
 const npxCommand = isWindows ? 'npx.cmd' : 'npx';
+const npmCommand = isWindows ? 'npm.cmd' : 'npm';
 
 function commandExists(command, env = process.env) {
   const result = spawnSync(command, ['--version'], {
@@ -282,9 +283,9 @@ function prepareElectronApp() {
   if (dryRun) return;
 
   const clientPackage = JSON.parse(readFileSync(resolve(clientRoot, 'package.json'), 'utf8'));
-  const electronVersion = clientPackage.devDependencies?.electron;
+  const electronVersion = clientPackage.nativeDependencies?.electron;
   if (!electronVersion) {
-    throw new Error('找不到 Electron 版本，请检查 Pneumata-Client/package.json 的 devDependencies.electron。');
+    throw new Error('找不到 Electron 版本，请检查 Pneumata-Client/package.json 的 nativeDependencies.electron。');
   }
 
   rmSync(electronAppRoot, { recursive: true, force: true });
@@ -345,6 +346,9 @@ function buildDesktop() {
   }
 
   if (electronArgs.length > 0) {
+    run('安装 Electron 桌面打包依赖', npmCommand, ['run', 'install:native:desktop'], {
+      cwd: clientRoot,
+    });
     prepareElectronApp();
     run(
       '生成 Electron 桌面安装包',
@@ -364,6 +368,9 @@ function buildDesktop() {
 }
 
 function buildAndroid() {
+  run('安装 Capacitor Android 打包依赖', npmCommand, ['run', 'install:native:android'], {
+    cwd: clientRoot,
+  });
   const androidEnv = dryRun ? undefined : resolveAndroidEnv();
   run('同步 Capacitor Android 工程', npxCommand, ['--no-install', 'cap', 'sync', 'android'], {
     cwd: clientRoot,
