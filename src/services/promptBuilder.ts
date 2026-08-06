@@ -19,7 +19,7 @@ import { adaptCharacterMindProjectionForPrompt, type CharacterMindPromptAdapterO
 import { userProfileMemoryPayloadOf } from './directUserProfileMemory';
 import { getCurrentRetentionLimits } from './retentionLimits';
 import type { SharedMemoryAnchor, UserProfileMemoryEventItem, UserProfileMemoryKind } from '../types/companionship';
-import type { RelationshipLedgerEntry, RuntimeEventV2 } from '../types/runtimeEvent';
+import type { RuntimeEventV2 } from '../types/runtimeEvent';
 import { CHAT_STYLE_PROMPT_DESCRIPTIONS } from '../constants/chatStyles';
 import { getPromptSpeakerLabel, getPromptTurnTypeLabel, isHumanDirectedMessage } from './chatMessageSemantics';
 import { resolveSessionFamilyKey } from './sessionEngineKeys';
@@ -142,17 +142,18 @@ function buildManualMemorySeedPrompt(character: AICharacter, members: DisplayTex
   const memory = character.memory;
   if (!memory) return '';
   const canExposeUserMemoryText = !chat || chat.type === 'direct';
+  const mindOwnsAuthoredContinuity = chat ? usesMindOwnedConversationContract(chat) : false;
   const hasUserMemory = Boolean(memory.userMemories?.length);
   const hasUserBoundaryMemory = (memory.userMemories || []).some((text) => /(不要|不想|别|公开|隐私|边界|禁忌|压力|焦虑|面试|考试|生日|纪念|私下)/.test(text));
   const lines = [
-    memory.shortTermSummary?.trim() ? `- Current private summary: ${cleanPromptText(memory.shortTermSummary, members)}` : '',
-    memory.longTerm?.length ? `- Stable long-term memories: ${memory.longTerm.slice(-6).map((item) => cleanPromptText(item, members, 160)).join(' / ')}` : '',
+    !mindOwnsAuthoredContinuity && memory.shortTermSummary?.trim() ? `- Current private summary: ${cleanPromptText(memory.shortTermSummary, members)}` : '',
+    !mindOwnsAuthoredContinuity && memory.longTerm?.length ? `- Stable long-term memories: ${memory.longTerm.slice(-6).map((item) => cleanPromptText(item, members, 160)).join(' / ')}` : '',
     memory.secrets?.length ? `- Private secrets you know but should not reveal casually: ${memory.secrets.slice(-6).map((item) => cleanPromptText(item, members, 160)).join(' / ')}` : '',
-    memory.obsessions?.length ? `- Obsessions that may leak into your attention and wording: ${memory.obsessions.slice(-6).map((item) => cleanPromptText(item, members, 160)).join(' / ')}` : '',
-    memory.tabooTopics?.length ? `- Taboo or sensitive topics that trigger avoidance, defensiveness, or careful wording: ${memory.tabooTopics.slice(-6).map((item) => cleanPromptText(item, members, 160)).join(' / ')}` : '',
-    canExposeUserMemoryText && hasUserMemory ? `- Memories about the user: ${memory.userMemories.slice(-6).map((item) => cleanPromptText(item, members, 160)).join(' / ')}` : '',
-    !canExposeUserMemoryText && hasUserMemory ? `- Private user continuity exists but this is not a pair-private channel. Let it shape restraint and care; do not expose the underlying user facts.` : '',
-    !canExposeUserMemoryText && hasUserBoundaryMemory ? `- User-related boundaries or sensitive cues exist. Avoid public pressure, public reminders, or revealing private details unless the user states them here.` : '',
+    !mindOwnsAuthoredContinuity && memory.obsessions?.length ? `- Obsessions that may leak into your attention and wording: ${memory.obsessions.slice(-6).map((item) => cleanPromptText(item, members, 160)).join(' / ')}` : '',
+    !mindOwnsAuthoredContinuity && memory.tabooTopics?.length ? `- Taboo or sensitive topics that trigger avoidance, defensiveness, or careful wording: ${memory.tabooTopics.slice(-6).map((item) => cleanPromptText(item, members, 160)).join(' / ')}` : '',
+    !mindOwnsAuthoredContinuity && canExposeUserMemoryText && hasUserMemory ? `- Memories about the user: ${memory.userMemories.slice(-6).map((item) => cleanPromptText(item, members, 160)).join(' / ')}` : '',
+    !mindOwnsAuthoredContinuity && !canExposeUserMemoryText && hasUserMemory ? `- Private user continuity exists but this is not a pair-private channel. Let it shape restraint and care; do not expose the underlying user facts.` : '',
+    !mindOwnsAuthoredContinuity && !canExposeUserMemoryText && hasUserBoundaryMemory ? `- User-related boundaries or sensitive cues exist. Avoid public pressure, public reminders, or revealing private details unless the user states them here.` : '',
   ].filter(Boolean);
   if (!lines.length) return '';
   return `\n## Manual Memory Seeds\n${lines.join('\n')}\n- Treat these as authored character continuity. Let them shape tone, attention, omissions, and reactions; do not list them unless the conversation naturally calls for it.`;

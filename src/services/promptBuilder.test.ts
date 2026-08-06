@@ -533,8 +533,10 @@ describe('buildSystemPromptWithContext', () => {
 
     const prompt = buildSystemPromptWithContext(character, buildDirectChat(), 0, [], new Map([[character.id, character]]));
 
-    expect(prompt).toContain('Memories about the user');
+    expect(prompt).toContain('## Character Mind Projection');
+    expect(prompt).toContain('User continuity');
     expect(prompt).toContain('用户预算有限但重视质感');
+    expect(prompt).not.toContain('Memories about the user');
   });
 
   it('keeps authored character memory available in private direct prompts', () => {
@@ -557,8 +559,10 @@ describe('buildSystemPromptWithContext', () => {
       new Map([[character.id, character]]),
     );
 
-    expect(prompt).toContain('## Manual Memory Seeds');
+    expect(prompt).toContain('## Character Mind Projection');
     expect(prompt).toContain('曾经在雨夜替朋友守过店');
+    expect(prompt).toContain('## Manual Memory Seeds');
+    expect(prompt).not.toContain('Stable long-term memories');
     expect(prompt).toContain('不愿承认自己曾经临阵退缩');
   });
 
@@ -586,8 +590,10 @@ describe('buildSystemPromptWithContext', () => {
       ]),
     );
 
-    expect(prompt).toContain('## Manual Memory Seeds');
+    expect(prompt).toContain('## Character Mind Projection');
     expect(prompt).toContain('曾经在雨夜替朋友守过店');
+    expect(prompt).toContain('## Manual Memory Seeds');
+    expect(prompt).not.toContain('Stable long-term memories');
     expect(prompt).toContain('不愿承认自己曾经临阵退缩');
   });
 
