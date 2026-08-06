@@ -112,38 +112,61 @@ function resolveTarget(params: {
   return firstOther ? { id: firstOther.id, name: firstOther.name } : undefined;
 }
 
-function resolveRelationship(params: {
-  character: AICharacter;
-  chat: GroupChat;
-  targetId?: string;
-}) {
-  if (!params.targetId) return null;
+interface RelationshipProjectionSource {
+  warmth: number;
+  competence: number;
+  trust: number;
+  threat: number;
+  note: string;
+  semanticSummary?: string;
+}
 
-  const authored = params.character.relationships.find((item) => item.characterId === params.targetId);
-  if (authored) {
-    return {
-      warmth: authored.warmth,
-      competence: authored.competence,
-      trust: authored.trust,
-      threat: authored.threat,
-      note: authored.note || '',
-    };
-  }
+interface RelationshipProjectionInputs {
+  authored: RelationshipProjectionSource | null;
+  ledger: RelationshipProjectionSource | null;
+}
 
-  const ledger = (params.chat.relationshipLedger || [])
-    .map(normalizeRelationshipLedgerEntry)
-    .find((item) => item.actorId === params.character.id && item.targetId === params.targetId);
-  if (!ledger) return null;
+function toAuthoredRelationshipSource(relation: AICharacter['relationships'][number] | undefined): RelationshipProjectionSource | null {
+  if (!relation) return null;
   return {
-    warmth: ledger.current.warmth,
-    competence: ledger.current.competence,
-    trust: ledger.current.trust,
-    threat: ledger.current.threat,
-    note: ledger.derived?.semantic?.summary || '',
+    warmth: relation.warmth,
+    competence: relation.competence,
+    trust: relation.trust,
+    threat: relation.threat,
+    note: relation.note || '',
   };
 }
 
-function formatRelationshipStance(relationship: ReturnType<typeof resolveRelationship>) {
+function toLedgerRelationshipSource(entry: ReturnType<typeof normalizeRelationshipLedgerEntry> | undefined): RelationshipProjectionSource | null {
+  if (!entry) return null;
+  return {
+    warmth: entry.current.warmth,
+    competence: entry.current.competence,
+    trust: entry.current.trust,
+    threat: entry.current.threat,
+    note: entry.derived?.semantic?.summary || '',
+    semanticSummary: entry.derived?.semantic?.summary || '',
+  };
+}
+
+function resolveRelationshipInputs(params: {
+  character: AICharacter;
+  chat: GroupChat;
+  targetId?: string;
+}): RelationshipProjectionInputs {
+  if (!params.targetId) return { authored: null, ledger: null };
+
+  const authored = params.character.relationships.find((item) => item.characterId === params.targetId);
+  const ledger = (params.chat.relationshipLedger || [])
+    .map(normalizeRelationshipLedgerEntry)
+    .find((item) => item.actorId === params.character.id && item.targetId === params.targetId);
+  return {
+    authored: toAuthoredRelationshipSource(authored),
+    ledger: toLedgerRelationshipSource(ledger),
+  };
+}
+
+function formatRelationshipStance(relationship: RelationshipProjectionSource | null) {
   if (!relationship) return [];
   const stance = [
     relationship.warmth >= 12 ? '更容易靠近、维护或给对方留余地' : relationship.warmth <= -12 ? '不主动给温度，倾向保持距离' : '',
@@ -154,21 +177,36 @@ function formatRelationshipStance(relationship: ReturnType<typeof resolveRelatio
   return uniqueText(stance, 4);
 }
 
+function formatMergedRelationshipStance(inputs: RelationshipProjectionInputs) {
+  const currentFirst = inputs.ledger || inputs.authored;
+  const longTermAfter = inputs.ledger && inputs.authored ? inputs.authored : null;
+  return uniqueText([
+    ...formatRelationshipStance(currentFirst),
+    ...formatRelationshipStance(longTermAfter),
+  ], 5);
+}
+
 function collectRelationshipContinuity(params: {
   chat: GroupChat;
   character: AICharacter;
   targetId?: string;
-  relationship: ReturnType<typeof resolveRelationship>;
+  relationship: RelationshipProjectionInputs;
 }) {
-  if (!params.targetId) return params.relationship?.note ? uniqueText([params.relationship.note], 3) : [];
+  if (!params.targetId) {
+    return uniqueText([
+      params.relationship.authored?.note,
+      params.relationship.ledger?.semanticSummary || params.relationship.ledger?.note,
+    ], 3);
+  }
   const semanticSummaries = (params.chat.relationshipLedger || [])
     .map(normalizeRelationshipLedgerEntry)
     .filter((entry) => entry.actorId === params.character.id && entry.targetId === params.targetId)
     .map((entry) => entry.derived?.semantic?.summary || '');
   return uniqueText([
-    params.relationship?.note,
-    ...semanticSummaries,
-  ], 3);
+    params.relationship.authored?.note ? `长期关系：${params.relationship.authored.note}` : '',
+    params.relationship.ledger?.semanticSummary ? `当前关系：${params.relationship.ledger.semanticSummary}` : '',
+    ...semanticSummaries.map((summary) => summary ? `当前关系：${summary}` : ''),
+  ], 4);
 }
 
 function buildMemoryCueText(chat: GroupChat, messages: Message[]) {
@@ -330,11 +368,12 @@ export function buildCharacterMindProjection(params: {
 }): CharacterMindProjection {
   const now = params.now || Date.now();
   const target = resolveTarget(params);
-  const relationship = resolveRelationship({
+  const relationship = resolveRelationshipInputs({
     character: params.character,
     chat: params.chat,
     targetId: target?.id,
   });
+  const activeRelationship = relationship.ledger || relationship.authored;
   const relationshipContinuity = collectRelationshipContinuity({
     chat: params.chat,
     character: params.character,
@@ -376,8 +415,8 @@ export function buildCharacterMindProjection(params: {
     params.character.memory?.secrets?.length ? '角色有未公开的自有内容，只能影响回避、克制或防御，不要主动揭露正文。' : '',
   ], 5);
   const conflictReasons = uniqueText([
-    relationship && relationship.threat >= 20 ? '关系中的戒备与当前对话目标可能冲突。' : '',
-    relationship && relationship.warmth >= 12 && relationship.threat >= 20 ? '想靠近与想防备同时存在。' : '',
+    activeRelationship && activeRelationship.threat >= 20 ? '关系中的戒备与当前对话目标可能冲突。' : '',
+    activeRelationship && activeRelationship.warmth >= 12 && activeRelationship.threat >= 20 ? '想靠近与想防备同时存在。' : '',
     params.character.soulState && params.character.soulState.repression >= 60 ? '有被压住的内容，不一定直接表达。' : '',
     ...narrativeLines.filter((line) => line.tension >= 0.55).slice(0, 3).map((line) => `${line.title}正在和普通聊天节奏竞争。`),
   ], 5);
@@ -411,7 +450,7 @@ export function buildCharacterMindProjection(params: {
     relationship: {
       targetId: target?.id,
       targetName: target?.name,
-      stance: formatRelationshipStance(relationship),
+      stance: formatMergedRelationshipStance(relationship),
       currentRoomPressure: roomPressure,
     },
     currentState: {
@@ -430,7 +469,7 @@ export function buildCharacterMindProjection(params: {
     },
     expression: {
       socialMove: conflictReasons.length ? '先处理当前关系或矛盾压力，再决定是否回答完整。' : '对当前最有注意力的对象做一个具体、自然的回应。',
-      temperature: relationship?.threat && relationship.threat >= 20 ? '克制或带防备' : relationship?.warmth && relationship.warmth >= 12 ? '更容易柔和' : '由当前情绪和房间压力决定',
+      temperature: activeRelationship?.threat && activeRelationship.threat >= 20 ? '克制或带防备' : activeRelationship?.warmth && activeRelationship.warmth >= 12 ? '更容易柔和' : '由当前情绪和房间压力决定',
       attention: target ? `注意力暂时落在${target.name}及其刚才的发言上。` : '注意力落在当前话题和最新变化上。',
       length: params.character.soulState?.energy !== undefined && params.character.soulState.energy < 35 ? '允许短、半句或不完整回应。' : '不要为了完整而补齐所有观点，按当下注意力自然决定长度。',
       omissions: [

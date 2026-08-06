@@ -205,6 +205,55 @@ describe('characterMindProjection', () => {
     expect(projection.expression.omissions).toContain('内部状态分数');
   });
 
+  it('keeps long-term warmth while exposing current-session guardedness', () => {
+    const target = character({ id: 'char-b', name: '小铁' });
+    const speaker = character({
+      relationships: [{
+        characterId: 'char-b',
+        warmth: 58,
+        competence: 20,
+        trust: 64,
+        threat: 2,
+        note: '长期愿意替小铁留余地。',
+      }],
+    });
+    const projection = buildCharacterMindProjection({
+      chat: {
+        ...chat('group'),
+        relationshipLedger: [{
+          pairKey: 'char-a->char-b',
+          actorId: 'char-a',
+          targetId: 'char-b',
+          current: { warmth: 0, competence: 0, trust: -20, threat: 48 },
+          derived: {
+            semantic: {
+              stage: '紧张对峙',
+              labels: ['戒备'],
+              summary: '紧张对峙：戒备',
+              intensity: 62,
+            },
+          },
+          trend: 'volatile',
+          recentEvents: [],
+          lastUpdatedAt: 20,
+        }],
+      },
+      character: speaker,
+      characters: [speaker, target],
+      messages: [message('这次先别替我做决定。', 'char-b')],
+      now: 2000,
+    });
+
+    expect(projection.relationship.stance).toEqual(expect.arrayContaining([
+      '更容易靠近、维护或给对方留余地',
+      '会验证、保留或不轻易相信',
+      '保持戒备，避免把主动权交出去',
+    ]));
+    expect(projection.continuity.relationshipMemories).toContain('长期关系：长期愿意替小铁留余地。');
+    expect(projection.continuity.relationshipMemories).toContain('当前关系：紧张对峙：戒备');
+    expect(projection.expression.temperature).toBe('克制或带防备');
+  });
+
   it('uses an upstream resolved target instead of re-picking the latest speaker', () => {
     const latestSpeaker = character({ id: 'char-b', name: '阿远' });
     const guidedTarget = character({ id: 'char-c', name: '林北' });
