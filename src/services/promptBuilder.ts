@@ -432,7 +432,7 @@ function buildPromptMemoryBundle(chat: GroupChat, conversationMemories: MemoryIt
 }
 
 function buildInfluenceModePrompt(chat: GroupChat, target: AICharacter | undefined) {
-  if (chat.type === 'group' && resolveSessionFamilyKey(chat) === 'conversation') return '';
+  if (usesMindOwnedConversationContract(chat)) return '';
   if (chat.type === 'direct') {
     return '\n## Influence Mode\n- In this user-private chat, let your own long-term self-model, relationship stance, and recent personal drift outweigh room-level context.';
   }
@@ -637,14 +637,14 @@ function buildPromptInfluenceContext(chat: GroupChat, character: AICharacter, ta
 }
 
 function buildChatInfluenceSummary(chat: GroupChat) {
-  if (chat.type === 'group' && resolveSessionFamilyKey(chat) === 'conversation') return '';
+  if (usesMindOwnedConversationContract(chat)) return '';
   if (chat.type === 'direct') return '\n## Channel Bias\n- This is a private user-facing channel: intimacy, continuity, and personal stance matter more than room theatrics.\n- The latest User line is what you are answering. Do not output it as your own line unless the user explicitly asked you to repeat or quote it.';
   if (chat.type === 'ai_direct') return '\n## Channel Bias\n- This is a pair-private AI thread: reciprocal dynamics and unfinished tension between the pair matter more than group consensus.';
   return '\n## Channel Bias\n- This is a public group room: local momentum, alliances, pressure, and contradiction shape what feels natural to say next.';
 }
 
 function buildPromptReasoningBias(chat: GroupChat) {
-  if (chat.type === 'group' && resolveSessionFamilyKey(chat) === 'conversation') return '';
+  if (usesMindOwnedConversationContract(chat)) return '';
   if (chat.type === 'direct') return '\n## Reasoning Bias\n- Answer from lived continuity and personal stance first; do not reconstruct a public-room transcript unless it is genuinely necessary.';
   if (chat.type === 'ai_direct') return '\n## Reasoning Bias\n- Think through the pair history first; prioritize what the other AI means to you over generic topic analysis.';
   return '\n## Reasoning Bias\n- Think like someone inside an unfolding room dynamic: react to contradiction, tone shifts, and alliances before abstract synthesis.';
@@ -655,7 +655,7 @@ function buildPromptReasoningSummary(chat: GroupChat) {
 }
 
 function buildMemoryPriorityPrompt(chat: GroupChat) {
-  if (chat.type === 'group' && resolveSessionFamilyKey(chat) === 'conversation') return '';
+  if (usesMindOwnedConversationContract(chat)) return '';
   if (chat.type === 'direct') return '\n## Memory Priority\n- Priority: self-memory and relationship-memory first, direct-thread continuity second, public-room carryover last.';
   if (chat.type === 'ai_direct') return '\n## Memory Priority\n- Priority: pair relationship memory first, pair-thread continuity second, general self-model third.';
   return '\n## Memory Priority\n- Priority: local room context first, then relationship memory and self bias, then older background memory.';

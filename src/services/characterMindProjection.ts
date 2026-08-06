@@ -357,6 +357,22 @@ function buildRoomPressure(params: {
   ], 6);
 }
 
+function buildChannelConstraints(chat: GroupChat) {
+  if (chat.type === 'direct') {
+    return [
+      '这是私密用户会话，亲近感、连续性和个人立场比公开房间态势更重要。',
+      '当前要回答的是用户最新一句，不要把用户原话当成自己的发言。',
+    ];
+  }
+  if (chat.type === 'ai_direct') {
+    return ['这是 AI 之间的私密对话，优先处理彼此关系、未完张力和成对连续性。'];
+  }
+  if (chat.type === 'group') {
+    return ['这是公开多人房间，公开时机、群体压力和可见关系会影响表达。'];
+  }
+  return [];
+}
+
 export function buildCharacterMindProjection(params: {
   chat: GroupChat;
   character: AICharacter;
@@ -464,7 +480,7 @@ export function buildCharacterMindProjection(params: {
       worldActivities,
       constraints: uniqueText([
         ...roomPressure,
-        params.chat.type === 'group' ? '这是公开多人房间，公开时机、群体压力和可见关系会影响表达。' : '',
+        ...buildChannelConstraints(params.chat),
       ], 6),
     },
     expression: {

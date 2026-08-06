@@ -597,7 +597,7 @@ describe('buildSystemPromptWithContext', () => {
     expect(prompt).toContain('不愿承认自己曾经临阵退缩');
   });
 
-  it('lets the mind projection own AI-private relationship facts while keeping channel policy', () => {
+  it('lets the mind projection own AI-private relationship and channel policy', () => {
     const character = buildCharacter({
       relationships: [{
         characterId: 'char-b',
@@ -652,9 +652,10 @@ describe('buildSystemPromptWithContext', () => {
     expect(prompt).not.toContain('## Targeted Reply Rule');
     expect(prompt).not.toContain('## Targeted Influence Summary');
     expect(prompt).not.toContain('## Active Continuity Pull');
-    expect(prompt).toContain('## Influence Mode');
-    expect(prompt).toContain('## Channel Bias');
-    expect(prompt).toContain('## Memory Priority');
+    expect(prompt).not.toContain('## Influence Mode');
+    expect(prompt).not.toContain('## Channel Bias');
+    expect(prompt).not.toContain('## Memory Priority');
+    expect(prompt).toContain('这是 AI 之间的私密对话');
   });
 
   it('keeps core continuity when visible old-memory callbacks are disabled', () => {
