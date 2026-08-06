@@ -634,7 +634,10 @@ function buildConflictPromptBundle(chat: GroupChat, character: AICharacter, char
   const involved = (primary.participantIds || []).includes(character.id) || (primary.targetIds || []).includes(character.id);
   const formatted = cleanPromptText(formatConflictPromptText(primary.type, primary.nextPressure, primary.developmentHooks), members, 260);
   const summary = cleanPromptText(primary.summary, members, 220);
-  return `\n## Active Conflict\n- Stage: ${formatConflictStageLabel(primary.stage)}\n- Severity: ${primary.severity.toFixed(2)}\n- Summary: ${summary}${participantNames ? `\n- Participants: ${participantNames}` : ''}${targetNames ? `\n- Targets: ${targetNames}` : ''}${formatted ? `\n${formatted}` : ''}${involved ? '\n- You are directly implicated in this contradiction; react from your position inside it, not as a neutral commentator.' : '\n- Even if you are not central, the room tension should subtly shape what you choose to notice, support, dodge, or escalate.'}`;
+  const intensity = primary.severity >= 0.78 ? 'high'
+    : primary.severity >= 0.55 ? 'medium'
+      : 'low';
+  return `\n## Active Conflict\n- Stage: ${formatConflictStageLabel(primary.stage)}\n- Intensity: ${intensity}\n- Summary: ${summary}${participantNames ? `\n- Participants: ${participantNames}` : ''}${targetNames ? `\n- Targets: ${targetNames}` : ''}${formatted ? `\n${formatted}` : ''}${involved ? '\n- You are directly implicated in this contradiction; react from your position inside it, not as a neutral commentator.' : '\n- Even if you are not central, the room tension should subtly shape what you choose to notice, support, dodge, or escalate.'}`;
 }
 
 function buildPromptInfluenceContext(chat: GroupChat, character: AICharacter, target: AICharacter | undefined, characters: Map<string, AICharacter>) {

@@ -1163,6 +1163,52 @@ describe('buildSystemPromptWithContext', () => {
     expect(prompt).not.toContain('## Active Conflict');
   });
 
+  it('keeps legacy active conflict prompts readable without exposing numeric severity', () => {
+    const speaker = buildCharacter();
+    const target = buildCharacter({ id: 'char-b', name: '阿远' });
+    const prompt = buildSystemPromptWithContext(speaker, {
+      ...buildChat(),
+      mode: 'werewolf',
+      memberIds: ['char-a', 'char-b'],
+      sessionKind: { topology: 'group', family: 'deduction', scenarioId: 'werewolf-classic', surfaceProfile: 'hybrid' },
+      worldState: {
+        ...buildChat().worldState,
+        conflictState: {
+          primaryConflict: {
+            id: 'conflict-1',
+            scope: 'group',
+            type: 'value_conflict',
+            severity: 0.82,
+            stage: 'escalating',
+            summary: '阿远被连续追问，气氛正在升高',
+            participantIds: ['char-a'],
+            targetIds: ['char-b'],
+            nextPressure: 'cool',
+            developmentHooks: ['invite_target_response'],
+            sourceEventIds: ['event-1'],
+            updatedAt: 50,
+          },
+          activeConflicts: [],
+          developmentHooks: ['invite_target_response'],
+          volatility: 0.6,
+          cooling: 0.1,
+          updatedAt: 50,
+        },
+      },
+    }, 0, [
+      buildMessage({ senderId: 'char-b', senderName: '阿远', content: '先别都压过来。' }),
+    ], new Map([
+      [speaker.id, speaker],
+      [target.id, target],
+    ]));
+
+    expect(prompt).toContain('## Active Conflict');
+    expect(prompt).toContain('Intensity: high');
+    expect(prompt).toContain('Summary: 阿远被连续追问，气氛正在升高');
+    expect(prompt).not.toContain('Severity:');
+    expect(prompt).not.toContain('0.82');
+  });
+
   it('keeps shared secrets masked in public group prompts', () => {
     const speaker = buildCharacter({
       relationships: [{
