@@ -20,7 +20,6 @@ import { userProfileMemoryPayloadOf } from './directUserProfileMemory';
 import { getCurrentRetentionLimits } from './retentionLimits';
 import type { SharedMemoryAnchor, UserProfileMemoryEventItem, UserProfileMemoryKind } from '../types/companionship';
 import type { RelationshipLedgerEntry, RuntimeEventV2 } from '../types/runtimeEvent';
-import { buildPublicSafeRelationshipSemanticSummary } from './relationshipSemanticPrivacy';
 import { CHAT_STYLE_PROMPT_DESCRIPTIONS } from '../constants/chatStyles';
 import { getPromptSpeakerLabel, getPromptTurnTypeLabel, isHumanDirectedMessage } from './chatMessageSemantics';
 import { resolveSessionFamilyKey } from './sessionEngineKeys';
@@ -28,6 +27,12 @@ import { resolveSessionFamilyKey } from './sessionEngineKeys';
 const COMPANIONSHIP_SHARED_ANCHOR_SOURCE_TAG = 'companionship_shared_anchor';
 const COMPANIONSHIP_USER_PROFILE_SOURCE_TAG = 'companionship_user_profile';
 const USER_ACTOR_ID = 'user';
+
+function usesMindOwnedConversationContract(chat: GroupChat) {
+  return chat.type === 'direct'
+    || chat.type === 'ai_direct'
+    || (chat.type === 'group' && resolveSessionFamilyKey(chat) === 'conversation');
+}
 
 export interface PromptMemoryTraceItem {
   id: string;
@@ -426,40 +431,14 @@ function buildPromptMemoryBundle(chat: GroupChat, conversationMemories: MemoryIt
 }
 
 function buildInfluenceModePrompt(chat: GroupChat, target: AICharacter | undefined) {
+  if (chat.type === 'group' && resolveSessionFamilyKey(chat) === 'conversation') return '';
   if (chat.type === 'direct') {
     return '\n## Influence Mode\n- In this user-private chat, let your own long-term self-model, relationship stance, and recent personal drift outweigh room-level context.';
   }
   if (chat.type === 'ai_direct') {
     return `\n## Influence Mode\n- In this AI private thread, prioritize your evolving stance toward ${target?.name || 'the other AI'}, reciprocal relationship memory, and pair-specific carryover over generic room balance.`;
   }
-  if (chat.type === 'group' && resolveSessionFamilyKey(chat) === 'conversation') return '';
   return '\n## Influence Mode\n- In group chat, balance room context with your own biases: react locally to the latest exchange, but let long-term relationship and self-memory bend your tone and alliances.';
-}
-
-function buildRelationshipInfluencePrompt(target: AICharacter | undefined, relationshipSnapshot: AICharacter['relationships'][number] | null) {
-  if (!target || !relationshipSnapshot) return '';
-  const cues = [
-    relationshipSnapshot.warmth >= 12 ? 'you soften, echo, or defend them more easily' : '',
-    relationshipSnapshot.trust >= 12 ? 'you disclose or coordinate more readily' : '',
-    relationshipSnapshot.threat >= 12 ? 'you guard, probe, or deflect instead of answering cleanly' : '',
-    relationshipSnapshot.competence >= 12 ? 'you treat their judgment as more credible than the room average' : '',
-  ].filter(Boolean);
-  if (!cues.length) return '';
-  return `\n## Relationship Influence\n- ${target.name} changes how you speak: ${cues.join('; ')}.`;
-}
-
-function buildMemoryInfluencePrompt(items: MemoryItem[]) {
-  const relationshipCount = items.filter((item) => item.scope === 'relationship').length;
-  const selfCount = items.filter((item) => item.scope === 'character_self').length;
-  const conversationCount = items.filter((item) => item.scope === 'conversation').length;
-  const threadCount = items.filter((item) => item.scope === 'thread').length;
-  const lines = [
-    relationshipCount ? `- Relationship memories currently active: ${relationshipCount}` : '',
-    selfCount ? `- Self memories currently active: ${selfCount}` : '',
-    conversationCount ? `- Conversation memories currently active: ${conversationCount}` : '',
-    threadCount ? `- Thread memories currently active: ${threadCount}` : '',
-  ].filter(Boolean);
-  return lines.length ? `\n## Memory Influence\n${lines.join('\n')}` : '';
 }
 
 function hasMeaningfulRelationshipSnapshot(relationshipSnapshot: AICharacter['relationships'][number] | null) {
@@ -516,7 +495,7 @@ function buildActiveContinuityPull(params: {
     adapter: CharacterMindPromptAdapterOutput;
   } | null;
 }) {
-  if (params.chat.type === 'group' && resolveSessionFamilyKey(params.chat) === 'conversation') return '';
+  if (usesMindOwnedConversationContract(params.chat)) return '';
   const members = buildPromptDisplayMembers(params.character, params.characters);
   const mindRecallHooks = params.mind?.adapter.visibleRecallInput
     .map((cue) => cleanPromptText(cue, members, 120))
@@ -564,48 +543,6 @@ ${groupUserBoundaryLine}
 - Do not announce memory retrieval, relationship scores, phases, policies, or internal systems.`;
 }
 
-function buildGroupPressurePrompt(chat: GroupChat, target: AICharacter | undefined, characters: Map<string, AICharacter>) {
-  if (chat.type !== 'group') return '';
-  const room = chat.worldState.structuredRoomState;
-  if (!room) return '';
-  const members = target ? buildPromptDisplayMembers(target, characters) : Array.from(characters.values()).map((item) => ({ id: item.id, name: item.name }));
-  const lines: string[] = [];
-  if (target && room.pileOnTarget === target.id) lines.push(`${target.name} is currently attracting pile-on pressure in the room.`);
-  if (target && room.dominantThread?.includes(target.id)) {
-    const threadNames = room.dominantThread.map((id) => characters.get(id)?.name || cleanPromptText(id, members, 80) || 'member').join(' ↔ ');
-    lines.push(`${target.name} is part of the room's dominant thread (${threadNames}).`);
-  }
-  if (target && room.alliances.some((pair) => pair.includes(target.id))) lines.push(`An alliance touching ${target.name} is currently visible in the room.`);
-  if (target && room.conflictPairs.some((pair) => pair.includes(target.id))) lines.push(`A visible conflict line around ${target.name} is shaping the room tone.`);
-  return lines.length ? `\n## Group Pressure\n${lines.map((line) => `- ${line}`).join('\n')}` : '';
-}
-
-function buildRelationshipSemanticPrompt(chat: GroupChat, character: AICharacter, target: AICharacter | undefined, characters: Map<string, AICharacter>) {
-  const members = buildPromptDisplayMembers(character, characters);
-  const relevant = (chat.relationshipLedger || [])
-    .map(normalizeRelationshipLedgerEntry)
-    .filter((entry) => entry.actorId === character.id && (!target || entry.targetId === target.id))
-    .filter((entry) => entry.derived?.semantic?.summary)
-    .sort((a, b) => (b.lastUpdatedAt || 0) - (a.lastUpdatedAt || 0))
-    .slice(0, target ? 1 : 3);
-  if (!relevant.length) return '';
-  return `\n## Relationship Semantics\n${relevant.map((entry) => {
-    const targetName = characters.get(entry.targetId)?.name || cleanPromptText(entry.targetId, members, 80) || 'member';
-    const summary = chat.type !== 'direct'
-      ? buildPublicSafeRelationshipSemanticSummary(entry, (text, max) => cleanPromptText(text, members, max))
-      : cleanPromptText(entry.derived?.semantic?.summary, members, 220);
-    return `- Toward ${targetName}: ${summary}`;
-  }).join('\n')}\n- Let these relationship meanings bend tone, omissions, willingness to defend, jealousy, rivalry, affection, or avoidance.`;
-}
-
-function buildTargetedReplyBiasPrompt(chat: GroupChat, target: AICharacter | undefined) {
-  if (!target) return '';
-  if (chat.type === 'group') {
-    return `\n## Targeted Reply Rule\n- If the latest exchange is about ${target.name}, answer from your relationship stance, targeted evidence, room pressure, and current drift first; do not flatten into generic analysis.`;
-  }
-  return `\n## Targeted Reply Rule\n- If the latest exchange is about ${target.name}, answer from your relationship stance, targeted evidence, and current drift first; do not flatten into generic analysis.`;
-}
-
 function buildRelationshipImpactText(target: AICharacter | undefined, relationshipSnapshot: AICharacter['relationships'][number] | null) {
   if (!target || !relationshipSnapshot) return '';
   const strongestAxis = [
@@ -622,30 +559,6 @@ function buildRelationshipImpactText(target: AICharacter | undefined, relationsh
         ? '更容易软化、维护、顺着说'
         : '更容易把对方当成可信判断来源';
   return `${target.name} · 主轴 ${strongestAxis.label} ${strongestAxis.value} · 倾向 ${behavior}`;
-}
-
-function buildGroupTargetPressureSummary(chat: GroupChat, target: AICharacter | undefined, characters: Map<string, AICharacter>) {
-  if (chat.type !== 'group' || !target) return '';
-  const room = chat.worldState.structuredRoomState;
-  if (!room) return '';
-  const members = buildPromptDisplayMembers(target, characters);
-  const parts: string[] = [];
-  if (room.pileOnTarget === target.id) parts.push('被多人围压');
-  if (room.dominantThread?.includes(target.id)) parts.push(`主线 ${room.dominantThread.map((id) => characters.get(id)?.name || cleanPromptText(id, members, 80) || '成员').join('↔')}`);
-  if (room.alliances.some((pair) => pair.includes(target.id))) parts.push('牵涉联盟');
-  if (room.conflictPairs.some((pair) => pair.includes(target.id))) parts.push('牵涉冲突线');
-  return parts.join(' / ');
-}
-
-function buildTargetRoomPressureContext(chat: GroupChat, target: AICharacter | undefined, characters: Map<string, AICharacter>) {
-  const summary = buildGroupTargetPressureSummary(chat, target, characters);
-  return summary ? `\n## Target Room Pressure\n- ${target?.name}: ${summary}.` : '';
-}
-
-function buildTargetedResponseContext(chat: GroupChat, target: AICharacter | undefined, relationshipSnapshot: AICharacter['relationships'][number] | null, characters: Map<string, AICharacter>) {
-  const impact = buildRelationshipImpactText(target, relationshipSnapshot);
-  const roomPressure = buildTargetRoomPressureContext(chat, target, characters);
-  return `${impact ? `\n## Targeted Response Lens\n- ${impact}` : ''}${roomPressure}`;
 }
 
 function buildSharedSecretPromptBlock(chat: GroupChat, character: AICharacter, target: AICharacter | undefined, characters: Map<string, AICharacter>) {
@@ -705,19 +618,6 @@ function buildSharedSecretTraceLines(chat: GroupChat, character: AICharacter, ta
     .map((secret) => `群聊避嫌：${cleanPromptText(secret.publicMask, members, 120)} · ${secret.leakState}`);
 }
 
-function buildPromptTargetingContext(chat: GroupChat, target: AICharacter | undefined, relationshipSnapshot: AICharacter['relationships'][number] | null, characters: Map<string, AICharacter>) {
-  if (chat.type === 'group') return '';
-  return `${buildTargetedResponseContext(chat, target, relationshipSnapshot, characters)}${buildTargetedReplyBiasPrompt(chat, target)}`;
-}
-
-function buildTargetedInfluenceContext(chat: GroupChat, target: AICharacter | undefined, relationshipSnapshot: AICharacter['relationships'][number] | null, characters: Map<string, AICharacter>) {
-  if (chat.type === 'group') return '';
-  const relation = buildRelationshipImpactText(target, relationshipSnapshot);
-  const room = buildGroupTargetPressureSummary(chat, target, characters);
-  const summary = [relation, room].filter(Boolean).join(' / ');
-  return summary ? `\n## Targeted Influence Summary\n- ${summary}` : '';
-}
-
 function buildConflictPromptBundle(chat: GroupChat, character: AICharacter, characters: Map<string, AICharacter>) {
   const state = chat.worldState.conflictState;
   const primary = state?.primaryConflict;
@@ -731,24 +631,21 @@ function buildConflictPromptBundle(chat: GroupChat, character: AICharacter, char
   return `\n## Active Conflict\n- Stage: ${formatConflictStageLabel(primary.stage)}\n- Severity: ${primary.severity.toFixed(2)}\n- Summary: ${summary}${participantNames ? `\n- Participants: ${participantNames}` : ''}${targetNames ? `\n- Targets: ${targetNames}` : ''}${formatted ? `\n${formatted}` : ''}${involved ? '\n- You are directly implicated in this contradiction; react from your position inside it, not as a neutral commentator.' : '\n- Even if you are not central, the room tension should subtly shape what you choose to notice, support, dodge, or escalate.'}`;
 }
 
-function buildPromptInfluenceContext(chat: GroupChat, character: AICharacter, target: AICharacter | undefined, relationshipSnapshot: AICharacter['relationships'][number] | null, mergedMemories: MemoryItem[], characters: Map<string, AICharacter>) {
-  if (chat.type === 'group') {
-    return `${buildInfluenceModePrompt(chat, target)}${buildConflictPromptBundle(chat, character, characters)}`;
-  }
-  return `${buildInfluenceModePrompt(chat, target)}${buildRelationshipInfluencePrompt(target, relationshipSnapshot)}${buildRelationshipSemanticPrompt(chat, character, target, characters)}${buildMemoryInfluencePrompt(mergedMemories)}${buildGroupPressurePrompt(chat, target, characters)}${buildConflictPromptBundle(chat, character, characters)}`;
+function buildPromptInfluenceContext(chat: GroupChat, character: AICharacter, target: AICharacter | undefined, characters: Map<string, AICharacter>) {
+  return `${buildInfluenceModePrompt(chat, target)}${buildConflictPromptBundle(chat, character, characters)}`;
 }
 
 function buildChatInfluenceSummary(chat: GroupChat) {
+  if (chat.type === 'group' && resolveSessionFamilyKey(chat) === 'conversation') return '';
   if (chat.type === 'direct') return '\n## Channel Bias\n- This is a private user-facing channel: intimacy, continuity, and personal stance matter more than room theatrics.\n- The latest User line is what you are answering. Do not output it as your own line unless the user explicitly asked you to repeat or quote it.';
   if (chat.type === 'ai_direct') return '\n## Channel Bias\n- This is a pair-private AI thread: reciprocal dynamics and unfinished tension between the pair matter more than group consensus.';
-  if (chat.type === 'group' && resolveSessionFamilyKey(chat) === 'conversation') return '';
   return '\n## Channel Bias\n- This is a public group room: local momentum, alliances, pressure, and contradiction shape what feels natural to say next.';
 }
 
 function buildPromptReasoningBias(chat: GroupChat) {
+  if (chat.type === 'group' && resolveSessionFamilyKey(chat) === 'conversation') return '';
   if (chat.type === 'direct') return '\n## Reasoning Bias\n- Answer from lived continuity and personal stance first; do not reconstruct a public-room transcript unless it is genuinely necessary.';
   if (chat.type === 'ai_direct') return '\n## Reasoning Bias\n- Think through the pair history first; prioritize what the other AI means to you over generic topic analysis.';
-  if (chat.type === 'group' && resolveSessionFamilyKey(chat) === 'conversation') return '';
   return '\n## Reasoning Bias\n- Think like someone inside an unfolding room dynamic: react to contradiction, tone shifts, and alliances before abstract synthesis.';
 }
 
@@ -757,9 +654,9 @@ function buildPromptReasoningSummary(chat: GroupChat) {
 }
 
 function buildMemoryPriorityPrompt(chat: GroupChat) {
+  if (chat.type === 'group' && resolveSessionFamilyKey(chat) === 'conversation') return '';
   if (chat.type === 'direct') return '\n## Memory Priority\n- Priority: self-memory and relationship-memory first, direct-thread continuity second, public-room carryover last.';
   if (chat.type === 'ai_direct') return '\n## Memory Priority\n- Priority: pair relationship memory first, pair-thread continuity second, general self-model third.';
-  if (chat.type === 'group' && resolveSessionFamilyKey(chat) === 'conversation') return '';
   return '\n## Memory Priority\n- Priority: local room context first, then relationship memory and self bias, then older background memory.';
 }
 
@@ -786,7 +683,7 @@ function buildCharacterMindAdapterOutput(character: AICharacter, chat: GroupChat
     visibleMemoryRecall: mapVisibleMemoryRecallSetting(),
     visibleRecallCues,
     maxRecallCues: chatMemoryConfig.maxCuesPerTurn,
-    maxCoreLines: isOrdinaryGroup ? 7 : 6,
+    maxCoreLines: isOrdinaryGroup ? 7 : usesMindOwnedConversationContract(chat) ? 9 : 6,
     maxRoomLines: 5,
     includeActiveRoomLineSummaries: false,
     renderVisibleRecallCues: isOrdinaryGroup,
@@ -832,7 +729,7 @@ function buildPromptMemorySection(chat: GroupChat, character: AICharacter, conve
   const memoryBundle = isOrdinaryGroup
     ? ''
     : buildPromptMemoryBundle(chat, conversationMemories, characterMemories, targetedCharacterMemories, members, memoryCues);
-  return `${buildManualMemorySeedPrompt(character, members, chat)}${memoryBundle}${buildPromptInfluenceContext(chat, character, target, relationshipSnapshot, merged, characters)}${buildPromptTargetingContext(chat, target, relationshipSnapshot, characters)}${buildTargetedInfluenceContext(chat, target, relationshipSnapshot, characters)}${buildSharedSecretPromptBlock(chat, character, target, characters)}${buildActiveContinuityPull({ chat, character, target, relationshipSnapshot, memoryCues, characters, hasCompanionshipContext, mind })}${buildPromptReasoningSummary(chat)}${buildMemoryPriorityPrompt(chat)}`;
+  return `${buildManualMemorySeedPrompt(character, members, chat)}${memoryBundle}${buildPromptInfluenceContext(chat, character, target, characters)}${buildSharedSecretPromptBlock(chat, character, target, characters)}${buildActiveContinuityPull({ chat, character, target, relationshipSnapshot, memoryCues, characters, hasCompanionshipContext, mind })}${buildPromptReasoningSummary(chat)}${buildMemoryPriorityPrompt(chat)}`;
 }
 
 function traceMemoryItem(item: MemoryItem, members: DisplayTextMember[]): PromptMemoryTraceItem {
@@ -999,7 +896,7 @@ export function buildCrossModeMemoryPrompt(character: AICharacter, chat: GroupCh
   const memoryBundle = chat.type === 'group' && resolveSessionFamilyKey(chat) === 'conversation'
     ? ''
     : buildPromptMemoryBundle(chat, memoryContext.conversationMemories, memoryContext.characterMemories, memoryContext.targetedCharacterMemories, members, memoryContext.memoryCues);
-  return `${buildManualMemorySeedPrompt(character, members, chat)}${memoryBundle}${buildPromptInfluenceContext(chat, character, memoryContext.target, memoryContext.relationshipSnapshot, merged, characters)}${buildPromptTargetingContext(chat, memoryContext.target, memoryContext.relationshipSnapshot, characters)}${buildTargetedInfluenceContext(chat, memoryContext.target, memoryContext.relationshipSnapshot, characters)}${buildSharedSecretPromptBlock(chat, character, memoryContext.target, characters)}${buildActiveContinuityPull({ chat, character, target: memoryContext.target, relationshipSnapshot: memoryContext.relationshipSnapshot, memoryCues: memoryContext.memoryCues, characters, hasCompanionshipContext: Boolean(companionshipPrompt), mind })}${mind.adapter.promptBlock}${renderedCompanionshipPrompt}${buildMemoryPriorityPrompt(chat)}`;
+  return `${buildManualMemorySeedPrompt(character, members, chat)}${memoryBundle}${buildPromptInfluenceContext(chat, character, memoryContext.target, characters)}${buildSharedSecretPromptBlock(chat, character, memoryContext.target, characters)}${buildActiveContinuityPull({ chat, character, target: memoryContext.target, relationshipSnapshot: memoryContext.relationshipSnapshot, memoryCues: memoryContext.memoryCues, characters, hasCompanionshipContext: Boolean(companionshipPrompt), mind })}${mind.adapter.promptBlock}${renderedCompanionshipPrompt}${buildMemoryPriorityPrompt(chat)}`;
 }
 
 function buildTopicSection(chat: GroupChat) {
@@ -1035,7 +932,8 @@ function buildCharacterSection(character: AICharacter, emotion: number, personaA
   ].filter(Boolean).join('\n');
 }
 
-function buildRelationshipSection(character: AICharacter, target: AICharacter | undefined) {
+function buildRelationshipSection(character: AICharacter, target: AICharacter | undefined, chat: GroupChat) {
+  if (usesMindOwnedConversationContract(chat)) return '';
   if (!target) return '';
   return buildSocialPromptContext(character, target);
 }
@@ -1207,7 +1105,7 @@ export function buildPromptAssemblyWithContext(character: AICharacter, chat: Gro
   const systemPrompt = [
     buildCharacterSection(character, emotion, personaActivation),
     buildTopicSection(chat),
-    buildRelationshipSection(character, memoryContext.target),
+    buildRelationshipSection(character, memoryContext.target, chat),
     buildPromptMemorySection(chat, character, memoryContext.conversationMemories, memoryContext.characterMemories, memoryContext.targetedCharacterMemories, memoryContext.target, memoryContext.relationshipSnapshot, characters, memoryContext.recallCue, Boolean(companionshipPrompt), memoryContext.recentMemoryUseIds, mind),
     mind.adapter.promptBlock,
     renderedCompanionshipPrompt,

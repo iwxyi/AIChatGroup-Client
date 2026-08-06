@@ -150,9 +150,25 @@ function formatRelationshipStance(relationship: ReturnType<typeof resolveRelatio
     relationship.trust >= 12 ? '更愿意配合或透露' : relationship.trust <= -12 ? '会验证、保留或不轻易相信' : '',
     relationship.competence >= 12 ? '认可对方的判断能力' : relationship.competence <= -12 ? '容易挑战对方的判断' : '',
     relationship.threat >= 20 ? '保持戒备，避免把主动权交出去' : '',
-    relationship.note,
   ];
   return uniqueText(stance, 4);
+}
+
+function collectRelationshipContinuity(params: {
+  chat: GroupChat;
+  character: AICharacter;
+  targetId?: string;
+  relationship: ReturnType<typeof resolveRelationship>;
+}) {
+  if (!params.targetId) return params.relationship?.note ? uniqueText([params.relationship.note], 3) : [];
+  const semanticSummaries = (params.chat.relationshipLedger || [])
+    .map(normalizeRelationshipLedgerEntry)
+    .filter((entry) => entry.actorId === params.character.id && entry.targetId === params.targetId)
+    .map((entry) => entry.derived?.semantic?.summary || '');
+  return uniqueText([
+    params.relationship?.note,
+    ...semanticSummaries,
+  ], 3);
 }
 
 function buildMemoryCueText(chat: GroupChat, messages: Message[]) {
@@ -319,6 +335,12 @@ export function buildCharacterMindProjection(params: {
     chat: params.chat,
     targetId: target?.id,
   });
+  const relationshipContinuity = collectRelationshipContinuity({
+    chat: params.chat,
+    character: params.character,
+    targetId: target?.id,
+    relationship,
+  });
   const memories = collectMemoryText({
     character: params.character,
     chat: params.chat,
@@ -379,7 +401,11 @@ export function buildCharacterMindProjection(params: {
     continuity: {
       userProfile: uniqueText([...memories.userProfile, ...companionship.userProfile], 10),
       selfMemories: uniqueText([...authoredContinuity, ...memories.selfMemories], 10),
-      relationshipMemories: uniqueText([...memories.relationshipMemories, ...companionship.relationshipMemories], 8),
+      relationshipMemories: uniqueText([
+        ...relationshipContinuity,
+        ...memories.relationshipMemories,
+        ...companionship.relationshipMemories,
+      ], 8),
       sharedHistory: uniqueText([...memories.sharedHistory, ...companionship.sharedHistory], 8),
     },
     relationship: {

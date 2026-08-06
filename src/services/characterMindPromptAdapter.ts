@@ -104,6 +104,8 @@ function buildCoreContinuityLines(
   );
   const rawSelfContinuity = projection.continuity.selfMemories;
   const selfContinuity = cleanValues(rawSelfContinuity, visibility, 4);
+  const rawTargetStance = projection.relationship.stance;
+  const targetStance = cleanValues(rawTargetStance, visibility, 3);
   const lines = [
     bullet('Stable self', cleanValues(projection.identity.selfModel, visibility, 3)),
     bullet('Voice and habits', cleanValues(projection.identity.stableVoice, visibility, 3)),
@@ -114,11 +116,14 @@ function buildCoreContinuityLines(
     bullet('Relationship continuity', relationshipContinuity),
     bullet('Shared history', sharedHistory),
     projection.relationship.targetName
-      ? bullet(`Stance toward ${stripInternalIds(projection.relationship.targetName)}`, publicContinuityFallback(
-        cleanValues(projection.relationship.stance, visibility, 3),
-        'A relationship stance exists toward the current target; show it through tone, omission, or boundary.',
-        visibility,
-      ))
+      ? bullet(`Stance toward ${stripInternalIds(projection.relationship.targetName)}`, targetStance.length
+        ? targetStance
+        : publicContinuityFallback(
+          targetStance,
+          'A relationship stance exists toward the current target; show it through tone, omission, or boundary.',
+          visibility,
+          rawTargetStance.length,
+        ))
       : '',
     bullet('Emotional undercurrent', cleanValues(projection.currentState.emotionalUndercurrent, visibility, 3)),
     bullet('Active needs', cleanValues(projection.currentState.activeNeeds, visibility, 2)),
@@ -186,7 +191,8 @@ export function adaptCharacterMindProjectionForPrompt(
   projection: CharacterMindProjection,
   options: CharacterMindPromptAdapterOptions,
 ): CharacterMindPromptAdapterOutput {
-  const visibility = options.visibility || (options.chatType === 'direct' ? 'private' : 'public');
+  const visibility = options.visibility
+    || (options.chatType === 'direct' || options.chatType === 'ai_direct' ? 'private' : 'public');
   const visibleMemoryRecall = options.visibleMemoryRecall || 'implicit';
   const coreLines = buildCoreContinuityLines(projection, visibility, options.maxCoreLines || DEFAULT_CORE_LINES);
   const roomLines = buildRoomLines(

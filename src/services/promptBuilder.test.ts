@@ -333,7 +333,7 @@ describe('buildSystemPromptWithContext', () => {
     expect(trace.targetReason).toBe('来自上一条消息的明确指向');
   });
 
-  it('turns a current relationship ledger into an active continuity pull', () => {
+  it('turns a current relationship ledger into mind continuity and recall cues', () => {
     const speaker = buildCharacter({ id: 'char-a', name: '喜羊羊' });
     const target = buildCharacter({ id: 'char-b', name: '灰太狼' });
     const chat = {
@@ -368,7 +368,8 @@ describe('buildSystemPromptWithContext', () => {
     expect(prompt).not.toContain('## Active Continuity Pull');
     expect(prompt).toContain('## Character Mind Projection');
     expect(prompt).toContain('Stance toward 灰太狼');
-    expect(prompt).toContain('A relationship stance exists toward the current target');
+    expect(prompt).toContain('更容易靠近、维护或给对方留余地');
+    expect(prompt).toContain('互相信任：会替对方留余地');
   });
 
   it('does not render legacy influence state as a separate visible prompt block', () => {
@@ -588,6 +589,66 @@ describe('buildSystemPromptWithContext', () => {
     expect(prompt).toContain('## Manual Memory Seeds');
     expect(prompt).toContain('曾经在雨夜替朋友守过店');
     expect(prompt).toContain('不愿承认自己曾经临阵退缩');
+  });
+
+  it('lets the mind projection own AI-private relationship facts while keeping channel policy', () => {
+    const character = buildCharacter({
+      relationships: [{
+        characterId: 'char-b',
+        warmth: 62,
+        competence: 18,
+        trust: 74,
+        threat: 4,
+        note: '互相信任：会替对方留余地。',
+      }],
+    });
+    const target = buildCharacter({ id: 'char-b', name: '阿远' });
+    const chat = {
+      ...buildAiDirectChat(),
+      relationshipLedger: [{
+        pairKey: 'char-a->char-b',
+        actorId: 'char-a',
+        targetId: 'char-b',
+        current: { warmth: 62, competence: 18, trust: 74, threat: 4 },
+        derived: {
+          semantic: {
+            stage: '互相信任',
+            labels: ['默契'],
+            summary: '互相信任：会替对方留余地',
+            intensity: 70,
+          },
+        },
+        trend: 'up' as const,
+        recentEvents: [],
+        lastUpdatedAt: 40,
+      }],
+    };
+
+    const prompt = buildSystemPromptWithContext(
+      character,
+      chat,
+      0,
+      [buildMessage({ senderId: target.id, senderName: target.name, content: '这件事我会接住。' })],
+      new Map([
+        [character.id, character],
+        [target.id, target],
+      ]),
+    );
+
+    expect(prompt).toContain('## Character Mind Projection');
+    expect(prompt).toContain('Stance toward 阿远');
+    expect(prompt).toContain('Relationship continuity');
+    expect(prompt).toContain('互相信任：会替对方留余地');
+    expect(prompt).not.toContain('## Social Appraisal');
+    expect(prompt).not.toContain('## Relationship Influence');
+    expect(prompt).not.toContain('## Relationship Semantics');
+    expect(prompt).not.toContain('## Targeted Response Lens');
+    expect(prompt).not.toContain('## Targeted Reply Rule');
+    expect(prompt).not.toContain('## Targeted Influence Summary');
+    expect(prompt).not.toContain('## Active Continuity Pull');
+    expect(prompt).toContain('## Influence Mode');
+    expect(prompt).toContain('## Channel Bias');
+    expect(prompt).toContain('## Memory Priority');
   });
 
   it('keeps core continuity when visible old-memory callbacks are disabled', () => {

@@ -85,6 +85,18 @@ describe('characterMindPromptAdapter', () => {
     expect(output.promptBlock).not.toContain('3c78729f-e52d-4dde-b27f-01a949960bb8b');
   });
 
+  it('treats AI-private threads as private when visibility is not explicitly supplied', () => {
+    const output = adaptCharacterMindProjectionForPrompt(projection(), {
+      chatType: 'ai_direct',
+      visibleMemoryRecall: 'natural',
+    });
+
+    expect(output.trace.visibility).toBe('private');
+    expect(output.promptBlock).toContain('用户不喜欢太甜的饮料。');
+    expect(output.promptBlock).toContain('和阿远有雨夜失约的旧事。');
+    expect(output.promptBlock).not.toContain('User continuity exists');
+  });
+
   it('turning visible recall off does not remove core character continuity', () => {
     const output = adaptCharacterMindProjectionForPrompt(projection(), {
       chatType: 'direct',
