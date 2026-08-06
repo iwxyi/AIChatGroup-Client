@@ -14,6 +14,7 @@ export interface CharacterMindPromptAdapterOptions {
   maxRoomLines?: number;
   maxRecallCues?: number;
   includeActiveRoomLineSummaries?: boolean;
+  includeRoomTopic?: boolean;
   renderVisibleRecallCues?: boolean;
 }
 
@@ -146,6 +147,7 @@ function buildRoomLines(
   visibility: CharacterMindPromptVisibility,
   maxLines: number,
   includeActiveRoomLineSummaries: boolean,
+  includeRoomTopic: boolean,
 ) {
   const activeRoomLines = includeActiveRoomLineSummaries
     ? cleanValues(projection.room.activeLines, visibility, 3)
@@ -153,7 +155,7 @@ function buildRoomLines(
       ? ['Active room lines exist; react to their pressure without copying recent transcript text.']
       : [];
   const lines = [
-    projection.room.topic ? `- Current room topic: ${stripInternalIds(compactText(projection.room.topic))}` : '',
+    includeRoomTopic && projection.room.topic ? `- Current room topic: ${stripInternalIds(compactText(projection.room.topic))}` : '',
     bullet('Room pressure and constraints', cleanValues(projection.room.constraints, visibility, 4)),
     bullet('Active room lines', activeRoomLines),
     bullet('World, scenario, or growth context', cleanValues(projection.room.worldActivities, visibility, 4)),
@@ -215,6 +217,7 @@ export function adaptCharacterMindProjectionForPrompt(
     visibility,
     options.maxRoomLines || DEFAULT_ROOM_LINES,
     options.includeActiveRoomLineSummaries ?? false,
+    options.includeRoomTopic ?? true,
   );
   const visibleRecallInput = selectRecallCues(
     projection,

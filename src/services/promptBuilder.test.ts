@@ -1074,6 +1074,8 @@ describe('buildSystemPromptWithContext', () => {
     ]));
 
     expect(prompt).toContain('## Character Mind Projection');
+    expect(prompt).toContain('## Conversation Context');
+    expect(prompt).not.toContain('Current room topic');
     expect(prompt).toContain('## Visible Recall Cues');
     expect(prompt).toContain('阿远上次主动给紧张的人留过台阶');
     expect(prompt).toContain('Visible rule');

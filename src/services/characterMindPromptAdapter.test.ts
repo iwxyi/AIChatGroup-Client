@@ -190,4 +190,16 @@ describe('characterMindPromptAdapter', () => {
     expect(output.currentRoomBlock).toContain('主线');
     expect(output.coreContinuityBlock.split('\n').length).toBeLessThanOrEqual(5);
   });
+
+  it('can omit room topic when another prompt block already owns topic context', () => {
+    const output = adaptCharacterMindProjectionForPrompt(projection(), {
+      chatType: 'group',
+      visibility: 'public',
+      visibleMemoryRecall: 'off',
+      includeRoomTopic: false,
+    });
+
+    expect(output.currentRoomBlock).not.toContain('Current room topic');
+    expect(output.currentRoomBlock).toContain('Active room lines exist');
+  });
 });

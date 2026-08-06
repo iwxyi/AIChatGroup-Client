@@ -689,6 +689,7 @@ function buildCharacterMindAdapterOutput(character: AICharacter, chat: GroupChat
     maxCoreLines: isOrdinaryGroup ? 7 : usesMindOwnedConversationContract(chat) ? 9 : 6,
     maxRoomLines: 5,
     includeActiveRoomLineSummaries: false,
+    includeRoomTopic: false,
     renderVisibleRecallCues: isOrdinaryGroup,
   });
   return { projection, adapter };
