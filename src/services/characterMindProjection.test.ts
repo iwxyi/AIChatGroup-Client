@@ -156,6 +156,38 @@ describe('characterMindProjection', () => {
     expect(projection.currentState.activeNeeds).toContain('希望被理解');
   });
 
+  it('does not treat shared anchors or artifacts as ordinary user profile facts', () => {
+    const speaker = character({
+      memory: { shortTermSummary: '', longTerm: [], secrets: [], obsessions: [], tabooTopics: [], userMemories: [] },
+      layeredMemories: [
+        memory({
+          id: 'shared-anchor',
+          kind: 'bond',
+          subjectIds: ['char-a', 'user'],
+          text: '第一次深夜聊天后，苏苏记住了用户没有退出对话。',
+          summary: '第一次深夜聊天后，用户没有退出对话。',
+        }),
+        memory({
+          id: 'ordinary-user-profile',
+          kind: 'fact',
+          subjectIds: ['user'],
+          text: '用户不喜欢太甜的饮料。',
+          summary: '用户不喜欢太甜的饮料。',
+        }),
+      ],
+    });
+    const projection = buildCharacterMindProjection({
+      chat: chat('direct'),
+      character: speaker,
+      characters: [speaker],
+      messages: [message('今天太阳好大。')],
+      now: 2000,
+    });
+
+    expect(projection.continuity.userProfile).toContain('用户不喜欢太甜的饮料。');
+    expect(projection.continuity.userProfile.join('\n')).not.toContain('第一次深夜聊天');
+  });
+
   it('projects authored character memory into self continuity without exposing secret text', () => {
     const speaker = character({
       memory: {
@@ -319,6 +351,7 @@ describe('characterMindProjection', () => {
       layeredMemories: [
         memory({
           id: 'user-drink-preference',
+          kind: 'fact',
           scope: 'relationship',
           subjectIds: ['user'],
           text: '用户不喜欢太甜的饮料。',
@@ -351,6 +384,7 @@ describe('characterMindProjection', () => {
     });
     const injectedMemory = memory({
       id: 'assembly-user-memory',
+      kind: 'fact',
       subjectIds: ['user'],
       text: '用户最近在准备一个重要面试。',
       summary: '用户最近在准备一个重要面试。',

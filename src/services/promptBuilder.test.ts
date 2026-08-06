@@ -509,8 +509,8 @@ describe('buildSystemPromptWithContext', () => {
       ]),
     );
 
-    expect(prompt).toContain('## Character Mind Projection');
-    expect(prompt).toContain('## Core Character Continuity');
+      expect(prompt).toContain('## Character Mind Projection');
+      expect(prompt).toContain('## Core Character Continuity');
     expect(prompt).toContain('Self continuity');
     expect(prompt).toContain('长期经历：曾经在雨夜替朋友守过店');
     expect(prompt).toContain('敏感触发：被拿失败经历开玩笑时会防御');
@@ -541,6 +541,8 @@ describe('buildSystemPromptWithContext', () => {
     expect(prompt).toContain('Remembered user cues');
     expect(prompt).toContain('用户预算有限但重视质感');
     expect(prompt).not.toContain('Memories about the user');
+    expect(prompt).not.toContain('## Private-Channel Memories');
+    expect(prompt).not.toContain('## Visible Recall Cues');
   });
 
   it('keeps authored character memory available in private direct prompts', () => {
@@ -567,6 +569,7 @@ describe('buildSystemPromptWithContext', () => {
     expect(prompt).toContain('曾经在雨夜替朋友守过店');
     expect(prompt).toContain('## Manual Memory Seeds');
     expect(prompt).not.toContain('Stable long-term memories');
+    expect(prompt).not.toContain('## Private-Channel Memories');
     expect(prompt).toContain('不愿承认自己曾经临阵退缩');
   });
 
@@ -598,6 +601,7 @@ describe('buildSystemPromptWithContext', () => {
     expect(prompt).toContain('曾经在雨夜替朋友守过店');
     expect(prompt).toContain('## Manual Memory Seeds');
     expect(prompt).not.toContain('Stable long-term memories');
+    expect(prompt).not.toContain('## Pair-Thread Memories');
     expect(prompt).toContain('不愿承认自己曾经临阵退缩');
   });
 
@@ -680,14 +684,15 @@ describe('buildSystemPromptWithContext', () => {
         buildMessage({ type: 'user', senderId: 'user', senderName: '用户', content: '今天想买一件外套。' }),
       ], new Map([[character.id, character]]));
 
-      expect(prompt).toContain('## Character Mind Projection');
-      expect(prompt).toContain('## Core Character Continuity');
+    expect(prompt).toContain('## Character Mind Projection');
+    expect(prompt).toContain('## Core Character Continuity');
       expect(prompt).toContain('User continuity');
       expect(prompt).toContain('User details are handled by the companionship context');
       expect(prompt).not.toContain('User continuity: 用户预算有限但重视质感');
       expect(prompt).toContain('Remembered user cues');
       expect(prompt).toContain('用户预算有限但重视质感');
       expect(prompt).not.toContain('## Visible Recall Cues');
+      expect(prompt).not.toContain('## Private-Channel Memories');
     } finally {
       setChatMemoryRuntimeConfig(null);
     }
@@ -732,6 +737,8 @@ describe('buildSystemPromptWithContext', () => {
     );
 
     expect(prompt).toContain('苏苏记住了阿远会在争执最激烈时先替别人留台阶');
+    expect(prompt).toContain('## Character Mind Projection');
+    expect(prompt).not.toContain('## Private-Channel Memories');
     expect(prompt).not.toContain('group-chat-1');
     expect(trace.injectedIds).toContain('group-experience-memory');
   });
@@ -793,6 +800,8 @@ describe('buildSystemPromptWithContext', () => {
 
     expect(prompt).toContain('Shared memory anchors with the user');
     expect(prompt).toContain('第一次深夜聊天');
+    expect(prompt).not.toContain('User continuity: 第一次深夜聊天');
+    expect(prompt).not.toContain('## Visible Recall Cues');
     expect(prompt).not.toContain('只有他们知道的暗号');
   });
 
@@ -1225,7 +1234,9 @@ describe('buildSystemPromptWithContext', () => {
 
     expect(trace.injectedIds).toContain('companionship-anchor-memory-runtime-anchor-late-night-care');
     expect(prompt).toContain('第一次深夜陪伴');
-    expect(prompt).toContain('Private-Channel Memories');
+    expect(prompt).toContain('## Character Mind Projection');
+    expect(prompt).toContain('## Companionship Context');
+    expect(prompt).not.toContain('Private-Channel Memories');
   });
 
   it('uses active user profile events as private-channel memory candidates and respects revoke events', () => {
@@ -1273,7 +1284,9 @@ describe('buildSystemPromptWithContext', () => {
 
     expect(trace.injectedIds.some((id) => id.startsWith('companionship-user-profile-memory-char-a-pressure_source'))).toBe(true);
     expect(prompt).toContain('用户这周因为面试压力很大');
-    expect(prompt).toContain('Private-Channel Memories');
+    expect(prompt).toContain('## Character Mind Projection');
+    expect(prompt).toContain('## Companionship Context');
+    expect(prompt).not.toContain('Private-Channel Memories');
 
     const revokedChat = {
       ...chat,
@@ -1343,7 +1356,8 @@ describe('buildSystemPromptWithContext', () => {
     expect(trace.injectedIds).toContain('companionship-anchor-memory-runtime-anchor-pair-repair');
     expect(trace.targetActorId).toBe('char-b');
     expect(prompt).toContain('雨夜后的和解');
-    expect(prompt).toContain('Pair-Thread Memories');
+    expect(prompt).toContain('## Character Mind Projection');
+    expect(prompt).not.toContain('Pair-Thread Memories');
   });
 
   it('exposes archived memories that were actually injected into the prompt trace', () => {

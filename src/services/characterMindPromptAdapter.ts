@@ -169,6 +169,7 @@ function selectRecallCues(
   visibleMemoryRecall: VisibleMemoryRecallSetting,
   maxRecallCues: number,
   suppliedRecallCues?: string[],
+  omitUserContinuity = false,
 ) {
   if (visibleMemoryRecall === 'off') return [];
   if (suppliedRecallCues?.length) {
@@ -176,7 +177,7 @@ function selectRecallCues(
       .slice(0, maxRecallCues);
   }
   const privateCueSources = [
-    ...projection.continuity.userProfile,
+    ...(omitUserContinuity ? [] : projection.continuity.userProfile),
     ...projection.continuity.relationshipMemories,
     ...projection.continuity.sharedHistory,
   ];
@@ -216,6 +217,7 @@ export function adaptCharacterMindProjectionForPrompt(
     visibleMemoryRecall,
     options.maxRecallCues || DEFAULT_RECALL_CUES,
     options.visibleRecallCues,
+    options.summarizeUserContinuity,
   );
   const recallLines = options.renderVisibleRecallCues !== false && visibleRecallInput.length
     ? ['## Visible Recall Cues', ...visibleRecallInput.map((cue) => `- ${cue}`)]

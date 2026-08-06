@@ -720,7 +720,6 @@ function buildPromptMemorySection(chat: GroupChat, character: AICharacter, conve
   const merged = buildMergedMemories([...targetedCharacterMemories, ...characterMemories, ...conversationMemories]);
   const members = buildPromptDisplayMembers(character, characters);
   const chatMemoryConfig = getChatMemoryRuntimeConfig();
-  const isOrdinaryGroup = chat.type === 'group' && resolveSessionFamilyKey(chat) === 'conversation';
   const memoryCues = chatMemoryConfig.enabled ? selectConstrainedMemoryCues(merged, {
     cueText,
     isPublicChannel: chat.type === 'group',
@@ -729,7 +728,7 @@ function buildPromptMemorySection(chat: GroupChat, character: AICharacter, conve
     visibleRecallMode: chatMemoryConfig.visibleRecallMode,
     targetActorIds: target ? [target.id] : [],
   }) : [];
-  const memoryBundle = isOrdinaryGroup
+  const memoryBundle = usesMindOwnedConversationContract(chat)
     ? ''
     : buildPromptMemoryBundle(chat, conversationMemories, characterMemories, targetedCharacterMemories, members, memoryCues);
   return `${buildManualMemorySeedPrompt(character, members, chat)}${memoryBundle}${buildPromptInfluenceContext(chat, character, target, characters)}${buildSharedSecretPromptBlock(chat, character, target, characters)}${buildActiveContinuityPull({ chat, character, target, relationshipSnapshot, memoryCues, characters, hasCompanionshipContext, mind })}${buildPromptReasoningSummary(chat)}${buildMemoryPriorityPrompt(chat)}`;
@@ -897,7 +896,7 @@ export function buildCrossModeMemoryPrompt(character: AICharacter, chat: GroupCh
     buildVisibleMindRecallCuesForPrompt(chat, character, characters, memoryContext.memoryCues),
     { summarizeUserContinuity: chat.type === 'direct' && Boolean(companionshipPrompt) },
   );
-  const memoryBundle = chat.type === 'group' && resolveSessionFamilyKey(chat) === 'conversation'
+  const memoryBundle = usesMindOwnedConversationContract(chat)
     ? ''
     : buildPromptMemoryBundle(chat, memoryContext.conversationMemories, memoryContext.characterMemories, memoryContext.targetedCharacterMemories, members, memoryContext.memoryCues);
   return `${buildManualMemorySeedPrompt(character, members, chat)}${memoryBundle}${buildPromptInfluenceContext(chat, character, memoryContext.target, characters)}${buildSharedSecretPromptBlock(chat, character, memoryContext.target, characters)}${buildActiveContinuityPull({ chat, character, target: memoryContext.target, relationshipSnapshot: memoryContext.relationshipSnapshot, memoryCues: memoryContext.memoryCues, characters, hasCompanionshipContext: Boolean(companionshipPrompt), mind })}${mind.adapter.promptBlock}${renderedCompanionshipPrompt}${buildMemoryPriorityPrompt(chat)}`;

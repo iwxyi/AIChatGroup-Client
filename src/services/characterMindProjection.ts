@@ -243,6 +243,7 @@ function collectMemoryText(params: {
   const userProfile = [
     ...(params.character.memory?.userMemories || []),
     ...memories
+      .filter((item) => item.kind !== 'bond' && item.kind !== 'artifact')
       .filter((item) => item.subjectIds?.includes(USER_ACTOR_ID) || item.sourceTag?.includes('direct_user') || item.text.includes('用户'))
       .map((item) => item.summary || item.text),
   ];
