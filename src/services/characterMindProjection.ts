@@ -373,6 +373,33 @@ function buildChannelConstraints(chat: GroupChat) {
   return [];
 }
 
+function conflictPressureLabel(nextPressure?: string) {
+  if (nextPressure === 'cool') return '需要降温';
+  if (nextPressure === 'divert') return '可能转移话题';
+  if (nextPressure === 'spread') return '可能扩散到更多人';
+  if (nextPressure === 'stabilize') return '需要稳住立场';
+  if (nextPressure === 'escalate') return '可能升级';
+  return '';
+}
+
+function buildConflictConstraints(params: {
+  chat: GroupChat;
+  character: AICharacter;
+}) {
+  const primary = params.chat.worldState.conflictState?.primaryConflict;
+  if (!primary || primary.stage === 'resolved') return [];
+  const involved = (primary.participantIds || []).includes(params.character.id)
+    || (primary.targetIds || []).includes(params.character.id);
+  const pressure = conflictPressureLabel(primary.nextPressure);
+  return uniqueText([
+    primary.summary ? `当前矛盾：${primary.summary}。` : '',
+    `矛盾阶段：${primary.stage || 'active'}，强度 ${Math.round((primary.severity || 0) * 100)}%。${pressure ? ` ${pressure}。` : ''}`,
+    involved
+      ? '你直接牵涉在这个矛盾里，回应应从自己的立场出发，而不是旁观总结。'
+      : '当前矛盾会影响房间温度，回应时可选择注意、回避、缓和或推进。',
+  ], 3);
+}
+
 export function buildCharacterMindProjection(params: {
   chat: GroupChat;
   character: AICharacter;
@@ -479,6 +506,7 @@ export function buildCharacterMindProjection(params: {
       activeLines,
       worldActivities,
       constraints: uniqueText([
+        ...buildConflictConstraints({ chat: params.chat, character: params.character }),
         ...roomPressure,
         ...buildChannelConstraints(params.chat),
       ], 6),

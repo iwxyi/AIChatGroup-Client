@@ -620,6 +620,7 @@ function buildSharedSecretTraceLines(chat: GroupChat, character: AICharacter, ta
 }
 
 function buildConflictPromptBundle(chat: GroupChat, character: AICharacter, characters: Map<string, AICharacter>) {
+  if (usesMindOwnedConversationContract(chat)) return '';
   const state = chat.worldState.conflictState;
   const primary = state?.primaryConflict;
   if (!primary) return '';
