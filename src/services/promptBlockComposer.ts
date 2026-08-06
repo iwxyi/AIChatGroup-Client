@@ -106,6 +106,7 @@ export function resolvePromptPlayMode(chat: GroupChat): PromptPlayModePolicy {
           'expression_surface_choice',
           'turn_length_variety',
           'turn_format_variety',
+          'response_surface',
           'turn_plan',
           'runtime_role_constraint',
         ],

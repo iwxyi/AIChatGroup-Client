@@ -32,4 +32,24 @@ describe('buildMessageStyleRules', () => {
     expect(prompt).toContain('must not override a user request');
     expect(prompt).not.toContain('Usually write one sentence');
   });
+
+  it('can render only character and emotion bias when a turn directive owns natural chat rules', () => {
+    const prompt = buildMessageStyleRules(character({
+      behavior: { proactivity: 45, aggressiveness: 35, humorIntensity: 20, empathyLevel: 80, summarizing: 82, offTopic: 10 },
+    }), { includeGeneralNaturalness: false });
+
+    expect(prompt).toContain('## Expression Bias');
+    expect(prompt).toContain('Notice emotional cues');
+    expect(prompt).toContain('Only summarize when the room is obviously drifting or confused');
+    expect(prompt).not.toContain('Sound like a person in a live chat');
+    expect(prompt).not.toContain('Let the situation decide length');
+  });
+
+  it('omits the expression block when no specific bias remains after general rules are disabled', () => {
+    const prompt = buildMessageStyleRules(character({
+      behavior: { proactivity: 45, aggressiveness: 35, humorIntensity: 20, empathyLevel: 45, summarizing: 45, offTopic: 10 },
+    }), { includeGeneralNaturalness: false });
+
+    expect(prompt).toBe('');
+  });
 });

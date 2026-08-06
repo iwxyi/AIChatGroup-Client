@@ -110,7 +110,12 @@ export function buildConflictPrompt(character: AICharacter) {
   return lines.length ? `\n## Hidden Conflict\n${lines.join('\n')}` : '';
 }
 
-export function buildMessageStyleRules(character: AICharacter) {
+export interface MessageStyleRuleOptions {
+  includeGeneralNaturalness?: boolean;
+}
+
+export function buildMessageStyleRules(character: AICharacter, options: MessageStyleRuleOptions = {}) {
+  const includeGeneralNaturalness = options.includeGeneralNaturalness !== false;
   const runtimeBehavior = {
     ...character.behavior,
     aggressiveness: Math.max(0, Math.min(100, character.behavior.aggressiveness + Math.round((character.personalityDrift?.neuroticism || 0) * 0.5) + Math.round((character.personalityDrift?.assertiveness || 0) * 0.3))),
@@ -121,7 +126,7 @@ export function buildMessageStyleRules(character: AICharacter) {
     offTopic: Math.max(0, Math.min(100, character.behavior.offTopic + Math.round((character.personalityDrift?.openness || 0) * 0.25) + Math.round((character.personalityDrift?.creativity || 0) * 0.2))),
   };
   const emotion = character.emotionalState || { irritation: 0, affection: 0, insecurity: 0, excitement: 0, embarrassment: 0 };
-  const rules: string[] = [
+  const rules: string[] = includeGeneralNaturalness ? [
     'Sound like a person in a live chat, not an AI giving a neat answer.',
     'Prefer unfinished, partial, or emotionally colored replies over polished completeness.',
     'Let the situation decide length: a casual room beat may be one word, while a serious professional question may need full reasoning, examples, caveats, or a long answer.',
@@ -129,7 +134,7 @@ export function buildMessageStyleRules(character: AICharacter) {
     'It is fine to be vague, biased, impatient, playful, repetitive in a human way, or slightly messy.',
     'Do not tidy your tone into a mini speech; react like you are mid-conversation.',
     'You can misread emphasis slightly, latch onto one phrase, or answer only the part you care about.',
-  ];
+  ] : [];
   if (runtimeBehavior.aggressiveness >= 70) rules.push('Be more willing to press, interrupt rhetorically, or push a point.');
   if (runtimeBehavior.empathyLevel >= 70) rules.push('Notice emotional cues and respond with some sensitivity.');
   if (runtimeBehavior.humorIntensity >= 70) rules.push('Let wit or playful phrasing show up naturally.');
@@ -140,5 +145,6 @@ export function buildMessageStyleRules(character: AICharacter) {
   if (emotion.insecurity >= 65) rules.push('You may hedge, test reactions, or protect yourself instead of speaking cleanly and directly.');
   if (emotion.excitement >= 70) rules.push('Let extra energy show: quicker jumps, playful escalation, livelier rhythm, or more eager participation.');
   if (emotion.embarrassment >= 65) rules.push('Awkwardness can bend the wording: evasive jokes, clipped pivots, or trying to move past the moment.');
+  if (!rules.length) return '';
   return `\n## Expression Bias\n${rules.map((rule) => `- ${rule}`).join('\n')}`;
 }

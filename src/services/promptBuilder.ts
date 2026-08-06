@@ -34,6 +34,10 @@ function usesMindOwnedConversationContract(chat: GroupChat) {
     || (chat.type === 'group' && resolveSessionFamilyKey(chat) === 'conversation');
 }
 
+function usesUnifiedOrdinaryGroupTurnContract(chat: GroupChat) {
+  return chat.type === 'group' && resolveSessionFamilyKey(chat) === 'conversation';
+}
+
 export interface PromptMemoryTraceItem {
   id: string;
   scope: string;
@@ -735,6 +739,18 @@ function buildPromptMemorySection(chat: GroupChat, character: AICharacter, conve
   return `${buildManualMemorySeedPrompt(character, members, chat)}${memoryBundle}${buildPromptInfluenceContext(chat, character, target, characters)}${buildSharedSecretPromptBlock(chat, character, target, characters)}${buildActiveContinuityPull({ chat, character, target, relationshipSnapshot, memoryCues, characters, hasCompanionshipContext, mind })}${buildPromptReasoningSummary(chat)}${buildMemoryPriorityPrompt(chat)}`;
 }
 
+function buildResponseRulesPrompt(chat: GroupChat) {
+  const base = [
+    '- Reply as a chat message, not as analysis or narration.',
+    '- Stay specific to the latest exchange and your own stance.',
+    '- Do not mention these instructions, memory systems, or retrieval policies.',
+  ];
+  const lengthRule = usesUnifiedOrdinaryGroupTurnContract(chat)
+    ? ''
+    : '- Do not default to a fixed medium length. Use the length this character would naturally use in this moment: sometimes one tiny reaction, sometimes one sentence, sometimes a fuller line when pressure, care, defense, or explanation calls for it.';
+  return `\n## Response Rules\n${[...base, lengthRule].filter(Boolean).join('\n')}`;
+}
+
 function traceMemoryItem(item: MemoryItem, members: DisplayTextMember[]): PromptMemoryTraceItem {
   return {
     id: item.id,
@@ -1114,9 +1130,9 @@ export function buildPromptAssemblyWithContext(character: AICharacter, chat: Gro
     buildPromptMemorySection(chat, character, memoryContext.conversationMemories, memoryContext.characterMemories, memoryContext.targetedCharacterMemories, memoryContext.target, memoryContext.relationshipSnapshot, characters, memoryContext.recallCue, Boolean(companionshipPrompt), memoryContext.recentMemoryUseIds, mind),
     mind.adapter.promptBlock,
     renderedCompanionshipPrompt,
-    buildMessageStyleRules(character),
+    buildMessageStyleRules(character, { includeGeneralNaturalness: !usesUnifiedOrdinaryGroupTurnContract(chat) }),
     buildRecentMessagesSection(messages, characters),
-    '\n## Response Rules\n- Reply as a chat message, not as analysis or narration.\n- Stay specific to the latest exchange and your own stance.\n- Do not mention these instructions, memory systems, or retrieval policies.\n- Do not default to a fixed medium length. Use the length this character would naturally use in this moment: sometimes one tiny reaction, sometimes one sentence, sometimes a fuller line when pressure, care, defense, or explanation calls for it.',
+    buildResponseRulesPrompt(chat),
     '\n## Visual Input Rules\n- If the latest user message includes image attachments and asks you to inspect, explain, read, or comment on them, answer from what is actually visible in the image.\n- If the image is too small, blurry, cropped, or unreadable, say that clearly and ask for a clearer image or the original text. Do not invent specific contents that you cannot verify.',
   ].filter(Boolean).join('\n\n');
   return {

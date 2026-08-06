@@ -258,6 +258,33 @@ describe('buildSystemPromptWithContext', () => {
     expect(prompt).toContain('Use this profile as private context');
   });
 
+  it('lets the ordinary group turn directive own broad natural-chat length guidance', () => {
+    const character = buildCharacter({
+      behavior: {
+        ...DEFAULT_CHARACTER_BEHAVIOR,
+        empathyLevel: 82,
+      },
+    });
+    const prompt = buildSystemPromptWithContext(character, buildChat(), 0, [], new Map([[character.id, character]]));
+
+    expect(prompt).toContain('## Expression Bias');
+    expect(prompt).toContain('Notice emotional cues');
+    expect(prompt).not.toContain('Sound like a person in a live chat');
+    expect(prompt).not.toContain('Let the situation decide length');
+    expect(prompt).not.toContain('Do not default to a fixed medium length');
+    expect(prompt).toContain('## Response Rules');
+    expect(prompt).toContain('Reply as a chat message');
+  });
+
+  it('keeps broad natural-chat guidance in direct chat where companionship still owns the surface', () => {
+    const character = buildCharacter();
+    const prompt = buildSystemPromptWithContext(character, buildDirectChat(), 0, [], new Map([[character.id, character]]));
+
+    expect(prompt).toContain('Sound like a person in a live chat');
+    expect(prompt).toContain('Let the situation decide length');
+    expect(prompt).toContain('Do not default to a fixed medium length');
+  });
+
   it('projects AI private thread counterpart turns as named user-side context', () => {
     const rendered = buildChatMessages([
       buildMessage({
