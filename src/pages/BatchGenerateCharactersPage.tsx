@@ -1245,6 +1245,7 @@ export default function BatchGenerateCharactersPage() {
           <Box sx={{ alignSelf: 'flex-start' }}>
             <FloatingSegmentedTabs
               value={activeTab}
+              scrollContentToTopOnChange
               items={[
                 { value: 'list', label: i18n.language.startsWith('zh') ? '名单' : 'List' },
                 { value: 'relationships', label: i18n.language.startsWith('zh') ? '关系' : 'Relationships' },

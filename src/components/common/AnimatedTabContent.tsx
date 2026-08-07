@@ -1,5 +1,5 @@
 import { Box } from '@mui/material';
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import type { SxProps, Theme } from '@mui/material/styles';
 import { motion } from '../../styles/motion';
 
@@ -8,6 +8,18 @@ type AnimatedTabContentProps<T extends string | number> = {
   direction?: -1 | 1;
   children: ReactNode;
   sx?: SxProps<Theme>;
+};
+
+type TabPane<T extends string | number> = {
+  value: T;
+  children: ReactNode;
+  slot: 0 | 1;
+};
+
+type TabTransition<T extends string | number> = {
+  key: number;
+  outgoing: TabPane<T>;
+  direction: -1 | 1;
 };
 
 const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
@@ -41,54 +53,86 @@ function usePrefersReducedMotion() {
 
 export default function AnimatedTabContent<T extends string | number>({ value, direction = 1, children, sx }: AnimatedTabContentProps<T>) {
   const prefersReducedMotion = usePrefersReducedMotion();
-  const previousValueRef = useRef(value);
-  const previousChildrenRef = useRef<ReactNode>(children);
-  const [transition, setTransition] = useState<{
-    key: number;
-    from: ReactNode;
-    direction: -1 | 1;
-  } | null>(null);
+  const [currentPane, setCurrentPane] = useState<TabPane<T>>(() => ({
+    value,
+    children,
+    slot: 0,
+  }));
+  const [transition, setTransition] = useState<TabTransition<T> | null>(null);
   const transitionKeyRef = useRef(0);
   const transitionTimeoutRef = useRef<number | null>(null);
 
-  useEffect(() => {
-    if (Object.is(previousValueRef.current, value)) {
-      previousChildrenRef.current = children;
-      return;
-    }
+  useLayoutEffect(() => {
+    let cancelled = false;
+    const scheduleStateUpdate = (callback: () => void) => {
+      queueMicrotask(() => {
+        if (!cancelled) callback();
+      });
+    };
 
-    if (prefersReducedMotion) {
+    if (prefersReducedMotion && transition !== null) {
       if (transitionTimeoutRef.current !== null) {
         window.clearTimeout(transitionTimeoutRef.current);
         transitionTimeoutRef.current = null;
       }
-      transitionTimeoutRef.current = window.setTimeout(() => {
-        setTransition(null);
-        transitionTimeoutRef.current = null;
-      }, 0);
-      previousValueRef.current = value;
-      previousChildrenRef.current = children;
-      return;
+      scheduleStateUpdate(() => setTransition(null));
+    }
+
+    if (Object.is(currentPane.value, value)) {
+      if (currentPane.children !== children) {
+        scheduleStateUpdate(() => {
+          setCurrentPane((pane) => (
+            Object.is(pane.value, value) && pane.children !== children
+              ? { ...pane, children }
+              : pane
+          ));
+        });
+      }
+      return () => {
+        cancelled = true;
+      };
     }
 
     if (transitionTimeoutRef.current !== null) {
       window.clearTimeout(transitionTimeoutRef.current);
       transitionTimeoutRef.current = null;
     }
+
+    const nextPane: TabPane<T> = {
+      value,
+      children,
+      slot: currentPane.slot === 0 ? 1 : 0,
+    };
+
+    if (prefersReducedMotion) {
+      scheduleStateUpdate(() => {
+        setTransition(null);
+        setCurrentPane(nextPane);
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+
     transitionKeyRef.current += 1;
-    setTransition({
-      key: transitionKeyRef.current,
-      from: previousChildrenRef.current,
-      direction,
+    const transitionKey = transitionKeyRef.current;
+    scheduleStateUpdate(() => {
+      setTransition({
+        key: transitionKey,
+        outgoing: currentPane,
+        direction,
+      });
+      setCurrentPane(nextPane);
     });
-    previousValueRef.current = value;
-    previousChildrenRef.current = children;
 
     transitionTimeoutRef.current = window.setTimeout(() => {
-      setTransition((current) => (current?.key === transitionKeyRef.current ? null : current));
+      setTransition((current) => (current?.key === transitionKey ? null : current));
       transitionTimeoutRef.current = null;
     }, motion.durations.navTrack + 40);
-  }, [children, direction, prefersReducedMotion, value]);
+    return () => {
+      cancelled = true;
+    };
+  }, [children, currentPane, direction, prefersReducedMotion, transition, value]);
 
   useEffect(() => () => {
     if (transitionTimeoutRef.current !== null) {
@@ -98,8 +142,38 @@ export default function AnimatedTabContent<T extends string | number>({ value, d
 
   const enteringAnimation = `animatedTabContentEnter ${motion.durations.navTrack}ms ${motion.standard} both`;
   const exitingAnimation = `animatedTabContentExit ${motion.durations.navTrack}ms ${motion.standard} both`;
-  const visibleTransition = prefersReducedMotion ? null : transition;
-  const effectiveDirection = visibleTransition?.direction ?? direction;
+  const effectiveDirection = transition?.direction ?? direction;
+
+  const renderPane = (slot: 0 | 1) => {
+    const outgoing = transition?.outgoing.slot === slot ? transition.outgoing : null;
+    const pane = outgoing || (currentPane.slot === slot ? currentPane : null);
+    if (!pane) return null;
+
+    const isOutgoing = outgoing !== null;
+    return (
+      <Box
+        key={`slot-${slot}`}
+        aria-hidden={isOutgoing || undefined}
+        sx={{
+          minWidth: 0,
+          position: isOutgoing ? 'absolute' : 'relative',
+          ...(isOutgoing ? {
+            inset: 0,
+            width: '100%',
+            pointerEvents: 'none',
+          } : {}),
+          animation: prefersReducedMotion || transition === null
+            ? undefined
+            : (isOutgoing ? exitingAnimation : enteringAnimation),
+          willChange: transition === null ? undefined : 'transform',
+        }}
+      >
+        <Box key={String(pane.value)} sx={{ minWidth: 0 }}>
+          {pane.children}
+        </Box>
+      </Box>
+    );
+  };
 
   return (
     <Box
@@ -138,31 +212,8 @@ export default function AnimatedTabContent<T extends string | number>({ value, d
         ...sx,
       }}
     >
-      {visibleTransition ? (
-        <Box
-          key={`from-${visibleTransition.key}`}
-          aria-hidden
-          sx={{
-            position: 'absolute',
-            inset: 0,
-            width: '100%',
-            pointerEvents: 'none',
-            animation: prefersReducedMotion ? undefined : exitingAnimation,
-          }}
-        >
-          {visibleTransition.from}
-        </Box>
-      ) : null}
-      <Box
-        key={String(value)}
-        sx={{
-          minWidth: 0,
-          position: 'relative',
-          animation: visibleTransition ? enteringAnimation : undefined,
-        }}
-      >
-        {children}
-      </Box>
+      {renderPane(0)}
+      {renderPane(1)}
     </Box>
   );
 }

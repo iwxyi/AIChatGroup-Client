@@ -1658,6 +1658,7 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
       >
         <FloatingSegmentedTabs
           value={configTab}
+          scrollContentToTopOnChange
           onChange={(nextTab) => {
             setTabTransitionDirection(resolveTabTransitionDirection(availableTabs.map((item) => item.value), configTab, nextTab));
             setConfigTab(nextTab);

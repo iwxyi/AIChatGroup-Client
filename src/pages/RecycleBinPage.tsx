@@ -186,6 +186,7 @@ export default function RecycleBinPage() {
       >
         <FloatingSegmentedTabs
           value={tab}
+          scrollContentToTopOnChange
           onChange={(value) => {
             setTabTransitionDirection(resolveTabTransitionDirection(RECYCLE_BIN_TAB_ORDER, tab, value));
             setTab(value);

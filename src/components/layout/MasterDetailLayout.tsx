@@ -9,6 +9,7 @@ import GlassHeader, { GLASS_HEADER_HEIGHT } from './GlassHeader';
 import { useAutoHideHeader } from '../../hooks/useAutoHideHeader';
 import { DETAIL_COLLAPSED_CHANGE_EVENT, DETAIL_COLLAPSED_STORAGE_KEY, readDetailCollapsedState, writeDetailCollapsedState } from './masterDetailState';
 import PaneResizeDivider, { PANE_RESIZE_DIVIDER_LAYOUT_WIDTH } from './PaneResizeDivider';
+import { CONTENT_SCROLL_TO_TOP_EVENT, type ContentScrollToTopDetail } from '../../services/contentScrollRegion';
 
 const MIN_MASTER_WIDTH = 320;
 const DEFAULT_MASTER_WIDTH = 430;
@@ -36,6 +37,9 @@ function getInitialMasterWidth() {
 function PaneShell({ role, title, children }: { role: 'master' | 'detail'; title: ReactNode | null; children: ReactNode }) {
   const [headerTitle, setHeaderTitleState] = useState<ReactNode | null>(null);
   const [headerActions, setHeaderActions] = useState<ReactNode>(null);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const suppressHeaderScrollRef = useRef(false);
+  const releaseHeaderScrollFrameRef = useRef<number | null>(null);
   const resolvedTitle = headerTitle ?? title;
   const showHeader = resolvedTitle != null || headerActions != null;
   const autoHide = useAutoHideHeader(!showHeader);
@@ -47,6 +51,41 @@ function PaneShell({ role, title, children }: { role: 'master' | 'detail'; title
     setHeaderBackAction: () => undefined,
     setHideMobileBottomNav: () => undefined,
   }), []);
+
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return undefined;
+
+    const handleScrollToTop = (event: Event) => {
+      const detail = (event as CustomEvent<ContentScrollToTopDetail>).detail;
+      const preserveHeader = detail?.preserveHeader === true;
+      if (!preserveHeader) {
+        container.scrollTop = 0;
+        autoHide.reset();
+        return;
+      }
+
+      if (releaseHeaderScrollFrameRef.current !== null) {
+        window.cancelAnimationFrame(releaseHeaderScrollFrameRef.current);
+      }
+      suppressHeaderScrollRef.current = true;
+      autoHide.syncScrollTop(0);
+      container.scrollTop = 0;
+      releaseHeaderScrollFrameRef.current = window.requestAnimationFrame(() => {
+        suppressHeaderScrollRef.current = false;
+        releaseHeaderScrollFrameRef.current = null;
+      });
+    };
+
+    container.addEventListener(CONTENT_SCROLL_TO_TOP_EVENT, handleScrollToTop);
+    return () => {
+      container.removeEventListener(CONTENT_SCROLL_TO_TOP_EVENT, handleScrollToTop);
+      if (releaseHeaderScrollFrameRef.current !== null) {
+        window.cancelAnimationFrame(releaseHeaderScrollFrameRef.current);
+        releaseHeaderScrollFrameRef.current = null;
+      }
+    };
+  }, [autoHide]);
 
   return (
     <LayoutHeaderActionsContext.Provider value={contextValue}>
@@ -66,8 +105,14 @@ function PaneShell({ role, title, children }: { role: 'master' | 'detail'; title
             <GlassHeader title={resolvedTitle} actions={headerActions} hidden={autoHide.hidden} overlay zIndex={1} />
           ) : null}
           <Box
+            ref={scrollContainerRef}
+            data-pneumata-scroll-region={`pane-${role}`}
             onScroll={(event) => {
               const { currentTarget } = event;
+              if (suppressHeaderScrollRef.current) {
+                autoHide.syncScrollTop(currentTarget.scrollTop);
+                return;
+              }
               autoHide.handleScrollTop(currentTarget.scrollTop, {
                 scrollHeight: currentTarget.scrollHeight,
                 clientHeight: currentTarget.clientHeight,

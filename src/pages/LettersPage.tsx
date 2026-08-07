@@ -158,6 +158,7 @@ export default function LettersPage() {
           >
             <FloatingSegmentedTabs
               value={tab}
+              scrollContentToTopOnChange
               onChange={(nextTab) => {
                 setTabTransitionDirection(resolveTabTransitionDirection(LETTERS_TAB_ORDER, tab, nextTab));
                 setTab(nextTab);

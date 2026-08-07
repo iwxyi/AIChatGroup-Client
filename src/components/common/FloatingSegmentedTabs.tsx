@@ -3,6 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import { motion, reducedMotionSx, transition } from '../../styles/motion';
 import { buildFloatingTabGroupSx } from './FloatingSegmentedTabs.styles';
+import { requestNearestContentScrollToTop } from '../../services/contentScrollRegion';
 
 type FloatingSegmentedTab<T extends string | number> = {
   value: T;
@@ -14,6 +15,7 @@ const POINTER_X_TOLERANCE_PX = 44;
 const TOUCH_SCROLL_INTENT_PX = 8;
 const TOUCH_POINTER_Y_TOLERANCE_PX = 68;
 const TOUCH_POINTER_X_TOLERANCE_PX = 58;
+const TAB_SCROLL_PADDING_PX = 6;
 
 export type FloatingSegmentedTabsProps<T extends string | number> = {
   value: T;
@@ -21,12 +23,22 @@ export type FloatingSegmentedTabsProps<T extends string | number> = {
   onChange: (value: T) => void;
   equalWidth?: boolean;
   comfortable?: boolean;
+  scrollContentToTopOnChange?: boolean;
 };
 
-export default function FloatingSegmentedTabs<T extends string | number>({ value, items, onChange, equalWidth = true, comfortable = true }: FloatingSegmentedTabsProps<T>) {
+export default function FloatingSegmentedTabs<T extends string | number>({
+  value,
+  items,
+  onChange,
+  equalWidth = true,
+  comfortable = true,
+  scrollContentToTopOnChange = false,
+}: FloatingSegmentedTabsProps<T>) {
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const groupRef = useRef<HTMLDivElement | null>(null);
   const indicatorRef = useRef<HTMLDivElement | null>(null);
   const itemRefs = useRef(new Map<string, HTMLButtonElement>());
+  const scrollAnimationRef = useRef<number | null>(null);
   const pointerRef = useRef<{
     pointerId: number;
     startX: number;
@@ -38,14 +50,110 @@ export default function FloatingSegmentedTabs<T extends string | number>({ value
   const previewValueRef = useRef<T | null>(null);
   const latestPointerTypeRef = useRef<string>('mouse');
   const suppressClickRef = useRef(false);
+  const animateIndicatorRef = useRef(false);
+  const animateScrollRef = useRef(false);
+  const hasPositionedScrollRef = useRef(false);
   const [previewValue, setPreviewValue] = useState<T | null>(null);
   const visualValue = previewValue ?? value;
+
+  const markIndicatorAnimation = useCallback(() => {
+    animateIndicatorRef.current = true;
+  }, []);
+
+  const markScrollAnimation = useCallback(() => {
+    animateScrollRef.current = true;
+  }, []);
+
+  const commitChange = useCallback((nextValue: T) => {
+    if (nextValue === value) return;
+    if (scrollContentToTopOnChange) {
+      requestNearestContentScrollToTop(scrollContainerRef.current, { preserveHeader: false });
+    }
+    onChange(nextValue);
+  }, [onChange, scrollContentToTopOnChange, value]);
 
   const setVisualPreview = useCallback((nextValue: T | null) => {
     if (previewValueRef.current === nextValue) return;
     previewValueRef.current = nextValue;
     setPreviewValue(nextValue);
   }, []);
+
+  const itemValues = useMemo(() => items.map((item) => item.value), [items]);
+
+  const stopScrollAnimation = useCallback(() => {
+    if (scrollAnimationRef.current !== null) {
+      window.cancelAnimationFrame(scrollAnimationRef.current);
+      scrollAnimationRef.current = null;
+    }
+  }, []);
+
+  const animateScrollTo = useCallback((container: HTMLDivElement, nextLeft: number, animated: boolean) => {
+    const maxLeft = Math.max(0, container.scrollWidth - container.clientWidth);
+    const targetLeft = Math.max(0, Math.min(maxLeft, nextLeft));
+    const startLeft = container.scrollLeft;
+    const distance = targetLeft - startLeft;
+    stopScrollAnimation();
+    if (!animated || Math.abs(distance) < 1 || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      container.scrollLeft = targetLeft;
+      return;
+    }
+
+    const duration = Math.max(
+      motion.durations.navTrack,
+      Math.min(motion.durations.settle, Math.round(Math.abs(distance) * 0.72)),
+    );
+    const startedAt = window.performance.now();
+    const step = (now: number) => {
+      const progress = Math.min(1, (now - startedAt) / duration);
+      const eased = 1 - ((1 - progress) ** 3);
+      container.scrollLeft = startLeft + distance * eased;
+      if (progress < 1) {
+        scrollAnimationRef.current = window.requestAnimationFrame(step);
+      } else {
+        scrollAnimationRef.current = null;
+      }
+    };
+    scrollAnimationRef.current = window.requestAnimationFrame(step);
+  }, [stopScrollAnimation]);
+
+  const updateScrollPosition = useCallback(() => {
+    const container = scrollContainerRef.current;
+    const selectedIndex = itemValues.findIndex((candidate) => candidate === value);
+    const target = itemRefs.current.get(String(value));
+    if (!container || !target || selectedIndex < 0 || container.scrollWidth <= container.clientWidth + 1) {
+      hasPositionedScrollRef.current = true;
+      animateScrollRef.current = false;
+      return;
+    }
+
+    const previous = itemRefs.current.get(String(itemValues[selectedIndex - 1]));
+    const next = itemRefs.current.get(String(itemValues[selectedIndex + 1]));
+    const viewportStart = container.scrollLeft;
+    const viewportEnd = viewportStart + container.clientWidth;
+    const desiredStart = Math.max(0, (previous || target).offsetLeft - TAB_SCROLL_PADDING_PX);
+    const desiredEndNode = next || target;
+    const desiredEnd = desiredEndNode.offsetLeft + desiredEndNode.offsetWidth + TAB_SCROLL_PADDING_PX;
+    const targetStart = Math.max(0, target.offsetLeft - TAB_SCROLL_PADDING_PX);
+    const targetEnd = target.offsetLeft + target.offsetWidth + TAB_SCROLL_PADDING_PX;
+    const desiredWidth = desiredEnd - desiredStart;
+    let nextLeft = viewportStart;
+
+    if (desiredWidth <= container.clientWidth) {
+      if (desiredStart < viewportStart) nextLeft = desiredStart;
+      else if (desiredEnd > viewportEnd) nextLeft = desiredEnd - container.clientWidth;
+    } else if (targetStart < viewportStart) {
+      nextLeft = targetStart;
+    } else if (targetEnd > viewportEnd) {
+      nextLeft = targetEnd - container.clientWidth;
+    }
+
+    const shouldAnimate = hasPositionedScrollRef.current && animateScrollRef.current;
+    hasPositionedScrollRef.current = true;
+    animateScrollRef.current = false;
+    if (Math.abs(nextLeft - viewportStart) >= 1) {
+      animateScrollTo(container, nextLeft, shouldAnimate);
+    }
+  }, [animateScrollTo, itemValues, value]);
 
   const updateIndicator = useCallback(() => {
     const group = groupRef.current;
@@ -70,18 +178,25 @@ export default function FloatingSegmentedTabs<T extends string | number>({ value
       motion.durations.navTrack,
       Math.min(motion.durations.settle, Math.round(distance * 0.72)),
     );
+    const shouldAnimate = animateIndicatorRef.current || previewValueRef.current !== null;
     const duration = previewValueRef.current !== null ? previewDuration : settledDuration;
     const easing = previewValueRef.current !== null ? motion.softOut : motion.standard;
     indicator.style.opacity = '1';
-    indicator.style.transition = transition(['transform', 'width', 'opacity', 'background-color', 'box-shadow'], duration, easing);
+    indicator.style.transition = shouldAnimate
+      ? transition(['transform', 'width', 'opacity', 'background-color', 'box-shadow'], duration, easing)
+      : 'none';
     indicator.style.transform = `translateX(${nextLeft}px)`;
     indicator.style.width = `${targetBounds.width}px`;
     indicator.dataset.left = String(nextLeft);
+    animateIndicatorRef.current = false;
   }, [visualValue]);
 
   useLayoutEffect(() => {
+    updateScrollPosition();
     updateIndicator();
-  }, [items, updateIndicator]);
+  }, [items, updateIndicator, updateScrollPosition]);
+
+  useEffect(() => stopScrollAnimation, [stopScrollAnimation]);
 
   useEffect(() => {
     if (previewValue !== null && previewValue === value) {
@@ -92,10 +207,13 @@ export default function FloatingSegmentedTabs<T extends string | number>({ value
   }, [previewValue, setVisualPreview, value]);
 
   useEffect(() => {
-    const handleResize = () => updateIndicator();
+    const handleResize = () => {
+      updateScrollPosition();
+      updateIndicator();
+    };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, [updateIndicator]);
+  }, [updateIndicator, updateScrollPosition]);
 
   useEffect(() => {
     const handleWindowBlur = () => {
@@ -107,11 +225,9 @@ export default function FloatingSegmentedTabs<T extends string | number>({ value
     return () => window.removeEventListener('blur', handleWindowBlur);
   }, [setVisualPreview]);
 
-  const itemValues = useMemo(() => items.map((item) => item.value), [items]);
-
   const isHorizontallyScrollable = useCallback(() => {
-    const group = groupRef.current;
-    return Boolean(group && group.scrollWidth > group.clientWidth + 1);
+    const container = scrollContainerRef.current;
+    return Boolean(container && container.scrollWidth > container.clientWidth + 1);
   }, []);
 
   const resolveValueAtPoint = useCallback((clientX: number, clientY: number) => {
@@ -159,6 +275,8 @@ export default function FloatingSegmentedTabs<T extends string | number>({ value
     };
     latestPointerTypeRef.current = event.pointerType;
     suppressClickRef.current = true;
+    markIndicatorAnimation();
+    markScrollAnimation();
     setVisualPreview(itemValue);
     event.currentTarget.setPointerCapture(event.pointerId);
   };
@@ -185,6 +303,7 @@ export default function FloatingSegmentedTabs<T extends string | number>({ value
     if (pointer.scrollIntent || !pointer.allowDragPreview) return;
 
     const nextValue = resolveValueAtPoint(event.clientX, event.clientY);
+    if (nextValue !== previewValueRef.current) markIndicatorAnimation();
     setVisualPreview(nextValue);
   };
 
@@ -214,7 +333,9 @@ export default function FloatingSegmentedTabs<T extends string | number>({ value
     }
 
     setVisualPreview(targetValue);
-    onChange(targetValue);
+    markIndicatorAnimation();
+    markScrollAnimation();
+    commitChange(targetValue);
   };
 
   const handleKeyDown = (itemValue: T, event: ReactKeyboardEvent<HTMLButtonElement>) => {
@@ -225,7 +346,11 @@ export default function FloatingSegmentedTabs<T extends string | number>({ value
       const nextValue = itemValues[nextIndex];
       const nextNode = nextValue === undefined ? null : itemRefs.current.get(String(nextValue));
       nextNode?.focus();
-      if (nextValue !== undefined) setVisualPreview(nextValue);
+      if (nextValue !== undefined) {
+        markIndicatorAnimation();
+        markScrollAnimation();
+        setVisualPreview(nextValue);
+      }
     };
 
     if (event.key === 'ArrowLeft') {
@@ -250,7 +375,11 @@ export default function FloatingSegmentedTabs<T extends string | number>({ value
     }
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
-      if (itemValue !== value) onChange(itemValue);
+      if (itemValue !== value) {
+        markIndicatorAnimation();
+        markScrollAnimation();
+        commitChange(itemValue);
+      }
     }
   };
 
@@ -264,8 +393,28 @@ export default function FloatingSegmentedTabs<T extends string | number>({ value
     }
   };
 
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return undefined;
+
+    const handleWheel = (event: WheelEvent) => {
+      if (container.scrollWidth <= container.clientWidth + 1) return;
+      const delta = Math.abs(event.deltaX) >= Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+      if (Math.abs(delta) < 1) return;
+
+      const maxLeft = container.scrollWidth - container.clientWidth;
+      const nextLeft = Math.max(0, Math.min(maxLeft, container.scrollLeft + delta));
+      stopScrollAnimation();
+      event.preventDefault();
+      container.scrollLeft = nextLeft;
+    };
+
+    container.addEventListener('wheel', handleWheel, { passive: false });
+    return () => container.removeEventListener('wheel', handleWheel);
+  }, [stopScrollAnimation]);
+
   return (
-    <Box sx={buildFloatingTabGroupSx()}>
+    <Box ref={scrollContainerRef} sx={buildFloatingTabGroupSx()}>
       <Box
         ref={groupRef}
         sx={{
@@ -316,7 +465,9 @@ export default function FloatingSegmentedTabs<T extends string | number>({ value
                   suppressClickRef.current = false;
                   return;
                 }
-                onChange(item.value);
+                markIndicatorAnimation();
+                markScrollAnimation();
+                commitChange(item.value);
               }}
               onPointerDown={(event) => handlePointerDown(item.value, event)}
               onPointerMove={handlePointerMove}

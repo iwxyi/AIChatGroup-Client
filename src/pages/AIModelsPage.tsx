@@ -49,6 +49,12 @@ type ModelDropdownOption = {
   group: string;
 };
 
+type OfficialProvidersState = {
+  key: string;
+  items: OfficialAiProviderInfo[];
+  error: string | null;
+};
+
 function maskSecret(value: string) {
   if (!value) return '';
   if (value.length <= 8) {
@@ -696,12 +702,7 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
   const syncCurrentSettingsToServer = useSettingsStore((state) => state.syncCurrentSettingsToServer);
   const isLoggedIn = useAuthStore((state) => state.isLoggedIn);
   const authMode = useAuthStore((state) => state.authMode);
-  const characters = useCharacterStore((state) => state.characters);
-  const characterLoading = useCharacterStore((state) => state.isLoading);
-  const loadCharacters = useCharacterStore((state) => state.loadCharacters);
-  const markCharactersWarm = useCharacterStore((state) => state.markCharactersWarm);
-  const prefetchCharacters = useCharacterStore((state) => state.prefetchCharacters);
-  const updateCharacter = useCharacterStore((state) => state.updateCharacter);
+  const canUseOfficialProviders = authMode === 'cloud' && isLoggedIn;
   const [showKey, setShowKey] = useState(false);
   const [testingId, setTestingId] = useState<string | null>(null);
   const [assigningId, setAssigningId] = useState<string | null>(null);
@@ -715,9 +716,18 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
   const [aiBalances, setAiBalances] = useState<Record<string, Record<string, unknown> | null>>({});
   const [aiBalanceLoadingIds, setAiBalanceLoadingIds] = useState<Record<string, boolean>>({});
   const [aiBalanceStatuses, setAiBalanceStatuses] = useState<Record<string, 'idle' | 'guest' | 'unassigned' | 'error'>>({});
-  const [officialProviders, setOfficialProviders] = useState<OfficialAiProviderInfo[]>([]);
-  const [officialProvidersLoading, setOfficialProvidersLoading] = useState(true);
-  const [officialProvidersError, setOfficialProvidersError] = useState<string | null>(null);
+  const officialProvidersRequestKey = `${canUseOfficialProviders ? 'private' : 'public'}:${i18n.language}`;
+  const [officialProvidersState, setOfficialProvidersState] = useState<OfficialProvidersState>({
+    key: officialProvidersRequestKey,
+    items: [],
+    error: null,
+  });
+  const officialProviders = useMemo(
+    () => (officialProvidersState.key === officialProvidersRequestKey ? officialProvidersState.items : []),
+    [officialProvidersRequestKey, officialProvidersState.items, officialProvidersState.key],
+  );
+  const officialProvidersError = officialProvidersState.key === officialProvidersRequestKey ? officialProvidersState.error : null;
+  const officialProvidersLoading = officialProvidersState.key !== officialProvidersRequestKey;
   const modelInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const fetchingModelKeysRef = useRef<Record<string, string>>({});
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
@@ -725,7 +735,6 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
     message: '',
     severity: 'success',
   });
-  const canUseOfficialProviders = authMode === 'cloud' && isLoggedIn;
 
   const modelTypeLabels: Record<AIModelType, string> = {
     text: i18n.language.startsWith('zh') ? '文本' : 'Text',
@@ -854,26 +863,28 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
 
   useEffect(() => {
     let active = true;
-    setOfficialProvidersLoading(true);
-    setOfficialProvidersError(null);
     const request = canUseOfficialProviders ? api.getOfficialAiProviders() : api.getPublicOfficialAiProviders();
     request
       .then((result) => {
         if (!active) return;
-        setOfficialProviders(Array.isArray(result.items) ? result.items : []);
+        setOfficialProvidersState({
+          key: officialProvidersRequestKey,
+          items: Array.isArray(result.items) ? result.items : [],
+          error: null,
+        });
       })
       .catch((error) => {
         if (!active) return;
-        setOfficialProviders([]);
-        setOfficialProvidersError(extractConnectionErrorMessage(error) || (i18n.language.startsWith('zh') ? '官方 AI 供应商列表获取失败' : 'Failed to load official AI providers'));
-      })
-      .finally(() => {
-        if (active) setOfficialProvidersLoading(false);
+        setOfficialProvidersState({
+          key: officialProvidersRequestKey,
+          items: [],
+          error: extractConnectionErrorMessage(error) || (i18n.language.startsWith('zh') ? '官方 AI 供应商列表获取失败' : 'Failed to load official AI providers'),
+        });
       });
     return () => {
       active = false;
     };
-  }, [canUseOfficialProviders, i18n.language]);
+  }, [canUseOfficialProviders, i18n.language, officialProvidersRequestKey]);
 
   const commitModelValue = useCallback((profileId: string, value: string) => {
     const { aiProfiles: currentProfiles, updateAIProfile: updateCurrentAIProfile } = useSettingsStore.getState();
@@ -920,13 +931,6 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
       .map((profile) => profile.provider)));
     providers.forEach((provider) => void refreshAiBalance(provider));
   }, [aiProfiles, isOfficialProxyProviderKey, refreshAiBalance]);
-
-  useEffect(() => {
-    if (characters.length === 0 && !characterLoading) {
-      markCharactersWarm();
-      void prefetchCharacters();
-    }
-  }, [characters.length, characterLoading, markCharactersWarm, prefetchCharacters]);
 
   const handleTestConnection = async (profileId: string) => {
     const profile = aiProfiles.find((item) => item.id === profileId);
@@ -1023,22 +1027,24 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
   const handleAssignToAllRoles = async (profileId: string) => {
     const profile = aiProfiles.find((item) => item.id === profileId);
     if (!profile) return;
-    if (characters.length === 0 && !characterLoading) {
-      await loadCharacters();
-    }
-    const latestCharacters = useCharacterStore.getState().characters;
-    const editableCharacters = latestCharacters.filter((character) => !character.isPreset && character.deletedAt == null);
-    if (!editableCharacters.length) {
-      setSnackbar({
-        open: true,
-        message: i18n.language.startsWith('zh') ? '还没有可编辑角色，请先创建至少一个角色' : 'No editable characters yet. Create at least one custom character first.',
-        severity: 'error',
-      });
-      return;
-    }
-
     setAssigningId(profileId);
     try {
+      const initialCharacterState = useCharacterStore.getState();
+      if (initialCharacterState.characters.length === 0) {
+        await initialCharacterState.loadCharacters();
+      }
+
+      const { characters: latestCharacters, updateCharacter } = useCharacterStore.getState();
+      const editableCharacters = latestCharacters.filter((character) => !character.isPreset && character.deletedAt == null);
+      if (!editableCharacters.length) {
+        setSnackbar({
+          open: true,
+          message: i18n.language.startsWith('zh') ? '还没有可编辑角色，请先创建至少一个角色' : 'No editable characters yet. Create at least one custom character first.',
+          severity: 'error',
+        });
+        return;
+      }
+
       await Promise.all(editableCharacters.map((character) => {
         const modelProfileIds = normalizeCharacterModelProfileIds(character.modelProfileIds, character.modelProfileId || null);
         const nextModelProfileIds = {
@@ -1696,15 +1702,7 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
         label={i18n.language.startsWith('zh') ? '添加模型' : 'Add model'}
         ariaLabel={i18n.language.startsWith('zh') ? '添加模型' : 'Add model'}
         onClick={() => addAIProfile()}
-        sx={embedded ? {
-          position: 'sticky',
-          display: 'flex',
-          width: 'fit-content',
-          ml: 'auto',
-          right: 0,
-          bottom: 16,
-          mt: 2,
-        } : {
+        sx={{
           position: 'fixed',
           right: { xs: 20, sm: 28, md: 36 },
           bottom: { xs: 'calc(env(safe-area-inset-bottom, 0px) + 76px)', sm: 32, md: 36 },

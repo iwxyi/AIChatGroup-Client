@@ -1438,6 +1438,7 @@ export default function CreateChatPage() {
         >
           <FloatingSegmentedTabs
             value={configTab}
+            scrollContentToTopOnChange
             onChange={(value) => handleTabChange(null, value)}
             items={[
               ...(showGameplayTab ? [{ value: gameplayTabIndex, label: i18n.language.startsWith('zh') ? '玩法' : 'Gameplay' }] : []),

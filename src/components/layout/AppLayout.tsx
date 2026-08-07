@@ -22,6 +22,7 @@ import { DETAIL_COLLAPSED_CHANGE_EVENT, DETAIL_COLLAPSED_STORAGE_KEY, readDetail
 import { motion } from '../../styles/motion';
 import AppSnackbar from '../common/AppSnackbar';
 import { APP_DIAGNOSTIC_TOAST_EVENT, type DiagnosticToastDetail } from '../../services/diagnostics';
+import { CONTENT_SCROLL_TO_TOP_EVENT, type ContentScrollToTopDetail } from '../../services/contentScrollRegion';
 
 const routeMeta = [
   { match: (pathname: string) => pathname === '/', titleKey: 'nav.home' },
@@ -80,6 +81,8 @@ export default function AppLayout() {
     severity: 'error',
   });
   const scrollContainerRef = React.useRef<HTMLDivElement | null>(null);
+  const suppressHeaderScrollRef = React.useRef(false);
+  const releaseHeaderScrollFrameRef = React.useRef<number | null>(null);
   const effectiveHeaderTitle = headerTitle ?? currentTitle;
   const mainPaddingBottom = 0;
   const isChatDetailRoute = /^\/chats\/[^/]+$/.test(location.pathname) && location.pathname !== '/chats/create';
@@ -92,7 +95,12 @@ export default function AppLayout() {
     : showMobileTopBar
       ? `calc(${GLASS_HEADER_HEIGHT}px + env(safe-area-inset-top, 0px))`
       : showDesktopTopBar ? 49 : 0;
-  const { hidden: headerHidden, reset: resetHeaderHidden, handleScrollTop: handleHeaderScrollTop } = useAutoHideHeader(isChatDetailRoute || isMasterDetailRoute || sidebarOpen);
+  const {
+    hidden: headerHidden,
+    reset: resetHeaderHidden,
+    syncScrollTop: syncHeaderScrollTop,
+    handleScrollTop: handleHeaderScrollTop,
+  } = useAutoHideHeader(isChatDetailRoute || isMasterDetailRoute || sidebarOpen);
   const effectiveHeaderHidden = headerHidden;
   const floatingTabTopOffset = effectiveHeaderHidden
     ? 10
@@ -138,8 +146,47 @@ export default function AppLayout() {
     resetHeaderHidden();
   }, [location.pathname, resetHeaderHidden]);
 
+  React.useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return undefined;
+
+    const handleScrollToTop = (event: Event) => {
+      const detail = (event as CustomEvent<ContentScrollToTopDetail>).detail;
+      const preserveHeader = detail?.preserveHeader === true;
+      if (!preserveHeader) {
+        container.scrollTop = 0;
+        resetHeaderHidden();
+        return;
+      }
+
+      if (releaseHeaderScrollFrameRef.current !== null) {
+        window.cancelAnimationFrame(releaseHeaderScrollFrameRef.current);
+      }
+      suppressHeaderScrollRef.current = true;
+      syncHeaderScrollTop(0);
+      container.scrollTop = 0;
+      releaseHeaderScrollFrameRef.current = window.requestAnimationFrame(() => {
+        suppressHeaderScrollRef.current = false;
+        releaseHeaderScrollFrameRef.current = null;
+      });
+    };
+
+    container.addEventListener(CONTENT_SCROLL_TO_TOP_EVENT, handleScrollToTop);
+    return () => {
+      container.removeEventListener(CONTENT_SCROLL_TO_TOP_EVENT, handleScrollToTop);
+      if (releaseHeaderScrollFrameRef.current !== null) {
+        window.cancelAnimationFrame(releaseHeaderScrollFrameRef.current);
+        releaseHeaderScrollFrameRef.current = null;
+      }
+    };
+  }, [resetHeaderHidden, syncHeaderScrollTop]);
+
   const handleMainScroll = (event: React.UIEvent<HTMLDivElement>) => {
     const { currentTarget } = event;
+    if (suppressHeaderScrollRef.current) {
+      syncHeaderScrollTop(currentTarget.scrollTop);
+      return;
+    }
     handleHeaderScrollTop(currentTarget.scrollTop, {
       scrollHeight: currentTarget.scrollHeight,
       clientHeight: currentTarget.clientHeight,
@@ -255,6 +302,7 @@ export default function AppLayout() {
 
           <Box
             ref={scrollContainerRef}
+            data-pneumata-scroll-region="main"
             onScroll={handleMainScroll}
             sx={{
               flex: 1,

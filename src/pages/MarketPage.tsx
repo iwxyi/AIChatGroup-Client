@@ -823,6 +823,7 @@ export default function MarketPage() {
         <FloatingSegmentedTabs
           value={kind}
           onChange={setKind}
+          scrollContentToTopOnChange
           equalWidth={false}
           items={kindFilterOptions}
         />

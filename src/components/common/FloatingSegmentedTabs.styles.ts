@@ -30,7 +30,7 @@ export function buildFloatingTabGroupSx() {
       ? '0 14px 34px rgba(15,23,42,0.075), 0 1px 0 rgba(255,255,255,0.86) inset'
       : '0 18px 38px rgba(0,0,0,0.30), 0 1px 0 rgba(255,255,255,0.055) inset',
     overflowX: 'auto',
-    overscrollBehaviorX: 'contain',
+    overscrollBehavior: 'contain',
     scrollbarWidth: 'none',
     '&::-webkit-scrollbar': { display: 'none' },
     ...reducedMotionSx,

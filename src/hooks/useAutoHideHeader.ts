@@ -20,6 +20,10 @@ export function useAutoHideHeader(disabled = false) {
     setHidden(false);
   }, []);
 
+  const syncScrollTop = useCallback((nextTop: number) => {
+    lastScrollTopRef.current = nextTop;
+  }, []);
+
   const handleScrollTop = useCallback((nextTop: number, metrics?: AutoHideHeaderMetrics) => {
     if (disabled) return;
     const previousTop = lastScrollTopRef.current;
@@ -52,5 +56,5 @@ export function useAutoHideHeader(disabled = false) {
     if (hidden) setHidden(false);
   }, [disabled, hidden]);
 
-  return { hidden: disabled ? false : hidden, reset, handleScrollTop };
+  return { hidden: disabled ? false : hidden, reset, syncScrollTop, handleScrollTop };
 }

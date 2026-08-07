@@ -342,6 +342,7 @@ export default function ChatListPage() {
 
         <FloatingSegmentedTabs
           value={tab}
+          scrollContentToTopOnChange
           onChange={(nextTab) => {
             setTabTransitionDirection(resolveTabTransitionDirection(CHAT_LIST_TAB_ORDER, tab, nextTab));
             setTab(nextTab);

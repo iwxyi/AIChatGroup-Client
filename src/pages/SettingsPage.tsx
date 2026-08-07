@@ -2502,6 +2502,7 @@ export default function SettingsPage() {
         <Box sx={{ ...buildFloatingTabContainerSx(), order: -100, mb: 0.5, animation: 'none !important', transform: 'none !important' }}>
           <FloatingSegmentedTabs
             value={activeSettingsTab}
+            scrollContentToTopOnChange
             onChange={(value) => {
               if (SETTINGS_TAB_KEYS.includes(value)) {
                 setTabTransitionDirection(resolveTabTransitionDirection(SETTINGS_TAB_KEYS, activeSettingsTab, value));
