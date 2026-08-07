@@ -58,7 +58,7 @@ export default function ExpandableFab({ icon, label, ariaLabel, onClick, color =
             transition(['width', 'min-width'], 420, fabSettle),
             transition(['background-color', 'border-color', 'box-shadow', 'color'], 320, fabSettle),
           ].join(', '),
-          '&:hover, &:focus-visible': canHover ? {
+          '&:not(.Mui-disabled):hover, &:not(.Mui-disabled):focus-visible': canHover ? {
             width: expandedWidth,
             minWidth: expandedWidth,
             borderRadius: '999px',
@@ -79,13 +79,26 @@ export default function ExpandableFab({ icon, label, ariaLabel, onClick, color =
               : `0 22px 52px ${alpha(theme.palette.common.black, 0.50)}`,
           } : undefined,
           '&.Mui-disabled': {
-            borderColor: (theme) => alpha(theme.palette.text.disabled, theme.palette.mode === 'light' ? 0.16 : 0.24),
-            color: 'text.disabled',
-            bgcolor: (theme) => alpha(theme.palette.action.disabledBackground, theme.palette.mode === 'light' ? 0.58 : 0.36),
-            backdropFilter: 'blur(18px) saturate(1.15)',
-            WebkitBackdropFilter: 'blur(18px) saturate(1.15)',
+            pointerEvents: 'auto',
+            cursor: 'not-allowed',
+            borderColor: (theme) => {
+              const main = theme.palette[color]?.main || theme.palette.primary.main;
+              return alpha(main, theme.palette.mode === 'light' ? 0.18 : 0.24);
+            },
+            color: (theme) => alpha(theme.palette[color]?.main || theme.palette.primary.main, theme.palette.mode === 'light' ? 0.44 : 0.52),
+            bgcolor: (theme) => {
+              const main = theme.palette[color]?.main || theme.palette.primary.main;
+              return theme.palette.mode === 'light'
+                ? alpha(main, 0.075)
+                : alpha(main, 0.11);
+            },
+            backdropFilter: 'blur(18px) saturate(1.28)',
+            WebkitBackdropFilter: 'blur(18px) saturate(1.28)',
+            boxShadow: (theme) => theme.palette.mode === 'light'
+              ? `0 14px 30px ${alpha(theme.palette[color]?.main || theme.palette.primary.main, 0.10)}`
+              : `0 16px 36px ${alpha(theme.palette.common.black, 0.30)}`,
           },
-          '&:active': {
+          '&:not(.Mui-disabled):active': {
             transform: 'translateY(1px) scale(0.985)',
             transitionTimingFunction: motion.press,
             transitionDuration: `${motion.durations.instant}ms`,
@@ -116,7 +129,7 @@ export default function ExpandableFab({ icon, label, ariaLabel, onClick, color =
             transformOrigin: 'left center',
             transition: `opacity 150ms ease, transform 300ms ${fabSettle}`,
           },
-          '&:hover .ExpandableFab-label, &:focus-visible .ExpandableFab-label': canHover ? {
+          '&:not(.Mui-disabled):hover .ExpandableFab-label, &:not(.Mui-disabled):focus-visible .ExpandableFab-label': canHover ? {
             opacity: 1,
             transform: 'translate3d(0, 0, 0)',
             transition: `opacity 220ms ease 120ms, transform 420ms ${fabSettle} 80ms`,
