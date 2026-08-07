@@ -17,6 +17,7 @@ import ForumOutlinedIcon from '@mui/icons-material/ForumOutlined';
 import { useNavigate } from 'react-router-dom';
 import { motion, reducedMotionDescendantSx } from '../styles/motion';
 import { useLayoutHeaderActions } from '../components/layout/AppLayoutContext';
+import IntroExperiencePage from './IntroExperiencePage';
 
 const accent = '#E5C07B';
 const blue = '#E5C07B';
@@ -2326,7 +2327,7 @@ function EditorialIntroPage() {
   );
 }
 
-export default EditorialIntroPage;
+export default IntroExperiencePage;
 
 export function IntroConceptPage() {
   const navigate = useNavigate();
