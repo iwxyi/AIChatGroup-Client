@@ -4,6 +4,7 @@ import { copyTextToClipboard } from './clipboard';
 describe('copyTextToClipboard', () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    Reflect.deleteProperty(globalThis, 'window');
   });
 
   it('uses the Clipboard API when available', async () => {
@@ -15,6 +16,25 @@ describe('copyTextToClipboard', () => {
 
     await expect(copyTextToClipboard('hello')).resolves.toBe(true);
     expect(writeText).toHaveBeenCalledWith('hello');
+  });
+
+  it('uses the desktop clipboard bridge before browser fallbacks', async () => {
+    const writeClipboardText = vi.fn().mockReturnValue(true);
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const testWindow = {};
+    vi.stubGlobal('window', testWindow);
+    Object.defineProperty(testWindow, 'senseMurmurDesktop', {
+      configurable: true,
+      value: { writeClipboardText },
+    });
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+
+    await expect(copyTextToClipboard('desktop')).resolves.toBe(true);
+    expect(writeClipboardText).toHaveBeenCalledWith('desktop');
+    expect(writeText).not.toHaveBeenCalled();
   });
 
   it('falls back to execCommand when Clipboard API fails', async () => {

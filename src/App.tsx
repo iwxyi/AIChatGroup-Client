@@ -16,7 +16,13 @@ import { APP_DESCRIPTION, APP_TITLE } from './constants/brand';
 import { buildSettingsPath } from './routes/settingsRoute';
 import DevUpdatePrompt from './components/common/DevUpdatePrompt';
 import PwaUpdatePrompt from './components/common/PwaUpdatePrompt';
-import { hasGuestImportData, importGuestDataToCurrentAccount, readGuestImportSnapshot, type GuestImportSnapshot } from './services/guestDataImport';
+import {
+  hasPendingGuestImportForUser,
+  importGuestDataToCurrentAccount,
+  markGuestImportSnapshotDismissed,
+  readGuestImportSnapshot,
+  type GuestImportSnapshot,
+} from './services/guestDataImport';
 import { isCloudSyncEnabled } from './services/cloudSyncPreference';
 import { useChatStore } from './stores/useChatStore';
 import { useCharacterStore } from './stores/useCharacterStore';
@@ -320,16 +326,16 @@ function GuestImportPrompt() {
   useEffect(() => {
     let cancelled = false;
     if (!isLoggedIn || authMode !== 'cloud' || !userId) {
-      setSnapshot(null);
+      void Promise.resolve().then(() => {
+        if (!cancelled) setSnapshot(null);
+      });
       return () => {
         cancelled = true;
       };
     }
-    const dismissedKey = `pneumata-guest-import-dismissed:${userId}`;
-    if (sessionStorage.getItem(dismissedKey) === '1') return undefined;
     void readGuestImportSnapshot().then((nextSnapshot) => {
       if (cancelled) return;
-      setSnapshot(hasGuestImportData(nextSnapshot) ? nextSnapshot : null);
+      setSnapshot(hasPendingGuestImportForUser(userId, nextSnapshot) ? nextSnapshot : null);
     });
     return () => {
       cancelled = true;
@@ -337,7 +343,7 @@ function GuestImportPrompt() {
   }, [authMode, isLoggedIn, userId]);
 
   const closeAndRefresh = () => {
-    if (userId) sessionStorage.setItem(`pneumata-guest-import-dismissed:${userId}`, '1');
+    if (userId && snapshot) markGuestImportSnapshotDismissed(userId, snapshot);
     setSnapshot(null);
     startPostImportCloudRefresh();
   };

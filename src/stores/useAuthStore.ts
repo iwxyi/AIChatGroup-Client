@@ -272,7 +272,11 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
         }
       }
       const guestImportModule = await import('../services/guestDataImport');
-      const shouldDeferRemoteRefresh = guestImportModule.hasGuestImportData(await guestImportModule.readGuestImportSnapshot());
+      const guestImportSnapshot = await guestImportModule.readGuestImportSnapshot();
+      const shouldDeferRemoteRefresh = Boolean(
+        result.user?.id
+        && guestImportModule.hasPendingGuestImportForUser(result.user.id, guestImportSnapshot),
+      );
       await refreshStoresAfterCloudAuth(result.user, { deferRemoteRefresh: shouldDeferRemoteRefresh });
     } catch (error) {
       set({ isLoading: false });

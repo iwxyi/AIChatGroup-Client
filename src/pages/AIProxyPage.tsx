@@ -136,7 +136,7 @@ function getAiProxyBaseUrl() {
 }
 
 function buildCurlExamples(apiKey: string, baseUrl: string, model: string) {
-  const auth = apiKey || 'pn_xxx';
+  const auth = apiKey || 'ssmm_xxx';
   return [
     {
       label: 'OpenAI Chat',
@@ -303,7 +303,7 @@ export default function AIProxyPage() {
   }, [loadData, setHeaderActions, setHeaderTitle]);
 
   useEffect(() => {
-    void loadData();
+    void Promise.resolve().then(() => loadData());
   }, [loadData]);
 
   useEffect(() => {

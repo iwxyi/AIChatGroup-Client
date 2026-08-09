@@ -1,4 +1,4 @@
-import { scopedStorageKey } from '../constants/brand';
+import { scopedStorageKey, storageKey } from '../constants/brand';
 import { getLocalDataUserId } from './authStorageScope';
 import { createScopedIndexedDbStorage, flushBufferedPersistenceWrites } from '../stores/storePersistenceScope';
 import { useCharacterStore } from '../stores/useCharacterStore';
@@ -16,6 +16,14 @@ export interface GuestImportSnapshot {
   messageWindowsByChatId: Record<string, unknown>;
   artifacts: unknown[];
 }
+
+interface GuestImportPromptState {
+  version: 1;
+  dismissedByUserId: Record<string, string[]>;
+}
+
+const PROMPT_STATE_KEY = storageKey('guest-import-prompt-state');
+const MAX_DISMISSED_SIGNATURES_PER_USER = 20;
 
 function scopedStorage(scopedKey: string, storageName: string) {
   return createScopedIndexedDbStorage({
@@ -96,6 +104,84 @@ export function hasGuestImportData(snapshot: GuestImportSnapshot) {
       return Array.isArray(messages) && messages.length > 0;
     })
     || snapshot.artifacts.length > 0;
+}
+
+function stableStringify(value: unknown): string {
+  if (value === null) return 'null';
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => (item === undefined ? 'null' : stableStringify(item))).join(',')}]`;
+  }
+  if (typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    const entries = Object.keys(record)
+      .sort()
+      .filter((key) => record[key] !== undefined)
+      .map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`);
+    return `{${entries.join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function hashString(value: string) {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+export function getGuestImportSnapshotSignature(snapshot: GuestImportSnapshot) {
+  const payload = stableStringify(snapshot);
+  return `v1:${hashString(payload)}:${payload.length.toString(36)}`;
+}
+
+function readPromptState(): GuestImportPromptState {
+  if (typeof localStorage === 'undefined') {
+    return { version: 1, dismissedByUserId: {} };
+  }
+  try {
+    const raw = localStorage.getItem(PROMPT_STATE_KEY);
+    if (!raw) return { version: 1, dismissedByUserId: {} };
+    const parsed = JSON.parse(raw) as Partial<GuestImportPromptState>;
+    return {
+      version: 1,
+      dismissedByUserId: parsed.dismissedByUserId && typeof parsed.dismissedByUserId === 'object'
+        ? parsed.dismissedByUserId
+        : {},
+    };
+  } catch {
+    return { version: 1, dismissedByUserId: {} };
+  }
+}
+
+function writePromptState(state: GuestImportPromptState) {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(PROMPT_STATE_KEY, JSON.stringify(state));
+  } catch {
+    // The prompt can safely fall back to appearing again if persistent storage is unavailable.
+  }
+}
+
+export function hasDismissedGuestImportSnapshot(userId: string, snapshot: GuestImportSnapshot) {
+  const signature = getGuestImportSnapshotSignature(snapshot);
+  return readPromptState().dismissedByUserId[userId]?.includes(signature) === true;
+}
+
+export function markGuestImportSnapshotDismissed(userId: string, snapshot: GuestImportSnapshot) {
+  const signature = getGuestImportSnapshotSignature(snapshot);
+  const state = readPromptState();
+  const current = state.dismissedByUserId[userId] || [];
+  state.dismissedByUserId[userId] = [
+    signature,
+    ...current.filter((item) => item !== signature),
+  ].slice(0, MAX_DISMISSED_SIGNATURES_PER_USER);
+  writePromptState(state);
+}
+
+export function hasPendingGuestImportForUser(userId: string, snapshot: GuestImportSnapshot) {
+  return hasGuestImportData(snapshot) && !hasDismissedGuestImportSnapshot(userId, snapshot);
 }
 
 export async function importGuestDataToCurrentAccount(snapshot: GuestImportSnapshot) {
