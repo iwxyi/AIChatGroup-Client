@@ -92,7 +92,6 @@ function hasRepairImpulse(entry: RelationshipLedgerEntry, characters: AICharacte
 }
 
 function describeRelationshipLineSummary(entry: RelationshipLedgerEntry, characters: AICharacter[]) {
-  const semantic = entry.derived?.semantic;
   const safeSemanticSummary = buildPublicSafeRelationshipSemanticSummary(entry, (text, max) => clipText(text || '', max));
   if (hasRepairImpulse(entry, characters)) {
     return safeSemanticSummary
@@ -456,7 +455,7 @@ function buildMysteryLines(chat: GroupChat, now: number): NarrativeLineProjectio
     conversationId: chat.id,
     type: 'mystery',
     title: '未公开线索',
-    summary: '当前会话存在未公开信息或私密行动，可能影响公开讨论的走向。',
+    summary: '当前会话有隐藏信息在影响公开走向。',
     participantIds: [],
     hiddenParticipantIds: unique(privateEvents.flatMap((event) => [...(event.actorIds || []), ...(event.targetIds || [])])),
     visibility: 'derived_public',

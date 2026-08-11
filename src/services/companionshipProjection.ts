@@ -4143,7 +4143,7 @@ export function buildRitualRegistry(params: {
       kind: 'daily_greeting',
       participantIds: [params.character.id, USER_ACTOR_ID],
       trigger: 'time',
-      content: `用${address}能接受的轻度方式表达早安/晚安，不机械打卡。`,
+      content: `用${address}轻度表达早安/晚安，不机械打卡。`,
       evolution: profile.scheduleHints.slice(0, 2),
       cooldownHours: 12,
       boundaryReasons: [],
@@ -4378,7 +4378,7 @@ export function buildCompanionshipArtifactSeeds(params: {
       seeds.push(`公开动态可以把关系仪式写成生活痕迹，不解释系统含义：${text}。`);
       return;
     }
-    seeds.push(`关系仪式可以作为日记里的生活感材料：${text}。`);
+    seeds.push(`关系仪式可作为私密日记材料：${text}。`);
   });
 
   buildCharacterCompanionshipStates(companionCharacter, now, chat)

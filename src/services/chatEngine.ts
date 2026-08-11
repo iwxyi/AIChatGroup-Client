@@ -64,6 +64,13 @@ export interface GeneratedRoundMessage extends Omit<Message, 'id' | 'timestamp' 
   conflictFocus?: ConflictFocusPayload | null;
 }
 
+type SpeakerSelectionState = {
+  speakerId?: string | null;
+  reason?: string | null;
+  bypassNotice?: string | null;
+  policy?: Record<string, unknown>;
+} | null;
+
 export type LocalInterceptionKind =
   | 'guidance_retry'
   | 'analysis_artifacts_present'
@@ -2555,7 +2562,7 @@ function buildMessageMetadata(params: {
 function buildRuntimeDecisionMetadata(params: {
   directorIntent?: DirectorIntent | null;
   narrativeLines?: NarrativeLineProjection[];
-  speakerSelection?: { speakerId?: string | null; reason?: string | null; bypassNotice?: string | null; policy?: Record<string, unknown> } | null;
+  speakerSelection?: SpeakerSelectionState;
   speakerScore?: SpeakerScoreBreakdown | null;
   innerLife?: InnerLifeProjection | null;
   surface?: ResponseSurface | null;
@@ -4249,7 +4256,7 @@ export const runOneRound = async (
   const candidates = calculateWeights(autoSpeakableMembers, activeMessages, effectiveCooldownMap, chat.speed, BASE_COOLDOWN_MS, pendingReplyContext, chat, directorIntent);
   const lockedGuidanceSpeaker = resolveUserGuidanceLockedSpeaker(autoSpeakableMembers, directorIntent);
   const roundtableTurnSpeaker = resolveRoundtableTurnSpeaker(chat, autoSpeakableMembers);
-  let speakerSelection = storyNarrator
+  let speakerSelection: SpeakerSelectionState = storyNarrator
     ? {
       speakerId: storyNarrator.id,
       reason: null,
@@ -4342,28 +4349,29 @@ export const runOneRound = async (
           speakerName: chatMembers.find((member) => member.id === candidate.characterId)?.name || candidate.characterId,
         }))
         .sort((a, b) => b.weight - a.weight),
-      pickedSpeakerId: speakerSelection.speakerId,
-      pickedSpeakerName: chatMembers.find((member) => member.id === speakerSelection.speakerId)?.name || null,
-      idleReason: speakerSelection.reason,
+      pickedSpeakerId: speakerSelection?.speakerId || null,
+      pickedSpeakerName: chatMembers.find((member) => member.id === speakerSelection?.speakerId)?.name || null,
+      idleReason: speakerSelection?.reason || null,
 	      pendingReplyContext,
 	      directorIntent,
 	      narrativeLines,
 	    };
     logDeveloperDiagnostic('group-loop:selection', selectionDebug);
   }
-  if (!speakerSelection.speakerId) {
+  const currentSpeakerSelection = speakerSelection;
+  if (!currentSpeakerSelection?.speakerId) {
     logDeveloperDiagnostic('chat-run:speaker-selection-idle', {
       chatId: chat.id,
       type: chat.type,
       scenarioId: resolveSessionDefinition(chat).kind.scenarioId,
-      reason: speakerSelection.reason,
+      reason: currentSpeakerSelection?.reason || null,
       elapsedMs: selectionElapsedMs,
     }, 'info', 'chat-run');
-    if (speakerSelection.reason) callbacks.onIdle?.(speakerSelection.reason);
+    if (currentSpeakerSelection?.reason) callbacks.onIdle?.(currentSpeakerSelection.reason);
     return;
   }
 
-  const speaker = chatMembers.find((c) => c.id === speakerSelection.speakerId);
+  const speaker = chatMembers.find((c) => c.id === currentSpeakerSelection.speakerId);
   if (!speaker) return;
   const selectedCandidate = candidates.find((candidate) => candidate.characterId === speaker.id);
   const selectedSpeakerScore = resolveSelectedSpeakerScore({

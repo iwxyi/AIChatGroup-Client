@@ -1,7 +1,7 @@
 import { lazy, Suspense, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useLayoutHeaderActions } from '../components/layout/AppLayoutContext';
 import {
-  Alert, Box, Typography, Button, Dialog, DialogTitle, DialogContent, DialogActions, IconButton, Menu, MenuItem,
+  Alert, Box, Typography, Button, Dialog, DialogTitle, DialogContent, DialogActions, IconButton, Menu, MenuItem, Tooltip,
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
@@ -358,7 +358,6 @@ export default function CreateChatPage() {
 
   useEffect(() => {
     let active = true;
-    setFreeEntitlementLoaded(false);
     apiClient.getBillingMembershipConfig()
       .then((result) => {
         if (active) {
@@ -379,31 +378,32 @@ export default function CreateChatPage() {
 
   useEffect(() => {
     let active = true;
-    if (authMode !== 'cloud' || !isLoggedIn) {
-      setMembership(null);
-      setMembershipLoaded(true);
+    queueMicrotask(() => {
+      if (!active) return;
+      if (authMode !== 'cloud' || !isLoggedIn) {
+        setMembership(null);
+        setMembershipLoaded(true);
+        setMembershipLoadFailed(false);
+        return;
+      }
+      setMembershipLoaded(false);
       setMembershipLoadFailed(false);
-      return () => {
-        active = false;
-      };
-    }
-    setMembershipLoaded(false);
-    setMembershipLoadFailed(false);
-    apiClient.getBillingMembership()
-      .then((result) => {
-        if (active) {
-          setMembership(result);
-          setMembershipLoaded(true);
-          setMembershipLoadFailed(false);
-        }
-      })
-      .catch(() => {
-        if (active) {
-          setMembership(null);
-          setMembershipLoaded(true);
-          setMembershipLoadFailed(true);
-        }
-      });
+      apiClient.getBillingMembership()
+        .then((result) => {
+          if (active) {
+            setMembership(result);
+            setMembershipLoaded(true);
+            setMembershipLoadFailed(false);
+          }
+        })
+        .catch(() => {
+          if (active) {
+            setMembership(null);
+            setMembershipLoaded(true);
+            setMembershipLoadFailed(true);
+          }
+        });
+    });
     return () => {
       active = false;
     };
@@ -413,129 +413,135 @@ export default function CreateChatPage() {
     if (id && !editingChat) return;
 
     if (editingChat) {
-      setMarketBundleCharacterPreviews([]);
-      setName(editingChat.name || '');
-      setTopic(editingChat.topic || '');
-      setStyle(editingChat.style);
-      styleOverriddenRef.current = true;
-      const matchedTemplateKey = editingChat.sessionKind ? getRoomTemplateKeyBySessionKind(editingChat.sessionKind) : null;
-      setRoomTemplate(matchedTemplateKey || 'open_chat');
-      setSelectedMembers(stripUserMemberId(editingChat.memberIds || []));
-      setOwnerCharacterId(editingChat.governance.ownerCharacterId || '');
-      setAdminCharacterIds(editingChat.governance.adminCharacterIds || []);
-      setMood(editingChat.worldState.mood || '');
-      setFocus(editingChat.worldState.focus || '');
-      setRecentEvent(editingChat.worldState.recentEvent || '');
-      setSeedMemoryText((editingChat.runtimeSeed?.notes || []).join('\n'));
-      setSeedArtifactText((editingChat.runtimeSeed?.artifacts || []).join('\n'));
-      setAllowCliques(editingChat.dramaRules.allowCliques);
-      setAllowMockery(editingChat.dramaRules.allowMockery);
-      setShowRoleActions(editingChat.showRoleActions ?? true);
-      setIncludeUserAsMember((editingChat.memberIds || []).includes('user'));
-      setOperatorIdsText((editingChat.operatorIds || []).join(', '));
-      setRuntimeEvolutionIntensity(editingChat.runtimeEvolutionIntensity || 'balanced');
-      setStoryBranchMode(editingChat.scenarioState?.branches?.[0]?.status === 'chosen' ? 'open' : 'guided');
-      setStoryBackground(String(editingChat.scenarioState?.storyBackground || ''));
-      setStoryDirection(String(editingChat.scenarioState?.storyDirection || ''));
-      setStoryOutline(String(editingChat.scenarioState?.storyOutline || ''));
-      setStudyGoalLabel(editingChat.scenarioState?.goals?.find((item) => item.goalId === 'study-goal')?.label || '');
-      setAgentGoalLabel(editingChat.scenarioState?.goals?.find((item) => item.goalId === 'agent-goal')?.label || '');
-      setBoardColumns(editingChat.scenarioState?.board?.schema?.columns || 8);
-      setBoardRows(editingChat.scenarioState?.board?.schema?.rows || 8);
-      setDeductionFactionCount(editingChat.scenarioState?.factions?.length || 2);
-      setWerewolfRoleConfig(String(editingChat.scenarioState?.werewolfRoleConfig || ''));
-      setWerewolfPostGameMode(String(editingChat.scenarioState?.werewolfPostGameMode || 'free_talk'));
-      setMysteryClueCount(editingChat.scenarioState?.progress?.find((item) => item.key === 'mystery-progress')?.target || 6);
-      setMysteryScript(String(editingChat.scenarioState?.mysteryScript || ''));
-      setMysteryRoleMappingMode(String(editingChat.scenarioState?.mysteryRoleMappingMode || 'alias'));
-      setAllowSpeakAs(editingChat.directorControls.allowSpeakAs);
-      setAllowDirectorMode(editingChat.directorControls.allowDirectorMode);
-      setAllowEventInjection(editingChat.directorControls.allowEventInjection);
-      setAllowForcedReply(editingChat.directorControls.allowForcedReply);
-      setAutoModeration(editingChat.governance.autoModeration);
-      setAllowMute(editingChat.governance.allowMute);
-      setAllowPrivateThreads(editingChat.governance.allowPrivateThreads);
+      queueMicrotask(() => {
+        setMarketBundleCharacterPreviews([]);
+        setName(editingChat.name || '');
+        setTopic(editingChat.topic || '');
+        setStyle(editingChat.style);
+        styleOverriddenRef.current = true;
+        const matchedTemplateKey = editingChat.sessionKind ? getRoomTemplateKeyBySessionKind(editingChat.sessionKind) : null;
+        setRoomTemplate(matchedTemplateKey || 'open_chat');
+        setSelectedMembers(stripUserMemberId(editingChat.memberIds || []));
+        setOwnerCharacterId(editingChat.governance.ownerCharacterId || '');
+        setAdminCharacterIds(editingChat.governance.adminCharacterIds || []);
+        setMood(editingChat.worldState.mood || '');
+        setFocus(editingChat.worldState.focus || '');
+        setRecentEvent(editingChat.worldState.recentEvent || '');
+        setSeedMemoryText((editingChat.runtimeSeed?.notes || []).join('\n'));
+        setSeedArtifactText((editingChat.runtimeSeed?.artifacts || []).join('\n'));
+        setAllowCliques(editingChat.dramaRules.allowCliques);
+        setAllowMockery(editingChat.dramaRules.allowMockery);
+        setShowRoleActions(editingChat.showRoleActions ?? true);
+        setIncludeUserAsMember((editingChat.memberIds || []).includes('user'));
+        setOperatorIdsText((editingChat.operatorIds || []).join(', '));
+        setRuntimeEvolutionIntensity(editingChat.runtimeEvolutionIntensity || 'balanced');
+        setStoryBranchMode(editingChat.scenarioState?.branches?.[0]?.status === 'chosen' ? 'open' : 'guided');
+        setStoryBackground(String(editingChat.scenarioState?.storyBackground || ''));
+        setStoryDirection(String(editingChat.scenarioState?.storyDirection || ''));
+        setStoryOutline(String(editingChat.scenarioState?.storyOutline || ''));
+        setStudyGoalLabel(editingChat.scenarioState?.goals?.find((item) => item.goalId === 'study-goal')?.label || '');
+        setAgentGoalLabel(editingChat.scenarioState?.goals?.find((item) => item.goalId === 'agent-goal')?.label || '');
+        setBoardColumns(editingChat.scenarioState?.board?.schema?.columns || 8);
+        setBoardRows(editingChat.scenarioState?.board?.schema?.rows || 8);
+        setDeductionFactionCount(editingChat.scenarioState?.factions?.length || 2);
+        setWerewolfRoleConfig(String(editingChat.scenarioState?.werewolfRoleConfig || ''));
+        setWerewolfPostGameMode(String(editingChat.scenarioState?.werewolfPostGameMode || 'free_talk'));
+        setMysteryClueCount(editingChat.scenarioState?.progress?.find((item) => item.key === 'mystery-progress')?.target || 6);
+        setMysteryScript(String(editingChat.scenarioState?.mysteryScript || ''));
+        setMysteryRoleMappingMode(String(editingChat.scenarioState?.mysteryRoleMappingMode || 'alias'));
+        setAllowSpeakAs(editingChat.directorControls.allowSpeakAs);
+        setAllowDirectorMode(editingChat.directorControls.allowDirectorMode);
+        setAllowEventInjection(editingChat.directorControls.allowEventInjection);
+        setAllowForcedReply(editingChat.directorControls.allowForcedReply);
+        setAutoModeration(editingChat.governance.autoModeration);
+        setAllowMute(editingChat.governance.allowMute);
+        setAllowPrivateThreads(editingChat.governance.allowPrivateThreads);
+      });
       return;
     }
 
     if (marketImportDraft?.item && ['chat_template', 'bundle_template'].includes(marketImportDraft.item.kind)) {
-      const importedChat = buildImportedChatDraft(marketImportDraft.item);
-      const matchedTemplateKey = importedChat.sessionKind ? getRoomTemplateKeyBySessionKind(importedChat.sessionKind) : null;
-      setName(importedChat.name || '');
-      setTopic(importedChat.topic || '');
-      setStyle(importedChat.style || chatDraftDefaults.style);
-      styleOverriddenRef.current = Boolean(importedChat.style);
-      setRoomTemplate(matchedTemplateKey || 'open_chat');
-      setSelectedMembers(stripUserMemberId(importedChat.memberIds || []));
-      setOwnerCharacterId(importedChat.governance?.ownerCharacterId || '');
-      setAdminCharacterIds(importedChat.governance?.adminCharacterIds || []);
-      setMood(importedChat.worldState?.mood || '');
-      setFocus(importedChat.worldState?.focus || '');
-      setRecentEvent(importedChat.worldState?.recentEvent || '');
-      setSeedMemoryText((importedChat.runtimeSeed?.notes || []).join('\n'));
-      setSeedArtifactText((importedChat.runtimeSeed?.artifacts || []).join('\n'));
-      setAllowCliques(Boolean(importedChat.dramaRules?.allowCliques));
-      setAllowMockery(Boolean(importedChat.dramaRules?.allowMockery));
-      setShowRoleActions(importedChat.showRoleActions ?? chatDraftDefaults.showRoleActions);
-      setIncludeUserAsMember((importedChat.memberIds || []).includes('user'));
-      setOperatorIdsText((importedChat.operatorIds || []).join(', '));
-      setRuntimeEvolutionIntensity(importedChat.runtimeEvolutionIntensity || chatDraftDefaults.runtimeEvolutionIntensity);
-      setStoryBranchMode(importedChat.scenarioState?.branches?.[0]?.status === 'chosen' ? 'open' : 'guided');
-      setStoryBackground(String(importedChat.scenarioState?.storyBackground || ''));
-      setStoryDirection(String(importedChat.scenarioState?.storyDirection || ''));
-      setStoryOutline(String(importedChat.scenarioState?.storyOutline || ''));
-      setStudyGoalLabel(importedChat.scenarioState?.goals?.find((item) => item.goalId === 'study-goal')?.label || '');
-      setAgentGoalLabel(importedChat.scenarioState?.goals?.find((item) => item.goalId === 'agent-goal')?.label || '');
-      setBoardColumns(importedChat.scenarioState?.board?.schema?.columns || 8);
-      setBoardRows(importedChat.scenarioState?.board?.schema?.rows || 8);
-      setDeductionFactionCount(importedChat.scenarioState?.factions?.length || 2);
-      setWerewolfRoleConfig(String(importedChat.scenarioState?.werewolfRoleConfig || ''));
-      setWerewolfPostGameMode(String(importedChat.scenarioState?.werewolfPostGameMode || 'free_talk'));
-      setMysteryClueCount(importedChat.scenarioState?.progress?.find((item) => item.key === 'mystery-progress')?.target || 6);
-      setMysteryScript(String(importedChat.scenarioState?.mysteryScript || ''));
-      setMysteryRoleMappingMode(String(importedChat.scenarioState?.mysteryRoleMappingMode || 'alias'));
-      setAllowSpeakAs(importedChat.directorControls?.allowSpeakAs ?? true);
-      setAllowDirectorMode(importedChat.directorControls?.allowDirectorMode ?? true);
-      setAllowEventInjection(importedChat.directorControls?.allowEventInjection ?? true);
-      setAllowForcedReply(importedChat.directorControls?.allowForcedReply ?? true);
-      setAutoModeration(Boolean(importedChat.governance?.autoModeration));
-      setAllowMute(importedChat.governance?.allowMute ?? true);
-      setAllowPrivateThreads(importedChat.governance?.allowPrivateThreads ?? true);
-      setMarketBundleCharacterPreviews(marketImportDraft.item.kind === 'bundle_template' ? buildBundledCharacterPreview(marketImportDraft.item) : []);
+      queueMicrotask(() => {
+        const importedChat = buildImportedChatDraft(marketImportDraft.item);
+        const matchedTemplateKey = importedChat.sessionKind ? getRoomTemplateKeyBySessionKind(importedChat.sessionKind) : null;
+        setName(importedChat.name || '');
+        setTopic(importedChat.topic || '');
+        setStyle(importedChat.style || chatDraftDefaults.style);
+        styleOverriddenRef.current = Boolean(importedChat.style);
+        setRoomTemplate(matchedTemplateKey || 'open_chat');
+        setSelectedMembers(stripUserMemberId(importedChat.memberIds || []));
+        setOwnerCharacterId(importedChat.governance?.ownerCharacterId || '');
+        setAdminCharacterIds(importedChat.governance?.adminCharacterIds || []);
+        setMood(importedChat.worldState?.mood || '');
+        setFocus(importedChat.worldState?.focus || '');
+        setRecentEvent(importedChat.worldState?.recentEvent || '');
+        setSeedMemoryText((importedChat.runtimeSeed?.notes || []).join('\n'));
+        setSeedArtifactText((importedChat.runtimeSeed?.artifacts || []).join('\n'));
+        setAllowCliques(Boolean(importedChat.dramaRules?.allowCliques));
+        setAllowMockery(Boolean(importedChat.dramaRules?.allowMockery));
+        setShowRoleActions(importedChat.showRoleActions ?? chatDraftDefaults.showRoleActions);
+        setIncludeUserAsMember((importedChat.memberIds || []).includes('user'));
+        setOperatorIdsText((importedChat.operatorIds || []).join(', '));
+        setRuntimeEvolutionIntensity(importedChat.runtimeEvolutionIntensity || chatDraftDefaults.runtimeEvolutionIntensity);
+        setStoryBranchMode(importedChat.scenarioState?.branches?.[0]?.status === 'chosen' ? 'open' : 'guided');
+        setStoryBackground(String(importedChat.scenarioState?.storyBackground || ''));
+        setStoryDirection(String(importedChat.scenarioState?.storyDirection || ''));
+        setStoryOutline(String(importedChat.scenarioState?.storyOutline || ''));
+        setStudyGoalLabel(importedChat.scenarioState?.goals?.find((item) => item.goalId === 'study-goal')?.label || '');
+        setAgentGoalLabel(importedChat.scenarioState?.goals?.find((item) => item.goalId === 'agent-goal')?.label || '');
+        setBoardColumns(importedChat.scenarioState?.board?.schema?.columns || 8);
+        setBoardRows(importedChat.scenarioState?.board?.schema?.rows || 8);
+        setDeductionFactionCount(importedChat.scenarioState?.factions?.length || 2);
+        setWerewolfRoleConfig(String(importedChat.scenarioState?.werewolfRoleConfig || ''));
+        setWerewolfPostGameMode(String(importedChat.scenarioState?.werewolfPostGameMode || 'free_talk'));
+        setMysteryClueCount(importedChat.scenarioState?.progress?.find((item) => item.key === 'mystery-progress')?.target || 6);
+        setMysteryScript(String(importedChat.scenarioState?.mysteryScript || ''));
+        setMysteryRoleMappingMode(String(importedChat.scenarioState?.mysteryRoleMappingMode || 'alias'));
+        setAllowSpeakAs(importedChat.directorControls?.allowSpeakAs ?? true);
+        setAllowDirectorMode(importedChat.directorControls?.allowDirectorMode ?? true);
+        setAllowEventInjection(importedChat.directorControls?.allowEventInjection ?? true);
+        setAllowForcedReply(importedChat.directorControls?.allowForcedReply ?? true);
+        setAutoModeration(Boolean(importedChat.governance?.autoModeration));
+        setAllowMute(importedChat.governance?.allowMute ?? true);
+        setAllowPrivateThreads(importedChat.governance?.allowPrivateThreads ?? true);
+        setMarketBundleCharacterPreviews(marketImportDraft.item.kind === 'bundle_template' ? buildBundledCharacterPreview(marketImportDraft.item) : []);
+      });
       return;
     }
 
-    setMarketBundleCharacterPreviews([]);
-    setStyle(chatDraftDefaults.style);
-    styleOverriddenRef.current = false;
-    setRoomTemplate('open_chat');
-    setShowRoleActions(chatDraftDefaults.showRoleActions);
-    setIncludeUserAsMember(chatDraftDefaults.includeUserAsMember);
-    setRuntimeEvolutionIntensity(chatDraftDefaults.runtimeEvolutionIntensity);
-    setStoryBranchMode('guided');
-    setStudyGoalLabel('');
-    setAgentGoalLabel('');
-    setBoardColumns(8);
-    setBoardRows(8);
-    setDeductionFactionCount(2);
-    setMysteryClueCount(6);
-    setOwnerCharacterId('');
-    setAdminCharacterIds([]);
-    setMood('');
-    setFocus('');
-    setRecentEvent('');
-    setSeedMemoryText('');
-    setSeedArtifactText('');
-    setAllowCliques(false);
-    setAllowMockery(false);
-    setAllowSpeakAs(true);
-    setAllowDirectorMode(true);
-    setAllowEventInjection(true);
-    setAllowForcedReply(true);
-    setOperatorIdsText('');
-    setAutoModeration(false);
-    setAllowMute(true);
-    setAllowPrivateThreads(true);
+    queueMicrotask(() => {
+      setMarketBundleCharacterPreviews([]);
+      setStyle(chatDraftDefaults.style);
+      styleOverriddenRef.current = false;
+      setRoomTemplate('open_chat');
+      setShowRoleActions(chatDraftDefaults.showRoleActions);
+      setIncludeUserAsMember(chatDraftDefaults.includeUserAsMember);
+      setRuntimeEvolutionIntensity(chatDraftDefaults.runtimeEvolutionIntensity);
+      setStoryBranchMode('guided');
+      setStudyGoalLabel('');
+      setAgentGoalLabel('');
+      setBoardColumns(8);
+      setBoardRows(8);
+      setDeductionFactionCount(2);
+      setMysteryClueCount(6);
+      setOwnerCharacterId('');
+      setAdminCharacterIds([]);
+      setMood('');
+      setFocus('');
+      setRecentEvent('');
+      setSeedMemoryText('');
+      setSeedArtifactText('');
+      setAllowCliques(false);
+      setAllowMockery(false);
+      setAllowSpeakAs(true);
+      setAllowDirectorMode(true);
+      setAllowEventInjection(true);
+      setAllowForcedReply(true);
+      setOperatorIdsText('');
+      setAutoModeration(false);
+      setAllowMute(true);
+      setAllowPrivateThreads(true);
+    });
   }, [chatDraftDefaults.includeUserAsMember, chatDraftDefaults.runtimeEvolutionIntensity, chatDraftDefaults.showRoleActions, chatDraftDefaults.style, editingChat, id, marketImportDraft]);
 
   const toggleMember = (memberId: string) => {
@@ -594,7 +600,7 @@ export default function CreateChatPage() {
     }));
   };
 
-  const restoreDraft = () => {
+  const restoreDraft = useCallback(() => {
     const raw = sessionStorage.getItem(CHAT_DRAFT_KEY);
     if (!raw) return;
     try {
@@ -649,7 +655,12 @@ export default function CreateChatPage() {
     } finally {
       sessionStorage.removeItem(CHAT_DRAFT_KEY);
     }
-  };
+  }, [
+    chatDraftDefaults.runtimeEvolutionIntensity,
+    chatDraftDefaults.style,
+    location.pathname,
+    location.search,
+  ]);
 
   const openMemberEdit = (characterId: string) => {
     persistDraft();
@@ -680,7 +691,7 @@ export default function CreateChatPage() {
     if (!editingChat && new URLSearchParams(location.search).get('restoreDraft') === '1') {
       restoreDraft();
     }
-  }, [editingChat, location.search]);
+  }, [editingChat, location.search, restoreDraft]);
 
   useEffect(() => () => clearMemberPressTimer(), []);
 
@@ -749,8 +760,10 @@ export default function CreateChatPage() {
 
   useEffect(() => {
     const defaults = selectedRoomTemplate.defaults || {};
-    if (defaults.studyGoalLabel !== undefined && !studyGoalLabel) setStudyGoalLabel(defaults.studyGoalLabel);
-    if (defaults.agentGoalLabel !== undefined && !agentGoalLabel) setAgentGoalLabel(defaults.agentGoalLabel);
+    queueMicrotask(() => {
+      if (defaults.studyGoalLabel !== undefined && !studyGoalLabel) setStudyGoalLabel(defaults.studyGoalLabel);
+      if (defaults.agentGoalLabel !== undefined && !agentGoalLabel) setAgentGoalLabel(defaults.agentGoalLabel);
+    });
   }, [selectedRoomTemplate, studyGoalLabel, agentGoalLabel]);
 
   const applyRoomTemplate = useCallback((templateKey: RoomTemplateKey) => {
@@ -788,7 +801,10 @@ export default function CreateChatPage() {
 
   useEffect(() => {
     if (editingChat || roomTemplateAvailable) return;
-    applyRoomTemplate('open_chat');
+    queueMicrotask(() => {
+      if (editingChat || roomTemplateAvailable) return;
+      applyRoomTemplate('open_chat');
+    });
   }, [applyRoomTemplate, editingChat, roomTemplateAvailable]);
 
   const handleRoomTemplateChange = useCallback((templateKey: RoomTemplateKey) => {
@@ -891,6 +907,7 @@ export default function CreateChatPage() {
     selectedMembers,
     showRoleActions,
     style,
+    topic,
     t,
   ]);
 
@@ -1139,9 +1156,11 @@ export default function CreateChatPage() {
       .concat(showManagementTab ? [managementTabIndex] : [])
       .concat(showRuntimeTab ? [runtimeTabIndex] : [])
       .concat(showDirectorTab ? [directorTabIndex] : []);
-    if (!availableTabs.includes(configTab)) {
-      setConfigTab(availableTabs[0] || 0);
-    }
+    queueMicrotask(() => {
+      if (!availableTabs.includes(configTab)) {
+        setConfigTab(availableTabs[0] || 0);
+      }
+    });
   }, [configTab, directorTabIndex, gameplayTabIndex, managementTabIndex, runtimeTabIndex, showDirectorTab, showGameplayTab, showManagementTab, showRuntimeTab]);
 
   const desktopHeaderActions = null;
@@ -1520,9 +1539,15 @@ export default function CreateChatPage() {
                 <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1, color: 'error.main' }}>
                   {isZh ? '危险操作' : 'Danger zone'}
                 </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-                  {isZh ? `可分别清理消息记录、会话级记忆或删除${conversationNoun}。` : `You can clear messages, clear session memory, or delete the ${conversationNoun}.`}
-                </Typography>
+                <Tooltip
+                  title={isZh ? `可分别清理消息记录、会话级记忆或删除${conversationNoun}。` : `You can clear messages, clear session memory, or delete the ${conversationNoun}.`}
+                  arrow
+                  placement="top-start"
+                >
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5, width: 'fit-content', cursor: 'help' }}>
+                    {isZh ? '可清理消息 / 记忆 / 会话' : 'Clear messages / memory / chat'}
+                  </Typography>
+                </Tooltip>
                 <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, gap: 1 }}>
                   <Button color="error" variant="outlined" onClick={openClearMessagesDialog}>
                     {clearMessagesLabel}

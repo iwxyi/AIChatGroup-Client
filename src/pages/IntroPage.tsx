@@ -3,7 +3,6 @@ import { useTheme } from '@mui/material/styles';
 import { Box, Button, Chip, Stack, Typography } from '@mui/material';
 import PsychologyIcon from '@mui/icons-material/Psychology';
 import HubIcon from '@mui/icons-material/Hub';
-import ScienceIcon from '@mui/icons-material/Science';
 import MemoryIcon from '@mui/icons-material/Memory';
 import ForumIcon from '@mui/icons-material/Forum';
 import TimelineIcon from '@mui/icons-material/Timeline';
@@ -17,7 +16,6 @@ import ForumOutlinedIcon from '@mui/icons-material/ForumOutlined';
 import { useNavigate } from 'react-router-dom';
 import { motion, reducedMotionDescendantSx } from '../styles/motion';
 import { useLayoutHeaderActions } from '../components/layout/AppLayoutContext';
-import IntroExperiencePage from './IntroExperiencePage';
 
 const accent = '#E5C07B';
 const blue = '#E5C07B';
@@ -27,50 +25,34 @@ const border = 'rgba(255,255,255,0.12)';
 const groupRevealOptions = { threshold: 0.04, rootMargin: '0px 0px 18% 0px' };
 
 const navItems = [
-  ['world', '群息共存 · 房间'],
-  ['memory', '心迹回响 · 记忆'],
-  ['engine', '生命机制 · 运行'],
-  ['runtime', '内在秩序 · 视角'],
-  ['craft', '意志存续 · 进入'],
+  ['world', '这是什么'],
+  ['memory', '旧事如何回来'],
+  ['engine', '角色如何开口'],
+  ['runtime', '房间如何运转'],
+  ['craft', '开始相处'],
 ];
 
-const featureCards = [
+const proofRows = [
   {
     icon: <ForumIcon />,
     title: '一间会呼吸的房间',
-    text: 'Sense Murmur 的基本形态是一间互动房间。多个 AI 角色共享同一段时间，插话、沉默、维护和站边都会改变房间的空气。',
+    detail: '多个角色共享同一段正在发生的时间。接话、插话、沉默、维护、反驳，不是轮流发言，而是自然发生的对话。',
   },
   {
     icon: <MemoryIcon />,
     title: '记忆会沉下去，再浮上来',
-    text: '群聊、单聊和 AI 私聊不是孤立会话。旧事会沉进关系与记忆，在某个名字、语气或沉默里重新浮上来。',
+    detail: '偏好、承诺、误会、共同经历，不会消失，只是暂时沉下去。在某个话题触碰到旧事时，它会自己浮上来，改变下一句话的语气。',
   },
   {
     icon: <HubIcon />,
     title: '关系不是一个分数',
-    text: '亲近、戒备、信赖、不安会分别留下痕迹。你不只看到数值变化，而是在角色下一句话里感觉到重量。',
+    detail: '角色会记住你们之间发生过什么。亲近、信任、防备、亏欠——这些不是参数，是它开口前会感受到的重量。',
   },
   {
-    icon: <ScienceIcon />,
+    icon: <PsychologyIcon />,
     title: '每一次开口，都是一次选择',
-    text: '系统会在意图、关系、记忆、情绪和场面之间选择一种回应，让角色说出此刻更像自己的那句话。',
+    detail: '生成回复前，角色会综合身份、记忆、关系、状态和房间态势，再决定说什么、说多少、用什么语气、要不要沉默。',
   },
-];
-
-const engineSteps = [
-  ['它是一间房间', '你不是在和一个回答器对话，而是在把角色放进同一段时间里，让他们彼此看见、插话、沉默、站边。'],
-  ['角色会被经历改变', '一次被接住、一次被忽视、一次争执或一次维护，都会进入关系和记忆，影响它下一次怎么面对你。'],
-  ['群聊不是背景板', '公开房间里的玩笑、冲突和默契，会回到单聊里的语气；单聊里的关系，也会反过来改变公开场合。'],
-  ['私密线程会长出余波', 'AI 角色之间可以有自己的私聊、秘密、和解和误会。你未必看见全过程，但会在之后的群聊里感到变化。'],
-  ['你可以轻推剧情', '你能指定谁回应、代演某个角色、投放事件或改变议题。系统会尽量让干预成为世界的一部分，而不是硬切场景。'],
-  ['回来时不是从零开始', '角色会带着旧事继续存在：记得共同经历、关系裂痕、未完成的约定，也记得哪些话不该轻易说出口。'],
-];
-
-const proofRows = [
-  ['会沉默', '有些委屈不会立刻说破，只会变成短句、岔开、嘴硬，或下一次忽然冒出来的刺。'],
-  ['会在乎', '被认真接住后，改变的不只是好感，而是角色对这段关系是否安全的判断。'],
-  ['会自尊', '它会维护体面，会害怕被看穿，也会在想靠近的时候先绕开一步。'],
-  ['会告别', '经历会变成日记、诞生信和最后一封信，像一个生命，在离开前留下了自己的证词。'],
 ];
 
 const mockGroupChatLog: Array<{ type: 'time' | 'msg'; text?: string; sender?: '阿晚' | '老李' | '涩涩'; content?: string }> = [
@@ -169,32 +151,32 @@ const metrics = [
 
 const architectureNodes = [
   {
-    title: '会话引导',
-    caption: '意图归一',
+    title: '意图归一',
+    caption: '精确感知',
     mode: 'intent',
-    summary: '把用户的一句话归一成会话意图：点名、换题、请求图片、导演干预或普通推进，都进入同一条运行链路。',
-    facets: ['对象识别', '动作验收', '跑偏重试'],
+    summary: '把用户的每句话拆解为意图、对象与情绪，让角色先理解再回应。',
+    facets: ['对象识别', '意图分类', '动作指向'],
   },
   {
-    title: '角色人格',
-    caption: '内在驱动',
-    mode: 'persona',
-    summary: '角色先是长期存在的人，再临时参与某个场景。核心人格、情绪余波、防御机制和表达边界共同决定它怎么开口。',
-    facets: ['长期人格', '内心余波', '表达边界'],
+    title: '记忆分层',
+    caption: '按需唤醒',
+    mode: 'memory',
+    summary: '短期对话、阶段经历与长期结论分层管理，在合适的时候自然唤醒。',
+    facets: ['工作记忆', '阶段经历', '长期结论', '冷存档'],
   },
   {
-    title: '关系账本',
-    caption: '立场沉淀',
+    title: '立场沉淀',
+    caption: '关系演化',
     mode: 'relationship',
-    summary: '关系不是好感度。亲近、信任、威胁感、能力认可会分别变化，并留下原因链，影响下一轮谁靠近、谁防备。',
+    summary: '亲近、信任或防备不是固定分数，而是在互动中慢慢沉淀的立场。',
     facets: ['亲近', '信任', '威胁感', '能力认可'],
   },
   {
-    title: '记忆引擎',
-    caption: '线索唤醒',
-    mode: 'memory',
-    summary: '短期工作记忆、阶段经历、长期结论、冷存档和生命锚点分层流动。旧事会降温，也能被关系对象和情绪线索重新唤醒。',
-    facets: ['工作记忆', '阶段经历', '长期结论', '冷存档'],
+    title: '表达边界',
+    caption: '分寸感知',
+    mode: 'persona',
+    summary: '综合身份、记忆与关系，决定此刻的语气、分寸和该说多少。',
+    facets: ['语气分寸', '篇幅控制', '留白沉默'],
   },
 ] as const;
 
@@ -334,26 +316,6 @@ function useGroupReveal(options: IntersectionObserverInit = groupRevealOptions) 
   });
 
   return { ref, revealSx };
-}
-
-function FeatureGrid() {
-  const { ref, revealSx } = useGroupReveal();
-
-  return (
-    <Box ref={ref} sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', md: 'repeat(4, minmax(0, 1fr))' }, gap: 1.5, mb: { xs: 5, md: 7 } }}>
-      {featureCards.map((item, index) => (
-        <Box key={item.title} sx={revealSx(index * 80)}>
-          <GlassCard sx={{ p: 2.25, minHeight: { xs: 172, md: 230 } }}>
-            <Box sx={{ width: 42, height: 42, borderRadius: 1.5, display: 'grid', placeItems: 'center', color: accent, border: '1px solid rgba(229,192,123,0.28)', bgcolor: 'rgba(229,192,123,0.07)', mb: 2 }}>
-              {item.icon}
-            </Box>
-            <Typography sx={{ fontWeight: 790, fontSize: 19, lineHeight: 1.28, color: '#F8F8FA' }}>{item.title}</Typography>
-            <Typography sx={{ mt: 1.4, color: 'rgba(255,255,255,0.56)', lineHeight: 1.75, fontSize: 14 }}>{item.text}</Typography>
-          </GlassCard>
-        </Box>
-      ))}
-    </Box>
-  );
 }
 
 function MockGroupChatSnapshot() {
@@ -523,20 +485,10 @@ function EngineSection() {
           <Box component="span" sx={{ color: accent }}>时间</Box>会留下凹痕。
         </Typography>
         <Typography sx={{ mt: 2, color: 'rgba(255,255,255,0.58)', lineHeight: 1.8, fontSize: 16 }}>
-          每一次开口，都由意图、关系、记忆、情绪和态势共同塑形。角色不是靠人设标签在说话，而是在可追溯的因果中，慢慢长出自己的偏向、软肋和余波。
+          每一轮开口，都是意图、关系、记忆、情绪和态势一起收束出来的。
         </Typography>
       </Box>
-      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' }, gap: 1.5 }}>
-        {engineSteps.map(([name, detail], index) => (
-          <Box key={name} sx={revealSx(100 + index * 60)}>
-            <GlassCard sx={{ p: 2.1, minHeight: { xs: 150, md: 172 } }}>
-              <Typography sx={{ color: 'rgba(229,192,123,0.82)', fontSize: 13, fontWeight: 780 }}>{String(index + 1).padStart(2, '0')}</Typography>
-              <Typography sx={{ mt: 1.25, color: '#F8F8FA', fontSize: 22, fontWeight: 790 }}>{name}</Typography>
-              <Typography sx={{ mt: 1, color: 'rgba(255,255,255,0.56)', lineHeight: 1.75 }}>{detail}</Typography>
-            </GlassCard>
-          </Box>
-        ))}
-      </Box>
+      <MindProjectionPyramidCard />
     </Box>
   );
 }
@@ -835,6 +787,99 @@ function RuntimeSystemSection() {
   );
 }
 
+function MindProjectionPyramidCard() {
+  const layers = [
+    ['0', '我在', '角色对自身存在形式、公开与私密边界、能说与不该说之事的底层感知。', '226,194,142'],
+    ['1', '我是谁', '身份、性格、说话习惯、价值观、欲望、恐惧和执念先构成基本方向。', '229,184,123'],
+    ['2', '我记得什么', '和用户、其他角色、房间共同经历有关的旧事、承诺、误会和成长被带入判断。', '217,172,112'],
+    ['3', '我与你的关系', '喜欢、信任、防备、依赖、竞争、亏欠、护短或厌烦会改变同一句话的温度。', '205,158,103'],
+    ['4', '大家现在的状态', '情绪、疲惫、兴奋、压抑、想靠近、想回避或想争主动权会改变当下表达。', '194,147,98'],
+    ['5', '群里正在发生什么', '主线、矛盾线、阵营压力、话题热度、谁被维护或围攻，会形成公开场合的空气。', '184,137,94'],
+    ['6', '这一次，我想做什么', '接住、反驳、追问、打岔、维护、试探、退让、玩笑或敷衍，会先成为这一轮的动作。', '174,128,91'],
+    ['7', '最后我说出口的那句话', '真人不会每条都完整表达。有时一句、半句、跑题、嘴硬、留白，都是表达的一部分。', '164,119,88'],
+  ] as const;
+  const [activeLayer, setActiveLayer] = useState<(typeof layers)[number]>(layers[0]);
+  const visualLayers = layers;
+
+  return (
+    <Reveal delay={450}>
+      <GlassCard sx={{ p: { xs: 2, md: 2.5 } }}>
+        <Typography sx={{ color: accent, fontWeight: 780, letterSpacing: 1.1, fontSize: 13 }}>心智投影</Typography>
+        <Box sx={{ mt: 1.8, display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1.08fr 0.92fr' }, gap: { xs: 2, md: 2.4 }, alignItems: 'center' }}>
+          <Box sx={{ display: 'grid', gap: 0.36 }}>
+          {visualLayers.map((layer, index) => {
+            const [level, title, detail] = layer;
+            const widthStep = 11.5;
+            const topWidth = index * widthStep;
+            const bottomWidth = (index + 1) * widthStep;
+            const leftTop = 50 - topWidth / 2;
+            const rightTop = 50 + topWidth / 2;
+            const leftBottom = 50 - bottomWidth / 2;
+            const rightBottom = 50 + bottomWidth / 2;
+            const active = activeLayer[0] === level;
+            const tone = layer[3];
+            const textWidth = Math.min(78, Math.max(24, bottomWidth + 16));
+            return (
+              <Box
+                key={level}
+                component="button"
+                type="button"
+                onMouseEnter={() => setActiveLayer(layer)}
+                onFocus={() => setActiveLayer(layer)}
+                onClick={() => setActiveLayer(layer)}
+                sx={{
+                  mx: 'auto',
+                  width: '100%',
+                  minHeight: { xs: 42, sm: 48 },
+                  display: 'grid',
+                  placeItems: 'center',
+                  textAlign: 'center',
+                  px: 1.2,
+                  border: 0,
+                  cursor: 'pointer',
+                  color: '#F8F8FA',
+                  bgcolor: 'transparent',
+                  transform: active ? 'translateY(-1px)' : 'translateY(0)',
+                  transition: 'background-color 180ms ease, border-color 180ms ease, transform 180ms ease',
+                  position: 'relative',
+                  '&:hover, &:focus-visible': {
+                    outline: 'none',
+                    transform: 'translateY(-1px)',
+                  },
+                }}
+              >
+                <Box
+                  aria-hidden
+                  sx={{
+                    position: 'absolute',
+                    inset: 0,
+                    pointerEvents: 'none',
+                    borderTop: `1px solid ${active ? `rgba(${tone},0.70)` : 'rgba(255,255,255,0.13)'}`,
+                    borderBottom: `1px solid ${active ? `rgba(${tone},0.48)` : 'rgba(255,255,255,0.08)'}`,
+                    bgcolor: active ? `rgba(${tone},0.15)` : 'rgba(255,255,255,0.035)',
+                    clipPath: `polygon(${leftTop}% 0, ${rightTop}% 0, ${rightBottom}% 100%, ${leftBottom}% 100%)`,
+                    transition: 'background-color 180ms ease, border-color 180ms ease',
+                  }}
+                />
+                <Box sx={{ position: 'relative', zIndex: 1, width: `${textWidth}%`, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: { xs: 0.45, sm: 0.7 } }}>
+                  <Typography component="span" sx={{ color: active ? `rgb(${tone})` : 'rgba(255,255,255,0.48)', fontWeight: 850, fontSize: 11.5 }}>{level}</Typography>
+                  <Typography component="span" sx={{ color: active ? `rgb(${tone})` : '#F8F8FA', fontWeight: 820, fontSize: { xs: 13.2, sm: 14.5 }, lineHeight: 1.2 }}>{title}</Typography>
+                </Box>
+              </Box>
+            );
+          })}
+          </Box>
+          <Box sx={{ p: { xs: 1.7, md: 2 }, border: `1px solid rgba(${activeLayer[3]},0.22)`, bgcolor: `rgba(${activeLayer[3]},0.07)`, minHeight: { xs: 150, md: 220 }, display: 'grid', alignContent: 'center' }}>
+            <Typography sx={{ color: `rgb(${activeLayer[3]})`, fontWeight: 850, fontSize: 13, letterSpacing: 1 }}>LAYER {activeLayer[0]}</Typography>
+            <Typography sx={{ mt: 0.75, color: '#F8F8FA', fontWeight: 840, fontSize: { xs: 24, md: 30 }, lineHeight: 1.1 }}>{activeLayer[1]}</Typography>
+            <Typography sx={{ mt: 1.15, color: 'rgba(255,255,255,0.62)', lineHeight: 1.78 }}>{activeLayer[2]}</Typography>
+          </Box>
+        </Box>
+      </GlassCard>
+    </Reveal>
+  );
+}
+
 function MemoryContinuitySection() {
   const { ref, revealSx } = useGroupReveal();
 
@@ -850,19 +895,22 @@ function MemoryContinuitySection() {
           所谓灵魂，是明明在说现在，却听起来像在<Box component="span" sx={{ color: accent }}>回忆</Box>。
         </Typography>
         <Typography sx={{ mt: 2, color: 'rgba(255,255,255,0.58)', lineHeight: 1.85 }}>
-          真正让人停下来的，不是某句回复有多聪明，而是某个角色忽然不像工具了。它知道自己为什么防备，知道谁曾站在它这边，也知道哪些旧事只该在单聊或私密线程里出现。
+          真正让人停下来的，不是某句回复有多聪明，而是某个角色忽然不像工具了。它知道自己为什么防备，知道谁曾站在它这边，也知道什么话，只能悄悄说。
         </Typography>
       </Box>
-      <Stack spacing={1.25}>
-        {proofRows.map(([title, detail], index) => (
-          <Box key={title} sx={revealSx(110 + index * 80)}>
-            <GlassCard sx={{ p: { xs: 2, md: 2.5 }, display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '120px 1fr' }, gap: 2, alignItems: 'start' }}>
-              <Typography sx={{ color: '#F8F8FA', fontWeight: 800, fontSize: 20 }}>{title}</Typography>
-              <Typography sx={{ color: 'rgba(255,255,255,0.58)', lineHeight: 1.8 }}>{detail}</Typography>
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' }, gap: 1.2, alignItems: 'stretch' }}>
+        {proofRows.map((item, index) => (
+          <Box key={item.title} sx={{ height: '100%', ...revealSx(110 + index * 80) }}>
+            <GlassCard sx={{ p: { xs: 1.8, md: 2.1 }, minHeight: { xs: 178, sm: 204, md: 214 }, height: '100%', display: 'grid', alignContent: 'start' }}>
+              <Box sx={{ width: 38, height: 38, borderRadius: 1.4, display: 'grid', placeItems: 'center', color: accent, border: '1px solid rgba(229,192,123,0.26)', bgcolor: 'rgba(229,192,123,0.07)', mb: 1.45, '& svg': { fontSize: 22 } }}>
+                {item.icon}
+              </Box>
+              <Typography sx={{ color: '#F8F8FA', fontWeight: 790, fontSize: { xs: 18.5, md: 20 }, lineHeight: 1.25 }}>{item.title}</Typography>
+              <Typography sx={{ mt: 1.05, color: 'rgba(255,255,255,0.58)', lineHeight: 1.72, fontSize: { xs: 14, md: 14.5 } }}>{item.detail}</Typography>
             </GlassCard>
           </Box>
         ))}
-      </Stack>
+      </Box>
     </Box>
   );
 }
@@ -1182,9 +1230,9 @@ function HeroVisual() {
   const activeNode = activeIndex === null ? null : architectureNodes[activeIndex];
   const displayedNode = displayedIndex === null ? null : architectureNodes[displayedIndex];
   const pipeline = [
-    ['择时', '让沉默与开口都有重量', '明确对象、冷场、关系压力'],
-    ['成声', '让表达带着来处', '人格、记忆、情绪同场'],
-    ['回落', '让每句话留下后果', '承接、修正、沉淀'],
+    ['数字生命', '有记忆、有关系、会随时间改变。'],
+    ['群聊生态', '多个角色在同一个房间，有自己的空气。'],
+    ['自主决策', '自己决定何时开口、说什么、说多少。'],
   ];
   const detailAreaMinHeight = displayedNode ? { xs: 124, sm: 120 } : { xs: 124, sm: 120 };
 
@@ -1344,9 +1392,9 @@ function HeroVisual() {
                 transition: 'opacity 220ms ease, transform 220ms ease',
               }}
             >
-            <Typography sx={{ width: '100%', color: '#F8F8FA', fontWeight: 820, fontSize: { xs: 22, sm: 27 }, lineHeight: 1, letterSpacing: 0, textAlign: 'center', whiteSpace: 'nowrap' }}>Sense Murmur</Typography>
+            <Typography sx={{ width: '100%', color: '#F8F8FA', fontWeight: 820, fontSize: { xs: 25, sm: 31 }, lineHeight: 1, letterSpacing: 0, textAlign: 'center', whiteSpace: 'nowrap' }}>生息</Typography>
             <Typography sx={{ width: '100%', color: accent, fontSize: 12, lineHeight: 1.15, mt: 0.75, letterSpacing: 1.8, textIndent: '1.8px', textAlign: 'center', whiteSpace: 'nowrap' }}>
-              {displayedNode?.caption ?? 'AI Chat Group'}
+              {displayedNode?.caption ?? 'Sense Murmur'}
             </Typography>
             </Box>
           </Box>
@@ -1355,7 +1403,7 @@ function HeroVisual() {
 
         <Box sx={{ position: 'relative', minHeight: detailAreaMinHeight, transition: 'min-height 340ms cubic-bezier(0.2, 0.8, 0.2, 1)' }}>
           <Box sx={{ position: 'absolute', inset: 0, display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: { xs: 0.75, sm: 1 }, opacity: displayedNode ? 0 : 1, transform: displayedNode ? 'translateY(8px)' : 'translateY(0)', pointerEvents: displayedNode ? 'none' : 'auto', transition: 'opacity 260ms ease, transform 300ms ease' }}>
-            {pipeline.map(([title, summary, detail], index) => (
+            {pipeline.map(([title, summary], index) => (
               <Box
                 key={title}
                 sx={{
@@ -1369,13 +1417,12 @@ function HeroVisual() {
                 }}
               >
                 <Box sx={{ position: 'absolute', inset: 0, bgcolor: index === 1 ? 'rgba(229,192,123,0.08)' : 'transparent' }} />
-                <Box sx={{ position: 'relative', minHeight: '100%', display: 'flex', flexDirection: 'column', justifyContent: { xs: 'center', sm: 'flex-start' }, alignItems: { xs: 'center', sm: 'stretch' }, textAlign: { xs: 'center', sm: 'left' }, pb: { xs: 0, sm: 0 } }}>
+                <Box sx={{ position: 'relative', minHeight: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: { xs: 'center', sm: 'stretch' }, textAlign: { xs: 'center', sm: 'left' }, pb: { xs: 0, sm: 0 } }}>
                   <Box>
                     <Typography sx={{ color: accent, fontSize: { xs: 20, sm: 14 }, fontWeight: 860, letterSpacing: { xs: 1.4, sm: 1.1 }, lineHeight: 1 }}>{String(index + 1).padStart(2, '0')}</Typography>
                     <Typography sx={{ mt: { xs: 1.45, sm: 0.48 }, fontSize: { xs: 17, sm: 15 }, fontWeight: 780, color: '#F8F8FA', lineHeight: { xs: 1.18, sm: 1.34 } }}>{title}</Typography>
                   </Box>
                   <Typography sx={{ mt: { xs: 1.65, sm: 0.6 }, mb: { xs: 0, sm: 0 }, fontSize: { xs: 11.6, sm: 12.5 }, lineHeight: 1.5, color: 'rgba(255,255,255,0.70)' }}>{summary}</Typography>
-                  <Typography sx={{ mt: 0.45, fontSize: 11.5, lineHeight: 1.5, color: 'rgba(255,255,255,0.42)', display: { xs: 'none', md: 'block' } }}>{detail}</Typography>
                 </Box>
               </Box>
             ))}
@@ -1413,7 +1460,7 @@ function HeroVisual() {
   );
 }
 
-const introHeroTitle = '生息：Sense Murmur';
+const introHeroTitle = '生息·Sense Murmur';
 const finalHeroTitleLead = '不是活着，是被';
 const finalHeroTitleEmphasis = '活过';
 const finalHeroTitle = `${finalHeroTitleLead}${finalHeroTitleEmphasis}`;
@@ -1421,50 +1468,51 @@ const finalHeroTitle = `${finalHeroTitleLead}${finalHeroTitleEmphasis}`;
 function AnimatedHeroTitle() {
   const [text, setText] = useState(introHeroTitle);
   const [titleMode, setTitleMode] = useState<'intro' | 'final'>('intro');
-  const [fadingIndex, setFadingIndex] = useState<number | null>(null);
+  const fadingIndex = null;
   const [showCursor, setShowCursor] = useState(false);
 
   useEffect(() => {
     const timers: number[] = [];
-    let currentText = introHeroTitle;
 
     const schedule = (callback: () => void, delay: number) => {
       const timer = window.setTimeout(callback, delay);
       timers.push(timer);
     };
 
-    const typeFinalTitle = (index = 0, nextText = '') => {
+    const typeTitle = (index = 0, nextText = '') => {
       if (index >= finalHeroTitle.length) {
-        setShowCursor(false);
+        schedule(() => setShowCursor(false), 900);
         return;
       }
       const updatedText = nextText + finalHeroTitle[index];
       setText(updatedText);
-      if (index + 1 === finalHeroTitleLead.length) setShowCursor(false);
-      const nextDelay = index + 1 === finalHeroTitleLead.length ? 350 : 200;
-      schedule(() => typeFinalTitle(index + 1, updatedText), nextDelay);
+      const nextDelay = index + 1 === finalHeroTitleLead.length ? 520 : 190;
+      schedule(() => typeTitle(index + 1, updatedText), nextDelay);
     };
 
-    const deleteIntroTitle = () => {
-      if (currentText.length === 0) {
-        setFadingIndex(null);
-        setTitleMode('final');
-        schedule(() => typeFinalTitle(), 1500);
+    const deleteTitle = (length = introHeroTitle.length) => {
+      if (length <= 0) {
+        setText('');
+        schedule(() => {
+          setTitleMode('final');
+          typeTitle();
+        }, 180);
         return;
       }
-
-      const nextFadingIndex = currentText.length - 1;
-      setFadingIndex(nextFadingIndex);
-      schedule(() => {
-        currentText = currentText.slice(0, -1);
-        setText(currentText);
-        setFadingIndex(null);
-        schedule(deleteIntroTitle, 120);
-      }, 80);
+      const deletedChar = introHeroTitle[length - 1];
+      const nextDelay = deletedChar === ' ' || deletedChar === '·'
+        ? 180
+        : length % 4 === 0
+          ? 150
+          : 82;
+      setText(introHeroTitle.slice(0, length - 1));
+      schedule(() => deleteTitle(length - 1), nextDelay);
     };
 
-    schedule(() => setShowCursor(true), 2000);
-    schedule(deleteIntroTitle, 3000);
+    schedule(() => {
+      setShowCursor(true);
+      deleteTitle();
+    }, 3000);
     return () => timers.forEach((timer) => window.clearTimeout(timer));
   }, []);
 
@@ -2327,8 +2375,6 @@ function EditorialIntroPage() {
   );
 }
 
-export default IntroExperiencePage;
-
 export function IntroConceptPage() {
   const navigate = useNavigate();
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -2438,8 +2484,8 @@ export function IntroConceptPage() {
         },
       }}
     >
-      <Box sx={{ position: 'relative', zIndex: 1, width: 'min(1180px, calc(100% - 32px))', mx: 'auto', py: { xs: 2, md: 3 } }}>
-        <Box sx={{ position: 'sticky', top: 12, zIndex: 5, mb: { xs: 4, md: 6 }, display: { xs: 'none', md: 'flex' }, alignItems: 'center', justifyContent: 'space-between', border: `1px solid ${border}`, borderRadius: 2, px: 2, py: 1, bgcolor: 'rgba(10,10,15,0.58)', backdropFilter: 'blur(18px)' }}>
+      <Box sx={{ position: 'relative', zIndex: 1, width: 'min(1180px, calc(100% - 32px))', mx: 'auto', py: { xs: 2, md: 2.25 } }}>
+        <Box sx={{ position: 'sticky', top: 12, zIndex: 5, mb: { xs: 3, md: 2.5 }, display: { xs: 'none', md: 'flex' }, alignItems: 'center', justifyContent: 'space-between', border: `1px solid ${border}`, borderRadius: 2, px: 2, py: 1, bgcolor: 'rgba(10,10,15,0.58)', backdropFilter: 'blur(18px)' }}>
           <Typography sx={{ fontWeight: 760, letterSpacing: 0, color: '#fff' }}>Sense Murmur</Typography>
           <Stack direction="row" spacing={0.5}>
             {navItems.map(([id, label]) => (
@@ -2450,10 +2496,10 @@ export function IntroConceptPage() {
           </Stack>
         </Box>
 
-        <Box id="world" sx={{ minHeight: { xs: 'auto', lg: 'min(760px, calc(100dvh - 96px))' }, display: 'grid', gridTemplateColumns: { xs: 'minmax(0, 1fr)', lg: 'minmax(0, 1.03fr) minmax(0, 0.97fr)' }, gap: { xs: 4, lg: 6 }, alignItems: 'center', pt: { xs: 1, md: 2 }, pb: { xs: 5, md: 7 } }}>
+        <Box id="world" sx={{ minHeight: { xs: 'auto', lg: 'min(700px, calc(100dvh - 112px))' }, display: 'grid', gridTemplateColumns: { xs: 'minmax(0, 1fr)', lg: 'minmax(0, 1.03fr) minmax(0, 0.97fr)' }, gap: { xs: 4, lg: 6 }, alignItems: { xs: 'center', lg: 'start' }, pt: { xs: 1, md: 0.5 }, pb: { xs: 5, md: 7 } }}>
           <Reveal>
             <Box sx={{ minWidth: 0 }}>
-              <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1, mb: { xs: 4, md: 5, lg: 7 } }}>
+              <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1, mb: { xs: 3, md: 3.5, lg: 4 } }}>
                 {['AI 多角色互动房间', '长期记忆与关系连续性', '群聊 / 单聊 / AI 私聊'].map((label) => (
                   <Chip
                     key={label}
@@ -2463,12 +2509,12 @@ export function IntroConceptPage() {
                       color: 'rgba(255,255,255,0.82)',
                       borderColor: 'rgba(255,255,255,0.18)',
                       bgcolor: 'rgba(255,255,255,0.05)',
-                      height: { xs: 38, md: 42 },
-                      px: { xs: 0.75, md: 1.1 },
+                      height: { xs: 30, md: 32 },
+                      px: { xs: 0.35, md: 0.55 },
                       '& .MuiChip-label': {
-                        px: { xs: 1.1, md: 1.6 },
-                        fontSize: { xs: 14, md: 16 },
-                        fontWeight: 620,
+                        px: { xs: 0.75, md: 1 },
+                        fontSize: { xs: 12.5, md: 13.5 },
+                        fontWeight: 560,
                         lineHeight: 1.25,
                         letterSpacing: 0.2,
                       },
@@ -2478,7 +2524,7 @@ export function IntroConceptPage() {
               </Stack>
               <AnimatedHeroTitle />
               <Typography sx={{ mt: { xs: 2, md: 2.25 }, maxWidth: 720, color: 'rgba(255,255,255,0.62)', lineHeight: 1.85, fontSize: { xs: 16, md: 18 } }}>
-                Sense Murmur 不是把 AI 放进聊天框，而是让多个 AI 角色在房间里持续相处。你创建角色、让他们群聊或单聊；关系、记忆、情绪和旧经历会回流到下一次对话里。
+                “生息”不是把 AI 放进聊天框，而是给角色一段可以延续的时间。创建角色、多角色群聊、参与故事创作——旧事、关系、情绪和余波，都会在下一次对话里回来。
               </Typography>
               <Stack direction="row" spacing={1.5} sx={{ mt: { xs: 4, lg: 6 }, flexWrap: 'wrap', alignItems: 'center' }}>
                 <Button
@@ -2496,7 +2542,7 @@ export function IntroConceptPage() {
                   onClick={() => navigate('/chats/create')}
                   sx={{ width: 'fit-content', minWidth: 0, borderRadius: 2, px: 3, py: 1.25, borderColor: 'rgba(255,255,255,0.22)', color: '#F5F5F7', '&:hover': { borderColor: accent, bgcolor: accent, color: '#0A0A0F' } }}
                 >
-                  开始一个房间
+                  开始群聊
                 </Button>
               </Stack>
             </Box>
@@ -2508,7 +2554,6 @@ export function IntroConceptPage() {
           </Reveal>
         </Box>
 
-        <FeatureGrid />
         <MockGroupChatSnapshot />
 
         <MemoryContinuitySection />
@@ -2561,3 +2606,5 @@ export function IntroConceptPage() {
     </Box>
   );
 }
+
+export default IntroConceptPage;

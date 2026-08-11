@@ -68,6 +68,44 @@ function manualDevUpdatePlugin(): Plugin {
   }
 }
 
+function devServiceWorkerCleanupPlugin(): Plugin {
+  const cleanupServiceWorker = [
+    'self.addEventListener("install", event => { self.skipWaiting(); });',
+    'self.addEventListener("activate", event => {',
+    '  event.waitUntil((async () => {',
+    '    const keys = await caches.keys();',
+    '    await Promise.all(keys.map(key => caches.delete(key)));',
+    '    await self.registration.unregister();',
+    '    const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });',
+    '    clients.forEach(client => client.navigate(client.url));',
+    '  })());',
+    '});',
+    '',
+  ].join('\n')
+
+  return {
+    name: 'pneumata-dev-service-worker-cleanup',
+    apply: 'serve',
+    configureServer(server) {
+      server.middlewares.use((request, response, next) => {
+        const url = request.url?.split('?')[0]
+        if (url !== '/sw.js') {
+          next()
+          return
+        }
+
+        response.writeHead(200, {
+          'Content-Type': 'text/javascript; charset=utf-8',
+          'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+          'Service-Worker-Allowed': '/',
+          'Content-Length': Buffer.byteLength(cleanupServiceWorker),
+        })
+        response.end(cleanupServiceWorker)
+      })
+    },
+  }
+}
+
 function isPublicAiProxyPath(pathname: string) {
   return pathname === '/ai'
     || pathname.startsWith('/ai/')
@@ -213,6 +251,7 @@ export default defineConfig(({ mode }) => {
       publicAiProxyCorsPlugin(),
       react(),
       manualDevUpdatePlugin(),
+      devServiceWorkerCleanupPlugin(),
       ...(disablePwa ? [disabledPwaRegisterPlugin()] : []),
       ...(disablePwa ? [] : [VitePWA({
         registerType: appUpdateMode === 'prompt' ? 'prompt' : 'autoUpdate',

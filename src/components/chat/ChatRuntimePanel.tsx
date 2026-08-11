@@ -10,24 +10,10 @@ import DebugChip from '../common/DebugChip';
 import type { AICharacter } from '../../types/character';
 import type { GroupChat } from '../../types/chat';
 import type { Message } from '../../types/message';
-import type { RuntimeEventV2 } from '../../types/runtimeEvent';
 import { useSettingsStore } from '../../stores/useSettingsStore';
 import DialogueDebugPanel from './DialogueDebugPanel';
 import {
   projectRuntimeTimeline,
-  readSocialEventArtifactMeta as readTimelineSocialEventArtifactMeta,
-  readSocialEventCandidateMeta as readTimelineSocialEventCandidateMeta,
-  readSocialEventClusterMeta as readTimelineSocialEventClusterMeta,
-  readSocialEventEffectMeta as readTimelineSocialEventEffectMeta,
-  readRelationshipDeltaMeta as readTimelineRelationshipDeltaMeta,
-  readRoomShiftMeta as readTimelineRoomShiftMeta,
-  readMemoryCandidateMeta as readTimelineMemoryCandidateMeta,
-  readCalendarPatchMeta as readTimelineCalendarPatchMeta,
-  readAttentionInfoMeta as readTimelineAttentionInfoMeta,
-  readAttentionFollowupMeta as readTimelineAttentionFollowupMeta,
-  readMemoryDistillationMeta as readTimelineMemoryDistillationMeta,
-  readProjectionInfoMeta as readTimelineProjectionInfoMeta,
-  type ProjectedRuntimeTimelineItem,
 } from '../../services/sessionProjection';
 import { projectRuntimeDecisionTrace, type RuntimeDecisionTraceItem } from '../../services/runtimeDecisionTrace';
 import { buildDecisionReasonGroups } from '../../services/runtimeDecisionTraceGroups';
@@ -63,71 +49,6 @@ function cleanText(text: string | undefined | null, members: DisplayTextMember[]
     .replace(/尊重/g, '能力')
     .replace(/态度发生变化/g, '关系发生变化')
     .trim();
-}
-
-function clip(text: string, max = 64) {
-  return text.length > max ? `${text.slice(0, max)}…` : text;
-}
-
-function formatSigned(value: number | undefined) {
-  const safeValue = typeof value === 'number' && Number.isFinite(value) ? value : 0;
-  return `${safeValue > 0 ? '+' : ''}${Math.round(safeValue)}`;
-}
-
-function roomDeltaLabel(kind: 'heat' | 'cohesion' | 'topic', value: number | undefined) {
-  const safeValue = typeof value === 'number' && Number.isFinite(value) ? Math.round(value) : 0;
-  if (safeValue === 0) return '';
-  if (kind === 'heat') return safeValue > 0 ? '互动升温' : '互动降温';
-  if (kind === 'cohesion') return safeValue > 0 ? '氛围靠拢' : '氛围分散';
-  return safeValue > 0 ? '话题发散' : '回到主线';
-}
-
-function readSocialEventClusterMeta(item: ProjectedRuntimeTimelineItem) {
-  return readTimelineSocialEventClusterMeta(item);
-}
-
-function readSocialEventCandidateMeta(item: ProjectedRuntimeTimelineItem) {
-  return readTimelineSocialEventCandidateMeta(item);
-}
-
-function readSocialEventArtifactMeta(item: ProjectedRuntimeTimelineItem) {
-  return readTimelineSocialEventArtifactMeta(item);
-}
-
-function readSocialEventEffectMeta(item: ProjectedRuntimeTimelineItem) {
-  return readTimelineSocialEventEffectMeta(item);
-}
-
-function readRelationshipDeltaMeta(item: ProjectedRuntimeTimelineItem) {
-  return readTimelineRelationshipDeltaMeta(item);
-}
-
-function readRoomShiftMeta(item: ProjectedRuntimeTimelineItem) {
-  return readTimelineRoomShiftMeta(item);
-}
-
-function readMemoryCandidateMeta(item: ProjectedRuntimeTimelineItem) {
-  return readTimelineMemoryCandidateMeta(item);
-}
-
-function readMemoryDistillationMeta(item: ProjectedRuntimeTimelineItem) {
-  return readTimelineMemoryDistillationMeta(item);
-}
-
-function readCalendarPatchMeta(item: ProjectedRuntimeTimelineItem) {
-  return readTimelineCalendarPatchMeta(item);
-}
-
-function readAttentionInfoMeta(item: ProjectedRuntimeTimelineItem) {
-  return readTimelineAttentionInfoMeta(item);
-}
-
-function readAttentionFollowupMeta(item: ProjectedRuntimeTimelineItem) {
-  return readTimelineAttentionFollowupMeta(item);
-}
-
-function readProjectionInfoMeta(item: ProjectedRuntimeTimelineItem) {
-  return readTimelineProjectionInfoMeta(item);
 }
 
 function renderConflictPanel(chat: GroupChat, members: AICharacter[]) {
@@ -210,7 +131,13 @@ function renderMediaGenerationPanel(items: ProjectedMediaGenerationItem[], isAdv
   if (!items.length) return null;
   return (
     <SurfaceCard>
-      <SectionHeader title="媒体生成" subtitle="展示 AI 决策后的图片、语音附件状态。" dense action={isAdvancedRuntimeView ? <DebugChip /> : undefined} />
+      <SectionHeader
+        title="媒体生成"
+        subtitle="附件状态"
+        subtitleTooltip="展示 AI 决策后的图片、语音附件状态。"
+        dense
+        action={isAdvancedRuntimeView ? <DebugChip /> : undefined}
+      />
       <Stack spacing={0.8}>
         {items.map((item) => {
           const body = (

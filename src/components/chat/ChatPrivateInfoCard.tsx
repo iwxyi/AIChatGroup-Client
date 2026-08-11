@@ -1,4 +1,4 @@
-import { Box, Chip, Stack, Typography } from '@mui/material';
+import { Box, Chip, Stack, Tooltip, Typography } from '@mui/material';
 import type { AICharacter } from '../../types/character';
 import type { GroupChat } from '../../types/chat';
 import type { CompanionshipStatusSignature } from '../../types/companionship';
@@ -89,7 +89,17 @@ export function ChatPrivateInfoCard({ chat, members, directMemoryContext }: Chat
     <Box sx={buildCardSx()}>
       <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 0.75 }}>{chat.type === 'direct' ? '单聊记忆主轴' : '私聊记忆主轴'}</Typography>
       <Stack spacing={0.75}>
-        <Typography variant="caption" color="text.secondary">{chat.type === 'direct' ? '该角色会优先读取自己的长期记忆、关系记忆与最近变化，而不是优先回溯来源群聊。' : '该角色会优先读取与当前私聊对象相关的长期记忆、关系记忆与最近变化，而不是回退到主群公共上下文。'}</Typography>
+        <Tooltip
+          title={chat.type === 'direct'
+            ? '该角色会优先读取自己的长期记忆、关系记忆与最近变化，而不是优先回溯来源群聊。'
+            : '该角色会优先读取与当前私聊对象相关的长期记忆、关系记忆与最近变化，而不是回退到主群公共上下文。'}
+          arrow
+          placement="top-start"
+        >
+          <Typography variant="caption" color="text.secondary" sx={{ width: 'fit-content', cursor: 'help' }}>
+            {chat.type === 'direct' ? '优先读自己的私聊记忆' : '优先读当前私聊相关记忆'}
+          </Typography>
+        </Tooltip>
         {showCompanionshipStatusHints && companionshipStatus ? (
           <Box sx={buildStatusSx(companionshipStatus.tone)}>
             <Typography variant="body2" sx={{ fontWeight: 600, mb: companionshipStatus.chips.length ? 0.75 : 0 }}>

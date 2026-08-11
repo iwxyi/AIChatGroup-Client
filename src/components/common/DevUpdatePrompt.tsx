@@ -19,7 +19,7 @@ export default function DevUpdatePrompt() {
   const [needRefresh, setNeedRefresh] = useState(false);
 
   useEffect(() => {
-    if (!import.meta.env.DEV) return;
+    if (!import.meta.env.DEV || UPDATE_MODE === 'auto') return;
 
     let disposed = false;
     let baselineVersion: number | null = null;
@@ -40,10 +40,6 @@ export default function DevUpdatePrompt() {
         if (baselineVersion === null) {
           baselineVersion = version;
         } else if (version !== baselineVersion) {
-          if (UPDATE_MODE === 'auto') {
-            window.location.reload();
-            return;
-          }
           setNeedRefresh(true);
           baselineVersion = version;
         }

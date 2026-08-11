@@ -86,6 +86,7 @@ export default function AppLayout() {
   const effectiveHeaderTitle = headerTitle ?? currentTitle;
   const mainPaddingBottom = 0;
   const isChatDetailRoute = /^\/chats\/[^/]+$/.test(location.pathname) && location.pathname !== '/chats/create';
+  const isIntroRoute = location.pathname.startsWith('/intro');
   const supportsMasterDetail = isMasterDetailPath(location.pathname);
   const isMasterDetailRoute = supportsMasterDetail && isThreeColumn && !detailCollapsed;
   const showMobileTopBar = shouldShowMenuButton && !isMasterDetailRoute && !isChatDetailRoute;
@@ -199,13 +200,14 @@ export default function AppLayout() {
       hidden={effectiveHeaderHidden}
       safeAreaTop
       zIndex={sidebarOpen ? 1099 : 1199}
+      tone={isIntroRoute ? 'intro' : 'default'}
       leading={
         <IconButton
           onClick={handleHeaderLeadingAction}
           sx={{
             borderRadius: 3,
             flex: '0 0 auto',
-            color: 'text.primary',
+            color: isIntroRoute ? 'rgba(255,244,228,0.86)' : 'text.primary',
           }}
         >
           {headerBackAction ? <ArrowBackIcon /> : <MenuIcon />}
@@ -219,13 +221,14 @@ export default function AppLayout() {
     <GlassHeader
       title={effectiveHeaderTitle}
       hidden={effectiveHeaderHidden}
+      tone={isIntroRoute ? 'intro' : 'default'}
       leading={headerBackAction ? (
           <IconButton
             onClick={headerBackAction}
             sx={{
               borderRadius: 3,
               flex: '0 0 auto',
-              color: 'text.primary',
+              color: isIntroRoute ? 'rgba(255,244,228,0.86)' : 'text.primary',
             }}
           >
             <ArrowBackIcon />
@@ -293,7 +296,7 @@ export default function AppLayout() {
             pb: mainPaddingBottom,
             position: 'relative',
             overflow: 'hidden',
-            bgcolor: 'background.default',
+            bgcolor: isIntroRoute ? '#0A0A0F' : 'background.default',
             backgroundImage: 'none',
           }}
         >

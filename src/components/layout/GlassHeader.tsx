@@ -10,6 +10,7 @@ interface GlassHeaderProps {
   overlay?: boolean;
   safeAreaTop?: boolean;
   zIndex?: number;
+  tone?: 'default' | 'intro';
 }
 
 export const GLASS_HEADER_HEIGHT = 64;
@@ -22,7 +23,10 @@ export default function GlassHeader({
   overlay = true,
   safeAreaTop = false,
   zIndex = 1198,
+  tone = 'default',
 }: GlassHeaderProps) {
+  const isIntroTone = tone === 'intro';
+
   return (
     <Box
       sx={{
@@ -41,14 +45,24 @@ export default function GlassHeader({
         gap: 1.5,
         transform: hidden ? 'translateY(-100%)' : 'translateY(0)',
         pointerEvents: hidden ? 'none' : 'auto',
-        bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(245,245,247,0.68)' : 'rgba(10,10,15,0.42)',
-        backdropFilter: (theme) => theme.palette.mode === 'light' ? 'blur(22px) saturate(0.96) brightness(1.015) contrast(0.92)' : 'blur(20px) saturate(0.90) brightness(0.84)',
-        WebkitBackdropFilter: (theme) => theme.palette.mode === 'light' ? 'blur(22px) saturate(0.96) brightness(1.015) contrast(0.92)' : 'blur(20px) saturate(0.90) brightness(0.84)',
+        bgcolor: (theme) => isIntroTone
+          ? 'rgba(10,10,15,0.78)'
+          : theme.palette.mode === 'light' ? 'rgba(245,245,247,0.68)' : 'rgba(10,10,15,0.42)',
+        backdropFilter: (theme) => isIntroTone
+          ? 'blur(18px) saturate(0.82) brightness(0.76)'
+          : theme.palette.mode === 'light' ? 'blur(22px) saturate(0.96) brightness(1.015) contrast(0.92)' : 'blur(20px) saturate(0.90) brightness(0.84)',
+        WebkitBackdropFilter: (theme) => isIntroTone
+          ? 'blur(18px) saturate(0.82) brightness(0.76)'
+          : theme.palette.mode === 'light' ? 'blur(22px) saturate(0.96) brightness(1.015) contrast(0.92)' : 'blur(20px) saturate(0.90) brightness(0.84)',
         borderBottom: '1px solid',
-        borderColor: (theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.035)' : 'rgba(226,232,240,0.055)',
-        boxShadow: (theme) => theme.palette.mode === 'light'
-          ? '0 1px 0 rgba(255,255,255,0.34) inset, 0 8px 18px rgba(15,23,42,0.010)'
-          : '0 1px 0 rgba(255,255,255,0.05) inset, 0 10px 22px rgba(0,0,0,0.10)',
+        borderColor: (theme) => isIntroTone
+          ? 'rgba(229,192,123,0.10)'
+          : theme.palette.mode === 'light' ? 'rgba(15,23,42,0.035)' : 'rgba(226,232,240,0.055)',
+        boxShadow: (theme) => isIntroTone
+          ? '0 1px 0 rgba(255,255,255,0.04) inset, 0 10px 24px rgba(0,0,0,0.14)'
+          : theme.palette.mode === 'light'
+            ? '0 1px 0 rgba(255,255,255,0.34) inset, 0 8px 18px rgba(15,23,42,0.010)'
+            : '0 1px 0 rgba(255,255,255,0.05) inset, 0 10px 22px rgba(0,0,0,0.10)',
         transition: [
           `transform 320ms ${motion.emphasized}`,
           transition(['background-color', 'backdrop-filter', 'border-color', 'box-shadow'], 220, motion.standard),
@@ -61,13 +75,19 @@ export default function GlassHeader({
           bottom: -36,
           height: 36,
           pointerEvents: 'none',
-          backdropFilter: (theme) => theme.palette.mode === 'light' ? 'blur(32px) saturate(0.74) brightness(1.18) contrast(0.66)' : 'blur(18px) saturate(0.92) brightness(0.84)',
-          WebkitBackdropFilter: (theme) => theme.palette.mode === 'light' ? 'blur(32px) saturate(0.74) brightness(1.18) contrast(0.66)' : 'blur(18px) saturate(0.92) brightness(0.84)',
+          backdropFilter: (theme) => isIntroTone
+            ? 'blur(24px) saturate(0.72) brightness(0.72)'
+            : theme.palette.mode === 'light' ? 'blur(32px) saturate(0.74) brightness(1.18) contrast(0.66)' : 'blur(18px) saturate(0.92) brightness(0.84)',
+          WebkitBackdropFilter: (theme) => isIntroTone
+            ? 'blur(24px) saturate(0.72) brightness(0.72)'
+            : theme.palette.mode === 'light' ? 'blur(32px) saturate(0.74) brightness(1.18) contrast(0.66)' : 'blur(18px) saturate(0.92) brightness(0.84)',
           maskImage: 'linear-gradient(to bottom, rgba(0,0,0,0.72), rgba(0,0,0,0.22) 58%, transparent)',
           WebkitMaskImage: 'linear-gradient(to bottom, rgba(0,0,0,0.72), rgba(0,0,0,0.22) 58%, transparent)',
-          background: (theme) => theme.palette.mode === 'light'
-            ? 'linear-gradient(rgba(245,245,247,0.18), rgba(245,245,247,0))'
-            : 'linear-gradient(rgba(10,10,15,0.12), rgba(10,10,15,0))',
+          background: (theme) => isIntroTone
+            ? 'linear-gradient(rgba(229,192,123,0.10), rgba(10,10,15,0))'
+            : theme.palette.mode === 'light'
+              ? 'linear-gradient(rgba(245,245,247,0.18), rgba(245,245,247,0))'
+              : 'linear-gradient(rgba(10,10,15,0.12), rgba(10,10,15,0))',
         },
       }}
     >
@@ -76,13 +96,14 @@ export default function GlassHeader({
         {typeof title === 'string' || typeof title === 'number' ? (
           <Typography
             variant="subtitle1"
-            sx={{
-              minWidth: 0,
-              fontWeight: 700,
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-            }}
+              sx={{
+                minWidth: 0,
+                fontWeight: 700,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                color: isIntroTone ? 'rgba(255,244,228,0.92)' : 'inherit',
+              }}
           >
             {title}
           </Typography>

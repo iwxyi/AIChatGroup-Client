@@ -419,6 +419,17 @@ function SiteConfigBootstrap({ onThemeColor }: { onThemeColor: (value: string | 
   return null;
 }
 
+function RouteThemeColorBootstrap({ onThemeColor }: { onThemeColor: (value: string | null) => void }) {
+  const location = useLocation();
+
+  useEffect(() => {
+    const isIntroRoute = location.pathname === '/intro' || location.pathname === '/intro/concept';
+    onThemeColor(isIntroRoute ? '#0A0A0F' : null);
+  }, [location.pathname, onThemeColor]);
+
+  return null;
+}
+
 function InAppNotificationBootstrap() {
   const authUserId = useAuthStore((state) => state.user?.id || '');
   const setNotificationItems = useInAppNotificationStore((state) => state.setItems);
@@ -630,6 +641,7 @@ export default function App() {
   const prefersDark = useMediaQuery('(prefers-color-scheme: dark)');
   const [settingsHydrated, setSettingsHydrated] = useState(() => useSettingsStore.persist.hasHydrated());
   const [siteThemeColor, setSiteThemeColor] = useState<string | null>(null);
+  const [routeThemeColor, setRouteThemeColor] = useState<string | null>(null);
 
   useEffect(() => {
     if (settingsHydrated) return;
@@ -651,8 +663,8 @@ export default function App() {
 
   useEffect(() => {
     const themeColorMeta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
-    if (themeColorMeta) themeColorMeta.content = siteThemeColor || theme.palette.primary.main;
-  }, [siteThemeColor, theme]);
+    if (themeColorMeta) themeColorMeta.content = routeThemeColor || siteThemeColor || theme.palette.primary.main;
+  }, [routeThemeColor, siteThemeColor, theme]);
 
   return (
     <ThemeProvider theme={theme}>
@@ -662,6 +674,7 @@ export default function App() {
       {settingsHydrated ? (
         <AppRouter>
           <SiteConfigBootstrap onThemeColor={setSiteThemeColor} />
+          <RouteThemeColorBootstrap onThemeColor={setRouteThemeColor} />
           <AuthBootstrap />
           <AuthSessionRedirectHandler />
           <AdminAuthRedirectHandler />
