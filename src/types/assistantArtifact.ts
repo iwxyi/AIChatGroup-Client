@@ -108,6 +108,7 @@ export interface AssistantArtifactDraft {
 
 export type AssistantAgentIntent = 'chat' | 'create' | 'update' | 'clarify' | 'search';
 export type AssistantAgentTargetMode = 'single' | 'multi' | 'workspace' | 'selection' | 'unknown';
+export type AssistantResponseExperience = 'direct_answer' | 'source_code' | 'structured_input' | 'interactive_workspace' | 'visual_explanation';
 
 export interface AssistantAgentLocalFileRef {
   directoryId: string;
@@ -138,6 +139,7 @@ export interface AssistantAgentChangePlan {
   clarificationQuestion?: string;
   searchQuery?: string;
   localFilePaths?: AssistantAgentLocalFileRef[];
+  responseExperience?: AssistantResponseExperience;
   confidence: number;
   rationale?: string;
 }

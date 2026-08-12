@@ -44,6 +44,135 @@ describe('assistantAgentOrchestrator validation', () => {
     generateResponseMock.mockReset();
   });
 
+  it('keeps generated HTML out of the visible assistant message', async () => {
+    generateResponseMock.mockResolvedValue(JSON.stringify({
+      assistantMessage: '已为你创建旅行调查。\n\n## 旅行偏好调查\n```html\n<!doctype html><html><body><form><input name="destination"></form></body></html>\n```',
+      patches: [{
+        action: 'create',
+        kind: 'html',
+        title: '旅行偏好调查',
+        content: '<!doctype html><html><body><form><input name="destination"></form></body></html>',
+        htmlRuntime: {
+          submission: {
+            interactionId: 'travel-1',
+            resultType: 'form',
+            fields: [{ name: 'destination', type: 'text', required: true }],
+          },
+        },
+      }],
+    }));
+    const plan: AssistantAgentChangePlan = {
+      intent: 'create',
+      responseExperience: 'interactive_workspace',
+      scope: { targetMode: 'unknown', artifactIds: [] },
+      operations: [{ kind: 'create', instruction: '创建旅行调查' }],
+      requiresConfirmation: false,
+      confidence: 1,
+    };
+    const userMessage: Message = {
+      id: 'message-user',
+      chatId: 'chat-a',
+      type: 'user',
+      senderId: 'user',
+      senderName: '用户',
+      content: '创建旅行调查',
+      emotion: 0,
+      timestamp: 1,
+      isDeleted: false,
+    };
+
+    const patchSet = await writeAssistantAgentPatchSet({
+      api: { provider: 'openai', apiKey: 'k', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4.1' },
+      chatId: 'chat-a',
+      messages: [],
+      userMessage,
+      plan,
+      existingArtifacts: [],
+    });
+
+    expect(patchSet.assistantMessage).toBe('已为你创建旅行调查。\n\n## 旅行偏好调查');
+    expect(patchSet.assistantMessage).not.toContain('```html');
+    expect(patchSet.assistantMessage).not.toContain('<!doctype html>');
+    expect(patchSet.patches[0]?.content).toContain('<!doctype html>');
+    expect(patchSet.patches[0]?.htmlRuntime?.presentation).toBe('fullscreen');
+  });
+
+  it('rejects HTML artifacts when the planner classified the request as source code', async () => {
+    generateResponseMock.mockResolvedValue(JSON.stringify({
+      assistantMessage: '```html\n<div>Hello</div>\n```',
+      patches: [{ action: 'create', kind: 'html', title: '示例', content: '<div>Hello</div>', htmlRuntime: {} }],
+    }));
+    const plan: AssistantAgentChangePlan = {
+      intent: 'create',
+      responseExperience: 'source_code',
+      scope: { targetMode: 'unknown', artifactIds: [] },
+      operations: [{ kind: 'create', instruction: '展示 HTML 示例代码' }],
+      requiresConfirmation: false,
+      confidence: 1,
+    };
+    const userMessage: Message = {
+      id: 'message-user', chatId: 'chat-a', type: 'user', senderId: 'user', senderName: '用户', content: '写一段 HTML 示例代码', emotion: 0, timestamp: 1, isDeleted: false,
+    };
+
+    const patchSet = await writeAssistantAgentPatchSet({
+      api: { provider: 'openai', apiKey: 'k', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4.1' },
+      chatId: 'chat-a', messages: [], userMessage, plan, existingArtifacts: [],
+    });
+
+    expect(patchSet.patches).toEqual([]);
+  });
+
+  it('requires a declared submission schema for structured input forms', async () => {
+    generateResponseMock.mockResolvedValue(JSON.stringify({
+      assistantMessage: '请填写旅行信息。',
+      patches: [{ action: 'create', kind: 'html', title: '旅行信息', content: '<form><input name="destination"></form>' }],
+    }));
+    const plan: AssistantAgentChangePlan = {
+      intent: 'create',
+      responseExperience: 'structured_input',
+      scope: { targetMode: 'unknown', artifactIds: [] },
+      operations: [{ kind: 'create', instruction: '收集旅行计划所需信息' }],
+      requiresConfirmation: false,
+      confidence: 1,
+    };
+    const userMessage: Message = {
+      id: 'message-user', chatId: 'chat-a', type: 'user', senderId: 'user', senderName: '用户', content: '我想去旅游，帮我制定计划', emotion: 0, timestamp: 1, isDeleted: false,
+    };
+
+    const patchSet = await writeAssistantAgentPatchSet({
+      api: { provider: 'openai', apiKey: 'k', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4.1' },
+      chatId: 'chat-a', messages: [], userMessage, plan, existingArtifacts: [],
+    });
+
+    expect(patchSet.patches).toEqual([]);
+  });
+
+  it('allows a read-only HTML visualization without a submission schema', async () => {
+    generateResponseMock.mockResolvedValue(JSON.stringify({
+      assistantMessage: '这是当前显卡性能分层。',
+      patches: [{ action: 'create', kind: 'html', title: '显卡天梯图', content: '<section><ol><li>RTX 5090</li><li>RTX 5080</li></ol></section>' }],
+    }));
+    const plan: AssistantAgentChangePlan = {
+      intent: 'create',
+      responseExperience: 'visual_explanation',
+      scope: { targetMode: 'unknown', artifactIds: [] },
+      operations: [{ kind: 'create', instruction: '用天梯图展示显卡性能' }],
+      requiresConfirmation: false,
+      confidence: 1,
+    };
+    const userMessage: Message = {
+      id: 'message-user', chatId: 'chat-a', type: 'user', senderId: 'user', senderName: '用户', content: '给我看看显卡天梯图', emotion: 0, timestamp: 1, isDeleted: false,
+    };
+
+    const patchSet = await writeAssistantAgentPatchSet({
+      api: { provider: 'openai', apiKey: 'k', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4.1' },
+      chatId: 'chat-a', messages: [], userMessage, plan, existingArtifacts: [],
+    });
+
+    expect(patchSet.patches[0]?.htmlRuntime).toMatchObject({ executionMode: 'declarative', presentation: 'inline' });
+    expect(patchSet.patches[0]?.htmlRuntime?.submission).toBeUndefined();
+  });
+
   it('keeps data URL images out of text model payload references', () => {
     const message: Message = {
       id: 'message-image',

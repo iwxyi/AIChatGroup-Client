@@ -357,6 +357,13 @@ function ArtifactThumbnail({ item, mode }: { item: AssistantArtifactItem; mode: 
     : mode === 'gallery'
       ? 220
       : 128;
+  const contentScale = mode === 'icons' ? 0.52 : 1;
+  const scaledCanvasSx = {
+    width: `${100 / contentScale}%`,
+    height: `${100 / contentScale}%`,
+    transform: `scale(${contentScale})`,
+    transformOrigin: 'top left',
+  } as const;
 
   return (
     <Box
@@ -371,17 +378,17 @@ function ArtifactThumbnail({ item, mode }: { item: AssistantArtifactItem; mode: 
       }}
     >
       {renderMermaid ? (
-        <Box sx={{ p: 0.5, transform: mode === 'list' ? 'scale(0.92)' : mode === 'gallery' ? 'scale(0.84)' : 'scale(0.58)', transformOrigin: 'top left', width: mode === 'list' ? '108%' : mode === 'gallery' ? '119%' : '172%' }}>
+        <Box sx={{ p: 0.5, ...scaledCanvasSx }}>
           <MermaidDiagram source={content} />
         </Box>
       ) : item.kind === 'html' ? (
-        <Box component="iframe" title={item.title} srcDoc={content} sandbox="" sx={{ width: '100%', height: '100%', border: 0, bgcolor: '#fff' }} />
+        <Box component="iframe" title={item.title} srcDoc={content} sandbox="" sx={{ ...scaledCanvasSx, border: 0, bgcolor: '#fff' }} />
       ) : item.kind === 'document' ? (
-        <Box sx={{ p: 1, height: '100%', overflow: 'hidden', bgcolor: (theme) => theme.palette.mode === 'light' ? '#fff' : 'rgba(2,6,23,0.52)' }}>
+        <Box sx={{ p: 1, overflow: 'hidden', bgcolor: (theme) => theme.palette.mode === 'light' ? '#fff' : 'rgba(2,6,23,0.52)', ...scaledCanvasSx }}>
           <MarkdownText text={content} forceRich />
         </Box>
       ) : (
-        <Box sx={{ p: 1, height: '100%', display: 'grid', alignContent: 'start', gap: 0.75 }}>
+        <Box sx={{ p: mode === 'icons' ? 0.75 : 1, height: '100%', display: 'grid', alignContent: 'start', gap: mode === 'icons' ? 0.35 : 0.6 }}>
           <Box sx={{ color: 'text.secondary' }}>
             <ArtifactKindIcon kind={item.kind} />
           </Box>
@@ -394,6 +401,7 @@ function ArtifactThumbnail({ item, mode }: { item: AssistantArtifactItem; mode: 
               WebkitBoxOrient: 'vertical',
               overflow: 'hidden',
               lineHeight: 1.55,
+              fontSize: mode === 'list' ? 11.5 : mode === 'gallery' ? 10.5 : 9.5,
               whiteSpace: 'pre-wrap',
               wordBreak: 'break-word',
             }}

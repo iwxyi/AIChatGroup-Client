@@ -3497,8 +3497,6 @@ export default function ChatDetailPage() {
             onAddImagesToReference={handleAddImagesToReference}
             onCharacterAvatarClick={openCharacterPreview}
             onOpenArtifact={isAssistantChat ? handleOpenAssistantArtifact : undefined}
-            onHtmlAutosave={isAssistantChat && !chatInteractionDisabled ? handleHtmlAutosave : undefined}
-            onHtmlSubmit={isAssistantChat && !chatInteractionDisabled ? handleHtmlSubmit : undefined}
             selfMemberId={effectiveAiDirectPerspectiveMemberId}
             onReachTop={handleNearTop}
             onReachBottom={handleNearBottom}

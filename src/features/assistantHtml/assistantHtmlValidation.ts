@@ -30,13 +30,14 @@ function normalizeField(value: unknown): AssistantHtmlSubmissionField | null {
   };
 }
 
-export function resolveAssistantHtmlPresentation(html: string, fieldCount: number): AssistantHtmlRuntimeManifest['presentation'] {
+export function resolveAssistantHtmlPresentation(html: string, fieldCount: number, preferredMode?: 'inline_interaction' | 'artifact_page'): AssistantHtmlRuntimeManifest['presentation'] {
   const source = html.trim().replace(/^```(?:html)?\s*/i, '');
   const fullDocument = /^(?:<!doctype\s+html\b|<html\b)/i.test(source);
+  if (preferredMode === 'artifact_page') return 'fullscreen';
   return fullDocument || fieldCount > 12 || source.length > 12_000 ? 'fullscreen' : 'inline';
 }
 
-export function normalizeAssistantHtmlRuntime(value: unknown, html = ''): AssistantHtmlRuntimeManifest | undefined {
+export function normalizeAssistantHtmlRuntime(value: unknown, html = '', preferredMode?: 'inline_interaction' | 'artifact_page'): AssistantHtmlRuntimeManifest | undefined {
   if (!isRecord(value)) return undefined;
   const autosave = isRecord(value.autosave) && value.autosave.enabled === true ? {
     enabled: true as const,
@@ -47,7 +48,7 @@ export function normalizeAssistantHtmlRuntime(value: unknown, html = ''): Assist
     ? rawSubmission.fields.map(normalizeField).filter((field): field is AssistantHtmlSubmissionField => Boolean(field)).slice(0, MAX_FIELDS)
     : [];
   const interactionId = rawSubmission ? cleanText(rawSubmission.interactionId, 160) : '';
-  const presentation = resolveAssistantHtmlPresentation(html, fields.length);
+  const presentation = resolveAssistantHtmlPresentation(html, fields.length, preferredMode);
   const submission = rawSubmission && interactionId && fields.length ? {
     interactionId,
     label: cleanText(rawSubmission.label, 120) || '提交',

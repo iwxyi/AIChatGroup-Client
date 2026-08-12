@@ -24,7 +24,6 @@ import { copyTextToClipboard } from '../../utils/clipboard';
 import { getNarrativeDisplayBlocks, hasNarrativeReaderBlocks, isNarrativeParagraphMessage, shouldUseCompactMediaBubble, shouldUseCompactMessageBubble } from './messageBubblePresentation';
 import { DefaultUserAvatarIcon, TopicGuideAvatarIcon } from '../common/IdentityIcons';
 import AssistantHtmlMessageBlock from '../../features/assistantHtml/AssistantHtmlMessageBlock';
-import type { AssistantHtmlInteractionPayload } from '../../features/assistantHtml/AssistantHtmlFrame';
 
 interface MessageBubbleProps {
   message: Message;
@@ -46,8 +45,6 @@ interface MessageBubbleProps {
   onCreateRevision?: (message: Message, content: string) => void | Promise<void>;
   onSwitchRevision?: (message: Message, direction: -1 | 1) => void | Promise<void>;
   onOpenArtifact?: (artifactId: string) => void;
-  onHtmlAutosave?: (input: AssistantHtmlInteractionPayload) => void | Promise<void>;
-  onHtmlSubmit?: (input: AssistantHtmlInteractionPayload) => void | Promise<void>;
 }
 
 interface MenuPosition {
@@ -112,7 +109,7 @@ function buildWithdrawalDebugTitle(withdrawal: NonNullable<Message['metadata']>[
   );
 }
 
-function MessageBubble({ message, character, characters = [], onDelete, onAnalyze, onExpressionFeedback, onRetryMedia, onOpenImage, onAddImagesToReference, onOpenDiagram, onCharacterAvatarClick, pending = false, currentUser, selfMemberId = null, privateConversation = false, branchVersionInfo, onCreateRevision, onSwitchRevision, onOpenArtifact, onHtmlAutosave, onHtmlSubmit }: MessageBubbleProps) {
+function MessageBubble({ message, character, characters = [], onDelete, onAnalyze, onExpressionFeedback, onRetryMedia, onOpenImage, onAddImagesToReference, onOpenDiagram, onCharacterAvatarClick, pending = false, currentUser, selfMemberId = null, privateConversation = false, branchVersionInfo, onCreateRevision, onSwitchRevision, onOpenArtifact }: MessageBubbleProps) {
   const customBubbleStyles = useSettingsStore((state) => state.customBubbleStyles);
   const userBubbleStyleId = useSettingsStore((state) => state.userBubbleStyleId);
   const userBubbleStyle = useSettingsStore((state) => state.userBubbleStyle);
@@ -138,6 +135,19 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
     .filter((attachment) => attachment.kind === 'image' && attachment.status === 'ready' && Boolean(attachment.url)), [message.metadata?.attachments]);
   const canAddImagesToReference = !pending && readyImageAttachments.length > 0 && Boolean(onAddImagesToReference);
   const artifactRefs = message.metadata?.assistant?.artifacts || [];
+  const htmlArtifactRefs = artifactRefs.filter((artifact) => artifact.kind === 'html');
+  const nonHtmlArtifactRefs = artifactRefs.filter((artifact) => artifact.kind !== 'html');
+  const visibleMessage = useMemo(() => {
+    if (!htmlArtifactRefs.length) return message;
+    const content = message.content
+      .replace(/```(?:html|htm)\s*[\s\S]*?```/gi, '')
+      .replace(/```\s*(?=(?:<!doctype\s+html\b|<html\b))[\s\S]*?```/gi, '')
+      .replace(/<!doctype\s+html\b[\s\S]*$/gi, '')
+      .replace(/<html\b[\s\S]*?<\/html\s*>/gi, '')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+    return content === message.content ? message : { ...message, content: content || `已创建「${htmlArtifactRefs[0]?.title || '交互内容'}」。` };
+  }, [htmlArtifactRefs, message]);
 
   const clearPressTimer = () => {
     if (pressTimerRef.current) {
@@ -457,13 +467,13 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
                   </Box>
                 </Tooltip>
               ) : withdrawalNoticeNode
-            ) : <MessageContent message={message} onRetryMedia={onRetryMedia} onOpenImage={onOpenImage} onOpenDiagram={onOpenDiagram} compactMediaLayout={compactMediaBubble} />}
+            ) : <MessageContent message={visibleMessage} onRetryMedia={onRetryMedia} onOpenImage={onOpenImage} onOpenDiagram={onOpenDiagram} compactMediaLayout={compactMediaBubble} />}
           </Box>
-          {artifactRefs.length ? (
+          {nonHtmlArtifactRefs.length ? (
             <Box
               component="button"
               type="button"
-              onClick={() => artifactRefs[0]?.id && onOpenArtifact?.(artifactRefs[0].id)}
+              onClick={() => nonHtmlArtifactRefs[0]?.id && onOpenArtifact?.(nonHtmlArtifactRefs[0].id)}
               sx={(theme) => ({
                 display: 'inline-block',
                 width: 'fit-content',
@@ -491,12 +501,12 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
               })}
             >
               <Typography variant="caption" sx={{ display: 'block', fontWeight: 500, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.25 }}>
-                产物详情{artifactRefs.length > 1 ? ` · ${artifactRefs.length}` : ''}
+                产物详情{nonHtmlArtifactRefs.length > 1 ? ` · ${nonHtmlArtifactRefs.length}` : ''}
               </Typography>
             </Box>
           ) : null}
-          {artifactRefs.filter((artifact) => artifact.kind === 'html').map((artifact) => (
-            <AssistantHtmlMessageBlock key={`${artifact.id}:${artifact.versionId || 'current'}`} artifactRef={artifact} onAutosave={onHtmlAutosave} onSubmit={onHtmlSubmit} onOpenArtifact={onOpenArtifact} />
+          {htmlArtifactRefs.map((artifact) => (
+            <AssistantHtmlMessageBlock key={`${artifact.id}:${artifact.versionId || 'current'}`} artifactRef={artifact} onOpenArtifact={onOpenArtifact} />
           ))}
         </Box>
 
@@ -515,7 +525,7 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
 
       <Dialog open={viewerOpen} onClose={() => setViewerOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>{message.senderName}</DialogTitle>
-        <DialogContent><MessageContent message={message} onRetryMedia={onRetryMedia} onOpenImage={onOpenImage} onOpenDiagram={onOpenDiagram} compactMediaLayout={compactMediaBubble} /></DialogContent>
+        <DialogContent><MessageContent message={visibleMessage} onRetryMedia={onRetryMedia} onOpenImage={onOpenImage} onOpenDiagram={onOpenDiagram} compactMediaLayout={compactMediaBubble} /></DialogContent>
       </Dialog>
 
       <Menu
@@ -645,9 +655,7 @@ function areMessageBubblePropsEqual(previous: MessageBubbleProps, next: MessageB
     && previous.branchVersionInfo === next.branchVersionInfo
     && previous.onCreateRevision === next.onCreateRevision
     && previous.onSwitchRevision === next.onSwitchRevision
-    && previous.onOpenArtifact === next.onOpenArtifact
-    && previous.onHtmlAutosave === next.onHtmlAutosave
-    && previous.onHtmlSubmit === next.onHtmlSubmit;
+    && previous.onOpenArtifact === next.onOpenArtifact;
 }
 
 export default memo(MessageBubble, areMessageBubblePropsEqual);

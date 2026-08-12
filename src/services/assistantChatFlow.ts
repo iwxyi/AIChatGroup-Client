@@ -470,7 +470,7 @@ async function persistAssistantArtifactsFromReply(params: {
     return { message: assistantMessage, patchesCommitted: 0 };
   }
   const latestUserHasImages = hasReadyImageAttachments(params.userMessage);
-  if (plan.intent === 'chat' && (plan.assistantMessage?.trim() || localFiles.length || latestUserHasImages)) {
+  if (plan.intent === 'chat' && (plan.assistantMessage?.trim() || localFiles.length || latestUserHasImages || plan.responseExperience === 'source_code')) {
     const answer = localFiles.length
       ? await generateAssistantLocalFileAnswer({
         api: params.api,
@@ -481,7 +481,7 @@ async function persistAssistantArtifactsFromReply(params: {
         localFiles,
         signal: params.signal,
       })
-      : latestUserHasImages
+      : latestUserHasImages || plan.responseExperience === 'source_code'
         ? await generateAssistantGeneralAnswer({
           api: params.api,
           inputCapabilities: params.inputCapabilities,

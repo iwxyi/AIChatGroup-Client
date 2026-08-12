@@ -261,6 +261,11 @@ function buildPlannerPrompt() {
     '2. 需要创建产物输出 intent=create。',
     '2a. 用户要求生成图片、海报、插画、照片、图像素材，或要求基于上一张/刚才那张/某张参考图生成变体时，也属于 intent=create；Planner 只规划，不输出图片提示词正文。',
     '2b. 用户要求生成文档、方案、表格、网页、代码、图表、JSON、可沉淀资料时，属于 intent=create，不要退回普通聊天。',
+    '2c. 每轮必须选择 responseExperience，它描述最合适的回答体验，而不是用户是否提到 HTML。direct_answer 用于文字/Markdown 已足够清楚；source_code 只用于用户明确要源码、示例、教程、解释、调试或复制代码。source_code 输出 intent=chat、assistantMessage 为空，让普通回复模型生成代码块，禁止创建可运行产物。',
+    '2d. structured_input 用于完成任务前缺少一组结构化信息，应该主动提供少量字段让用户填写，而不是追问用户打一大段文字。例如“帮我制定旅行计划”缺少目的地、预算、天数和偏好时。使用 intent=create。',
+    '2e. interactive_workspace 用于试卷、问卷、计算器、配置器、练习、审批等完整操作流程，或结果需要提交、批改和持续版本化时。例如“给我做一套高三英语试卷”。使用 intent=create/update。',
+    '2f. visual_explanation 用于天梯图、复杂对比表、数据可视化、复杂公式、交互图表等视觉表达明显优于纯文字的内容。例如“显卡天梯图”。使用 intent=create/update。不要要求用户说网页、HTML、产物或交互。',
+    '2g. responseExperience 必须从用户真正想完成的任务推断。用户说“我想去旅游，帮我制定计划”时可以主动选择 structured_input 收集必要信息；用户说“给我做一套符合高三的英语试卷”时选择 interactive_workspace；用户说“给我看看显卡天梯图”时选择 visual_explanation。HTML 只是内部实现手段，不是用户目标。',
     '3. 需要修改一个或多个现有产物输出 intent=update，scope.artifactIds 可以是多个。',
     '3a. 如果没有 selectedArtifactId，但 artifactRegistry 中只有一个明显相关产物，可以直接 update；如果有多个相关产物且用户没有点名，必须 clarify。',
     '4. 目标不明确且会影响多个候选时输出 intent=clarify，并给 clarificationQuestion；不要猜 target。',
@@ -268,7 +273,7 @@ function buildPlannerPrompt() {
     '6. Planner 不输出产物正文，不输出 patch；只有 intent=chat/clarify 时 assistantMessage 才作为用户可见回复。',
     '',
     '输出格式：',
-    '{"intent":"chat|create|update|clarify|search","assistantMessage":"普通聊天或澄清时的可见回复","searchQuery":"搜索时使用的具体查询；非搜索为空","localFilePaths":[{"directoryId":"...","path":"相对路径"}],"scope":{"targetMode":"single|multi|workspace|selection|unknown","artifactIds":[]},"operations":[{"kind":"style_change|content_edit|structure_edit|create|export|review|search|other","instruction":"..."}],"requiresConfirmation":false,"clarificationQuestion":"","confidence":0.0,"rationale":"..."}',
+    '{"intent":"chat|create|update|clarify|search","assistantMessage":"普通聊天或澄清时的可见回复；source_code 时为空","responseExperience":"direct_answer|source_code|structured_input|interactive_workspace|visual_explanation","searchQuery":"搜索时使用的具体查询；非搜索为空","localFilePaths":[{"directoryId":"...","path":"相对路径"}],"scope":{"targetMode":"single|multi|workspace|selection|unknown","artifactIds":[]},"operations":[{"kind":"style_change|content_edit|structure_edit|create|export|review|search|other","instruction":"..."}],"requiresConfirmation":false,"clarificationQuestion":"","confidence":0.0,"rationale":"..."}',
   ].join('\n');
 }
 
@@ -311,6 +316,9 @@ function normalizePlan(raw: unknown, existingArtifacts: AssistantArtifactItem[],
       }).slice(0, 12)
     : [];
   const normalizedIntent = intent === 'update' && artifactIds.length === 0 ? 'clarify' : intent;
+  const responseExperience = ['direct_answer', 'source_code', 'structured_input', 'interactive_workspace', 'visual_explanation'].includes(String(raw.responseExperience))
+    ? raw.responseExperience as NonNullable<AssistantAgentChangePlan['responseExperience']>
+    : undefined;
   return {
     intent: normalizedIntent,
     assistantMessage: text(raw.assistantMessage, 8000),
@@ -320,6 +328,7 @@ function normalizePlan(raw: unknown, existingArtifacts: AssistantArtifactItem[],
     clarificationQuestion: text(raw.clarificationQuestion, 300),
     searchQuery: text(raw.searchQuery, 300),
     localFilePaths,
+    responseExperience,
     confidence: numberInRange(raw.confidence, 0),
     rationale: text(raw.rationale, 500),
   };
@@ -361,10 +370,11 @@ function buildWriterPrompt() {
     '10. 图片任务可按用户自然语言要求输出 aspectRatio 和 imageSize。aspectRatio 仅可为 1:1、2:3、3:2、3:4、4:3、4:5、5:4、9:16、16:9、21:9；imageSize 仅可为 1K、2K、4K。用户没有要求时省略。',
     '11. 如果 assistantMessage、patch content 或 files 中需要写应用内链接，必须使用跨平台 AppLink：ssmm://character/{id}?action=edit、ssmm://chat/{id}?action=open、ssmm://settings?action=open&tab=models&card=models。禁止输出 /characters/...、/chats/...、#/...、http://localhost/... 或任何平台私有路由。',
     '11.1 只有当 ID 来自用户输入、recentConversation、artifactRegistry、targetArtifacts、localFiles 或其他明确上下文时，才能写入 AppLink；禁止编造角色、会话、产物或文件 ID。外部网页来源继续使用 https:// 链接。',
-    '12. 生成列表、选择器、小表单等轻量交互时使用 HTML 片段；生成试卷、复杂问卷、交互报告或完整页面时输出 <!doctype html>/<html> 完整文档。使用 kind=html，并输出 htmlRuntime；不要输出全屏、气泡、presentation、viewport 等宿主展示参数。',
+    '12. 遵循 changePlan.responseExperience。structured_input 生成简洁 HTML 表单片段；interactive_workspace 生成 <!doctype html>/<html> 完整交互文档；visual_explanation 根据内容规模生成 HTML 片段或完整文档，并优先可读、可比较的视觉表达。这三类使用 kind=html；需要提交时输出 htmlRuntime。不要在用户可见文案中谈论 HTML、网页、全屏、气泡、presentation 或 viewport。source_code 不应进入 Writer；若意外收到，必须返回 patches=[]。',
     '12.1 HTML 不得包含 script、onclick/onchange 等事件属性、iframe/object/embed、外部 src/href、网络请求或表单 action。交互只使用标准 input/select/textarea/form，以及 data-pneumata-action=save|submit|reset|open_fullscreen|close。',
     '12.2 htmlRuntime.executionMode 固定为 declarative。submission.fields 必须完整列出允许提交的字段名、类型、必填、长度和选项，并与 HTML 中 name 属性一致。',
     '12.3 如果 userMessage.htmlSubmission 存在，本轮必须 update 其目标 HTML 产物，baseVersionId 使用提交版本，生成包含审批、批改、分析、结果或下一步交互的完整新版本；不得创建无关的新产物。',
+    '12.4 HTML 正文只能放在 patches[].content，严禁放进 assistantMessage 的 Markdown 代码块或直接正文。assistantMessage 只保留一句简短说明；程序会提供产物打开入口。',
     '',
     '输出格式：',
     '{"assistantMessage":"面向用户的自然回复文案","patches":[{"action":"create|update","artifactId":"...","kind":"document|code|diagram|html|table|json|text","title":"...","summary":"...","language":"...","content":"完整内容","files":[{"id":"...","path":"...","language":"...","content":"完整文件内容"}],"baseVersionId":"...","changeSummary":"...","htmlRuntime":{"schemaVersion":1,"executionMode":"declarative","autosave":{"enabled":true,"debounceMs":900},"submission":{"interactionId":"stable-id","label":"提交","resultType":"form|quiz|selection|custom","fields":[{"name":"answer","type":"text|textarea|number|boolean|single_choice|multi_choice","label":"回答","required":true,"maxLength":8000,"options":[]}],"sendToAssistant":true,"createArtifactVersion":true}}}],"mediaTasks":[]}',
@@ -575,7 +585,22 @@ function compactLocalFilesForPrompt(localFiles: AssistantAgentLocalFileContext[]
   });
 }
 
-function normalizePatchSet(raw: unknown, imageReferenceRegistry = new Map<string, ImageAttachmentRef>(), userMessage?: Message): AssistantAgentPatchSet {
+function stripHtmlArtifactSourceFromAssistantMessage(message: string, patches: AssistantAgentPatch[]) {
+  const htmlPatches = patches.filter((patch) => patch.kind === 'html');
+  if (!htmlPatches.length) return message.trim();
+  const cleaned = message
+    .replace(/```(?:html|htm)\s*[\s\S]*?```/gi, '')
+    .replace(/```\s*(?=(?:<!doctype\s+html\b|<html\b))[\s\S]*?```/gi, '')
+    .replace(/<!doctype\s+html\b[\s\S]*$/gi, '')
+    .replace(/<html\b[\s\S]*?<\/html\s*>/gi, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  if (cleaned) return cleaned;
+  const primary = htmlPatches[0];
+  return `${primary.action === 'update' ? '已更新' : '已创建'}「${primary.title}」。`;
+}
+
+function normalizePatchSet(raw: unknown, imageReferenceRegistry = new Map<string, ImageAttachmentRef>(), userMessage?: Message, plan?: AssistantAgentChangePlan): AssistantAgentPatchSet {
   if (!isRecord(raw)) return { assistantMessage: '没有可提交的产物变更。', patches: [], mediaTasks: [] };
   const patches = Array.isArray(raw.patches) ? raw.patches.slice(0, MAX_PATCHES).flatMap((item): AssistantAgentPatch[] => {
     if (!isRecord(item)) return [];
@@ -584,7 +609,14 @@ function normalizePatchSet(raw: unknown, imageReferenceRegistry = new Map<string
     const content = text(item.content, MAX_CONTENT_CHARS);
     const files = normalizeFiles(item.files);
     if (!action || !kind || (!content && !files?.length)) return [];
-    const htmlRuntime = kind === 'html' ? normalizeAssistantHtmlRuntime(item.htmlRuntime, content) : undefined;
+    if (kind === 'html' && plan?.responseExperience === 'source_code') return [];
+    const preferredMode = plan?.responseExperience === 'structured_input'
+      ? 'inline_interaction'
+      : plan?.responseExperience === 'interactive_workspace'
+        ? 'artifact_page'
+        : undefined;
+    const htmlRuntime = kind === 'html' ? normalizeAssistantHtmlRuntime(isRecord(item.htmlRuntime) ? item.htmlRuntime : {}, content, preferredMode) : undefined;
+    if (kind === 'html' && plan?.responseExperience === 'structured_input' && !htmlRuntime?.submission) return [];
     return [{
       action,
       artifactId: text(item.artifactId, 160) || null,
@@ -605,8 +637,12 @@ function normalizePatchSet(raw: unknown, imageReferenceRegistry = new Map<string
     const implicitTask = createImplicitLatestImageEditTask({ userMessage, imageReferenceRegistry });
     if (implicitTask) mediaTasks = [implicitTask];
   }
+  const visibleAssistantMessage = stripHtmlArtifactSourceFromAssistantMessage(
+    text(raw.assistantMessage, MAX_ASSISTANT_VISIBLE_MESSAGE_CHARS),
+    patches,
+  );
   return {
-    assistantMessage: ensureMediaTaskPlaceholders(text(raw.assistantMessage, MAX_ASSISTANT_VISIBLE_MESSAGE_CHARS), mediaTasks)
+    assistantMessage: ensureMediaTaskPlaceholders(visibleAssistantMessage, mediaTasks)
       || (mediaTasks.length && !patches.length ? '我已根据你的要求准备生成图片。' : patches.length ? '已完成产物变更。' : '没有可提交的产物变更。'),
     patches,
     mediaTasks,
@@ -681,6 +717,7 @@ export async function planAssistantAgentChange(params: {
       assistantMessage: '',
       scope: { targetMode: 'single', artifactIds: [submittedArtifact.id] },
       operations: [{ kind: 'content_edit', instruction: `处理用户提交的 ${htmlSubmission.resultType} 交互结果，并生成同一 HTML 产物的新版本。` }],
+      responseExperience: 'interactive_workspace',
       requiresConfirmation: false,
       confidence: 1,
       rationale: '用户通过 HTML 交互提交了结构化数据，目标产物和基准版本已明确。',
@@ -805,7 +842,7 @@ export async function writeAssistantAgentPatchSet(params: {
     },
   );
   return validateAssistantAgentPatchSet({
-    patchSet: normalizePatchSet(safeJsonParse(raw), imageReferenceRegistry, params.userMessage),
+    patchSet: normalizePatchSet(safeJsonParse(raw), imageReferenceRegistry, params.userMessage, params.plan),
     plan: params.plan,
     existingArtifacts: params.existingArtifacts,
     blockedUpdateArtifactIds,
