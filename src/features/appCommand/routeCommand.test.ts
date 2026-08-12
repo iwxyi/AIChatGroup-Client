@@ -159,6 +159,29 @@ describe('routeAppCommand', () => {
     expect(route.plan.chatQuery).toBe('世界杯');
   });
 
+  it('keeps search intent as search_chats instead of opening a single chat too early', async () => {
+    generateResponseMock.mockResolvedValueOnce(JSON.stringify({
+      mode: 'local_action',
+      action: 'search_chats',
+      riskLevel: 'low',
+      requiresConfirmation: false,
+      plan: {
+        action: 'search_chats',
+        chatQuery: '秦始皇',
+      },
+      choices: [
+        { id: 'open', label: '打开会话', kind: 'execute', action: 'open_existing_chat', plan: { action: 'open_existing_chat', chatQuery: '秦始皇' } },
+      ],
+    }));
+
+    const { route } = await routeAppCommand(context('找一下之前聊过秦始皇的会话'));
+
+    expect(route.mode).toBe('local_action');
+    if (route.mode !== 'local_action') return;
+    expect(route.action).toBe('search_chats');
+    expect(route.choices?.[0]?.label).toBe('打开会话');
+  });
+
   it('keeps advanced chat-search parameters from the planner', async () => {
     generateResponseMock.mockResolvedValueOnce(JSON.stringify({
       mode: 'local_action',
@@ -187,6 +210,29 @@ describe('routeAppCommand', () => {
       chatSearchLimit: 100,
       chatSearchOffset: 200,
     });
+  });
+
+  it('keeps search refinement intent in the planner output', async () => {
+    generateResponseMock.mockResolvedValueOnce(JSON.stringify({
+      mode: 'local_action',
+      action: 'search_chats',
+      riskLevel: 'low',
+      requiresConfirmation: false,
+      plan: {
+        action: 'search_chats',
+        chatQuery: '三国 红楼 人物结合',
+        chatSearchScope: 'auto',
+        chatSearchSortBy: 'relevance',
+      },
+    }));
+
+    const { route } = await routeAppCommand(context('上周三我聊到的三国和红楼里面人物结合的大纲，换个更准的词再找'));
+
+    expect(route.mode).toBe('local_action');
+    if (route.mode !== 'local_action') return;
+    expect(route.plan.chatQuery).toContain('三国');
+    expect(route.plan.chatQuery).toContain('红楼');
+    expect(route.plan.chatSearchSortBy).toBe('relevance');
   });
 
   it('keeps opening messages for direct chat creation plans', async () => {
