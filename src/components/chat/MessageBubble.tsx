@@ -21,6 +21,7 @@ import DebugChip from '../common/DebugChip';
 import AppSnackbar from '../common/AppSnackbar';
 import { EXPRESSION_FEEDBACK_MENU_GROUPS, type ExpressionFeedbackKind } from '../../services/characterExpressionFeedback';
 import { copyTextToClipboard } from '../../utils/clipboard';
+import type { AssistantHtmlInteractionPayload } from '../../features/assistantHtml/AssistantHtmlFrame';
 import { getNarrativeDisplayBlocks, hasNarrativeReaderBlocks, isNarrativeParagraphMessage, shouldUseCompactMediaBubble, shouldUseCompactMessageBubble } from './messageBubblePresentation';
 import { DefaultUserAvatarIcon, TopicGuideAvatarIcon } from '../common/IdentityIcons';
 import AssistantHtmlMessageBlock from '../../features/assistantHtml/AssistantHtmlMessageBlock';
@@ -45,6 +46,8 @@ interface MessageBubbleProps {
   onCreateRevision?: (message: Message, content: string) => void | Promise<void>;
   onSwitchRevision?: (message: Message, direction: -1 | 1) => void | Promise<void>;
   onOpenArtifact?: (artifactId: string) => void;
+  onHtmlAutosave?: (input: AssistantHtmlInteractionPayload) => void | Promise<void>;
+  onHtmlSubmit?: (input: AssistantHtmlInteractionPayload) => void | Promise<void>;
 }
 
 interface MenuPosition {
@@ -109,7 +112,7 @@ function buildWithdrawalDebugTitle(withdrawal: NonNullable<Message['metadata']>[
   );
 }
 
-function MessageBubble({ message, character, characters = [], onDelete, onAnalyze, onExpressionFeedback, onRetryMedia, onOpenImage, onAddImagesToReference, onOpenDiagram, onCharacterAvatarClick, pending = false, currentUser, selfMemberId = null, privateConversation = false, branchVersionInfo, onCreateRevision, onSwitchRevision, onOpenArtifact }: MessageBubbleProps) {
+function MessageBubble({ message, character, characters = [], onDelete, onAnalyze, onExpressionFeedback, onRetryMedia, onOpenImage, onAddImagesToReference, onOpenDiagram, onCharacterAvatarClick, pending = false, currentUser, selfMemberId = null, privateConversation = false, branchVersionInfo, onCreateRevision, onSwitchRevision, onOpenArtifact, onHtmlAutosave, onHtmlSubmit }: MessageBubbleProps) {
   const customBubbleStyles = useSettingsStore((state) => state.customBubbleStyles);
   const userBubbleStyleId = useSettingsStore((state) => state.userBubbleStyleId);
   const userBubbleStyle = useSettingsStore((state) => state.userBubbleStyle);
@@ -136,6 +139,8 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
   const canAddImagesToReference = !pending && readyImageAttachments.length > 0 && Boolean(onAddImagesToReference);
   const artifactRefs = message.metadata?.assistant?.artifacts || [];
   const htmlArtifactRefs = artifactRefs.filter((artifact) => artifact.kind === 'html');
+  const interactiveHtmlArtifactRefs = htmlArtifactRefs.filter((artifact) => artifact.presentation !== 'fullscreen_html');
+  const previewHtmlArtifactRefs = htmlArtifactRefs.filter((artifact) => artifact.presentation === 'fullscreen_html');
   const nonHtmlArtifactRefs = artifactRefs.filter((artifact) => artifact.kind !== 'html');
   const visibleMessage = useMemo(() => {
     if (!htmlArtifactRefs.length) return message;
@@ -147,7 +152,7 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
       .replace(/\n{3,}/g, '\n\n')
       .trim();
     return content === message.content ? message : { ...message, content: content || `已创建「${htmlArtifactRefs[0]?.title || '交互内容'}」。` };
-  }, [htmlArtifactRefs, message]);
+  }, [message]);
 
   const clearPressTimer = () => {
     if (pressTimerRef.current) {
@@ -399,7 +404,7 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
   }
 
   return (
-    <>
+    <Box sx={{ width: '100%' }}>
       <Box data-message-id={message.id} data-message-type={message.type} sx={{ display: 'flex', justifyContent: wrapperJustify, px: 2, py: 0.75, gap: 1.25, alignItems: 'flex-start' }}>
         {!isUser ? (
           <Box onClick={handleAvatarClick} sx={{ cursor: message.type === 'ai' && !pending ? 'pointer' : 'default', flexShrink: 0 }}>
@@ -505,7 +510,7 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
               </Typography>
             </Box>
           ) : null}
-          {htmlArtifactRefs.map((artifact) => (
+          {previewHtmlArtifactRefs.map((artifact) => (
             <AssistantHtmlMessageBlock key={`${artifact.id}:${artifact.versionId || 'current'}`} artifactRef={artifact} onOpenArtifact={onOpenArtifact} />
           ))}
         </Box>
@@ -522,6 +527,22 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
           </Box>
         ) : null}
       </Box>
+
+      {interactiveHtmlArtifactRefs.length ? (
+        <Box sx={{ display: 'flex', justifyContent: 'center', px: { xs: 2, sm: 3 }, pb: 1, width: '100%' }}>
+          <Box sx={{ width: '100%', maxWidth: '100%', display: 'grid', gap: 1 }}>
+            {interactiveHtmlArtifactRefs.map((artifact) => (
+              <AssistantHtmlMessageBlock
+                key={`${artifact.id}:${artifact.versionId || 'current'}`}
+                artifactRef={artifact}
+                onAutosave={onHtmlAutosave}
+                onSubmit={onHtmlSubmit}
+                onOpenArtifact={onOpenArtifact}
+              />
+            ))}
+          </Box>
+        </Box>
+      ) : null}
 
       <Dialog open={viewerOpen} onClose={() => setViewerOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>{message.senderName}</DialogTitle>
@@ -632,7 +653,7 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
           <Button variant="contained" onClick={handleSaveRevision}>生成新版本</Button>
         </DialogActions>
       </Dialog>
-    </>
+    </Box>
   );
 }
 
@@ -655,7 +676,9 @@ function areMessageBubblePropsEqual(previous: MessageBubbleProps, next: MessageB
     && previous.branchVersionInfo === next.branchVersionInfo
     && previous.onCreateRevision === next.onCreateRevision
     && previous.onSwitchRevision === next.onSwitchRevision
-    && previous.onOpenArtifact === next.onOpenArtifact;
+    && previous.onOpenArtifact === next.onOpenArtifact
+    && previous.onHtmlAutosave === next.onHtmlAutosave
+    && previous.onHtmlSubmit === next.onHtmlSubmit;
 }
 
 export default memo(MessageBubble, areMessageBubblePropsEqual);

@@ -2,7 +2,7 @@ import { Box } from '@mui/material';
 import type { Message } from '../../types/message';
 import type { AssistantArtifactItem } from '../../types/assistantArtifact';
 import { useAssistantArtifactStore } from '../../stores/useAssistantArtifactStore';
-import AssistantHtmlFrame from './AssistantHtmlFrame';
+import AssistantHtmlFrame, { type AssistantHtmlInteractionPayload } from './AssistantHtmlFrame';
 
 type ArtifactRef = NonNullable<NonNullable<NonNullable<Message['metadata']>['assistant']>['artifacts']>[number];
 
@@ -17,8 +17,10 @@ function resolveInlineVersion(artifact: AssistantArtifactItem, ref: ArtifactRef)
   return attempt || referenced;
 }
 
-export default function AssistantHtmlMessageBlock({ artifactRef, onOpenArtifact }: {
+export default function AssistantHtmlMessageBlock({ artifactRef, onAutosave, onSubmit, onOpenArtifact }: {
   artifactRef: ArtifactRef;
+  onAutosave?: (input: AssistantHtmlInteractionPayload) => void | Promise<void>;
+  onSubmit?: (input: AssistantHtmlInteractionPayload) => void | Promise<void>;
   onOpenArtifact?: (artifactId: string) => void;
 }) {
   const artifact = useAssistantArtifactStore((state) => state.items.find((item) => item.id === artifactRef.id && item.deletedAt == null) || null);
@@ -26,6 +28,25 @@ export default function AssistantHtmlMessageBlock({ artifactRef, onOpenArtifact 
   const version = resolveInlineVersion(artifact, artifactRef);
   const manifest = version?.htmlRuntime;
   if (!version || !manifest) return null;
+  const interactive = artifactRef.presentation !== 'fullscreen_html'
+    && (manifest.presentation === 'inline' || manifest.presentation === 'both');
+  const readOnly = version.stage === 'submitted'
+    || (version.id !== artifact.currentVersionId && version.stage !== 'autosave');
+  if (interactive) {
+    return (
+      <Box sx={{ width: '100%', border: '1px solid', borderColor: 'divider', borderRadius: 1, overflow: 'hidden', bgcolor: '#fff' }}>
+        <AssistantHtmlFrame
+          artifactId={artifact.id}
+          version={version}
+          manifest={manifest}
+          inline
+          readOnly={readOnly}
+          onAutosave={onAutosave}
+          onSubmit={onSubmit}
+        />
+      </Box>
+    );
+  }
   const previewManifest = {
     ...manifest,
     viewport: { preferredHeight: 320, maxInlineHeight: 360 },
@@ -44,7 +65,6 @@ export default function AssistantHtmlMessageBlock({ artifactRef, onOpenArtifact 
       sx={{
         position: 'relative',
         width: 'min(100%, 680px)',
-        mt: 0.75,
         border: '1px solid',
         borderColor: 'divider',
         borderRadius: 1,
