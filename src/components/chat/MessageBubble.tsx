@@ -23,6 +23,8 @@ import { EXPRESSION_FEEDBACK_MENU_GROUPS, type ExpressionFeedbackKind } from '..
 import { copyTextToClipboard } from '../../utils/clipboard';
 import { getNarrativeDisplayBlocks, hasNarrativeReaderBlocks, isNarrativeParagraphMessage, shouldUseCompactMediaBubble, shouldUseCompactMessageBubble } from './messageBubblePresentation';
 import { DefaultUserAvatarIcon, TopicGuideAvatarIcon } from '../common/IdentityIcons';
+import AssistantHtmlMessageBlock from '../../features/assistantHtml/AssistantHtmlMessageBlock';
+import type { AssistantHtmlInteractionPayload } from '../../features/assistantHtml/AssistantHtmlFrame';
 
 interface MessageBubbleProps {
   message: Message;
@@ -44,6 +46,8 @@ interface MessageBubbleProps {
   onCreateRevision?: (message: Message, content: string) => void | Promise<void>;
   onSwitchRevision?: (message: Message, direction: -1 | 1) => void | Promise<void>;
   onOpenArtifact?: (artifactId: string) => void;
+  onHtmlAutosave?: (input: AssistantHtmlInteractionPayload) => void | Promise<void>;
+  onHtmlSubmit?: (input: AssistantHtmlInteractionPayload) => void | Promise<void>;
 }
 
 interface MenuPosition {
@@ -108,7 +112,7 @@ function buildWithdrawalDebugTitle(withdrawal: NonNullable<Message['metadata']>[
   );
 }
 
-function MessageBubble({ message, character, characters = [], onDelete, onAnalyze, onExpressionFeedback, onRetryMedia, onOpenImage, onAddImagesToReference, onOpenDiagram, onCharacterAvatarClick, pending = false, currentUser, selfMemberId = null, privateConversation = false, branchVersionInfo, onCreateRevision, onSwitchRevision, onOpenArtifact }: MessageBubbleProps) {
+function MessageBubble({ message, character, characters = [], onDelete, onAnalyze, onExpressionFeedback, onRetryMedia, onOpenImage, onAddImagesToReference, onOpenDiagram, onCharacterAvatarClick, pending = false, currentUser, selfMemberId = null, privateConversation = false, branchVersionInfo, onCreateRevision, onSwitchRevision, onOpenArtifact, onHtmlAutosave, onHtmlSubmit }: MessageBubbleProps) {
   const customBubbleStyles = useSettingsStore((state) => state.customBubbleStyles);
   const userBubbleStyleId = useSettingsStore((state) => state.userBubbleStyleId);
   const userBubbleStyle = useSettingsStore((state) => state.userBubbleStyle);
@@ -491,6 +495,9 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
               </Typography>
             </Box>
           ) : null}
+          {artifactRefs.filter((artifact) => artifact.kind === 'html').map((artifact) => (
+            <AssistantHtmlMessageBlock key={`${artifact.id}:${artifact.versionId || 'current'}`} artifactRef={artifact} onAutosave={onHtmlAutosave} onSubmit={onHtmlSubmit} onOpenArtifact={onOpenArtifact} />
+          ))}
         </Box>
 
         {isUser ? (
@@ -638,7 +645,9 @@ function areMessageBubblePropsEqual(previous: MessageBubbleProps, next: MessageB
     && previous.branchVersionInfo === next.branchVersionInfo
     && previous.onCreateRevision === next.onCreateRevision
     && previous.onSwitchRevision === next.onSwitchRevision
-    && previous.onOpenArtifact === next.onOpenArtifact;
+    && previous.onOpenArtifact === next.onOpenArtifact
+    && previous.onHtmlAutosave === next.onHtmlAutosave
+    && previous.onHtmlSubmit === next.onHtmlSubmit;
 }
 
 export default memo(MessageBubble, areMessageBubblePropsEqual);

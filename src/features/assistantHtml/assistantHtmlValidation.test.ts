@@ -1,0 +1,82 @@
+import { describe, expect, it } from 'vitest';
+import { buildAssistantHtmlDocument } from './assistantHtmlDocument';
+import { normalizeAssistantHtmlRuntime, validateAssistantHtmlPayload } from './assistantHtmlValidation';
+import { parseAssistantHtmlBridgeEvent } from './assistantHtmlBridge';
+
+const manifest = normalizeAssistantHtmlRuntime({
+  presentation: 'inline',
+  submission: {
+    interactionId: 'exam-1',
+    label: '交卷',
+    resultType: 'quiz',
+    fields: [
+      { name: 'answer', type: 'single_choice', required: true, options: ['A', 'B'] },
+      { name: 'note', type: 'textarea', maxLength: 20 },
+    ],
+  },
+})!;
+
+describe('assistant HTML safety', () => {
+  it('strips AI scripts and dangerous embedding while injecting only the trusted runtime', () => {
+    const document = buildAssistantHtmlDocument({
+      html: '<html><head><style>@import "https://bad.test/a.css";</style><script>steal()</script></head><body><iframe src="https://bad.test"></iframe><button onclick="steal()">提交</button></body></html>',
+      manifest,
+      channelToken: 'token-1',
+      artifactId: 'artifact-1',
+      versionId: 'version-1',
+    });
+
+    expect(document).not.toContain('steal()');
+    expect(document).not.toContain('<iframe');
+    expect(document).not.toContain('@import');
+    expect(document).toContain("connect-src 'none'");
+    expect(document).toContain("script-src 'nonce-token-1'");
+    expect(document).toContain("parent.postMessage");
+    expect(document).toContain("action==='submit'");
+  });
+
+  it('disables form controls when rendering a historical read-only version', () => {
+    const document = buildAssistantHtmlDocument({
+      html: '<form><input name="answer"><button data-pneumata-action="submit">提交</button></form>',
+      manifest,
+      channelToken: 'token-1',
+      artifactId: 'artifact-1',
+      versionId: 'version-1',
+      readOnly: true,
+    });
+
+    expect(document).toContain('"readOnly":true');
+    expect(document).toContain("node.disabled=true");
+  });
+
+  it('validates and normalizes declared submission fields', () => {
+    expect(validateAssistantHtmlPayload(manifest, { answer: 'A', note: '复习第一章' })).toEqual({ answer: 'A', note: '复习第一章' });
+    expect(() => validateAssistantHtmlPayload(manifest, { answer: 'C', note: '' })).toThrow('无效选项');
+    expect(() => validateAssistantHtmlPayload(manifest, { answer: 'A', unknown: 'x' })).toThrow('未知字段');
+  });
+
+  it('accepts bridge messages only from the bound frame and interaction channel', () => {
+    const frameWindow = {} as Window;
+    const validData = {
+      type: 'submit',
+      channelToken: 'token-1',
+      artifactId: 'artifact-1',
+      versionId: 'version-1',
+      interactionId: 'exam-1',
+      payload: { answer: 'A' },
+    };
+    const parse = (data: Record<string, unknown>, source: MessageEventSource | null = frameWindow) => parseAssistantHtmlBridgeEvent({
+      event: { data, source } as MessageEvent,
+      frameWindow,
+      channelToken: 'token-1',
+      artifactId: 'artifact-1',
+      versionId: 'version-1',
+      interactionId: 'exam-1',
+    });
+
+    expect(parse(validData)?.type).toBe('submit');
+    expect(parse({ ...validData, channelToken: 'wrong' })).toBeNull();
+    expect(parse({ ...validData, versionId: 'other-version' })).toBeNull();
+    expect(parse(validData, {} as Window)).toBeNull();
+  });
+});

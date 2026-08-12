@@ -162,7 +162,19 @@ export interface MessageMetadata {
       id: string;
       kind: string;
       title: string;
+      versionId?: string;
+      presentation?: 'link' | 'inline_html' | 'fullscreen_html';
+      interactionId?: string;
     }>;
+  };
+  assistantHtmlSubmission?: {
+    artifactId: string;
+    baseVersionId: string;
+    interactionId: string;
+    submissionId: string;
+    resultType: 'form' | 'quiz' | 'selection' | 'custom';
+    payload: Record<string, unknown>;
+    submittedAt: number;
   };
   branching?: {
     nodeId?: string;

@@ -64,6 +64,8 @@ import { getLatestChatPreviewMessage } from '../services/chatLatestMessage';
 import { projectMergedChatMessages } from '../services/currentChatMessages';
 import { resolveSessionFamilyKey } from '../services/sessionEngineKeys';
 import { isAssistantArtifactCloudSyncEnabled, setAssistantArtifactCloudSyncEnabled } from '../services/assistantArtifactCloudSyncPreference';
+import { useAssistantArtifactStore } from '../stores/useAssistantArtifactStore';
+import type { AssistantHtmlInteractionPayload } from '../features/assistantHtml/AssistantHtmlFrame';
 import { writeAssistantAgentDefaultEnabled } from '../services/assistantAgentPreference';
 import { isChatBlockedByMissingRequiredCharacters } from '../services/chatAvailability';
 import { getPendingAppCommand, subscribePendingAppCommand, type PendingAppCommand } from '../features/appCommand/pendingCommandStore';
@@ -846,6 +848,7 @@ export default function ChatDetailPage() {
   const isManualInputPendingRef = useRef<() => boolean>(() => false);
   const userDraftActivityRef = useRef<UserDraftActivity | null>(null);
   const directReplyAbortRef = useRef<AbortController | null>(null);
+  const pendingHtmlSubmissionKeysRef = useRef(new Set<string>());
   const directReplyEpochRef = useRef(0);
   const composerDockRef = useRef<HTMLDivElement | null>(null);
   const pendingAppCommandChoiceRef = useRef(false);
@@ -2059,6 +2062,98 @@ export default function ChatDetailPage() {
     setSelectedAssistantArtifactId(artifactId);
     setRightPanelOpen(true);
   }, [setRightPanelOpen]);
+
+  const handleHtmlAutosave = useCallback((input: AssistantHtmlInteractionPayload) => {
+    useAssistantArtifactStore.getState().saveHtmlInteractionState({
+      artifactId: input.artifactId,
+      baseVersionId: input.baseVersionId,
+      interactionState: input.payload,
+    });
+  }, []);
+
+  const handleHtmlSubmit = useCallback(async (input: AssistantHtmlInteractionPayload) => {
+    if (!chat || !id || chat.type !== 'assistant' || chatInteractionDisabled) return;
+    const pendingKey = `${input.artifactId}:${input.interactionId}:${input.baseVersionId}`;
+    if (pendingHtmlSubmissionKeysRef.current.has(pendingKey)) return;
+    pendingHtmlSubmissionKeysRef.current.add(pendingKey);
+    try {
+      await enqueueManualInput(async () => {
+        const submittedAt = Date.now();
+        const submissionId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : `html-submission-${submittedAt}-${Math.random().toString(36).slice(2, 10)}`;
+        const artifact = useAssistantArtifactStore.getState().submitHtmlInteraction({
+          artifactId: input.artifactId,
+          baseVersionId: input.baseVersionId,
+          interactionState: input.payload,
+          submissionId,
+          timestamp: submittedAt,
+        });
+        if (!artifact) return;
+        const submittedVersion = artifact.versions.find((version) => version.id === artifact.currentVersionId);
+        if (!submittedVersion || submittedVersion.stage !== 'submitted' || submittedVersion.submissionId !== submissionId) return;
+
+        const recentMessages = currentChatMessages;
+        const userMessage = await addMessageStable({
+          chatId: id,
+          type: 'user',
+          senderId: 'user',
+          senderName: currentUser?.nickname?.trim() || '我',
+          content: `已提交「${artifact.title}」的交互结果。`,
+          emotion: 0,
+          timestamp: getNextMessageTimestamp(),
+          metadata: {
+            assistantHtmlSubmission: {
+              artifactId: artifact.id,
+              baseVersionId: submittedVersion.id,
+              interactionId: input.interactionId,
+              submissionId,
+              resultType: input.resultType,
+              payload: input.payload,
+              submittedAt,
+            },
+          },
+        });
+        void updateChat(id, { lastMessageAt: userMessage.timestamp, latestMessage: userMessage });
+        const recentMessagesWithUser = [...recentMessages.filter((message) => message.id !== userMessage.id), userMessage];
+
+        directReplyAbortRef.current?.abort();
+        const assistantReplyEpoch = directReplyEpochRef.current + 1;
+        directReplyEpochRef.current = assistantReplyEpoch;
+        const assistantReplyAbortController = new AbortController();
+        directReplyAbortRef.current = assistantReplyAbortController;
+        setIsDirectReplyPending(true);
+        try {
+          const { runAssistantChatReplyFlow } = await import('../services/assistantChatFlow');
+          await runAssistantChatReplyFlow({
+            api,
+            aiProfiles,
+            chatId: id,
+            chat,
+            currentMessages: recentMessagesWithUser,
+            selectedArtifactId: artifact.id,
+            timestamp: userMessage.timestamp + 1,
+            upsertMessage: upsertMessageStable,
+            updateChat,
+            signal: assistantReplyAbortController.signal,
+            shouldContinue: () => !assistantReplyAbortController.signal.aborted && directReplyEpochRef.current === assistantReplyEpoch,
+          });
+        } catch (error) {
+          if (!isGenerationCancelledError(error)) {
+            console.error('[assistant-html:submit-error]', error);
+            showErrorToast(error instanceof Error ? error.message : String(error));
+          }
+        } finally {
+          if (directReplyAbortRef.current === assistantReplyAbortController) {
+            directReplyAbortRef.current = null;
+            setIsDirectReplyPending(false);
+          }
+        }
+      });
+    } finally {
+      pendingHtmlSubmissionKeysRef.current.delete(pendingKey);
+    }
+  }, [addMessageStable, aiProfiles, api, chat, chatInteractionDisabled, currentChatMessages, currentUser?.nickname, enqueueManualInput, getNextMessageTimestamp, id, showErrorToast, updateChat, upsertMessageStable]);
 
   useEffect(() => {
     if (!id) return undefined;
@@ -3402,6 +3497,8 @@ export default function ChatDetailPage() {
             onAddImagesToReference={handleAddImagesToReference}
             onCharacterAvatarClick={openCharacterPreview}
             onOpenArtifact={isAssistantChat ? handleOpenAssistantArtifact : undefined}
+            onHtmlAutosave={isAssistantChat && !chatInteractionDisabled ? handleHtmlAutosave : undefined}
+            onHtmlSubmit={isAssistantChat && !chatInteractionDisabled ? handleHtmlSubmit : undefined}
             selfMemberId={effectiveAiDirectPerspectiveMemberId}
             onReachTop={handleNearTop}
             onReachBottom={handleNearBottom}
@@ -3547,6 +3644,8 @@ export default function ChatDetailPage() {
                     chat={chat}
                     selectedArtifactId={selectedAssistantArtifactId}
                     onSelectedArtifactChange={setSelectedAssistantArtifactId}
+                    onHtmlAutosave={handleHtmlAutosave}
+                    onHtmlSubmit={handleHtmlSubmit}
                     onAgentEnabledChange={agentEntitled ? (enabled) => {
                       writeAssistantAgentDefaultEnabled(enabled);
                       const aiSearchAvailable = authMode === 'cloud' && currentUser?.aiSearchEntitled === true;

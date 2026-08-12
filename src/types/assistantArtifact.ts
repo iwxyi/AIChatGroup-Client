@@ -20,6 +20,39 @@ export interface AssistantArtifactFile {
   language?: string | null;
 }
 
+export type AssistantArtifactVersionStage = 'generated' | 'autosave' | 'submitted' | 'ai_result' | 'user_revision';
+
+export interface AssistantHtmlSubmissionField {
+  name: string;
+  type: 'text' | 'textarea' | 'number' | 'boolean' | 'single_choice' | 'multi_choice';
+  label?: string;
+  required?: boolean;
+  maxLength?: number;
+  options?: string[];
+}
+
+export interface AssistantHtmlRuntimeManifest {
+  schemaVersion: 1;
+  presentation: 'inline' | 'fullscreen' | 'both';
+  executionMode: 'declarative';
+  viewport?: {
+    preferredHeight?: number;
+    maxInlineHeight?: number;
+  };
+  autosave?: {
+    enabled: true;
+    debounceMs?: number;
+  };
+  submission?: {
+    interactionId: string;
+    label: string;
+    resultType: 'form' | 'quiz' | 'selection' | 'custom';
+    fields: AssistantHtmlSubmissionField[];
+    sendToAssistant: true;
+    createArtifactVersion: true;
+  };
+}
+
 export interface AssistantArtifactVersion {
   id: string;
   artifactId: string;
@@ -30,6 +63,13 @@ export interface AssistantArtifactVersion {
   baseVersionId?: string | null;
   changeSummary?: string;
   media?: AssistantArtifactMediaRef[];
+  htmlRuntime?: AssistantHtmlRuntimeManifest;
+  stage?: AssistantArtifactVersionStage;
+  interactionState?: Record<string, unknown>;
+  updatedAt?: number;
+  revision?: number;
+  submissionId?: string;
+  submittedAt?: number;
   createdAt: number;
 }
 
@@ -62,6 +102,8 @@ export interface AssistantArtifactDraft {
   baseVersionId?: string | null;
   changeSummary?: string;
   media?: AssistantArtifactMediaRef[];
+  htmlRuntime?: AssistantHtmlRuntimeManifest;
+  versionStage?: AssistantArtifactVersionStage;
 }
 
 export type AssistantAgentIntent = 'chat' | 'create' | 'update' | 'clarify' | 'search';
@@ -112,6 +154,8 @@ export interface AssistantAgentPatch {
   baseVersionId?: string | null;
   changeSummary?: string;
   media?: AssistantArtifactMediaRef[];
+  htmlRuntime?: AssistantHtmlRuntimeManifest;
+  versionStage?: AssistantArtifactVersionStage;
 }
 
 export interface AssistantAgentMediaTask {

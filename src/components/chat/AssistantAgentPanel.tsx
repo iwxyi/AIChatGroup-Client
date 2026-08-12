@@ -35,12 +35,15 @@ import { copyTextToClipboard } from '../../utils/clipboard';
 import { ensureAssistantArtifactStoreHydrated, getAssistantArtifactCurrentContent, useAssistantArtifactStore } from '../../stores/useAssistantArtifactStore';
 import { useLocalWorkspaceStore } from '../../stores/useLocalWorkspaceStore';
 import type { LocalWorkspaceFileEntry } from '../../services/localWorkspaceService';
+import AssistantHtmlFrame, { type AssistantHtmlInteractionPayload } from '../../features/assistantHtml/AssistantHtmlFrame';
 
 interface AssistantAgentPanelProps {
   chat: GroupChat;
   selectedArtifactId?: string | null;
   onSelectedArtifactChange?: (artifactId: string | null) => void;
   onAgentEnabledChange?: (enabled: boolean) => void;
+  onHtmlAutosave?: (input: AssistantHtmlInteractionPayload) => void | Promise<void>;
+  onHtmlSubmit?: (input: AssistantHtmlInteractionPayload) => void | Promise<void>;
 }
 
 const artifactKindLabels: Record<AssistantArtifactKind, string> = {
@@ -404,13 +407,15 @@ function ArtifactThumbnail({ item, mode }: { item: AssistantArtifactItem; mode: 
   );
 }
 
-function ArtifactPreview({ item, version, expanded = false, fullscreen = false, hideMermaidLoading = false, onMermaidRenderSettled }: {
+function ArtifactPreview({ item, version, expanded = false, fullscreen = false, hideMermaidLoading = false, onMermaidRenderSettled, onHtmlAutosave, onHtmlSubmit }: {
   item: AssistantArtifactItem;
   version?: AssistantArtifactVersion | null;
   expanded?: boolean;
   fullscreen?: boolean;
   hideMermaidLoading?: boolean;
   onMermaidRenderSettled?: () => void;
+  onHtmlAutosave?: (input: AssistantHtmlInteractionPayload) => void | Promise<void>;
+  onHtmlSubmit?: (input: AssistantHtmlInteractionPayload) => void | Promise<void>;
 }) {
   const content = version ? getArtifactVersionContent(version) : getAssistantArtifactCurrentContent(item);
   if (!content) {
@@ -423,6 +428,10 @@ function ArtifactPreview({ item, version, expanded = false, fullscreen = false, 
     return <MarkdownText text={content} forceRich />;
   }
   if (item.kind === 'html') {
+    if (version?.htmlRuntime) {
+      const readOnly = version.id !== item.currentVersionId || version.stage === 'submitted';
+      return <AssistantHtmlFrame artifactId={item.id} version={version} manifest={version.htmlRuntime} readOnly={readOnly} onAutosave={onHtmlAutosave} onSubmit={onHtmlSubmit} />;
+    }
     return (
       <Box component="iframe" title={item.title} srcDoc={content} sandbox="" sx={{ width: '100%', minHeight: expanded ? '72vh' : 360, border: 0, borderRadius: 1, bgcolor: '#fff' }} />
     );
@@ -453,10 +462,14 @@ function AssistantArtifactList({
   chatId,
   selectedArtifactId,
   onSelectedArtifactChange,
+  onHtmlAutosave,
+  onHtmlSubmit,
 }: {
   chatId: string;
   selectedArtifactId?: string | null;
   onSelectedArtifactChange?: (artifactId: string | null) => void;
+  onHtmlAutosave?: (input: AssistantHtmlInteractionPayload) => void | Promise<void>;
+  onHtmlSubmit?: (input: AssistantHtmlInteractionPayload) => void | Promise<void>;
 }) {
   const artifactItems = useAssistantArtifactStore((state) => state.items);
   const [viewMode, setViewMode] = useState<ArtifactViewMode>('list');
@@ -505,7 +518,12 @@ function AssistantArtifactList({
   ), [artifacts, fullscreenId]);
   const fullscreenVersion = useMemo(() => {
     if (!fullscreenItem) return null;
-    return fullscreenItem.versions.find((version) => version.id === fullscreenVersionId) || getArtifactCurrentVersion(fullscreenItem);
+    const selectedVersion = fullscreenItem.versions.find((version) => version.id === fullscreenVersionId) || getArtifactCurrentVersion(fullscreenItem);
+    const currentVersion = getArtifactCurrentVersion(fullscreenItem);
+    if (fullscreenItem.kind === 'html' && selectedVersion && currentVersion?.baseVersionId === selectedVersion.id && (currentVersion.stage === 'autosave' || currentVersion.stage === 'submitted')) {
+      return currentVersion;
+    }
+    return selectedVersion;
   }, [fullscreenItem, fullscreenVersionId]);
   const pendingFullscreenVersion = useMemo(() => {
     if (!fullscreenItem || !pendingFullscreenVersionId) return null;
@@ -941,7 +959,7 @@ function AssistantArtifactList({
                           justifyContent: 'center',
                         }}
                       >
-                        <ArtifactPreview item={fullscreenItem} version={fullscreenVersion} expanded fullscreen />
+                        <ArtifactPreview item={fullscreenItem} version={fullscreenVersion} expanded fullscreen onHtmlAutosave={onHtmlAutosave} onHtmlSubmit={onHtmlSubmit} />
                         {pendingFullscreenVersion ? (
                           <Box
                             aria-hidden
@@ -967,7 +985,7 @@ function AssistantArtifactList({
                   </Box>
                 ) : (
                   <>
-                    <ArtifactPreview item={fullscreenItem} version={fullscreenVersion} expanded fullscreen />
+                    <ArtifactPreview item={fullscreenItem} version={fullscreenVersion} expanded fullscreen onHtmlAutosave={onHtmlAutosave} onHtmlSubmit={onHtmlSubmit} />
                     {pendingFullscreenVersion ? (
                       <Box
                         aria-hidden
@@ -1004,6 +1022,8 @@ export default function AssistantAgentPanel({
   selectedArtifactId = null,
   onSelectedArtifactChange,
   onAgentEnabledChange,
+  onHtmlAutosave,
+  onHtmlSubmit,
 }: AssistantAgentPanelProps) {
   const capabilities = chat.modeState.assistantCapabilities || {};
   const agentEnabled = Boolean(capabilities.agent);
@@ -1043,6 +1063,8 @@ export default function AssistantAgentPanel({
                 chatId={chat.id}
                 selectedArtifactId={selectedArtifactId}
                 onSelectedArtifactChange={onSelectedArtifactChange}
+                onHtmlAutosave={onHtmlAutosave}
+                onHtmlSubmit={onHtmlSubmit}
               />
             </>
           ) : (

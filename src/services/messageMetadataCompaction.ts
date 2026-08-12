@@ -43,6 +43,28 @@ function omitEmpty<T extends Record<string, unknown>>(record: T): T {
   return next as T;
 }
 
+function compactHtmlSubmission(value: MessageMetadata['assistantHtmlSubmission']) {
+  if (!value || !value.payload || typeof value.payload !== 'object' || Array.isArray(value.payload)) return undefined;
+  const safePayload: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
+  Object.entries(value.payload).slice(0, 100).forEach(([key, fieldValue]) => {
+    if (!key || key === '__proto__' || key === 'prototype' || key === 'constructor') return;
+    if (typeof fieldValue === 'string') safePayload[key.slice(0, 120)] = fieldValue.slice(0, 8_000);
+    else if (typeof fieldValue === 'number' && Number.isFinite(fieldValue)) safePayload[key.slice(0, 120)] = fieldValue;
+    else if (typeof fieldValue === 'boolean' || fieldValue === null) safePayload[key.slice(0, 120)] = fieldValue;
+    else if (Array.isArray(fieldValue)) safePayload[key.slice(0, 120)] = fieldValue.filter((item): item is string => typeof item === 'string').slice(0, 100).map((item) => item.slice(0, 240));
+  });
+  if (JSON.stringify(safePayload).length > 32_000) return undefined;
+  return {
+    artifactId: String(value.artifactId || '').slice(0, 191),
+    baseVersionId: String(value.baseVersionId || '').slice(0, 240),
+    interactionId: String(value.interactionId || '').slice(0, 160),
+    submissionId: String(value.submissionId || '').slice(0, 160),
+    resultType: value.resultType,
+    payload: safePayload,
+    submittedAt: Number(value.submittedAt || 0),
+  } satisfies MessageMetadata['assistantHtmlSubmission'];
+}
+
 function compactGenerationRuntimeTrace(trace: unknown) {
   if (!trace || typeof trace !== 'object' || Array.isArray(trace)) return undefined;
   const record = trace as Record<string, unknown>;
@@ -232,6 +254,7 @@ export function compactMessageMetadata(metadata: MessageMetadata | undefined, op
   return omitEmpty({
     ...metadata,
     contextText: options.dropContextText ? undefined : compactText(metadata.contextText, MAX_TEXT.contextText),
+    assistantHtmlSubmission: compactHtmlSubmission(metadata.assistantHtmlSubmission),
     runtimeDecision: metadata.runtimeDecision ? compactRuntimeDecision(metadata.runtimeDecision) : undefined,
   }) as MessageMetadata;
 }

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { AssistantAgentPatch, AssistantArtifactDraft, AssistantArtifactItem } from '../types/assistantArtifact';
+import type { AssistantAgentPatch, AssistantArtifactDraft, AssistantArtifactItem, AssistantArtifactVersion } from '../types/assistantArtifact';
 import type { Message, MessageAttachment } from '../types/message';
 import { scopedStorageKey, storageKey } from '../constants/brand';
 import { getLocalDataUserId } from '../services/authStorageScope';
@@ -31,6 +31,19 @@ interface AssistantArtifactStore extends AssistantArtifactSnapshot {
     patches: AssistantAgentPatch[];
     timestamp?: number;
   }) => AssistantArtifactItem[];
+  saveHtmlInteractionState: (params: {
+    artifactId: string;
+    baseVersionId: string;
+    interactionState: Record<string, unknown>;
+    timestamp?: number;
+  }) => AssistantArtifactItem | null;
+  submitHtmlInteraction: (params: {
+    artifactId: string;
+    baseVersionId: string;
+    interactionState: Record<string, unknown>;
+    submissionId: string;
+    timestamp?: number;
+  }) => AssistantArtifactItem | null;
   getArtifactsForChat: (chatId: string) => AssistantArtifactItem[];
   refreshArtifactsFromCloud: (chatId: string) => Promise<void>;
   pushArtifactsToCloud: (chatId: string, artifactIds?: string[]) => Promise<void>;
@@ -48,6 +61,7 @@ const MAX_ARTIFACTS_PER_CHAT = 80;
 const MAX_VERSIONS_PER_ARTIFACT = 12;
 const ASSISTANT_ARTIFACT_SYNC_TTL_MS = 30_000;
 let assistantArtifactHydrationPromise: Promise<void> | null = null;
+const htmlAutosaveCloudPushTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const assistantArtifactSyncScopes = createSyncScopeMetadata(ASSISTANT_ARTIFACT_SYNC_TTL_MS, {
   getStorageKey: () => scopedStorageKey(`assistant-artifact-sync-scopes-${getLocalDataUserId()}`),
 });
@@ -101,7 +115,37 @@ function draftFromPatch(patch: AssistantAgentPatch): AssistantArtifactDraft {
     baseVersionId: patch.baseVersionId || null,
     changeSummary: patch.changeSummary,
     media: patch.media,
+    htmlRuntime: patch.htmlRuntime,
+    versionStage: patch.versionStage,
   };
+}
+
+function currentArtifactVersion(item: AssistantArtifactItem) {
+  return item.versions.find((version) => version.id === item.currentVersionId) || item.versions.at(-1) || null;
+}
+
+function htmlInteractionVersion(params: {
+  artifact: AssistantArtifactItem;
+  baseVersion: AssistantArtifactVersion;
+  interactionState: Record<string, unknown>;
+  stage: 'autosave' | 'submitted';
+  timestamp: number;
+  submissionId?: string;
+}) {
+  return {
+    ...params.baseVersion,
+    id: createVersionId(params.artifact.id, params.timestamp),
+    artifactId: params.artifact.id,
+    baseVersionId: params.baseVersion.id,
+    sourceMessageId: params.baseVersion.sourceMessageId,
+    stage: params.stage,
+    interactionState: params.interactionState,
+    updatedAt: params.timestamp,
+    revision: 1,
+    submissionId: params.submissionId,
+    submittedAt: params.stage === 'submitted' ? params.timestamp : undefined,
+    createdAt: params.timestamp,
+  } satisfies AssistantArtifactVersion;
 }
 
 function pruneChatArtifacts(items: AssistantArtifactItem[], chatId: string) {
@@ -208,6 +252,26 @@ function scheduleArtifactCloudPush(chatId: string, artifactIds: string[]) {
   }, 0);
 }
 
+function scheduleHtmlAutosaveCloudPush(chatId: string, artifactId: string) {
+  if (!shouldSyncAssistantArtifactsToCloud() || typeof window === 'undefined') return;
+  const key = `${chatId}:${artifactId}`;
+  const existingTimer = htmlAutosaveCloudPushTimers.get(key);
+  if (existingTimer) window.clearTimeout(existingTimer);
+  const timer = window.setTimeout(() => {
+    htmlAutosaveCloudPushTimers.delete(key);
+    void useAssistantArtifactStore.getState().pushArtifactsToCloud(chatId, [artifactId]).catch(() => undefined);
+  }, 4_000);
+  htmlAutosaveCloudPushTimers.set(key, timer);
+}
+
+function clearHtmlAutosaveCloudPush(chatId: string, artifactId: string) {
+  if (typeof window === 'undefined') return;
+  const key = `${chatId}:${artifactId}`;
+  const timer = htmlAutosaveCloudPushTimers.get(key);
+  if (timer) window.clearTimeout(timer);
+  htmlAutosaveCloudPushTimers.delete(key);
+}
+
 function scheduleArtifactLocalWorkspaceWrite(chatId: string, artifacts: AssistantArtifactItem[]) {
   if (!artifacts.length || typeof window === 'undefined') return;
   window.setTimeout(() => {
@@ -273,6 +337,10 @@ export const useAssistantArtifactStore = create<AssistantArtifactStore>()(
               baseVersionId: draft.baseVersionId || existing?.currentVersionId || null,
               changeSummary: draft.changeSummary,
               media: draft.media,
+              htmlRuntime: draft.htmlRuntime,
+              stage: draft.versionStage || (draft.kind === 'html' ? (existing ? 'ai_result' : 'generated') : undefined),
+              updatedAt: now + index,
+              revision: 1,
               createdAt: now + index,
             };
             if (existing) {
@@ -329,6 +397,89 @@ export const useAssistantArtifactStore = create<AssistantArtifactStore>()(
         drafts: patches.map(draftFromPatch),
         timestamp,
       }),
+      saveHtmlInteractionState: ({ artifactId, baseVersionId, interactionState, timestamp }) => {
+        const now = timestamp || Date.now();
+        const previous = get().items.find((item) => item.id === artifactId) || null;
+        set((state) => ({
+          items: state.items.map((artifact) => {
+            if (artifact.id !== artifactId || artifact.kind !== 'html' || artifact.deletedAt != null) return artifact;
+            const current = currentArtifactVersion(artifact);
+            if (!current) return artifact;
+            if (current.stage === 'autosave') {
+              if (current.baseVersionId !== baseVersionId) return artifact;
+              const updatedVersion: AssistantArtifactVersion = {
+                ...current,
+                interactionState,
+                updatedAt: now,
+                revision: (current.revision || 1) + 1,
+              };
+              return {
+                ...artifact,
+                versions: artifact.versions.map((version) => version.id === current.id ? updatedVersion : version),
+                updatedAt: now,
+              };
+            }
+            const baseVersion = artifact.versions.find((version) => version.id === baseVersionId);
+            if (!baseVersion || current.id !== baseVersionId) return artifact;
+            const autosave = htmlInteractionVersion({ artifact, baseVersion, interactionState, stage: 'autosave', timestamp: now });
+            return {
+              ...artifact,
+              currentVersionId: autosave.id,
+              versions: [...artifact.versions, autosave].slice(-MAX_VERSIONS_PER_ARTIFACT),
+              updatedAt: now,
+            };
+          }),
+        }));
+        const persisted = get().items.find((item) => item.id === artifactId) || null;
+        if (!persisted || persisted === previous) return null;
+        if (persisted) scheduleHtmlAutosaveCloudPush(persisted.chatId, persisted.id);
+        return persisted;
+      },
+      submitHtmlInteraction: ({ artifactId, baseVersionId, interactionState, submissionId, timestamp }) => {
+        const now = timestamp || Date.now();
+        const previous = get().items.find((item) => item.id === artifactId) || null;
+        set((state) => ({
+          items: state.items.map((artifact) => {
+            if (artifact.id !== artifactId || artifact.kind !== 'html' || artifact.deletedAt != null) return artifact;
+            const current = currentArtifactVersion(artifact);
+            if (!current) return artifact;
+            if (current.submissionId === submissionId && current.stage === 'submitted') {
+              return artifact;
+            }
+            if (current.stage === 'autosave' && current.baseVersionId === baseVersionId) {
+              const submitted: AssistantArtifactVersion = {
+                ...current,
+                stage: 'submitted',
+                interactionState,
+                submissionId,
+                submittedAt: now,
+                updatedAt: now,
+                revision: (current.revision || 1) + 1,
+              };
+              return {
+                ...artifact,
+                versions: artifact.versions.map((version) => version.id === current.id ? submitted : version),
+                updatedAt: now,
+              };
+            }
+            if (current.id !== baseVersionId) return artifact;
+            const submitted = htmlInteractionVersion({ artifact, baseVersion: current, interactionState, stage: 'submitted', timestamp: now, submissionId });
+            return {
+              ...artifact,
+              currentVersionId: submitted.id,
+              versions: [...artifact.versions, submitted].slice(-MAX_VERSIONS_PER_ARTIFACT),
+              updatedAt: now,
+            };
+          }),
+        }));
+        const persisted = get().items.find((item) => item.id === artifactId) || null;
+        if (!persisted || persisted === previous) return null;
+        if (persisted) {
+          clearHtmlAutosaveCloudPush(persisted.chatId, persisted.id);
+          scheduleArtifactCloudPush(persisted.chatId, [persisted.id]);
+        }
+        return persisted;
+      },
 
       getArtifactsForChat: (chatId) => orderedChatArtifacts(get().items, chatId),
 

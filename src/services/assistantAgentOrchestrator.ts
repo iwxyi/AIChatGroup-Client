@@ -12,6 +12,7 @@ import type { Message, MessageAttachment } from '../types/message';
 import type { APIConfig } from '../types/settings';
 import { generateResponse } from './aiClient';
 import { enhanceImagePrompt } from './imagePromptComposer';
+import { normalizeAssistantHtmlRuntime } from '../features/assistantHtml/assistantHtmlValidation';
 
 const VALID_ARTIFACT_KINDS = new Set<AssistantArtifactKind>(['document', 'code', 'diagram', 'html', 'table', 'json', 'text', 'image']);
 const MAX_RECENT_MESSAGES = 12;
@@ -360,9 +361,13 @@ function buildWriterPrompt() {
     '10. 图片任务可按用户自然语言要求输出 aspectRatio 和 imageSize。aspectRatio 仅可为 1:1、2:3、3:2、3:4、4:3、4:5、5:4、9:16、16:9、21:9；imageSize 仅可为 1K、2K、4K。用户没有要求时省略。',
     '11. 如果 assistantMessage、patch content 或 files 中需要写应用内链接，必须使用跨平台 AppLink：ssmm://character/{id}?action=edit、ssmm://chat/{id}?action=open、ssmm://settings?action=open&tab=models&card=models。禁止输出 /characters/...、/chats/...、#/...、http://localhost/... 或任何平台私有路由。',
     '11.1 只有当 ID 来自用户输入、recentConversation、artifactRegistry、targetArtifacts、localFiles 或其他明确上下文时，才能写入 AppLink；禁止编造角色、会话、产物或文件 ID。外部网页来源继续使用 https:// 链接。',
+    '12. 生成列表、选择器、问卷、试卷、表单或交互页面时使用 kind=html，并输出 htmlRuntime。HTML 片段优先 presentation=inline，完整 <!doctype html>/<html> 页面或复杂长表单优先 presentation=fullscreen。',
+    '12.1 HTML 不得包含 script、onclick/onchange 等事件属性、iframe/object/embed、外部 src/href、网络请求或表单 action。交互只使用标准 input/select/textarea/form，以及 data-pneumata-action=save|submit|reset|open_fullscreen|close。',
+    '12.2 htmlRuntime.executionMode 固定为 declarative。submission.fields 必须完整列出允许提交的字段名、类型、必填、长度和选项，并与 HTML 中 name 属性一致。',
+    '12.3 如果 userMessage.htmlSubmission 存在，本轮必须 update 其目标 HTML 产物，baseVersionId 使用提交版本，生成包含审批、批改、分析、结果或下一步交互的完整新版本；不得创建无关的新产物。',
     '',
     '输出格式：',
-    '{"assistantMessage":"面向用户的自然回复文案，可包含图片槽位，例如：下面是一份红烧肉图文介绍。\\n\\n![红烧肉成品图](attachment:image-1)\\n\\n这张图突出肥瘦相间和酱汁光泽。","patches":[{"action":"create|update","artifactId":"...","kind":"document|code|diagram|html|table|json|text","title":"...","summary":"...","language":"...","content":"完整内容","files":[{"id":"...","path":"...","language":"...","content":"完整文件内容"}],"baseVersionId":"...","changeSummary":"..."}],"mediaTasks":[{"kind":"image","slotId":"image-1","userCaption":"红烧肉成品图","prompt":"给图片模型的完整提示词","altText":"图片标题或替代文本","aspectRatio":"16:9","imageSize":"2K","targetArtifactId":"已有图片产物ID，可省略","targetImageIds":["message-id:attachment-id"],"referenceImageIds":["message-id:attachment-id"],"styleImageIds":["message-id:attachment-id"]}]}',
+    '{"assistantMessage":"面向用户的自然回复文案","patches":[{"action":"create|update","artifactId":"...","kind":"document|code|diagram|html|table|json|text","title":"...","summary":"...","language":"...","content":"完整内容","files":[{"id":"...","path":"...","language":"...","content":"完整文件内容"}],"baseVersionId":"...","changeSummary":"...","htmlRuntime":{"schemaVersion":1,"presentation":"inline|fullscreen|both","executionMode":"declarative","viewport":{"preferredHeight":420,"maxInlineHeight":480},"autosave":{"enabled":true,"debounceMs":900},"submission":{"interactionId":"stable-id","label":"提交","resultType":"form|quiz|selection|custom","fields":[{"name":"answer","type":"text|textarea|number|boolean|single_choice|multi_choice","label":"回答","required":true,"maxLength":8000,"options":[]}],"sendToAssistant":true,"createArtifactVersion":true}}}],"mediaTasks":[]}',
   ].join('\n');
 }
 
@@ -579,6 +584,7 @@ function normalizePatchSet(raw: unknown, imageReferenceRegistry = new Map<string
     const content = text(item.content, MAX_CONTENT_CHARS);
     const files = normalizeFiles(item.files);
     if (!action || !kind || (!content && !files?.length)) return [];
+    const htmlRuntime = kind === 'html' ? normalizeAssistantHtmlRuntime(item.htmlRuntime) : undefined;
     return [{
       action,
       artifactId: text(item.artifactId, 160) || null,
@@ -590,6 +596,8 @@ function normalizePatchSet(raw: unknown, imageReferenceRegistry = new Map<string
       files,
       baseVersionId: text(item.baseVersionId, 200) || null,
       changeSummary: text(item.changeSummary, 240),
+      htmlRuntime,
+      versionStage: kind === 'html' && action === 'update' ? 'ai_result' : kind === 'html' ? 'generated' : undefined,
     }];
   }) : [];
   let mediaTasks = withImplicitLatestImageTarget(normalizeMediaTasks(raw.mediaTasks, imageReferenceRegistry), userMessage, imageReferenceRegistry);
@@ -663,9 +671,29 @@ export async function planAssistantAgentChange(params: {
   }>;
   signal?: AbortSignal;
 }) {
+  const htmlSubmission = params.userMessage.metadata?.assistantHtmlSubmission;
+  const submittedArtifact = htmlSubmission
+    ? params.existingArtifacts.find((artifact) => artifact.id === htmlSubmission.artifactId && artifact.chatId === params.chatId && artifact.kind === 'html' && artifact.deletedAt == null)
+    : null;
+  if (htmlSubmission && submittedArtifact) {
+    return {
+      intent: 'update',
+      assistantMessage: '',
+      scope: { targetMode: 'single', artifactIds: [submittedArtifact.id] },
+      operations: [{ kind: 'content_edit', instruction: `处理用户提交的 ${htmlSubmission.resultType} 交互结果，并生成同一 HTML 产物的新版本。` }],
+      requiresConfirmation: false,
+      confidence: 1,
+      rationale: '用户通过 HTML 交互提交了结构化数据，目标产物和基准版本已明确。',
+    } satisfies AssistantAgentChangePlan;
+  }
   const payload = {
     chatId: params.chatId,
-    userMessage: { id: params.userMessage.id, content: params.userMessage.content, imageAttachments: buildCompactImageAttachmentRefs(params.userMessage) },
+    userMessage: {
+      id: params.userMessage.id,
+      content: params.userMessage.content,
+      imageAttachments: buildCompactImageAttachmentRefs(params.userMessage),
+      htmlSubmission: params.userMessage.metadata?.assistantHtmlSubmission,
+    },
     recentConversation: recentConversation(params.messages),
     imageReferenceRegistry: buildCompactImageReferenceRegistry(withLatestUserMessage(params.messages, params.userMessage)),
     artifactRegistry: artifactRegistry(params.existingArtifacts),
@@ -746,7 +774,12 @@ export async function writeAssistantAgentPatchSet(params: {
     });
   const payload = {
     chatId: params.chatId,
-    userMessage: { id: params.userMessage.id, content: params.userMessage.content, imageAttachments: buildCompactImageAttachmentRefs(params.userMessage) },
+    userMessage: {
+      id: params.userMessage.id,
+      content: params.userMessage.content,
+      imageAttachments: buildCompactImageAttachmentRefs(params.userMessage),
+      htmlSubmission: params.userMessage.metadata?.assistantHtmlSubmission,
+    },
     recentConversation: recentConversation(params.messages),
     imageReferenceRegistry: buildCompactImageReferenceRegistry(registryMessages),
     changePlan: params.plan,

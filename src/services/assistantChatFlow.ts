@@ -571,11 +571,21 @@ async function persistAssistantArtifactsFromReply(params: {
               ...(assistantMessage.metadata || {}),
               assistant: {
                 ...(assistantMessage.metadata?.assistant || {}),
-                artifacts: changedArtifacts.map((artifact) => ({
-                  id: artifact.id,
-                  kind: artifact.kind,
-                  title: artifact.title,
-                })),
+                artifacts: changedArtifacts.map((artifact) => {
+                  const version = artifact.versions.find((item) => item.id === artifact.currentVersionId)
+                    || artifact.versions.at(-1);
+                  const htmlRuntime = artifact.kind === 'html' ? version?.htmlRuntime : undefined;
+                  return {
+                    id: artifact.id,
+                    kind: artifact.kind,
+                    title: artifact.title,
+                    versionId: version?.id,
+                    presentation: htmlRuntime
+                      ? (htmlRuntime.presentation === 'inline' || htmlRuntime.presentation === 'both' ? 'inline_html' as const : 'fullscreen_html' as const)
+                      : 'link' as const,
+                    interactionId: htmlRuntime?.submission?.interactionId,
+                  };
+                }),
               },
             },
           },

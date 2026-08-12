@@ -282,4 +282,81 @@ describe('useAssistantArtifactStore', () => {
     expect(second?.id).toBe(first?.id);
     expect(second?.versions).toHaveLength(1);
   });
+
+  it('overwrites the current autosave and promotes it on submit', () => {
+    const [created] = useAssistantArtifactStore.getState().commitPatchSet({
+      chatId: 'chat-a',
+      messageId: 'message-html',
+      timestamp: 100,
+      patches: [{
+        action: 'create',
+        kind: 'html',
+        title: '练习',
+        content: '<form><input name="answer"></form>',
+      }],
+    });
+
+    const firstAutosave = useAssistantArtifactStore.getState().saveHtmlInteractionState({
+      artifactId: created.id,
+      baseVersionId: created.currentVersionId,
+      interactionState: { answer: 'A' },
+      timestamp: 200,
+    });
+    const secondAutosave = useAssistantArtifactStore.getState().saveHtmlInteractionState({
+      artifactId: created.id,
+      baseVersionId: created.currentVersionId,
+      interactionState: { answer: 'B' },
+      timestamp: 300,
+    });
+
+    expect(firstAutosave?.versions).toHaveLength(2);
+    expect(secondAutosave?.versions).toHaveLength(2);
+    expect(secondAutosave?.currentVersionId).toBe(firstAutosave?.currentVersionId);
+    expect(secondAutosave?.versions.at(-1)).toMatchObject({
+      stage: 'autosave',
+      interactionState: { answer: 'B' },
+      revision: 2,
+    });
+
+    const submitted = useAssistantArtifactStore.getState().submitHtmlInteraction({
+      artifactId: created.id,
+      baseVersionId: created.currentVersionId,
+      interactionState: { answer: 'B' },
+      submissionId: 'submission-1',
+      timestamp: 400,
+    });
+
+    expect(submitted?.versions).toHaveLength(2);
+    expect(submitted?.currentVersionId).toBe(firstAutosave?.currentVersionId);
+    expect(submitted?.versions.at(-1)).toMatchObject({
+      stage: 'submitted',
+      interactionState: { answer: 'B' },
+      submissionId: 'submission-1',
+    });
+  });
+
+  it('starts a new autosave after a submitted version', () => {
+    const [created] = useAssistantArtifactStore.getState().commitPatchSet({
+      chatId: 'chat-a',
+      messageId: 'message-html',
+      timestamp: 100,
+      patches: [{ action: 'create', kind: 'html', title: '练习', content: '<form></form>' }],
+    });
+    const submitted = useAssistantArtifactStore.getState().submitHtmlInteraction({
+      artifactId: created.id,
+      baseVersionId: created.currentVersionId,
+      interactionState: { answer: 'A' },
+      submissionId: 'submission-1',
+      timestamp: 200,
+    });
+    const next = useAssistantArtifactStore.getState().saveHtmlInteractionState({
+      artifactId: created.id,
+      baseVersionId: submitted!.currentVersionId,
+      interactionState: { answer: 'C' },
+      timestamp: 300,
+    });
+
+    expect(next?.versions).toHaveLength(3);
+    expect(next?.versions.at(-1)).toMatchObject({ stage: 'autosave', interactionState: { answer: 'C' } });
+  });
 });
