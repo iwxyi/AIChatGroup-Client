@@ -85,6 +85,10 @@ export interface LocalActionPlan {
   chatQuery?: string;
   chatId?: string;
   chatTypePreference?: 'group' | 'direct' | 'assistant' | 'any';
+  chatSearchScope?: 'local' | 'cloud' | 'auto';
+  chatSearchSortBy?: 'relevance' | 'time_desc' | 'time_asc';
+  chatSearchLimit?: number;
+  chatSearchOffset?: number;
   characterQuery?: string;
   characterQueryMode?: 'single' | 'collection';
   sourceGroup?: string;

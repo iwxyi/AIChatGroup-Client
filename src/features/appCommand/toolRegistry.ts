@@ -82,8 +82,8 @@ export const APP_COMMAND_TOOLS: AppCommandToolDefinition[] = [
     action: 'search_chats',
     title: '搜索聊天记录',
     riskLevel: 'low',
-    description: '在会话名称、主题、最近事件和已加载聊天消息中检索，返回匹配会话列表；不自动打开会话。',
-    parameters: ['chatQuery', 'chatTypePreference', 'summary'],
+    description: '搜索聊天记录和各类玩法房时间线，优先使用本地已加载消息窗口；本地无结果或用户明确要求云端/全部历史时再查云端数据库，返回可跳转到命中位置的列表、总数、排序和截断信息；不自动打开会话。',
+    parameters: ['chatQuery', 'chatTypePreference', 'chatSearchScope', 'chatSearchSortBy', 'chatSearchLimit', 'chatSearchOffset', 'summary'],
     validation: {
       requiredAny: [{
         fields: ['chatQuery', 'groupTopic', 'characterName', 'title'],

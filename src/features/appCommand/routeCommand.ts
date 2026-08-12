@@ -35,6 +35,12 @@ function positiveInteger(value: unknown, max: number) {
   return Math.min(max, Math.floor(numberValue));
 }
 
+function nonNegativeInteger(value: unknown, max: number) {
+  const numberValue = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(numberValue) || numberValue < 0) return undefined;
+  return Math.min(max, Math.floor(numberValue));
+}
+
 function normalizeCharacters(value: unknown): PlannedCharacter[] {
   if (!Array.isArray(value)) return [];
   return value
@@ -88,6 +94,18 @@ function normalizePlan(raw: Record<string, unknown>): LocalActionPlan {
     chatQuery: shortText(rawPlan.chatQuery ?? rawPlan.chat_query, 120),
     chatId: shortText(rawPlan.chatId ?? rawPlan.chat_id, 160),
     chatTypePreference: rawPlan.chatTypePreference === 'group' || rawPlan.chatTypePreference === 'direct' || rawPlan.chatTypePreference === 'assistant' ? rawPlan.chatTypePreference : 'any',
+    chatSearchScope: rawPlan.chatSearchScope === 'local' || rawPlan.chatSearchScope === 'cloud' || rawPlan.chatSearchScope === 'auto'
+      ? rawPlan.chatSearchScope
+      : rawPlan.chat_search_scope === 'local' || rawPlan.chat_search_scope === 'cloud' || rawPlan.chat_search_scope === 'auto'
+        ? rawPlan.chat_search_scope
+        : undefined,
+    chatSearchSortBy: rawPlan.chatSearchSortBy === 'relevance' || rawPlan.chatSearchSortBy === 'time_desc' || rawPlan.chatSearchSortBy === 'time_asc'
+      ? rawPlan.chatSearchSortBy
+      : rawPlan.chat_search_sort_by === 'relevance' || rawPlan.chat_search_sort_by === 'time_desc' || rawPlan.chat_search_sort_by === 'time_asc'
+        ? rawPlan.chat_search_sort_by
+        : undefined,
+    chatSearchLimit: positiveInteger(rawPlan.chatSearchLimit ?? rawPlan.chat_search_limit, 100),
+    chatSearchOffset: nonNegativeInteger(rawPlan.chatSearchOffset ?? rawPlan.chat_search_offset, 100000),
     sourceGroup: shortText(rawPlan.sourceGroup ?? rawPlan.source_group, 80),
     targetGroup: shortText(rawPlan.targetGroup ?? rawPlan.target_group ?? rawUpdates.group, 80),
     updateInstruction: shortText(rawPlan.updateInstruction ?? rawPlan.update_instruction, 260),
@@ -341,7 +359,7 @@ function buildPlannerPrompt(source: AppCommandContext['source']) {
     '- 同名或多候选角色需要 choices；每个 choice 的 label 必须带分组或摘要差异，choice.plan 里也要带 characterQuery、characterName、characters[].group 等可用于本地消歧的信息。',
     '- 对“秦始皇的性格怎么样”“A 和 B 谁更擅长做菜”“结合角色库信息回答”这类请求，必须使用 read_character_info 或 compare_characters；不要直接 final_response，不要退回 assistant_agent，也不要只凭摘要自由回答。',
     '- 对“哪些角色是皇帝/有哪些医生/列出擅长摄影的人”等按身份、职业、专长、背景或设定筛选角色库的集合查询，必须使用 read_character_info，并由你把 characterQueryMode 设为 collection、characterQuery 写成核心筛选条件（如“皇帝”“医生”“摄影”）；不要直接声称没有角色。',
-    '- 对“哪个聊天里提到皇帝/搜索聊天记录里的世界杯/刚才哪些会话聊过秦始皇”等聊天记录检索，必须使用 search_chats，并把 chatQuery 写成核心检索条件。',
+    '- 对“哪个聊天里提到皇帝/搜索聊天记录里的世界杯/刚才哪些会话聊过秦始皇”等聊天记录/玩法房时间线检索，必须使用 search_chats，并把 chatQuery 写成核心检索条件。用户明确说云端/服务器/数据库/全部/完整历史时设置 chatSearchScope=cloud；否则默认 auto。用户要求最近/最新/按时间时设置 chatSearchSortBy=time_desc，要求最早/从早到晚时设置 time_asc，未指定时 relevance。用户要求数量时设置 chatSearchLimit，最大 100。chatSearchOffset 是分页字段，除非用户明确要求继续上一页之后的结果，否则不要设置。',
     '- 对“把某分组下角色都改成...”“把喜羊羊相关的角色都移动到喜羊羊分组中”“把小明调外向一点”这类请求，输出 update_characters，并设置 riskLevel=high、requiresConfirmation=true。',
     '- 对“删除/移除/清理某些角色”“删掉刚才创建的角色”“删除这三个角色”这类请求，输出 delete_characters；若近期上下文能明确指向角色名，必须写入 characters[].name，不要改成 create_characters、update_characters 或 final_response。',
     '- delete_characters 是移入回收站，不是永久清空；当角色名称或范围明确时可以 requiresConfirmation=false，范围不明确或多候选时由执行器继续让用户选择。',

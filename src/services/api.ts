@@ -124,6 +124,30 @@ export interface AiSearchResponse {
   results: AiSearchResultItem[];
 }
 
+export interface ChatRecordSearchResponse {
+  query: string;
+  source: 'cloud';
+  totalCount: number;
+  returnedCount: number;
+  hasMore: boolean;
+  limit: number;
+  offset: number;
+  sortBy: 'relevance' | 'time_desc' | 'time_asc';
+  matches: Array<{
+    chatId: string;
+    chatName: string;
+    chatType: 'group' | 'direct' | 'assistant' | 'ai_direct';
+    chatMode?: string;
+    scenarioId?: string;
+    messageId: string;
+    timestamp: number;
+    senderName: string;
+    snippet: string;
+    matchedKeywords: string[];
+    score: number;
+  }>;
+}
+
 export interface AiUsageRecordItem {
   id: string;
   usageType?: string | null;
@@ -615,6 +639,16 @@ class ApiClient {
       exclude: options?.exclude,
       source: options?.source,
       resourceId: options?.resourceId,
+    });
+  }
+
+  async searchChatRecords(query: string, options?: { limit?: number; offset?: number; chatTypePreference?: 'group' | 'direct' | 'assistant' | 'any'; sortBy?: 'relevance' | 'time_desc' | 'time_asc' }) {
+    return this.request<ChatRecordSearchResponse>('POST', '/search/chats', {
+      query,
+      limit: options?.limit,
+      offset: options?.offset,
+      chatTypePreference: options?.chatTypePreference,
+      sortBy: options?.sortBy,
     });
   }
 

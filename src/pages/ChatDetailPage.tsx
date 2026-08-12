@@ -2997,6 +2997,39 @@ export default function ChatDetailPage() {
     }, 'info');
   }, [id, isSplitDetailPane, loadMessages]);
 
+  useEffect(() => {
+    if (!id) return;
+    const params = new URLSearchParams(location.search);
+    const messageId = params.get('messageId') || '';
+    const aroundTimestamp = params.get('aroundTimestamp');
+    if (!messageId && !aroundTimestamp) return;
+    const timestamp = aroundTimestamp !== null ? Number(aroundTimestamp) : undefined;
+    if (aroundTimestamp !== null && !Number.isFinite(timestamp)) return;
+    let cancelled = false;
+    void (async () => {
+      if (timestamp !== undefined) {
+        await loadMessages(id, { aroundTimestamp: timestamp, limit: CHAT_MESSAGE_WINDOW_SIZE * 2 });
+        await waitForNextFrame();
+      }
+      if (cancelled) return;
+      setMessageScrollRequest({
+        key: `chat-search:${id}:${messageId || timestamp || 0}:${Date.now()}`,
+        messageId: messageId || '',
+        offsetTop: isSplitDetailPane ? 84 : 96,
+        sourceTimestamp: timestamp,
+        behavior: prefersReducedMotion() ? 'auto' : 'smooth',
+        highlight: true,
+      });
+      params.delete('messageId');
+      params.delete('aroundTimestamp');
+      const nextSearch = params.toString();
+      navigate(`${location.pathname}${nextSearch ? `?${nextSearch}` : ''}`, { replace: true });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id, isSplitDetailPane, loadMessages, location.pathname, location.search, navigate]);
+
   const handleMessageScrollRequestResolved = useCallback((request: MessageListScrollRequest, resolved: boolean) => {
     if (resolved) return;
     if (request.key.startsWith('branch-switch:') || request.key.startsWith('branch-create:')) {
@@ -3006,6 +3039,16 @@ export default function ChatDetailPage() {
         messageId: request.messageId,
         sourceTimestamp: request.sourceTimestamp,
       }, 'debug', 'message-window');
+      return;
+    }
+    if (request.key.startsWith('chat-search:')) {
+      setSnackbar({ open: true, message: '没有定位到这条搜索结果；当前消息窗口或云端分页里缺少对应消息。', severity: 'error' });
+      logDeveloperDiagnostic('chat-scroll:search-request-miss', {
+        chatId: id,
+        requestKey: request.key,
+        messageId: request.messageId,
+        sourceTimestamp: request.sourceTimestamp,
+      }, 'warn');
       return;
     }
     setSnackbar({ open: true, message: '没有定位到章节起点；当前消息窗口或云端分页里缺少对应消息。', severity: 'error' });

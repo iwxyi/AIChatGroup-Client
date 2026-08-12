@@ -159,6 +159,36 @@ describe('routeAppCommand', () => {
     expect(route.plan.chatQuery).toBe('世界杯');
   });
 
+  it('keeps advanced chat-search parameters from the planner', async () => {
+    generateResponseMock.mockResolvedValueOnce(JSON.stringify({
+      mode: 'local_action',
+      action: 'search_chats',
+      riskLevel: 'low',
+      requiresConfirmation: false,
+      plan: {
+        action: 'search_chats',
+        chat_query: '三国 红楼 大纲',
+        chat_search_scope: 'cloud',
+        chat_search_sort_by: 'time_desc',
+        chat_search_limit: 100,
+        chat_search_offset: 200,
+      },
+    }));
+
+    const { route } = await routeAppCommand(context('云端按时间倒序列出100条三国红楼大纲聊天记录，从第201条开始'));
+
+    expect(route.mode).toBe('local_action');
+    if (route.mode !== 'local_action') return;
+    expect(route.action).toBe('search_chats');
+    expect(route.plan).toMatchObject({
+      chatQuery: '三国 红楼 大纲',
+      chatSearchScope: 'cloud',
+      chatSearchSortBy: 'time_desc',
+      chatSearchLimit: 100,
+      chatSearchOffset: 200,
+    });
+  });
+
   it('keeps opening messages for direct chat creation plans', async () => {
     generateResponseMock.mockResolvedValueOnce(JSON.stringify({
       mode: 'local_action',

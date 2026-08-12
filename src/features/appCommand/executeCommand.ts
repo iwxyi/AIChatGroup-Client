@@ -19,6 +19,7 @@ import { resolveSecretRef } from './secretRedaction';
 import { parseAppLink, resolveAppLinkToWebPath, serializeAppLink } from '../../services/appLink';
 import { characterSearchText, normalizeResourceKey, rankCharacterResources, rankChatResources, scoreResourceText } from './resourceIndex';
 import { validateAppCommandPlan } from './toolRegistry';
+import { searchLocalChatRecords, type ChatRecordSearchMatch } from '../../services/chatRecordSearch';
 
 function clean(value?: string | null) {
   return typeof value === 'string' ? value.trim() : '';
@@ -114,8 +115,11 @@ async function ensureCharacters(planCharacters: PlannedCharacter[], context: App
   return [...found, ...created];
 }
 
-function chatWebPath(chatId: string, tab: number) {
-  return `/chats/${encodeURIComponent(chatId)}?fromTab=${tab}`;
+function chatWebPath(chatId: string, tab: number, target?: { messageId?: string; timestamp?: number }) {
+  const params = new URLSearchParams({ fromTab: String(tab) });
+  if (target?.messageId) params.set('messageId', target.messageId);
+  if (target?.timestamp !== undefined) params.set('aroundTimestamp', String(target.timestamp));
+  return `/chats/${encodeURIComponent(chatId)}?${params.toString()}`;
 }
 
 function navigateToChat(context: AppCommandContext, chatId: string, tab: number, openingMessage?: string) {
@@ -125,12 +129,21 @@ function navigateToChat(context: AppCommandContext, chatId: string, tab: number,
   return url;
 }
 
-function chatAppLink(chatId: string, tab: number) {
-  return serializeAppLink({ target: 'chat', id: chatId, action: 'open', params: { fromTab: String(tab) } });
+function chatAppLink(chatId: string, tab: number, target?: { messageId?: string; timestamp?: number }) {
+  return serializeAppLink({
+    target: 'chat',
+    id: chatId,
+    action: 'open',
+    params: {
+      fromTab: String(tab),
+      ...(target?.messageId ? { messageId: target.messageId } : {}),
+      ...(target?.timestamp !== undefined ? { aroundTimestamp: String(target.timestamp) } : {}),
+    },
+  });
 }
 
-function markdownChatLink(label: string, chatId: string, tab: number) {
-  return `[${label}](${chatAppLink(chatId, tab)})`;
+function markdownChatLink(label: string, chatId: string, tab: number, target?: { messageId?: string; timestamp?: number }) {
+  return `[${label}](${chatAppLink(chatId, tab, target)})`;
 }
 
 function resolveCommandUrlForWeb(url: string) {
@@ -420,6 +433,84 @@ function chatCandidates(chats: GroupChat[]): AppCommandCandidate[] {
   });
 }
 
+function tabForChatType(type: GroupChat['type']) {
+  return type === 'assistant' ? 3 : type === 'direct' || type === 'ai_direct' ? 1 : 0;
+}
+
+function shouldUseCloudChatSearch(plan: LocalActionPlan, input: string, localFound: boolean) {
+  if (plan.chatSearchScope === 'cloud') return true;
+  if (plan.chatSearchScope === 'local') return false;
+  if (!localFound) return true;
+  return /云端|服务器|数据库|全部|所有聊天|完整历史|全量/.test(`${input}\n${plan.chatQuery || ''}`);
+}
+
+function normalizeChatSearchLimit(value: unknown) {
+  const parsed = Number(value);
+  return Math.min(Math.max(Number.isFinite(parsed) ? Math.floor(parsed) : 20, 1), 100);
+}
+
+function normalizeChatSearchOffset(value: unknown) {
+  const parsed = Number(value);
+  return Math.max(Number.isFinite(parsed) ? Math.floor(parsed) : 0, 0);
+}
+
+function normalizeChatSearchSortBy(plan: LocalActionPlan, input: string): 'relevance' | 'time_desc' | 'time_asc' {
+  if (plan.chatSearchSortBy === 'time_asc' || plan.chatSearchSortBy === 'time_desc' || plan.chatSearchSortBy === 'relevance') return plan.chatSearchSortBy;
+  if (/最早|从早到晚|时间正序/.test(input)) return 'time_asc';
+  if (/最近|最新|从新到旧|时间|时间倒序/.test(input)) return 'time_desc';
+  return 'relevance';
+}
+
+function chatRecordSearchCandidate(match: ChatRecordSearchMatch): AppCommandCandidate {
+  const tab = tabForChatType(match.chatType);
+  return {
+    id: `${match.chatId}:${match.messageId || 'chat'}`,
+    label: match.chatName,
+    description: [
+      chatSearchRoomLabel(match),
+      match.senderName ? `${match.senderName}：${match.snippet}` : match.snippet,
+      match.source === 'cloud' ? '云端' : '本地',
+    ].filter(Boolean).join(' · '),
+    url: chatAppLink(match.chatId, tab, { messageId: match.messageId, timestamp: match.timestamp }),
+    score: match.score,
+    kind: match.chatType,
+  };
+}
+
+function chatSearchRoomLabel(match: Pick<ChatRecordSearchMatch, 'chatType' | 'chatMode' | 'scenarioId'>) {
+  const scenarioId = match.scenarioId || '';
+  if (scenarioId.includes('story') || match.chatMode === 'story') return '故事房';
+  if (scenarioId.includes('mystery') || match.chatMode === 'mystery') return '剧本杀';
+  if (scenarioId.includes('study')) return '学习房';
+  if (scenarioId.includes('agent')) return '任务房';
+  if (match.chatType === 'assistant') return '助手';
+  if (match.chatType === 'group') return '群聊';
+  return '单聊';
+}
+
+function formatChatRecordMatches(params: {
+  query: string;
+  matches: ChatRecordSearchMatch[];
+  sourceLabel: string;
+  totalCount: number;
+  offset: number;
+  hasMore: boolean;
+  sortBy: 'relevance' | 'time_desc' | 'time_asc';
+}) {
+  const lines = params.matches.map((match) => {
+    const tab = tabForChatType(match.chatType);
+    const title = markdownChatLink(match.chatName, match.chatId, tab, { messageId: match.messageId, timestamp: match.timestamp });
+    const time = match.timestamp ? new Date(match.timestamp).toLocaleString() : '';
+    const meta = [match.senderName, time].filter(Boolean).join(' · ');
+    return `- ${title}${meta ? `（${meta}）` : ''}：${match.snippet || '命中会话信息'}`;
+  });
+  const sortLabel = params.sortBy === 'time_desc' ? '时间倒序' : params.sortBy === 'time_asc' ? '时间正序' : '相关性';
+  const rangeStart = params.matches.length ? params.offset + 1 : 0;
+  const rangeEnd = params.offset + params.matches.length;
+  const suffix = params.hasMore ? `\n- ...还有 ${params.totalCount - rangeEnd} 条未展开，可以点“查看更多”。` : '';
+  return `${params.sourceLabel}找到 ${params.totalCount} 条和“${params.query}”相关的记录，当前按${sortLabel}列出第 ${rangeStart}-${rangeEnd} 条：\n${lines.join('\n')}${suffix}`;
+}
+
 function chatActionChoices(chats: GroupChat[], plan: LocalActionPlan): AppCommandChoice[] {
   return chats.slice(0, 8).map((chat) => ({
     id: chat.id,
@@ -576,16 +667,44 @@ async function openExistingChat(plan: LocalActionPlan, context: AppCommandContex
   };
 }
 
-async function searchChats(plan: LocalActionPlan): Promise<AppCommandExecutionResult> {
+async function searchChats(plan: LocalActionPlan, context: AppCommandContext): Promise<AppCommandExecutionResult> {
   const query = clean(plan.chatQuery || plan.groupTopic || plan.characterName || plan.title);
+  const limit = normalizeChatSearchLimit(plan.chatSearchLimit);
+  const offset = normalizeChatSearchOffset(plan.chatSearchOffset);
+  const sortBy = normalizeChatSearchSortBy(plan, context.input);
   const chats = useChatStore.getState().chats.filter((chat) => !chat.deletedAt);
-  const ranked = rankChatResources({ chats, query, messagesByChatId: getChatSearchMessagesByChatId(), includeMessages: true, chatTypePreference: plan.chatTypePreference });
-  const top = ranked.slice(0, 8);
-  if (!top.length) {
+  const localResult = searchLocalChatRecords({
+    chats,
+    query,
+    messagesByChatId: getChatSearchMessagesByChatId(),
+    chatTypePreference: plan.chatTypePreference,
+    limit,
+    offset,
+    sortBy,
+  });
+  let matches = localResult.matches;
+  let totalCount = localResult.totalCount;
+  let hasMore = localResult.hasMore;
+  let sourceLabel = '本地';
+  let cloudError = '';
+  if (query && shouldUseCloudChatSearch(plan, context.input, matches.length > 0)) {
+    try {
+      const cloud = await api.searchChatRecords(query, { limit, offset, chatTypePreference: plan.chatTypePreference, sortBy });
+      matches = cloud.matches.map((match) => ({ ...match, source: 'cloud' as const }));
+      totalCount = cloud.totalCount;
+      hasMore = cloud.hasMore;
+      sourceLabel = matches.length ? '云端' : sourceLabel;
+    } catch (error) {
+      cloudError = error instanceof Error ? error.message : String(error);
+    }
+  }
+  if (!matches.length) {
     return {
       status: 'info',
       title: '没有找到会话',
-      message: query ? `没有找到和“${query}”相关的会话。` : '没有找到可检索的会话。',
+      message: query
+        ? `没有找到和“${query}”相关的聊天记录。${cloudError ? `云端搜索失败：${cloudError}` : '可以提供更具体的关键词、时间或人物再试。'}`
+        : '没有找到可检索的会话。',
       recoverable: true,
       reasonType: 'chat_not_found',
       observation: {
@@ -593,28 +712,59 @@ async function searchChats(plan: LocalActionPlan): Promise<AppCommandExecutionRe
         query,
         chatTypePreference: plan.chatTypePreference || 'any',
         foundCount: 0,
+        totalCount: 0,
+        offset,
+        sortBy,
+        cloudError,
         possibleNextActions: ['open_existing_chat', 'create_direct_chat', 'create_group_chat', 'assistant_agent'],
       },
     };
   }
-  const candidates = top.map(({ chat, score }) => {
-    const tab = chat.type === 'assistant' ? 3 : chat.type === 'direct' ? 1 : 0;
-    return {
-      id: chat.id,
-      label: chat.name,
-      description: [chat.type === 'group' ? '群聊' : chat.type === 'direct' ? '单聊' : '助手', chat.topic || ''].filter(Boolean).join(' · '),
-      url: chatAppLink(chat.id, tab),
-      score,
-      kind: chat.type,
-    };
-  });
+  const candidates = matches.map(chatRecordSearchCandidate);
+  const choices: AppCommandChoice[] = candidates.map((candidate) => ({
+    id: candidate.id,
+    label: candidate.label,
+    description: candidate.description,
+    url: candidate.url,
+    kind: 'execute' as const,
+  }));
+  if (hasMore) {
+    choices.push({
+      id: `more:${offset + matches.length}`,
+      label: '查看更多',
+      description: `继续列出第 ${offset + matches.length + 1} 条之后的结果`,
+      kind: 'execute' as const,
+      plan: {
+        action: 'search_chats',
+        plan: {
+          ...plan,
+          chatQuery: query,
+          chatSearchLimit: limit,
+          chatSearchOffset: offset + matches.length,
+          chatSearchSortBy: sortBy,
+        },
+      },
+    });
+  }
   return {
     status: 'needs_confirmation',
-    title: `找到 ${top.length} 个会话`,
-    message: `找到 ${top.length} 个和“${query}”相关的会话，请选择要打开的会话。`,
+    title: `找到 ${totalCount} 条记录`,
+    message: `找到 ${totalCount} 条和“${query}”相关的记录，当前列出 ${matches.length} 条，请选择要打开的位置。`,
+    markdown: formatChatRecordMatches({ query, matches, sourceLabel, totalCount, offset, hasMore, sortBy }),
     candidates,
-    choices: candidateChoices(candidates),
-    choicePresentation: candidates.length > 4 ? 'select' : 'chips',
+    choices,
+    choicePresentation: candidates.length > 4 ? 'select' : 'list',
+    observation: {
+      attemptedAction: 'search_chats',
+      query,
+      foundCount: matches.length,
+      totalCount,
+      offset,
+      hasMore,
+      sortBy,
+      source: sourceLabel === '云端' ? 'cloud' : 'local',
+      cloudError,
+    },
   };
 }
 
