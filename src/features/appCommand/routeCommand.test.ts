@@ -212,6 +212,49 @@ describe('routeAppCommand', () => {
     });
   });
 
+  it('keeps chat-search quantity intent bounded by the planner and executor limit', async () => {
+    generateResponseMock.mockResolvedValueOnce(JSON.stringify({
+      mode: 'local_action',
+      action: 'search_chats',
+      riskLevel: 'low',
+      requiresConfirmation: false,
+      plan: {
+        action: 'search_chats',
+        chatQuery: '世界杯',
+        chatSearchLimit: 300,
+      },
+    }));
+
+    const { route } = await routeAppCommand(context('给我300个搜索结果，找聊天记录里的世界杯'));
+
+    expect(route.mode).toBe('local_action');
+    if (route.mode !== 'local_action') return;
+    expect(route.action).toBe('search_chats');
+    expect(route.plan.chatSearchLimit).toBe(100);
+  });
+
+  it('keeps all-results requests bounded to a paged maximum', async () => {
+    generateResponseMock.mockResolvedValueOnce(JSON.stringify({
+      mode: 'local_action',
+      action: 'search_chats',
+      riskLevel: 'low',
+      requiresConfirmation: false,
+      plan: {
+        action: 'search_chats',
+        chatQuery: '三国',
+        chatSearchLimit: 100,
+        chatSearchScope: 'cloud',
+      },
+    }));
+
+    const { route } = await routeAppCommand(context('把所有结果都给我，搜索三国相关的聊天记录'));
+
+    expect(route.mode).toBe('local_action');
+    if (route.mode !== 'local_action') return;
+    expect(route.plan.chatSearchLimit).toBe(100);
+    expect(route.plan.chatSearchScope).toBe('cloud');
+  });
+
   it('keeps search refinement intent in the planner output', async () => {
     generateResponseMock.mockResolvedValueOnce(JSON.stringify({
       mode: 'local_action',
