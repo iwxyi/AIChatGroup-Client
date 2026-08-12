@@ -2661,8 +2661,12 @@ export default function ChatDetailPage() {
           />
         </Box>
       ) : null}
+    </>
+  ) : null;
+  const storyTailStatusBar = isStoryRoom && storyTailStatus ? (
+    <Box sx={{ px: { xs: 2, sm: 3 }, pb: 1.25 }}>
       {storyTailStatus === 'generating_node' ? (
-        <Box data-message-id="story-generating-next-node" data-message-type="story-loading" sx={{ display: 'flex', justifyContent: 'center', px: { xs: 2, sm: 3 }, pt: 0.75, pb: 1.5 }}>
+        <Box data-message-id="story-generating-next-node" data-message-type="story-loading" sx={{ display: 'flex', justifyContent: 'center' }}>
           <Box
             sx={(theme) => ({
               display: 'inline-flex',
@@ -2689,7 +2693,7 @@ export default function ChatDetailPage() {
         </Box>
       ) : null}
       {storyTailStatus === 'generation_cancelled' ? (
-        <Box data-message-id="story-generation-cancelled" data-message-type="story-loading" sx={{ display: 'flex', justifyContent: 'center', px: { xs: 2, sm: 3 }, pt: 0.75, pb: 1.5 }}>
+        <Box data-message-id="story-generation-cancelled" data-message-type="story-loading" sx={{ display: 'flex', justifyContent: 'center' }}>
           <Box
             sx={(theme) => ({
               display: 'inline-flex',
@@ -2714,15 +2718,13 @@ export default function ChatDetailPage() {
           </Box>
         </Box>
       ) : null}
-    </>
+    </Box>
   ) : null;
   const messageListBottomInset = isRemoteDeletedChat
     ? { xs: '24px', sm: '24px' }
     : composerDockHeight > 0
       ? { xs: `${composerDockHeight + 12}px`, sm: `${composerDockHeight + 12}px` }
-      : hasStoryTailStatusContent
-        ? { xs: 'calc(136px + env(safe-area-inset-bottom, 0px))', sm: '124px' }
-        : { xs: 'calc(112px + env(safe-area-inset-bottom, 0px))', sm: '104px' };
+      : { xs: 'calc(112px + env(safe-area-inset-bottom, 0px))', sm: '104px' };
 
   useLayoutEffect(() => {
     if (isRemoteDeletedChat) {
@@ -3383,6 +3385,7 @@ export default function ChatDetailPage() {
             <Typography variant="caption">当前仅保留本地只读历史；已停止自动生成和新消息提交。</Typography>
           </Box>
         ) : null}
+        {storyTailStatusBar}
         <Box sx={{ position: 'absolute', inset: 0, overflow: 'hidden', zIndex: 1 }}>
           {shouldDelayStoryMessageListForRestore ? null : <MessageList
             key={id}

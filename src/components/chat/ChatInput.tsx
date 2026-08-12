@@ -518,10 +518,10 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
           {inputCapabilityWarning}
         </Alert>
         ) : null}
-        <Box
+      <Box
         sx={{
           display: 'flex',
-          alignItems: 'flex-end',
+          alignItems: 'center',
           gap: 0.75,
           width: '100%',
           touchAction: 'pan-y',
@@ -590,6 +590,7 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
             '& .MuiOutlinedInput-root': {
               borderRadius: 2.25,
               bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(248,250,252,0.74)' : 'rgba(255,255,255,0.065)',
+              alignItems: 'center',
               '& fieldset': {
                 borderColor: (theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.09)' : 'rgba(226,232,240,0.11)',
               },

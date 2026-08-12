@@ -358,6 +358,7 @@ export default function AccountPage() {
   };
 
   const openPhoneDialog = () => {
+    if (authMode === 'local' || !user) return;
     setNewPhone(user?.phone || '');
     setPhoneCode('');
     setMockPhoneCode('');
@@ -460,6 +461,7 @@ export default function AccountPage() {
   const isImageAvatar = isImageAvatarValue(avatar);
   const zh = i18n.language.startsWith('zh');
   const phoneLabel = zh ? '手机号' : 'Phone';
+  const phoneEditable = authMode !== 'local' && Boolean(user);
   const activeMembership = Boolean(membership?.vipActive && membership.activeSubscription);
   const visibleSubscription = membership?.activeSubscription || membership?.latestSubscription || null;
   const membershipStatusLabel = activeMembership
@@ -563,7 +565,20 @@ export default function AccountPage() {
                 </Box>
               </Box>
 
-              <Box sx={rowSx} onClick={openPhoneDialog}>
+              <Box
+                sx={{
+                  ...rowSx,
+                  ...(phoneEditable
+                    ? {}
+                    : {
+                      cursor: 'default',
+                      opacity: 0.72,
+                      '&:hover': { borderColor: 'divider', boxShadow: 'none' },
+                    }),
+                }}
+                onClick={phoneEditable ? openPhoneDialog : undefined}
+                aria-disabled={!phoneEditable}
+              >
                 <Box sx={{ flex: 1, minWidth: 0 }}>
                   <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
                     {phoneLabel}

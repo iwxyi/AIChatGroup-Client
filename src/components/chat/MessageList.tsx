@@ -1811,6 +1811,9 @@ export default function MessageList({
       sx={{
         position: 'relative',
         flex: 1,
+        width: '100%',
+        maxWidth: contentMaxWidth,
+        mx: 'auto',
         height: '100%',
         minHeight: 0,
         boxSizing: 'border-box',
