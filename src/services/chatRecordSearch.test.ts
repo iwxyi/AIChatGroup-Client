@@ -7,7 +7,7 @@ function storyChat(): GroupChat {
   return {
     id: 'story-chat-1',
     type: 'group',
-    mode: 'story',
+    mode: 'scripted_play',
     sessionKind: createDefaultSessionKind('story_reader', 'story_reader'),
     modeConfig: DEFAULT_OPEN_CHAT_MODE_CONFIG,
     modeState: DEFAULT_OPEN_CHAT_MODE_STATE,
@@ -82,7 +82,7 @@ describe('chatRecordSearch', () => {
 
     expect(result.matches[0]).toMatchObject({
       chatId: 'story-chat-1',
-      chatMode: 'story',
+      chatMode: 'scripted_play',
     });
     expect(result).toMatchObject({
       totalCount: 2,

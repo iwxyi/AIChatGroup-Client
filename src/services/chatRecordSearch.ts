@@ -154,12 +154,12 @@ function storyMetadataText(metadata: unknown) {
   const narrativeBlocks = Array.isArray(narrativeTurn.blocks) ? narrativeTurn.blocks : [];
   const blockText = narrativeBlocks.map((block) => {
     const item = block && typeof block === 'object' && !Array.isArray(block) ? block as Record<string, unknown> : {};
-    return [item.actorName, item.text].filter((value): value is string => typeof value === 'string' && value.trim()).join('：');
+    return [item.actorName, item.text].filter((value): value is string => typeof value === 'string' && Boolean(value.trim())).join('：');
   });
   const storyEvents = Array.isArray(record.storyEvents) ? record.storyEvents : [];
   const eventText = storyEvents.flatMap((event) => {
     const item = event && typeof event === 'object' && !Array.isArray(event) ? event as Record<string, unknown> : {};
-    return [item.title, item.speakerName, item.text, item.summary].filter((value): value is string => typeof value === 'string' && value.trim());
+    return [item.title, item.speakerName, item.text, item.summary].filter((value): value is string => typeof value === 'string' && Boolean(value.trim()));
   });
   return [...blockText, ...eventText].join('\n');
 }
@@ -172,12 +172,12 @@ function storyMetadataSpeakerText(metadata: unknown) {
   const narrativeBlocks = Array.isArray(narrativeTurn.blocks) ? narrativeTurn.blocks : [];
   const blockSpeakers = narrativeBlocks.map((block) => {
     const item = block && typeof block === 'object' && !Array.isArray(block) ? block as Record<string, unknown> : {};
-    return [item.actorName, item.characterId].filter((value): value is string => typeof value === 'string' && value.trim()).join(' ');
+    return [item.actorName, item.characterId].filter((value): value is string => typeof value === 'string' && Boolean(value.trim())).join(' ');
   });
   const storyEvents = Array.isArray(record.storyEvents) ? record.storyEvents : [];
   const eventSpeakers = storyEvents.map((event) => {
     const item = event && typeof event === 'object' && !Array.isArray(event) ? event as Record<string, unknown> : {};
-    return [item.speakerName, item.characterId].filter((value): value is string => typeof value === 'string' && value.trim()).join(' ');
+    return [item.speakerName, item.characterId].filter((value): value is string => typeof value === 'string' && Boolean(value.trim())).join(' ');
   });
   return [...blockSpeakers, ...eventSpeakers].join('\n');
 }

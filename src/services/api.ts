@@ -2,6 +2,7 @@
 
 import type { BubbleStyleDefinition } from '../types/bubbleStyle';
 import type { AICharacter, CharacterVisualIdentity, CharacterVisualReferenceImage } from '../types/character';
+import type { ConversationMode } from '../types/chat';
 import type { Message } from '../types/message';
 import type { AssistantArtifactItem } from '../types/assistantArtifact';
 import { storageKey } from '../constants/brand';
@@ -137,7 +138,7 @@ export interface ChatRecordSearchResponse {
     chatId: string;
     chatName: string;
     chatType: 'group' | 'direct' | 'assistant' | 'ai_direct';
-    chatMode?: string;
+    chatMode?: ConversationMode;
     scenarioId?: string;
     messageId: string;
     timestamp: number;

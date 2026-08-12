@@ -519,8 +519,8 @@ function chatRecordSearchCandidate(match: ChatRecordSearchMatch): AppCommandCand
 
 function chatSearchRoomLabel(match: Pick<ChatRecordSearchMatch, 'chatType' | 'chatMode' | 'scenarioId'>) {
   const scenarioId = match.scenarioId || '';
-  if (scenarioId.includes('story') || match.chatMode === 'story') return '故事房';
-  if (scenarioId.includes('mystery') || match.chatMode === 'mystery') return '剧本杀';
+  if (scenarioId.includes('story') || match.chatMode === 'scripted_play') return '故事房';
+  if (scenarioId.includes('mystery') || match.chatMode === 'murder_mystery') return '剧本杀';
   if (scenarioId.includes('study')) return '学习房';
   if (scenarioId.includes('agent')) return '任务房';
   if (match.chatType === 'assistant') return '助手';
