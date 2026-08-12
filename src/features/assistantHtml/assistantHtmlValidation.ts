@@ -30,15 +30,14 @@ function normalizeField(value: unknown): AssistantHtmlSubmissionField | null {
   };
 }
 
-export function normalizeAssistantHtmlRuntime(value: unknown): AssistantHtmlRuntimeManifest | undefined {
+export function resolveAssistantHtmlPresentation(html: string, fieldCount: number): AssistantHtmlRuntimeManifest['presentation'] {
+  const source = html.trim().replace(/^```(?:html)?\s*/i, '');
+  const fullDocument = /^(?:<!doctype\s+html\b|<html\b)/i.test(source);
+  return fullDocument || fieldCount > 12 || source.length > 12_000 ? 'fullscreen' : 'inline';
+}
+
+export function normalizeAssistantHtmlRuntime(value: unknown, html = ''): AssistantHtmlRuntimeManifest | undefined {
   if (!isRecord(value)) return undefined;
-  const presentation = ['inline', 'fullscreen', 'both'].includes(String(value.presentation))
-    ? value.presentation as AssistantHtmlRuntimeManifest['presentation']
-    : 'fullscreen';
-  const viewport = isRecord(value.viewport) ? {
-    preferredHeight: Number.isFinite(Number(value.viewport.preferredHeight)) ? Math.min(Math.max(Math.floor(Number(value.viewport.preferredHeight)), 160), 1200) : undefined,
-    maxInlineHeight: Number.isFinite(Number(value.viewport.maxInlineHeight)) ? Math.min(Math.max(Math.floor(Number(value.viewport.maxInlineHeight)), 160), 640) : undefined,
-  } : undefined;
   const autosave = isRecord(value.autosave) && value.autosave.enabled === true ? {
     enabled: true as const,
     debounceMs: Number.isFinite(Number(value.autosave.debounceMs)) ? Math.min(Math.max(Math.floor(Number(value.autosave.debounceMs)), 400), 5000) : undefined,
@@ -48,6 +47,7 @@ export function normalizeAssistantHtmlRuntime(value: unknown): AssistantHtmlRunt
     ? rawSubmission.fields.map(normalizeField).filter((field): field is AssistantHtmlSubmissionField => Boolean(field)).slice(0, MAX_FIELDS)
     : [];
   const interactionId = rawSubmission ? cleanText(rawSubmission.interactionId, 160) : '';
+  const presentation = resolveAssistantHtmlPresentation(html, fields.length);
   const submission = rawSubmission && interactionId && fields.length ? {
     interactionId,
     label: cleanText(rawSubmission.label, 120) || '提交',
@@ -62,7 +62,7 @@ export function normalizeAssistantHtmlRuntime(value: unknown): AssistantHtmlRunt
     schemaVersion: 1,
     presentation,
     executionMode: 'declarative',
-    viewport,
+    viewport: presentation === 'inline' ? { preferredHeight: 280, maxInlineHeight: 480 } : { preferredHeight: 720 },
     autosave,
     submission,
   };
@@ -103,4 +103,3 @@ export function validateAssistantHtmlPayload(manifest: AssistantHtmlRuntimeManif
   if (JSON.stringify(normalized).length > MAX_PAYLOAD_CHARS) throw new Error('提交内容超过大小限制');
   return normalized;
 }
-

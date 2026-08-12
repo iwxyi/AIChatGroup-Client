@@ -4,7 +4,6 @@ import { normalizeAssistantHtmlRuntime, validateAssistantHtmlPayload } from './a
 import { parseAssistantHtmlBridgeEvent } from './assistantHtmlBridge';
 
 const manifest = normalizeAssistantHtmlRuntime({
-  presentation: 'inline',
   submission: {
     interactionId: 'exam-1',
     label: '交卷',
@@ -14,7 +13,7 @@ const manifest = normalizeAssistantHtmlRuntime({
       { name: 'note', type: 'textarea', maxLength: 20 },
     ],
   },
-})!;
+}, '<form><input name="answer"></form>')!;
 
 describe('assistant HTML safety', () => {
   it('strips AI scripts and dangerous embedding while injecting only the trusted runtime', () => {
@@ -53,6 +52,15 @@ describe('assistant HTML safety', () => {
     expect(validateAssistantHtmlPayload(manifest, { answer: 'A', note: '复习第一章' })).toEqual({ answer: 'A', note: '复习第一章' });
     expect(() => validateAssistantHtmlPayload(manifest, { answer: 'C', note: '' })).toThrow('无效选项');
     expect(() => validateAssistantHtmlPayload(manifest, { answer: 'A', unknown: 'x' })).toThrow('未知字段');
+  });
+
+  it('derives presentation from content shape instead of trusting model parameters', () => {
+    const fragment = normalizeAssistantHtmlRuntime({ ...manifest, presentation: 'fullscreen', viewport: { preferredHeight: 999 } }, '<div>轻量选择</div>');
+    const page = normalizeAssistantHtmlRuntime({ ...manifest, presentation: 'inline' }, '<!doctype html><html><body>完整试卷</body></html>');
+
+    expect(fragment?.presentation).toBe('inline');
+    expect(fragment?.viewport).toEqual({ preferredHeight: 280, maxInlineHeight: 480 });
+    expect(page?.presentation).toBe('fullscreen');
   });
 
   it('accepts bridge messages only from the bound frame and interaction channel', () => {
