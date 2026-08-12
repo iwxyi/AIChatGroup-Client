@@ -5,6 +5,7 @@ import { useCharacterStore } from '../../stores/useCharacterStore';
 import { useChatStore } from '../../stores/useChatStore';
 import { useMessageStore } from '../../stores/useMessageStore';
 import { useSettingsStore } from '../../stores/useSettingsStore';
+import { api } from '../../services/api';
 import type { GroupChat } from '../../types/chat';
 import { DEFAULT_CONVERSATION_DIRECTOR_CONTROLS, DEFAULT_CONVERSATION_DRAMA_RULES, DEFAULT_CONVERSATION_GOVERNANCE, DEFAULT_CONVERSATION_WORLD_STATE, DEFAULT_OPEN_CHAT_MODE_CONFIG, DEFAULT_OPEN_CHAT_MODE_STATE, createDefaultSessionKind } from '../../types/chat';
 import type { AICharacter } from '../../types/character';
@@ -123,6 +124,52 @@ describe('executeAppCommandRoute', () => {
 
     expect(result.status).toBe('needs_confirmation');
     expect(result.choices?.map((choice) => choice.id)).toEqual(['light', 'dark']);
+  });
+
+  it('passes speaker filters through chat search execution', async () => {
+    const searchChatRecordsMock = vi.spyOn(api, 'searchChatRecords').mockResolvedValueOnce({
+      query: '统一',
+      source: 'cloud',
+      totalCount: 1,
+      returnedCount: 1,
+      hasMore: false,
+      limit: 20,
+      offset: 0,
+      sortBy: 'relevance',
+      matches: [{
+        chatId: 'chat-1',
+        chatName: '历史讨论',
+        chatType: 'group',
+        messageId: 'msg-1',
+        timestamp: 100,
+        senderName: '嬴政',
+        snippet: '统一六国。',
+        matchedKeywords: ['统一'],
+        score: 99,
+      }],
+    });
+
+    try {
+      const result = await executeAppCommandRoute({
+        mode: 'local_action',
+        action: 'search_chats',
+        riskLevel: 'low',
+        requiresConfirmation: false,
+        plan: {
+          action: 'search_chats',
+          chatQuery: '统一',
+          chatSearchSpeakerQuery: '秦始皇',
+          chatSearchScope: 'cloud',
+        },
+      }, context());
+
+      expect(searchChatRecordsMock).toHaveBeenCalledWith('统一', expect.objectContaining({
+        speakerQuery: '秦始皇',
+      }));
+      expect(result.status).toBe('needs_confirmation');
+    } finally {
+      searchChatRecordsMock.mockRestore();
+    }
   });
 
   it('reuses an existing group chat with the same title topic members and scenario', () => {
@@ -418,7 +465,7 @@ describe('executeAppCommandRoute', () => {
       }, context());
 
       expect(result.status).toBe('needs_confirmation');
-      expect(result.candidates?.map((candidate) => candidate.id)).toEqual(['chat-worldcup']);
+      expect(result.candidates?.map((candidate) => candidate.id)).toEqual(['chat-worldcup:msg-worldcup']);
     } finally {
       useChatStore.setState({ chats: [] });
       useMessageStore.setState({ messages: [], messageWindowsByChatId: {} });

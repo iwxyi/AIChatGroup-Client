@@ -92,6 +92,7 @@ function normalizePlan(raw: Record<string, unknown>): LocalActionPlan {
     deductionFactionCount: positiveInteger(rawPlan.deductionFactionCount ?? rawPlan.deduction_faction_count, 12),
     mysteryClueCount: positiveInteger(rawPlan.mysteryClueCount ?? rawPlan.mystery_clue_count, 50),
     chatQuery: shortText(rawPlan.chatQuery ?? rawPlan.chat_query, 120),
+    chatSearchSpeakerQuery: shortText(rawPlan.chatSearchSpeakerQuery ?? rawPlan.chat_search_speaker_query, 80),
     chatId: shortText(rawPlan.chatId ?? rawPlan.chat_id, 160),
     chatTypePreference: rawPlan.chatTypePreference === 'group' || rawPlan.chatTypePreference === 'direct' || rawPlan.chatTypePreference === 'assistant' ? rawPlan.chatTypePreference : 'any',
     chatSearchScope: rawPlan.chatSearchScope === 'local' || rawPlan.chatSearchScope === 'cloud' || rawPlan.chatSearchScope === 'auto'
@@ -360,7 +361,9 @@ function buildPlannerPrompt(source: AppCommandContext['source']) {
     '- 对“秦始皇的性格怎么样”“A 和 B 谁更擅长做菜”“结合角色库信息回答”这类请求，必须使用 read_character_info 或 compare_characters；不要直接 final_response，不要退回 assistant_agent，也不要只凭摘要自由回答。',
     '- 对“哪些角色是皇帝/有哪些医生/列出擅长摄影的人”等按身份、职业、专长、背景或设定筛选角色库的集合查询，必须使用 read_character_info，并由你把 characterQueryMode 设为 collection、characterQuery 写成核心筛选条件（如“皇帝”“医生”“摄影”）；不要直接声称没有角色。',
     '- 对“哪个聊天里提到皇帝/搜索聊天记录里的世界杯/刚才哪些会话聊过秦始皇”等聊天记录/玩法房时间线检索，必须使用 search_chats，并把 chatQuery 写成核心检索条件。先判断用户是在“找记录”还是“直接打开那个会话”：前者用 search_chats，后者只有在目标唯一时才用 open_existing_chat。',
-    '- search_chats 不是裸搜索。planner 要尽量从自然语言里提炼关键词、时间范围、会话类型、排序和分页：用户明确说云端/服务器/数据库/全部/完整历史时设置 chatSearchScope=cloud；否则默认 auto。用户要求最近/最新/按时间时设置 chatSearchSortBy=time_desc，要求最早/从早到晚时设置 time_asc，未指定时 relevance。用户要求数量时设置 chatSearchLimit；没有明确数量时默认 20。若用户说“全部”“所有结果”“尽可能多”，也不要真的无限返回，而是把 chatSearchLimit 设为 100，并靠分页继续取后续结果。chatSearchOffset 是分页字段，除非用户明确要求继续上一页之后的结果，否则不要设置。',
+    '- search_chats 不是裸搜索。planner 要尽量从自然语言里提炼关键词、发言人、时间范围、会话类型、排序和分页：用户说“某某说过/某某提到/只看某某的发言/谁说的话”时，把说话人写入 chatSearchSpeakerQuery，把要找的内容写入 chatQuery；例如“秦始皇说过统一吗”应 chatSearchSpeakerQuery=秦始皇、chatQuery=统一。不要为了发言人条件先列出所有发言人。',
+    '- 发言人条件允许近似名称、称号、昵称或本名，例如“秦始皇”可能匹配“嬴政”，执行器会结合本地角色名、角色资料、消息 senderName 和故事叙事 actorName/speakerName 过滤。拿不准时仍保留用户原词到 chatSearchSpeakerQuery，而不是丢弃。',
+    '- 用户明确说云端/服务器/数据库/全部/完整历史时设置 chatSearchScope=cloud；否则默认 auto。用户要求最近/最新/按时间时设置 chatSearchSortBy=time_desc，要求最早/从早到晚时设置 time_asc，未指定时 relevance。用户要求数量时设置 chatSearchLimit；没有明确数量时默认 20。若用户说“全部”“所有结果”“尽可能多”，也不要真的无限返回，而是把 chatSearchLimit 设为 100，并靠分页继续取后续结果。chatSearchOffset 是分页字段，除非用户明确要求继续上一页之后的结果，否则不要设置。',
     '- 如果上一轮上下文已经显示 search_chats 未命中或结果太泛，下一轮不要重复原样检索；应改成更具体的关键词、缩小时间范围、切换会话类型或改用 cloud/local。若用户说“换个词再找/继续找/再搜一次”，优先保留原目标并优化检索条件，而不是直接 final_response。',
     '- search_chats 命中后，执行器会返回可点击结果列表和跳转位置；planner 不要把它再包装成“打开会话”完成态，除非用户明确只想进入唯一会话。若命中多个结果，返回的核心目标应是“列出并让用户选”，而不是自动跳转。',
     '- 如果用户要求“列出”“找出哪些会话”“返回前几个结果”“查看更多”，优先把这视为 search_chats 的分页/列表任务；如果只说“找一下”但没有足够关键词，可先保留最核心实体词，再补时间或范围到 search_chats。',

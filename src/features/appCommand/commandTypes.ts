@@ -83,6 +83,7 @@ export interface LocalActionPlan {
   deductionFactionCount?: number;
   mysteryClueCount?: number;
   chatQuery?: string;
+  chatSearchSpeakerQuery?: string;
   chatId?: string;
   chatTypePreference?: 'group' | 'direct' | 'assistant' | 'any';
   chatSearchScope?: 'local' | 'cloud' | 'auto';

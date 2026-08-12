@@ -212,6 +212,27 @@ describe('routeAppCommand', () => {
     });
   });
 
+  it('keeps speaker filters for chat-record search requests', async () => {
+    generateResponseMock.mockResolvedValueOnce(JSON.stringify({
+      mode: 'local_action',
+      action: 'search_chats',
+      riskLevel: 'low',
+      requiresConfirmation: false,
+      plan: {
+        action: 'search_chats',
+        chatQuery: '统一',
+        chatSearchSpeakerQuery: '秦始皇',
+      },
+    }));
+
+    const { route } = await routeAppCommand(context('秦始皇说过统一吗？搜索聊天记录'));
+
+    expect(route.mode).toBe('local_action');
+    if (route.mode !== 'local_action') return;
+    expect(route.plan.chatQuery).toBe('统一');
+    expect(route.plan.chatSearchSpeakerQuery).toBe('秦始皇');
+  });
+
   it('keeps chat-search quantity intent bounded by the planner and executor limit', async () => {
     generateResponseMock.mockResolvedValueOnce(JSON.stringify({
       mode: 'local_action',

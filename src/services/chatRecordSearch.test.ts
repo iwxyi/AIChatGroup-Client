@@ -121,4 +121,29 @@ describe('chatRecordSearch', () => {
     });
     expect(result.matches.map((item) => item.messageId)).toEqual(['m2']);
   });
+
+  it('filters and scores speaker queries with aliases', () => {
+    const result = searchLocalChatRecords({
+      chats: [storyChat()],
+      query: '统一六国',
+      speakerQuery: '秦始皇',
+      speakerCandidates: [{ id: 'char-qin', name: '秦始皇', aliases: ['嬴政', '始皇帝'] }],
+      messagesByChatId: {
+        'story-chat-1': [
+          {
+            ...message('m1', '统一六国之后，天下还需要怎样稳住？', 100),
+            senderName: '嬴政',
+          },
+          {
+            ...message('m2', '旁白补一句：秦始皇已经离席。', 200),
+            senderName: '旁白',
+          },
+        ],
+      },
+    });
+
+    expect(result.totalCount).toBe(1);
+    expect(result.matches[0]?.messageId).toBe('m1');
+    expect(result.matches[0]?.senderName).toBe('嬴政');
+  });
 });

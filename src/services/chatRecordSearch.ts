@@ -18,6 +18,7 @@ export interface ChatRecordSearchMatch {
 
 export interface ChatRecordSearchResult {
   query: string;
+  speakerQuery?: string;
   source: 'local' | 'cloud';
   totalCount: number;
   returnedCount: number;
@@ -26,6 +27,12 @@ export interface ChatRecordSearchResult {
   offset: number;
   sortBy: 'relevance' | 'time_desc' | 'time_asc';
   matches: ChatRecordSearchMatch[];
+}
+
+export interface ChatRecordSearchSpeakerCandidate {
+  id: string;
+  name: string;
+  aliases?: string[];
 }
 
 const WEEKDAY_ALIASES: Record<string, number> = {
@@ -45,6 +52,35 @@ function clean(value?: string | null) {
 
 function normalizeText(value: string) {
   return value.toLowerCase().replace(/\s+/g, '');
+}
+
+function normalizeActorAlias(value: string) {
+  return normalizeText(value);
+}
+
+function buildSpeakerAliases(params: {
+  speakerQuery?: string;
+  speakerCandidates?: ChatRecordSearchSpeakerCandidate[];
+}) {
+  const aliases = new Set<string>();
+  const query = clean(params.speakerQuery);
+  if (query) {
+    aliases.add(normalizeActorAlias(query));
+    query.split(/[\s,，.。;；:：!?！？、"'“”‘’()[\]{}<>《》和与及跟同里中的]+/)
+      .map((part) => part.trim())
+      .filter((part) => part.length >= 2)
+      .forEach((part) => aliases.add(normalizeActorAlias(part)));
+  }
+  params.speakerCandidates?.forEach((candidate) => {
+    const name = normalizeActorAlias(candidate.name || '');
+    if (!name) return;
+    aliases.add(name);
+    candidate.aliases?.forEach((alias) => {
+      const normalized = normalizeActorAlias(alias || '');
+      if (normalized) aliases.add(normalized);
+    });
+  });
+  return Array.from(aliases).filter(Boolean);
 }
 
 export function tokenizeChatRecordQuery(query: string) {
@@ -128,8 +164,30 @@ function storyMetadataText(metadata: unknown) {
   return [...blockText, ...eventText].join('\n');
 }
 
+function storyMetadataSpeakerText(metadata: unknown) {
+  const record = metadata && typeof metadata === 'object' && !Array.isArray(metadata) ? metadata as Record<string, unknown> : {};
+  const narrativeTurn = record.narrativeTurn && typeof record.narrativeTurn === 'object' && !Array.isArray(record.narrativeTurn)
+    ? record.narrativeTurn as Record<string, unknown>
+    : {};
+  const narrativeBlocks = Array.isArray(narrativeTurn.blocks) ? narrativeTurn.blocks : [];
+  const blockSpeakers = narrativeBlocks.map((block) => {
+    const item = block && typeof block === 'object' && !Array.isArray(block) ? block as Record<string, unknown> : {};
+    return [item.actorName, item.characterId].filter((value): value is string => typeof value === 'string' && value.trim()).join(' ');
+  });
+  const storyEvents = Array.isArray(record.storyEvents) ? record.storyEvents : [];
+  const eventSpeakers = storyEvents.map((event) => {
+    const item = event && typeof event === 'object' && !Array.isArray(event) ? event as Record<string, unknown> : {};
+    return [item.speakerName, item.characterId].filter((value): value is string => typeof value === 'string' && value.trim()).join(' ');
+  });
+  return [...blockSpeakers, ...eventSpeakers].join('\n');
+}
+
 function messageSearchText(message: Pick<Message, 'content' | 'metadata'>) {
   return [message.content, storyMetadataText(message.metadata)].filter(Boolean).join('\n');
+}
+
+function messageSpeakerText(message: Pick<Message, 'senderName' | 'metadata'>) {
+  return [message.senderName, storyMetadataSpeakerText(message.metadata)].filter(Boolean).join('\n');
 }
 
 function scoreText(text: string, query: string, keywords: string[]) {
@@ -150,6 +208,8 @@ export function searchLocalChatRecords(params: {
   chats: GroupChat[];
   messagesByChatId: Record<string, Pick<Message, 'id' | 'content' | 'metadata' | 'senderName' | 'timestamp' | 'isDeleted'>[]>;
   query: string;
+  speakerQuery?: string;
+  speakerCandidates?: ChatRecordSearchSpeakerCandidate[];
   chatTypePreference?: 'group' | 'direct' | 'assistant' | 'any';
   limit?: number;
   offset?: number;
@@ -161,6 +221,10 @@ export function searchLocalChatRecords(params: {
   const offset = Math.max(Math.floor(params.offset || 0), 0);
   const sortBy = params.sortBy || 'relevance';
   const keywords = tokenizeChatRecordQuery(query);
+  const speakerAliases = buildSpeakerAliases({
+    speakerQuery: params.speakerQuery,
+    speakerCandidates: params.speakerCandidates,
+  });
   const dateRange = inferChatRecordDateRange(query, params.now);
   const matches: ChatRecordSearchMatch[] = [];
   params.chats.forEach((chat) => {
@@ -172,13 +236,18 @@ export function searchLocalChatRecords(params: {
     const chatScore = scoreText(`${chat.name}\n${chat.topic || ''}\n${chat.worldState?.recentEvent || ''}`, query, keywords);
     messages.forEach((message, index) => {
       if (dateRange && message.timestamp && (message.timestamp < dateRange.from! || message.timestamp > dateRange.to!)) return;
+      if (speakerAliases.length) {
+        const speakerText = normalizeActorAlias(messageSpeakerText(message));
+        if (!speakerAliases.some((alias) => speakerText.includes(alias))) return;
+      }
       const searchableMessageText = messageSearchText(message);
       const sameMessageScore = scoreText(searchableMessageText, query, keywords);
       const contextMessages = messages.slice(Math.max(0, index - 2), Math.min(messages.length, index + 3));
       const contextText = contextMessages.map((item) => messageSearchText(item)).join('\n');
       const contextScore = scoreText(contextText, query, keywords);
-      const score = sameMessageScore * 2 + Math.max(0, contextScore - sameMessageScore) + chatScore * 0.35;
-      if (score <= 0) return;
+      const speakerScore = speakerAliases.length ? scoreText(messageSpeakerText(message), params.speakerQuery || query, speakerAliases) : 0;
+      const adjustedScore = sameMessageScore * 2 + Math.max(0, contextScore - sameMessageScore) + chatScore * 0.35 + speakerScore * 3;
+      if (adjustedScore <= 0) return;
       const matchedKeywords = keywords.filter((keyword) => normalizeText(contextText).includes(normalizeText(keyword))).slice(0, 8);
       matches.push({
         chatId: chat.id,
@@ -191,11 +260,12 @@ export function searchLocalChatRecords(params: {
         senderName: message.senderName,
         snippet: snippetAround(contextText, matchedKeywords.length ? matchedKeywords : keywords) || snippetAround(searchableMessageText, keywords),
         matchedKeywords,
-        score,
+        score: adjustedScore,
         source: 'local',
       });
     });
     if (!messages.length && chatScore > 0) {
+      if (speakerAliases.length) return;
       matches.push({
         chatId: chat.id,
         chatName: chat.name,
@@ -222,6 +292,7 @@ export function searchLocalChatRecords(params: {
   const allMatches = Array.from(deduped.values());
   return {
     query,
+    speakerQuery: params.speakerQuery ? clean(params.speakerQuery) : undefined,
     source: 'local',
     totalCount: allMatches.length,
     returnedCount: Math.min(Math.max(allMatches.length - offset, 0), limit),

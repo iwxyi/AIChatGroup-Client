@@ -245,6 +245,46 @@ function getChatSearchMessagesByChatId() {
   return messagesByChatId;
 }
 
+function getChatSearchSpeakerCandidates(chats: GroupChat[]) {
+  const characters = useCharacterStore.getState().characters.filter((character) => !character.deletedAt);
+  const usedNames = new Set<string>();
+  const candidates: { id: string; name: string; aliases?: string[] }[] = [];
+  const chatMemberCharacterIds = new Set(
+    chats.flatMap((chat) => Array.isArray(chat.memberIds) ? chat.memberIds : []),
+  );
+  const matchNames = (characterName: string) => {
+    const normalized = normalizeName(characterName);
+    if (!normalized || usedNames.has(normalized)) return false;
+    usedNames.add(normalized);
+    return true;
+  };
+  characters.forEach((character) => {
+    if (!matchNames(character.name)) return;
+    const aliases = Array.from(new Set([
+      character.name,
+      character.group || '',
+      character.voiceConfig?.role || '',
+      character.coreProfile?.socialMask || '',
+    ].filter(Boolean).map((item) => clean(item)).filter(Boolean)));
+    candidates.push({
+      id: character.id,
+      name: character.name,
+      aliases,
+    });
+  });
+  Array.from(chatMemberCharacterIds).forEach((characterId) => {
+    const character = characters.find((item) => item.id === characterId);
+    if (!character) return;
+    if (candidates.some((item) => item.id === character.id)) return;
+    candidates.push({
+      id: character.id,
+      name: character.name,
+      aliases: [character.name, character.group || ''].filter(Boolean) as string[],
+    });
+  });
+  return candidates;
+}
+
 function formatCharacterForAgent(character: AICharacter) {
   return [
     `名称：${character.name}`,
@@ -490,6 +530,7 @@ function chatSearchRoomLabel(match: Pick<ChatRecordSearchMatch, 'chatType' | 'ch
 
 function formatChatRecordMatches(params: {
   query: string;
+  speakerQuery?: string;
   matches: ChatRecordSearchMatch[];
   sourceLabel: string;
   totalCount: number;
@@ -508,7 +549,8 @@ function formatChatRecordMatches(params: {
   const rangeStart = params.matches.length ? params.offset + 1 : 0;
   const rangeEnd = params.offset + params.matches.length;
   const suffix = params.hasMore ? `\n- ...还有 ${params.totalCount - rangeEnd} 条未展开，可以点“查看更多”。` : '';
-  return `${params.sourceLabel}找到 ${params.totalCount} 条和“${params.query}”相关的记录，当前按${sortLabel}列出第 ${rangeStart}-${rangeEnd} 条：\n${lines.join('\n')}${suffix}`;
+  const speakerText = params.speakerQuery ? `，发言人限定为“${params.speakerQuery}”` : '';
+  return `${params.sourceLabel}找到 ${params.totalCount} 条和“${params.query}”相关的记录${speakerText}，当前按${sortLabel}列出第 ${rangeStart}-${rangeEnd} 条：\n${lines.join('\n')}${suffix}`;
 }
 
 function chatActionChoices(chats: GroupChat[], plan: LocalActionPlan): AppCommandChoice[] {
@@ -528,6 +570,10 @@ function chatActionChoices(chats: GroupChat[], plan: LocalActionPlan): AppComman
       },
     },
   }));
+}
+
+function chatSearchSpeakerLabel(plan: LocalActionPlan, input: string) {
+  return clean(plan.chatSearchSpeakerQuery);
 }
 
 function explicitCharacterNames(plan: LocalActionPlan) {
@@ -669,13 +715,17 @@ async function openExistingChat(plan: LocalActionPlan, context: AppCommandContex
 
 async function searchChats(plan: LocalActionPlan, context: AppCommandContext): Promise<AppCommandExecutionResult> {
   const query = clean(plan.chatQuery || plan.groupTopic || plan.characterName || plan.title);
+  const speakerQuery = chatSearchSpeakerLabel(plan, context.input);
   const limit = normalizeChatSearchLimit(plan.chatSearchLimit);
   const offset = normalizeChatSearchOffset(plan.chatSearchOffset);
   const sortBy = normalizeChatSearchSortBy(plan, context.input);
   const chats = useChatStore.getState().chats.filter((chat) => !chat.deletedAt);
+  const speakerCandidates = getChatSearchSpeakerCandidates(chats);
   const localResult = searchLocalChatRecords({
     chats,
     query,
+    speakerQuery: speakerQuery || undefined,
+    speakerCandidates,
     messagesByChatId: getChatSearchMessagesByChatId(),
     chatTypePreference: plan.chatTypePreference,
     limit,
@@ -689,7 +739,13 @@ async function searchChats(plan: LocalActionPlan, context: AppCommandContext): P
   let cloudError = '';
   if (query && shouldUseCloudChatSearch(plan, context.input, matches.length > 0)) {
     try {
-      const cloud = await api.searchChatRecords(query, { limit, offset, chatTypePreference: plan.chatTypePreference, sortBy });
+      const cloud = await api.searchChatRecords(query, {
+        limit,
+        offset,
+        chatTypePreference: plan.chatTypePreference,
+        sortBy,
+        speakerQuery: speakerQuery || undefined,
+      });
       matches = cloud.matches.map((match) => ({ ...match, source: 'cloud' as const }));
       totalCount = cloud.totalCount;
       hasMore = cloud.hasMore;
@@ -715,6 +771,7 @@ async function searchChats(plan: LocalActionPlan, context: AppCommandContext): P
         totalCount: 0,
         offset,
         sortBy,
+        speakerQuery: speakerQuery || undefined,
         cloudError,
         possibleNextActions: ['open_existing_chat', 'create_direct_chat', 'create_group_chat', 'assistant_agent'],
       },
@@ -739,6 +796,7 @@ async function searchChats(plan: LocalActionPlan, context: AppCommandContext): P
         plan: {
           ...plan,
           chatQuery: query,
+          chatSearchSpeakerQuery: speakerQuery || undefined,
           chatSearchLimit: limit,
           chatSearchOffset: offset + matches.length,
           chatSearchSortBy: sortBy,
@@ -750,13 +808,14 @@ async function searchChats(plan: LocalActionPlan, context: AppCommandContext): P
     status: 'needs_confirmation',
     title: `找到 ${totalCount} 条记录`,
     message: `找到 ${totalCount} 条和“${query}”相关的记录，当前列出 ${matches.length} 条，请选择要打开的位置。`,
-    markdown: formatChatRecordMatches({ query, matches, sourceLabel, totalCount, offset, hasMore, sortBy }),
+    markdown: formatChatRecordMatches({ query, speakerQuery: speakerQuery || undefined, matches, sourceLabel, totalCount, offset, hasMore, sortBy }),
     candidates,
     choices,
     choicePresentation: candidates.length > 4 ? 'select' : 'list',
     observation: {
       attemptedAction: 'search_chats',
       query,
+      speakerQuery: speakerQuery || undefined,
       foundCount: matches.length,
       totalCount,
       offset,

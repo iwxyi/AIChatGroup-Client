@@ -642,13 +642,14 @@ class ApiClient {
     });
   }
 
-  async searchChatRecords(query: string, options?: { limit?: number; offset?: number; chatTypePreference?: 'group' | 'direct' | 'assistant' | 'any'; sortBy?: 'relevance' | 'time_desc' | 'time_asc' }) {
+  async searchChatRecords(query: string, options?: { limit?: number; offset?: number; chatTypePreference?: 'group' | 'direct' | 'assistant' | 'any'; sortBy?: 'relevance' | 'time_desc' | 'time_asc'; speakerQuery?: string }) {
     return this.request<ChatRecordSearchResponse>('POST', '/search/chats', {
       query,
       limit: options?.limit,
       offset: options?.offset,
       chatTypePreference: options?.chatTypePreference,
       sortBy: options?.sortBy,
+      speakerQuery: options?.speakerQuery,
     });
   }
 
