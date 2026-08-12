@@ -13,6 +13,17 @@ export interface AssistantHtmlInteractionPayload {
   payload: Record<string, unknown>;
 }
 
+function createHtmlChannelToken() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `html-${crypto.randomUUID()}`;
+  }
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+    const bytes = crypto.getRandomValues(new Uint32Array(4));
+    return `html-${Array.from(bytes, (value) => value.toString(36)).join('')}`;
+  }
+  return `html-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 14)}`;
+}
+
 export default function AssistantHtmlFrame({
   artifactId,
   version,
@@ -33,7 +44,7 @@ export default function AssistantHtmlFrame({
   onOpenFullscreen?: () => void;
 }) {
   const frameRef = useRef<HTMLIFrameElement | null>(null);
-  const channelToken = useMemo(() => `html-${crypto.randomUUID()}`, [artifactId, version.id]);
+  const channelToken = useMemo(createHtmlChannelToken, [artifactId, version.id]);
   const [height, setHeight] = useState(manifest.viewport?.preferredHeight || (inline ? 280 : 720));
   const [ready, setReady] = useState(false);
   const [error, setError] = useState('');
