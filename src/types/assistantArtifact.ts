@@ -1,5 +1,34 @@
 export type AssistantArtifactKind = 'document' | 'code' | 'diagram' | 'html' | 'table' | 'json' | 'text' | 'image';
 
+export type AssistantDataOperationKind = 'query' | 'insert' | 'update' | 'delete';
+
+export interface AssistantDataFilter {
+  field: string;
+  operator?: 'eq' | 'contains' | 'startsWith' | 'endsWith' | 'gt' | 'gte' | 'lt' | 'lte';
+  value: unknown;
+}
+
+export interface AssistantArtifactDataOperation {
+  kind: AssistantDataOperationKind;
+  artifactId: string;
+  baseVersionId?: string | null;
+  filePath?: string | null;
+  filter?: AssistantDataFilter[];
+  values?: Record<string, unknown>;
+  limit?: number;
+  offset?: number;
+  sort?: { field: string; direction?: 'asc' | 'desc' };
+}
+
+export interface AssistantArtifactDataResult {
+  operation: AssistantDataOperationKind;
+  affectedRows: number;
+  totalRows?: number;
+  rows?: Array<Record<string, unknown>>;
+  truncated?: boolean;
+  error?: string;
+}
+
 export interface AssistantArtifactMediaRef {
   assetId: string;
   thumbnailAssetId?: string;
@@ -18,6 +47,18 @@ export interface AssistantArtifactFile {
   path: string;
   content: string;
   language?: string | null;
+}
+
+export interface AssistantArtifactDataField {
+  name: string;
+  type?: 'string' | 'number' | 'boolean' | 'date' | 'datetime' | 'array' | 'object';
+  description?: string;
+}
+
+export interface AssistantArtifactDataDescriptor {
+  description?: string;
+  fields: AssistantArtifactDataField[];
+  primaryKey?: string;
 }
 
 export type AssistantArtifactVersionStage = 'generated' | 'autosave' | 'submitted' | 'ai_result' | 'user_revision';
@@ -71,6 +112,7 @@ export interface AssistantArtifactVersion {
   submissionId?: string;
   submittedAt?: number;
   createdAt: number;
+  dataDescriptor?: AssistantArtifactDataDescriptor;
 }
 
 export interface AssistantArtifactItem {
@@ -88,6 +130,7 @@ export interface AssistantArtifactItem {
   sortOrder?: number;
   deletedAt?: number | null;
   revision?: number;
+  dataDescriptor?: AssistantArtifactDataDescriptor;
 }
 
 export interface AssistantArtifactDraft {
@@ -104,6 +147,7 @@ export interface AssistantArtifactDraft {
   media?: AssistantArtifactMediaRef[];
   htmlRuntime?: AssistantHtmlRuntimeManifest;
   versionStage?: AssistantArtifactVersionStage;
+  dataDescriptor?: AssistantArtifactDataDescriptor;
 }
 
 export type AssistantAgentIntent = 'chat' | 'create' | 'update' | 'clarify' | 'search';
@@ -158,6 +202,7 @@ export interface AssistantAgentPatch {
   media?: AssistantArtifactMediaRef[];
   htmlRuntime?: AssistantHtmlRuntimeManifest;
   versionStage?: AssistantArtifactVersionStage;
+  dataDescriptor?: AssistantArtifactDataDescriptor;
 }
 
 export interface AssistantAgentMediaTask {
@@ -183,4 +228,6 @@ export interface AssistantAgentPatchSet {
   assistantMessage: string;
   patches: AssistantAgentPatch[];
   mediaTasks?: AssistantAgentMediaTask[];
+  dataOperations?: AssistantArtifactDataOperation[];
+  dataResults?: AssistantArtifactDataResult[];
 }

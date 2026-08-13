@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { AssistantAgentPatch, AssistantArtifactDraft, AssistantArtifactItem, AssistantArtifactVersion } from '../types/assistantArtifact';
+import type { AssistantAgentPatch, AssistantArtifactDataOperation, AssistantArtifactDataResult, AssistantArtifactDraft, AssistantArtifactItem, AssistantArtifactVersion } from '../types/assistantArtifact';
+import { applyAssistantArtifactDataOperation } from '../services/assistantArtifactData';
 import type { Message, MessageAttachment } from '../types/message';
 import { scopedStorageKey, storageKey } from '../constants/brand';
 import { getLocalDataUserId } from '../services/authStorageScope';
@@ -31,6 +32,11 @@ interface AssistantArtifactStore extends AssistantArtifactSnapshot {
     patches: AssistantAgentPatch[];
     timestamp?: number;
   }) => AssistantArtifactItem[];
+  applyDataOperations: (params: {
+    chatId: string;
+    operations: AssistantArtifactDataOperation[];
+    timestamp?: number;
+  }) => { artifacts: AssistantArtifactItem[]; results: AssistantArtifactDataResult[] };
   saveHtmlInteractionState: (params: {
     artifactId: string;
     baseVersionId: string;
@@ -117,6 +123,7 @@ function draftFromPatch(patch: AssistantAgentPatch): AssistantArtifactDraft {
     media: patch.media,
     htmlRuntime: patch.htmlRuntime,
     versionStage: patch.versionStage,
+    dataDescriptor: patch.dataDescriptor,
   };
 }
 
@@ -217,6 +224,7 @@ function normalizeCloudArtifactPatch(change: Record<string, unknown>, chatId: st
     sortOrder: typeof patch.sortOrder === 'number' ? patch.sortOrder : undefined,
     deletedAt: patch.deletedAt == null ? null : Number(patch.deletedAt),
     revision: Number(patch.revision || change.revision || 1),
+    dataDescriptor: isRecord(patch.dataDescriptor) ? patch.dataDescriptor as unknown as AssistantArtifactItem['dataDescriptor'] : undefined,
   };
 }
 
@@ -338,6 +346,7 @@ export const useAssistantArtifactStore = create<AssistantArtifactStore>()(
               changeSummary: draft.changeSummary,
               media: draft.media,
               htmlRuntime: draft.htmlRuntime,
+              dataDescriptor: draft.dataDescriptor,
               stage: draft.versionStage || (draft.kind === 'html' ? (existing ? 'ai_result' : 'generated') : undefined),
               updatedAt: now + index,
               revision: 1,
@@ -354,6 +363,7 @@ export const useAssistantArtifactStore = create<AssistantArtifactStore>()(
                 title: draft.title || existing.title,
                 summary: draft.summary || existing.summary,
                 language: draft.language || existing.language || null,
+                dataDescriptor: draft.dataDescriptor || existing.dataDescriptor,
                 currentVersionId: version.id,
                 versions: [...existing.versions, version].slice(-MAX_VERSIONS_PER_ARTIFACT),
                 sourceMessageId: messageId,
@@ -377,6 +387,7 @@ export const useAssistantArtifactStore = create<AssistantArtifactStore>()(
               updatedAt: now + index,
               sortOrder: now + index,
               deletedAt: null,
+              dataDescriptor: draft.dataDescriptor,
             };
               nextItems.unshift(created);
               changed.push(created);
@@ -397,6 +408,41 @@ export const useAssistantArtifactStore = create<AssistantArtifactStore>()(
         drafts: patches.map(draftFromPatch),
         timestamp,
       }),
+      applyDataOperations: ({ chatId, operations, timestamp }) => {
+        const now = timestamp || Date.now();
+        const changed: AssistantArtifactItem[] = [];
+        const results: AssistantArtifactDataResult[] = [];
+        set((state) => {
+          let nextItems = [...state.items];
+          for (const operation of operations) {
+            const current = nextItems.find((item) => item.id === operation.artifactId && item.chatId === chatId && item.deletedAt == null);
+            if (!current || !['table', 'json'].includes(current.kind)) {
+              results.push({ operation: operation.kind, affectedRows: 0, error: '目标不是 CSV/JSON 数据产物' });
+              continue;
+            }
+            if (operation.baseVersionId && operation.baseVersionId !== current.currentVersionId) {
+              results.push({ operation: operation.kind, affectedRows: 0, error: '产物版本已变化，请重新查询后再操作' });
+              continue;
+            }
+            const applied = applyAssistantArtifactDataOperation(current, operation, now + results.length);
+            results.push(applied.result);
+            if (applied.item !== current) {
+              nextItems = nextItems.map((item) => item.id === current.id ? applied.item : item);
+              changed.push(applied.item);
+            }
+          }
+          return { items: nextItems };
+        });
+        if (changed.length) {
+          const ids = changed.map((item) => item.id);
+          for (const artifact of changed) {
+            scheduleArtifactCloudPush(chatId, [artifact.id]);
+            scheduleArtifactLocalWorkspaceWrite(chatId, [artifact]);
+          }
+          void ids;
+        }
+        return { artifacts: changed, results };
+      },
       saveHtmlInteractionState: ({ artifactId, baseVersionId, interactionState, timestamp }) => {
         const now = timestamp || Date.now();
         const previous = get().items.find((item) => item.id === artifactId) || null;

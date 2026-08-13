@@ -4,6 +4,7 @@ import type {
   AssistantAgentMediaTask,
   AssistantAgentPatch,
   AssistantAgentPatchSet,
+  AssistantArtifactDataOperation,
   AssistantArtifactFile,
   AssistantArtifactItem,
   AssistantArtifactKind,
@@ -13,6 +14,7 @@ import type { APIConfig } from '../types/settings';
 import { generateResponse } from './aiClient';
 import { enhanceImagePrompt } from './imagePromptComposer';
 import { normalizeAssistantHtmlRuntime } from '../features/assistantHtml/assistantHtmlValidation';
+import { summarizeAssistantArtifactData } from './assistantArtifactData';
 
 const VALID_ARTIFACT_KINDS = new Set<AssistantArtifactKind>(['document', 'code', 'diagram', 'html', 'table', 'json', 'text', 'image']);
 const MAX_RECENT_MESSAGES = 12;
@@ -141,6 +143,8 @@ function artifactRegistry(artifacts: AssistantArtifactItem[]) {
           language: file.language || null,
           size: file.content.length,
         })) || [],
+        data: artifact.kind === 'table' || artifact.kind === 'json' ? summarizeAssistantArtifactData(artifact) : undefined,
+        dataDescriptor: artifact.dataDescriptor,
         updatedAt: artifact.updatedAt,
       };
     });
@@ -239,7 +243,7 @@ export function buildCompactImageReferenceRegistry(messages: Message[]) {
     .slice(0, MAX_IMAGE_REFERENCES);
 }
 
-function buildPlannerPrompt(options: { includeImages: boolean; includeLocalFiles: boolean; includeSearch: boolean }) {
+function buildPlannerPrompt(options: { includeImages: boolean; includeLocalFiles: boolean; includeSearch: boolean; includeData: boolean }) {
   const sections = [
     '你是 Agent Intent Planner。只负责决策，不生成产物正文；只输出严格 JSON。',
     '结合用户输入、最近对话、产物注册表和交互焦点判断，不要要求用户使用“HTML/产物”等技术词。',
@@ -252,6 +256,7 @@ function buildPlannerPrompt(options: { includeImages: boolean; includeLocalFiles
   if (options.includeSearch) sections.push('搜索：需要实时消息、网页资料或外部核验且 webSearch=true 时输出 search 并填写 searchQuery；未开启时说明能力未开启。');
   if (options.includeLocalFiles) sections.push('本地文件：只使用 registry 中的文件；用户未明确目标时 clarify，未授权时不要假装读取；输出 localFilePaths 时必须使用 registry 中的 directoryId/path。');
   if (options.includeImages) sections.push('图片：结合图片注册表判断目标/参考图，不要虚构图片 ID；图片生成仍由后续 writer/media task 处理。');
+  if (options.includeData) sections.push('数据产物：已有 table/json 产物的筛选、统计、插入、更新或删除使用结构化数据操作；优先使用注册表中的字段、描述和统计摘要，不加载完整文件。');
   sections.push(
     '输出：',
     '{"intent":"chat|create|update|clarify|search","assistantMessage":"chat/clarify 可见回复","responseExperience":"direct_answer|source_code|structured_input|interactive_workspace|visual_explanation","searchQuery":"","localFilePaths":[],"scope":{"targetMode":"single|multi|workspace|selection|unknown","artifactIds":[]},"operations":[{"kind":"style_change|content_edit|structure_edit|create|export|review|search|other","instruction":"..."}],"requiresConfirmation":false,"clarificationQuestion":"","confidence":0,"rationale":"..."}',
@@ -316,7 +321,7 @@ function normalizePlan(raw: unknown, existingArtifacts: AssistantArtifactItem[],
   };
 }
 
-function buildWriterPrompt(options: { includeImages: boolean; includeLocalFiles: boolean; includeHtml: boolean }) {
+function buildWriterPrompt(options: { includeImages: boolean; includeLocalFiles: boolean; includeHtml: boolean; includeData: boolean }) {
   const sections = [
     '你是企业级 Artifact Patch Writer。',
     '必须只输出严格 JSON，不要 Markdown，不要解释。',
@@ -338,6 +343,9 @@ function buildWriterPrompt(options: { includeImages: boolean; includeLocalFiles:
   );
   if (options.includeLocalFiles) sections.push(
     '本地文件：localFiles 是唯一授权内容；不得假装读取未提供的文件。',
+  );
+  if (options.includeData) sections.push(
+    'CSV/JSON：已有数据产物优先使用 dataOperations 做本地增量 query/insert/update/delete，不要把完整大文件放入上下文；query 最多返回 100 行。创建新的 CSV/JSON 仍使用 patches，更新已有数据产物时只返回 dataOperations，不要伪造完整文件内容。',
   );
   if (options.includeHtml) sections.push(
     'HTML：structured_input 生成小型交互控件，interactive_workspace 生成完整页面，visual_explanation 按规模选择；禁止 script、事件属性、iframe/object/embed、外部资源和网络请求，只用声明式控件与 data-pneumata-action。submission.fields 必须与 name 一致；提交回流必须 update 原产物并使用完整新版本。颜色使用 --pneumata-* 变量，并提供 light/dark 属性主题和 prefers-color-scheme dark；HTML 只是交互手段，不在 assistantMessage 输出源码。',
@@ -371,7 +379,7 @@ function buildWriterPrompt(options: { includeImages: boolean; includeLocalFiles:
     '12.4 HTML 正文只能放在 patches[].content，严禁放进 assistantMessage 的 Markdown 代码块或直接正文。assistantMessage 只保留一句简短说明；程序会提供产物打开入口。',
     '',
     '输出格式：',
-    '{"assistantMessage":"面向用户的自然回复文案","patches":[{"action":"create|update","artifactId":"...","kind":"document|code|diagram|html|table|json|text","title":"...","summary":"...","language":"...","content":"完整内容","files":[{"id":"...","path":"...","language":"...","content":"完整文件内容"}],"baseVersionId":"...","changeSummary":"...","htmlRuntime":{"schemaVersion":1,"executionMode":"declarative","autosave":{"enabled":true,"debounceMs":900},"submission":{"interactionId":"stable-id","label":"提交","resultType":"form|quiz|selection|custom","fields":[{"name":"answer","type":"text|textarea|number|boolean|single_choice|multi_choice","label":"回答","required":true,"maxLength":8000,"options":[]}],"sendToAssistant":true,"createArtifactVersion":true}}}],"mediaTasks":[]}',
+    '{"assistantMessage":"面向用户的自然回复文案","patches":[{"action":"create|update","artifactId":"...","kind":"document|code|diagram|html|table|json|text","title":"...","summary":"...","language":"...","content":"完整内容","files":[],"baseVersionId":"...","changeSummary":"...","dataDescriptor":{"description":"...","primaryKey":"...","fields":[{"name":"...","type":"string|number|boolean|date|datetime|array|object","description":"..."}]},"htmlRuntime":{}}],"dataOperations":[{"kind":"query|insert|update|delete","artifactId":"...","baseVersionId":"...","filePath":"...","filter":[{"field":"...","operator":"eq|contains|startsWith|endsWith|gt|gte|lt|lte","value":"..."}],"values":{},"limit":100,"offset":0,"sort":{"field":"...","direction":"asc|desc"}}],"mediaTasks":[]}',
   );
   return sections.join('\n');
 }
@@ -465,6 +473,41 @@ function normalizeFiles(value: unknown): AssistantArtifactFile[] | undefined {
     }];
   });
   return files.length ? files : undefined;
+}
+
+function normalizeDataOperations(value: unknown): AssistantArtifactDataOperation[] {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 20).flatMap((item): AssistantArtifactDataOperation[] => {
+    if (!isRecord(item)) return [];
+    const kind = ['query', 'insert', 'update', 'delete'].includes(String(item.kind))
+      ? item.kind as AssistantArtifactDataOperation['kind']
+      : null;
+    const artifactId = text(item.artifactId, 160);
+    if (!kind || !artifactId) return [];
+    const filter = Array.isArray(item.filter) ? item.filter.flatMap((entry) => {
+      if (!isRecord(entry)) return [];
+      const field = text(entry.field, 160);
+      if (!field) return [];
+      const operator = ['eq', 'contains', 'startsWith', 'endsWith', 'gt', 'gte', 'lt', 'lte'].includes(String(entry.operator))
+        ? entry.operator as NonNullable<AssistantArtifactDataOperation['filter']>[number]['operator']
+        : 'eq';
+      return [{ field, operator, value: entry.value }];
+    }) : undefined;
+    return [{
+      kind,
+      artifactId,
+      baseVersionId: text(item.baseVersionId, 200) || null,
+      filePath: text(item.filePath, 240) || null,
+      filter,
+      values: isRecord(item.values) ? item.values : undefined,
+      limit: Number.isFinite(Number(item.limit)) ? Math.min(100, Math.max(1, Math.floor(Number(item.limit)))) : undefined,
+      offset: Number.isFinite(Number(item.offset)) ? Math.max(0, Math.floor(Number(item.offset))) : undefined,
+      sort: isRecord(item.sort) && text(item.sort.field, 160) ? {
+        field: text(item.sort.field, 160),
+        direction: item.sort.direction === 'desc' ? 'desc' : 'asc',
+      } : undefined,
+    }];
+  });
 }
 
 function normalizeMediaTasks(value: unknown, imageReferenceRegistry = new Map<string, ImageAttachmentRef>()): AssistantAgentMediaTask[] {
@@ -625,8 +668,20 @@ function normalizePatchSet(raw: unknown, imageReferenceRegistry = new Map<string
       changeSummary: text(item.changeSummary, 240),
       htmlRuntime,
       versionStage: kind === 'html' && action === 'update' ? 'ai_result' : kind === 'html' ? 'generated' : undefined,
+      dataDescriptor: isRecord(item.dataDescriptor) && Array.isArray(item.dataDescriptor.fields) ? {
+        description: text(item.dataDescriptor.description, 500),
+        primaryKey: text(item.dataDescriptor.primaryKey, 160) || undefined,
+        fields: item.dataDescriptor.fields.flatMap((field): Array<{ name: string; type?: 'string' | 'number' | 'boolean' | 'date' | 'datetime' | 'array' | 'object'; description?: string }> => {
+          if (!isRecord(field) || !text(field.name, 160)) return [];
+          const fieldType = ['string', 'number', 'boolean', 'date', 'datetime', 'array', 'object'].includes(String(field.type))
+            ? field.type as 'string' | 'number' | 'boolean' | 'date' | 'datetime' | 'array' | 'object'
+            : undefined;
+          return [{ name: text(field.name, 160), type: fieldType, description: text(field.description, 300) || undefined }];
+        }),
+      } : undefined,
     }];
   }) : [];
+  const dataOperations = normalizeDataOperations(raw.dataOperations);
   let mediaTasks = withImplicitLatestImageTarget(normalizeMediaTasks(raw.mediaTasks, imageReferenceRegistry), userMessage, imageReferenceRegistry);
   if (!patches.length && !mediaTasks.length && userMessage) {
     const implicitTask = createImplicitLatestImageEditTask({ userMessage, imageReferenceRegistry });
@@ -638,8 +693,9 @@ function normalizePatchSet(raw: unknown, imageReferenceRegistry = new Map<string
   );
   return {
     assistantMessage: ensureMediaTaskPlaceholders(visibleAssistantMessage, mediaTasks)
-      || (mediaTasks.length && !patches.length ? '我已根据你的要求准备生成图片。' : patches.length ? '已完成产物变更。' : '没有可提交的产物变更。'),
+      || (mediaTasks.length && !patches.length ? '我已根据你的要求准备生成图片。' : patches.length || dataOperations.length ? '已完成产物变更。' : '没有可提交的产物变更。'),
     patches,
+    dataOperations,
     mediaTasks,
   };
 }
@@ -664,6 +720,12 @@ export function validateAssistantAgentPatchSet(params: {
     if (patch.baseVersionId && patch.baseVersionId !== target.currentVersionId) return false;
     return true;
   });
+  const validDataOperations = (params.patchSet.dataOperations || []).filter((operation) => {
+    if (!allowedUpdateIds.has(operation.artifactId)) return false;
+    const target = existingById.get(operation.artifactId);
+    if (!target || !['table', 'json'].includes(target.kind)) return false;
+    return !operation.baseVersionId || operation.baseVersionId === target.currentVersionId;
+  });
   const rejectedForTruncatedContext = params.patchSet.patches.some((patch) => (
     patch.action === 'update'
     && patch.artifactId
@@ -674,6 +736,7 @@ export function validateAssistantAgentPatchSet(params: {
       ? '这个产物内容较长，当前上下文不足以安全生成完整新版本。请缩小修改范围或打开具体文件后再试。'
       : params.patchSet.assistantMessage,
     patches: validPatches,
+    dataOperations: validDataOperations,
     mediaTasks: params.patchSet.mediaTasks || [],
   } satisfies AssistantAgentPatchSet;
 }
@@ -749,6 +812,8 @@ export async function planAssistantAgentChange(params: {
       includeImages: Boolean(payload.imageReferenceRegistry.length || payload.userMessage.imageAttachments.length),
       includeLocalFiles: Boolean(params.toolCapabilities?.localWorkspace || payload.localWorkspaceFileRegistry.length),
       includeSearch: Boolean(params.toolCapabilities?.webSearch),
+      includeData: params.existingArtifacts.some((artifact) => artifact.kind === 'table' || artifact.kind === 'json')
+        || /\b(csv|json)\b|表格|数据集|数据文件|记录|字段|行|列/i.test(params.userMessage.content),
     }),
     [{ role: 'user', content: stringifyAgentPayload(payload, 'Assistant Agent planner') }],
     undefined,
@@ -840,6 +905,9 @@ export async function writeAssistantAgentPatchSet(params: {
         || params.plan.operations.some((operation) => /图片|照片|插画|海报|生图|图像/i.test(operation.instruction)),
       ),
       includeLocalFiles: Boolean(params.localFiles?.length),
+      includeData: activeTargetArtifacts.some((artifact) => artifact.kind === 'table' || artifact.kind === 'json')
+        || /\b(csv|json)\b|表格|数据集|数据文件|记录|字段|行|列/i.test(params.userMessage.content)
+        || params.plan.operations.some((operation) => /\b(csv|json)\b|表格|数据|记录|字段|行|列/i.test(operation.instruction)),
       includeHtml: Boolean(params.plan.responseExperience === 'structured_input' || params.plan.responseExperience === 'interactive_workspace' || params.plan.responseExperience === 'visual_explanation' || params.userMessage.metadata?.assistantHtmlSubmission || activeTargetArtifacts.some((artifact) => artifact.kind === 'html')),
     }),
     [{ role: 'user', content: stringifyAgentPayload(payload, 'Assistant Agent writer') }],

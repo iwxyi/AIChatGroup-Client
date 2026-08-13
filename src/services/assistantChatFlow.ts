@@ -1,6 +1,6 @@
 import type { GroupChat } from '../types/chat';
 import type { Message, MessageAttachment, MessageMetadata } from '../types/message';
-import type { AssistantAgentLocalFileContext, AssistantAgentPatchSet } from '../types/assistantArtifact';
+import type { AssistantAgentLocalFileContext, AssistantAgentPatchSet, AssistantArtifactDataResult } from '../types/assistantArtifact';
 import type { AIModelInputCapabilities, APIConfig, AIModelProfile } from '../types/settings';
 import { getUsablePreferredAIProfile, resolveAIModelInputCapabilities } from '../types/settings';
 import { createStreamingLocalMessage, persistLocalFirstMessage } from './chatCommitMessage';
@@ -170,6 +170,16 @@ function buildAssistantSearchResultPromptBlock(params: {
     'Live web search results are available below. Use them when relevant; do not say you cannot browse or cannot access current information. Do not invent citations. Prefer concise synthesis over listing every result.',
     params.results.map(formatAssistantSearchResult).join('\n\n') || 'No usable result items were returned.',
   ].join('\n');
+}
+
+function formatAssistantDataResults(results: AssistantArtifactDataResult[]) {
+  return results.map((result, index) => {
+    if (result.error) return `数据操作 ${index + 1} 失败：${result.error}`;
+    if (result.operation === 'query') {
+      return `查询结果 ${index + 1}：匹配 ${result.totalRows || 0} 行${result.truncated ? '，仅显示前 100 行' : ''}\n${JSON.stringify(result.rows || [], null, 2)}`;
+    }
+    return `数据操作 ${index + 1}：${result.operation} 已影响 ${result.affectedRows} 行。`;
+  }).join('\n\n');
 }
 
 function buildLocalFilePromptBlock(localFiles: AssistantAgentLocalFileContext[]) {
@@ -526,7 +536,20 @@ async function persistAssistantArtifactsFromReply(params: {
       localFiles,
       signal: params.signal,
     });
-    content = buildAgentArtifactReplyContent(patchSet);
+    let dataResults: AssistantArtifactDataResult[] = [];
+    if (patchSet.dataOperations?.length) {
+      const applied = useAssistantArtifactStore.getState().applyDataOperations({
+        chatId: params.chatId,
+        operations: patchSet.dataOperations,
+        timestamp: params.timestamp || Date.now(),
+      });
+      dataResults = applied.results;
+      if (applied.artifacts.length) {
+        patchesCommitted += applied.artifacts.length;
+      }
+    }
+    content = [buildAgentArtifactReplyContent(patchSet), dataResults.length ? formatAssistantDataResults(dataResults) : '']
+      .filter(Boolean).join('\n\n');
     const attachments = createAssistantMediaAttachments(patchSet, params.timestamp || Date.now());
     if (patchSet.patches.length) {
       patchesCommitted = patchSet.patches.length;
