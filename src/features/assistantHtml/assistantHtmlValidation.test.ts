@@ -16,6 +16,16 @@ const manifest = normalizeAssistantHtmlRuntime({
 }, '<form><input name="answer"></form>')!;
 
 describe('assistant HTML safety', () => {
+  it('keeps structured input inline even when the writer returns a full document', () => {
+    const manifest = normalizeAssistantHtmlRuntime({
+      submission: {
+        interactionId: 'vote-1',
+        resultType: 'selection',
+        fields: [{ name: 'choice', type: 'single_choice', required: true, options: ['A', 'B'] }],
+      },
+    }, '<!doctype html><html><body><form><input name="choice" /></form></body></html>', 'inline_interaction');
+    expect(manifest?.presentation).toBe('inline');
+  });
   it('strips AI scripts and dangerous embedding while injecting only the trusted runtime', () => {
     const document = buildAssistantHtmlDocument({
       html: '<html><head><style>@import "https://bad.test/a.css";</style><script>steal()</script></head><body><iframe src="https://bad.test"></iframe><button onclick="steal()">提交</button></body></html>',

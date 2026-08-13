@@ -31,8 +31,7 @@ export default function AssistantHtmlMessageBlock({ artifactRef, onAutosave, onS
   if (!version || !manifest) return null;
   const interactive = artifactRef.presentation !== 'fullscreen_html'
     && (manifest.presentation === 'inline' || manifest.presentation === 'both');
-  const readOnly = version.stage === 'submitted'
-    || (version.id !== artifact.currentVersionId && version.stage !== 'autosave');
+  const readOnly = version.id !== artifact.currentVersionId && version.stage !== 'autosave';
   if (interactive) {
     return (
       <Box sx={{ width: '100%', border: '1px solid', borderColor: 'divider', borderRadius: 1, overflow: 'hidden', bgcolor: 'background.paper' }}>

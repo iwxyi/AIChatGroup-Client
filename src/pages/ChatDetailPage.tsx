@@ -2102,6 +2102,7 @@ export default function ChatDetailPage() {
         if (!artifact) return;
         const submittedVersion = artifact.versions.find((version) => version.id === artifact.currentVersionId);
         if (!submittedVersion || submittedVersion.stage !== 'submitted' || submittedVersion.submissionId !== submissionId) return;
+        setFullscreenAssistantArtifactId((current) => current === artifact.id ? null : current);
 
         const recentMessages = currentChatMessages;
         const userMessage = await addMessageStable({

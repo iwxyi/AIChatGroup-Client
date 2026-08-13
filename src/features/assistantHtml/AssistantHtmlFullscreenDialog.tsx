@@ -71,11 +71,10 @@ export default function AssistantHtmlFullscreenDialog({ artifactId, onClose, onA
   }, [artifactId, onClose]);
 
   const requestClose = useCallback(() => {
+    onClose();
     if (window.history.state?.assistantHtmlFullscreen === historyMarkerRef.current) {
       window.history.back();
-      return;
     }
-    onClose();
   }, [onClose]);
 
   const version = useMemo(() => artifact ? visibleVersion(artifact, versionId) : null, [artifact, versionId]);
@@ -110,7 +109,7 @@ export default function AssistantHtmlFullscreenDialog({ artifactId, onClose, onA
               version={version}
               manifest={version.htmlRuntime}
               fillContainer
-              readOnly={version.stage === 'submitted' || (version.id !== latestVersion?.id && version.stage !== 'autosave')}
+              readOnly={version.id !== latestVersion?.id && version.stage !== 'autosave'}
               onAutosave={onAutosave}
               onSubmit={onSubmit}
             />

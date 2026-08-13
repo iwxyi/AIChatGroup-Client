@@ -436,7 +436,7 @@ function ArtifactPreview({ item, version, expanded = false, fullscreen = false, 
   }
   if (item.kind === 'html') {
     if (version?.htmlRuntime) {
-      const readOnly = version.id !== item.currentVersionId || version.stage === 'submitted';
+      const readOnly = version.id !== item.currentVersionId;
       return <AssistantHtmlFrame artifactId={item.id} version={version} manifest={version.htmlRuntime} readOnly={readOnly} onAutosave={onHtmlAutosave} onSubmit={onHtmlSubmit} />;
     }
     return (

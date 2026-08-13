@@ -262,8 +262,8 @@ function buildPlannerPrompt() {
     '2a. 用户要求生成图片、海报、插画、照片、图像素材，或要求基于上一张/刚才那张/某张参考图生成变体时，也属于 intent=create；Planner 只规划，不输出图片提示词正文。',
     '2b. 用户要求生成文档、方案、表格、网页、代码、图表、JSON、可沉淀资料时，属于 intent=create，不要退回普通聊天。',
     '2c. 每轮必须选择 responseExperience，它描述最合适的回答体验，而不是用户是否提到 HTML。direct_answer 用于文字/Markdown 已足够清楚；source_code 只用于用户明确要源码、示例、教程、解释、调试或复制代码。source_code 输出 intent=chat、assistantMessage 为空，让普通回复模型生成代码块，禁止创建可运行产物。',
-    '2d. structured_input 用于完成任务前缺少一组结构化信息，应该主动提供少量字段让用户填写，而不是追问用户打一大段文字。例如“帮我制定旅行计划”缺少目的地、预算、天数和偏好时。使用 intent=create。',
-    '2e. interactive_workspace 用于试卷、问卷、计算器、配置器、练习、审批等完整操作流程，或结果需要提交、批改和持续版本化时。例如“给我做一套高三英语试卷”。使用 intent=create/update。',
+    '2d. structured_input 用于少量字段或单步选择，包括完成任务前收集信息、单题投票、单题选择、简短反馈和小表单；即使需要提交给助手，也应优先作为消息内的小型交互控件。例如“做一个周末活动投票”或“帮我制定旅行计划”缺少目的地、预算、天数和偏好时。使用 intent=create。',
+    '2e. interactive_workspace 只用于多题试卷、多题问卷、计算器、配置器、连续练习、审批等需要较大空间或持续版本化的完整操作流程。例如“给我做一套高三英语试卷”。不要把单题投票、少字段表单归入 interactive_workspace。使用 intent=create/update。',
     '2f. visual_explanation 用于天梯图、复杂对比表、数据可视化、复杂公式、交互图表等视觉表达明显优于纯文字的内容。例如“显卡天梯图”。使用 intent=create/update。不要要求用户说网页、HTML、产物或交互。',
     '2g. responseExperience 必须从用户真正想完成的任务推断。用户说“我想去旅游，帮我制定计划”时可以主动选择 structured_input 收集必要信息；用户说“给我做一套符合高三的英语试卷”时选择 interactive_workspace；用户说“给我看看显卡天梯图”时选择 visual_explanation。HTML 只是内部实现手段，不是用户目标。',
     '3. 需要修改一个或多个现有产物输出 intent=update，scope.artifactIds 可以是多个。',
@@ -713,12 +713,18 @@ export async function planAssistantAgentChange(params: {
     ? params.existingArtifacts.find((artifact) => artifact.id === htmlSubmission.artifactId && artifact.chatId === params.chatId && artifact.kind === 'html' && artifact.deletedAt == null)
     : null;
   if (htmlSubmission && submittedArtifact) {
+    const submittedVersion = submittedArtifact.versions.find((version) => version.id === htmlSubmission.baseVersionId)
+      || submittedArtifact.versions.find((version) => version.id === submittedArtifact.currentVersionId)
+      || submittedArtifact.versions.at(-1);
+    const responseExperience = submittedVersion?.htmlRuntime?.presentation === 'inline'
+      ? 'structured_input'
+      : 'interactive_workspace';
     return {
       intent: 'update',
       assistantMessage: '',
       scope: { targetMode: 'single', artifactIds: [submittedArtifact.id] },
       operations: [{ kind: 'content_edit', instruction: `处理用户提交的 ${htmlSubmission.resultType} 交互结果，并生成同一 HTML 产物的新版本。` }],
-      responseExperience: 'interactive_workspace',
+      responseExperience,
       requiresConfirmation: false,
       confidence: 1,
       rationale: '用户通过 HTML 交互提交了结构化数据，目标产物和基准版本已明确。',

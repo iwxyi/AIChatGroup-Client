@@ -52,6 +52,7 @@ export default function AssistantHtmlFrame({
   const [height, setHeight] = useState(manifest.viewport?.preferredHeight || (inline ? 280 : 720));
   const [ready, setReady] = useState(false);
   const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const interactionId = manifest.submission?.interactionId || '';
   const baseVersionId = version.stage === 'autosave' && version.baseVersionId ? version.baseVersionId : version.id;
   const srcDoc = useMemo(() => buildAssistantHtmlDocument({
@@ -101,7 +102,12 @@ export default function AssistantHtmlFrame({
         };
         setError('');
         if (message.type === 'autosave') void onAutosave?.(input);
-        if (message.type === 'submit') void onSubmit?.(input);
+        if (message.type === 'submit') {
+          setSubmitting(true);
+          void Promise.resolve(onSubmit?.(input)).catch((reason) => {
+            setError(reason instanceof Error ? reason.message : '提交失败');
+          }).finally(() => setSubmitting(false));
+        }
       } catch (reason) {
         setError(reason instanceof Error ? reason.message : '提交内容无效');
       }
@@ -113,6 +119,14 @@ export default function AssistantHtmlFrame({
   return (
     <Box sx={{ position: 'relative', width: '100%', height: fillContainer ? '100%' : 'auto', minHeight: fillContainer ? 0 : inline ? 160 : 'calc(100dvh - 110px)', flex: fillContainer ? 1 : undefined }}>
       {!ready ? <Box sx={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', pointerEvents: 'none' }}><CircularProgress size={20} /></Box> : null}
+      {submitting ? (
+        <Box sx={{ position: 'absolute', inset: 0, zIndex: 2, display: 'grid', placeItems: 'center', bgcolor: 'rgba(15,18,24,0.42)', backdropFilter: 'blur(2px)' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1.5, py: 1, borderRadius: 1, bgcolor: 'background.paper', color: 'text.primary', boxShadow: 3 }}>
+            <CircularProgress size={18} />
+            <Typography variant="body2">正在提交</Typography>
+          </Box>
+        </Box>
+      ) : null}
       <Box
         ref={frameRef}
         component="iframe"
