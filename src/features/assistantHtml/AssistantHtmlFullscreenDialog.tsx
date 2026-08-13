@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Box, Dialog, DialogContent, DialogTitle, IconButton, Stack, Typography } from '@mui/material';
+import { Box, Chip, Dialog, DialogContent, DialogTitle, IconButton, Stack, Typography } from '@mui/material';
 import CloseOutlinedIcon from '@mui/icons-material/CloseOutlined';
 import ContentCopyOutlinedIcon from '@mui/icons-material/ContentCopyOutlined';
 import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
@@ -15,10 +15,7 @@ function currentVersion(item: AssistantArtifactItem) {
 }
 
 function visibleVersion(item: AssistantArtifactItem, versionId: string | null) {
-  const selected = item.versions.find((version) => version.id === versionId) || currentVersion(item);
-  const latest = currentVersion(item);
-  if (selected && latest?.baseVersionId === selected.id && (latest.stage === 'autosave' || latest.stage === 'submitted')) return latest;
-  return selected;
+  return item.versions.find((version) => version.id === versionId) || currentVersion(item);
 }
 
 function versionLabel(item: AssistantArtifactItem, version: AssistantArtifactVersion | null) {
@@ -97,6 +94,7 @@ export default function AssistantHtmlFullscreenDialog({ artifactId, onClose, onA
             <Stack direction="row" spacing={0.25} sx={{ alignItems: 'center', flexShrink: 0 }}>
               <IconButton onClick={() => stepVersion(-1)} disabled={versionIndex <= 0} aria-label="上一版本"><NavigateBeforeOutlinedIcon /></IconButton>
               <Typography variant="caption" color="text.secondary" sx={{ minWidth: 48, textAlign: 'center' }}>{versionLabel(artifact, version)}</Typography>
+              {version.stage === 'autosave' ? <Chip size="small" color="warning" variant="outlined" label="自动保存" sx={{ height: 22 }} /> : null}
               <IconButton onClick={() => stepVersion(1)} disabled={versionIndex < 0 || versionIndex >= artifact.versions.length - 1} aria-label="下一版本"><NavigateNextOutlinedIcon /></IconButton>
               <IconButton onClick={() => void copyTextToClipboard(version.content)} aria-label="复制 HTML"><ContentCopyOutlinedIcon /></IconButton>
               <IconButton onClick={() => downloadHtml(artifact, version)} aria-label="下载 HTML"><DownloadOutlinedIcon /></IconButton>

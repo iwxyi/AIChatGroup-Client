@@ -525,12 +525,7 @@ function AssistantArtifactList({
   ), [artifacts, fullscreenId]);
   const fullscreenVersion = useMemo(() => {
     if (!fullscreenItem) return null;
-    const selectedVersion = fullscreenItem.versions.find((version) => version.id === fullscreenVersionId) || getArtifactCurrentVersion(fullscreenItem);
-    const currentVersion = getArtifactCurrentVersion(fullscreenItem);
-    if (fullscreenItem.kind === 'html' && selectedVersion && currentVersion?.baseVersionId === selectedVersion.id && (currentVersion.stage === 'autosave' || currentVersion.stage === 'submitted')) {
-      return currentVersion;
-    }
-    return selectedVersion;
+    return fullscreenItem.versions.find((version) => version.id === fullscreenVersionId) || getArtifactCurrentVersion(fullscreenItem);
   }, [fullscreenItem, fullscreenVersionId]);
   const pendingFullscreenVersion = useMemo(() => {
     if (!fullscreenItem || !pendingFullscreenVersionId) return null;
@@ -668,6 +663,7 @@ function AssistantArtifactList({
       <Chip size="small" label={artifactKindLabels[item.kind]} sx={{ height: 20 }} />
       {item.language ? <Chip size="small" label={item.language} variant="outlined" sx={{ height: 20 }} /> : null}
       {item.versions.length > 1 ? <Chip size="small" label={`${item.versions.length} 版`} variant="outlined" sx={{ height: 20 }} /> : null}
+      {getArtifactCurrentVersion(item)?.stage === 'autosave' ? <Chip size="small" color="warning" variant="outlined" label="自动保存" sx={{ height: 20 }} /> : null}
       <Typography variant="caption" color="text.secondary">{formatArtifactTime(item.updatedAt)}</Typography>
     </Stack>
   );
@@ -868,6 +864,7 @@ function AssistantArtifactList({
                     {getArtifactVersionLabel(fullscreenItem, fullscreenVersion)}
                   </Typography>
                 </Box>
+                {fullscreenVersion?.stage === 'autosave' ? <Chip size="small" color="warning" variant="outlined" label="自动保存" sx={{ height: 22 }} /> : null}
                 <IconButton onClick={() => stepFullscreenVersion(1)} disabled={fullscreenVersionIndex < 0 || fullscreenVersionIndex >= fullscreenItem.versions.length - 1 || isFullscreenVersionRendering}>
                   <NavigateNextOutlinedIcon />
                 </IconButton>
