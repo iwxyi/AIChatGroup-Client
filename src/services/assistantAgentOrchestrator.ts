@@ -9,6 +9,7 @@ import type {
   AssistantArtifactItem,
   AssistantArtifactKind,
   AssistantDataFilter,
+  AssistantDataFilterOperator,
 } from '../types/assistantArtifact';
 import type { Message, MessageAttachment } from '../types/message';
 import type { APIConfig } from '../types/settings';
@@ -490,7 +491,7 @@ function normalizeDataOperations(value: unknown): AssistantArtifactDataOperation
     const field = text(entry.field, 160);
     if (!field) return null;
     const operator = ['eq', 'contains', 'startsWith', 'endsWith', 'gt', 'gte', 'lt', 'lte', 'exists', 'notExists', 'isNull', 'isNotNull'].includes(String(entry.operator))
-      ? entry.operator as NonNullable<AssistantArtifactDataOperation['filter']>[number]['operator']
+      ? entry.operator as AssistantDataFilterOperator
       : 'eq';
     return { field, operator, value: entry.value };
   };
