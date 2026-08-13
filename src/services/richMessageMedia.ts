@@ -423,7 +423,7 @@ async function runRichMediaQueueEntry(entry: RichMediaQueueEntry) {
       : null;
     const latestAttachment = getLatestRichMediaMessage(messageId, workingMessage).metadata?.attachments?.find((item) => item.id === attachment.id);
     if (latestAttachment?.generationJobId !== generationJobId) return;
-    const dataUrl = speechResult?.audioDataUrl || await blobToDataUrl((await synthesizeSpeechWithAdapter({ profile, intent: 'chat-audio', input: speechText, voice, style: voiceStyle, emotion: voiceEmotion, format: 'mp3' })).blob);
+    const dataUrl = speechResult?.audioDataUrl || await blobToDataUrl((await synthesizeSpeechWithAdapter({ profile, intent: 'chat-audio', input: speechText, voice, format: 'mp3' })).blob);
     const asset = speechResult?.asset || { id: undefined, url: dataUrl, mimeType: speechResult?.mimeType || 'audio/mpeg', sizeBytes: dataUrl.length, checksum: undefined };
     workingMessage = updateRichMediaMessage({
       message: workingMessage,

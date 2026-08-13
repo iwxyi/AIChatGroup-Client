@@ -1,5 +1,5 @@
 import { memo, useMemo, useRef, useState } from 'react';
-import { Box, Typography, Avatar, Dialog, DialogContent, DialogTitle, DialogActions, Menu, MenuItem, Tooltip, Divider, Button, TextField, Stack, IconButton, ListItemIcon } from '@mui/material';
+import { Box, Typography, Avatar, Dialog, DialogContent, DialogTitle, DialogActions, Menu, MenuItem, Tooltip, Divider, Button, TextField, Stack, IconButton, ListItemIcon, CircularProgress } from '@mui/material';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
@@ -25,6 +25,10 @@ import type { AssistantHtmlInteractionPayload } from '../../features/assistantHt
 import { getNarrativeDisplayBlocks, hasNarrativeReaderBlocks, isNarrativeParagraphMessage, shouldUseCompactMediaBubble, shouldUseCompactMessageBubble } from './messageBubblePresentation';
 import { DefaultUserAvatarIcon, TopicGuideAvatarIcon } from '../common/IdentityIcons';
 import AssistantHtmlMessageBlock from '../../features/assistantHtml/AssistantHtmlMessageBlock';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import PauseIcon from '@mui/icons-material/Pause';
+import VolumeUpIcon from '@mui/icons-material/VolumeUp';
+import { api } from '../../services/api';
 
 interface MessageBubbleProps {
   message: Message;
@@ -128,6 +132,70 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
   const [menuPosition, setMenuPosition] = useState<MenuPosition | null>(null);
   const [feedbackDialogOpen, setFeedbackDialogOpen] = useState(false);
   const [copyStatus, setCopyStatus] = useState<'success' | 'error' | null>(null);
+  const [voiceUrl, setVoiceUrl] = useState<string | null>(null);
+  const [voicePlaying, setVoicePlaying] = useState(false);
+  const [voiceGenerating, setVoiceGenerating] = useState(false);
+  const [voiceProgress, setVoiceProgress] = useState(0);
+  const voiceAudioRef = useRef<HTMLAudioElement | null>(null);
+  const audioProfiles = useSettingsStore((state) => state.aiProfiles.filter((profile) => profile.type === 'audio' && (profile.audioCapability === 'tts' || profile.audioCapability === 'both')));
+  const voiceProfile = audioProfiles.find((profile) => profile.id === character?.modelProfileIds?.audio) || audioProfiles.find((profile) => profile.isDefault) || audioProfiles[0];
+  const canPlayVoice = Boolean(message.type === 'ai' && !pending && message.content.trim() && voiceProfile && character?.voiceConfig?.enabled !== false);
+  const toggleVoice = async () => {
+    if (!canPlayVoice) return;
+    if (!voiceUrl) {
+      setVoiceGenerating(true);
+      try {
+        const result = await api.synthesizeSpeech({
+          providerCode: voiceProfile?.provider,
+          text: message.content,
+          voice: character?.voiceConfig?.voiceName,
+          style: character?.voiceConfig?.style || character?.voiceConfig?.instructions,
+          emotion: character?.voiceConfig?.emotion,
+          speed: character?.voiceConfig?.rate ? Number.parseFloat(character.voiceConfig.rate) || undefined : undefined,
+          pitch: character?.voiceConfig?.pitch ? Number.parseFloat(character.voiceConfig.pitch) || undefined : undefined,
+          chatId: message.chatId,
+          messageId: message.serverId || message.id,
+          attachmentId: `voice-${message.id}`,
+        });
+        setVoiceUrl(result.asset?.url || result.audioDataUrl);
+      } finally {
+        setVoiceGenerating(false);
+      }
+      return;
+    }
+    const audio = voiceAudioRef.current;
+    if (!audio) return;
+    if (audio.paused) await audio.play(); else audio.pause();
+  };
+  const voiceBar = voiceUrl ? (
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.65, width: 'min(280px, 100%)', px: 0.7, py: 0.35, borderRadius: 999, bgcolor: 'action.hover' }}>
+      <audio
+        ref={voiceAudioRef}
+        src={voiceUrl}
+        preload="metadata"
+        onPlay={() => setVoicePlaying(true)}
+        onPause={() => setVoicePlaying(false)}
+        onEnded={() => { setVoicePlaying(false); setVoiceProgress(0); }}
+        onTimeUpdate={(event) => {
+          const audio = event.currentTarget;
+          setVoiceProgress(audio.duration ? audio.currentTime / audio.duration : 0);
+        }}
+        style={{ display: 'none' }}
+      />
+      <IconButton size="small" onClick={() => void toggleVoice()} aria-label={voicePlaying ? '暂停语音' : '播放语音'}>
+        {voicePlaying ? <PauseIcon fontSize="small" /> : <PlayArrowIcon fontSize="small" />}
+      </IconButton>
+      <Box sx={{ flex: 1, height: 5, borderRadius: 999, bgcolor: 'divider', overflow: 'hidden', cursor: 'pointer' }} onClick={(event) => {
+        const audio = voiceAudioRef.current;
+        if (!audio || !audio.duration) return;
+        const rect = event.currentTarget.getBoundingClientRect();
+        audio.currentTime = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)) * audio.duration;
+      }}>
+        <Box sx={{ height: '100%', width: `${voiceProgress * 100}%`, bgcolor: 'primary.main', transition: 'width 120ms linear' }} />
+      </Box>
+      <VolumeUpIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+    </Box>
+  ) : null;
   const [revisionEditorOpen, setRevisionEditorOpen] = useState(false);
   const [revisionDraft, setRevisionDraft] = useState(message.content);
   const pressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -475,6 +543,7 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
               ) : withdrawalNoticeNode
             ) : <MessageContent message={visibleMessage} onRetryMedia={onRetryMedia} onOpenImage={onOpenImage} onOpenDiagram={onOpenDiagram} compactMediaLayout={compactMediaBubble} />}
           </Box>
+          {voiceBar}
           {nonHtmlArtifactRefs.length ? (
             <Box
               component="button"
@@ -593,6 +662,12 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
           <MenuItem onClick={openFeedbackDialog}>
             <ListItemIcon sx={{ minWidth: 32 }}><RateReviewIcon fontSize="small" /></ListItemIcon>
             表达反馈
+          </MenuItem>
+        ) : null}
+        {canPlayVoice ? (
+          <MenuItem onClick={() => { closeMenus(); void toggleVoice(); }} disabled={voiceGenerating}>
+            <ListItemIcon sx={{ minWidth: 32 }}>{voiceGenerating ? <CircularProgress size={18} /> : <VolumeUpIcon fontSize="small" />}</ListItemIcon>
+            {voiceGenerating ? '生成语音中…' : '播放语音'}
           </MenuItem>
         ) : null}
         {canDelete ? (
