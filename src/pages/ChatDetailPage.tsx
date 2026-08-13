@@ -86,6 +86,7 @@ import {
 
 const ChatSidebarPanel = lazy(() => import('../components/chat/ChatSidebarPanel'));
 const AssistantAgentPanel = lazy(() => import('../components/chat/AssistantAgentPanel'));
+const AssistantHtmlFullscreenDialog = lazy(() => import('../features/assistantHtml/AssistantHtmlFullscreenDialog'));
 const SessionActionPanel = lazy(() => import('../components/session/SessionActionPanel'));
 const MessageAnalysisDialog = lazy(() => import('../components/chat/MessageAnalysisDialog').then((module) => ({ default: module.MessageAnalysisDialog })));
 const ProfilePreviewOverlay = lazy(() => import('../components/chat/ProfilePreviewOverlay'));
@@ -827,7 +828,6 @@ export default function ChatDetailPage() {
   const [uiHydrated, setUiHydrated] = useState(() => useUIStore.persist.hasHydrated());
   const [selectedAssistantArtifactId, setSelectedAssistantArtifactId] = useState<string | null>(null);
   const [fullscreenAssistantArtifactId, setFullscreenAssistantArtifactId] = useState<string | null>(null);
-  const closeAssistantPanelAfterFullscreenRef = useRef(false);
   const [pendingAppCommand, setPendingAppCommand] = useState<PendingAppCommand | null>(null);
   const [visiblePendingAppCommand, setVisiblePendingAppCommand] = useState<PendingAppCommand | null>(null);
   const [pendingAppCommandChoiceId, setPendingAppCommandChoiceId] = useState<string | null>(null);
@@ -2066,16 +2066,12 @@ export default function ChatDetailPage() {
   }, [setRightPanelOpen]);
 
   const handleOpenAssistantHtmlFullscreen = useCallback((artifactId: string) => {
-    closeAssistantPanelAfterFullscreenRef.current = !rightPanelOpen;
     setFullscreenAssistantArtifactId(artifactId);
-    if (!rightPanelOpen) setRightPanelOpen(true);
-  }, [rightPanelOpen, setRightPanelOpen]);
+  }, []);
 
   const handleCloseAssistantHtmlFullscreen = useCallback(() => {
     setFullscreenAssistantArtifactId(null);
-    if (closeAssistantPanelAfterFullscreenRef.current) setRightPanelOpen(false);
-    closeAssistantPanelAfterFullscreenRef.current = false;
-  }, [setRightPanelOpen]);
+  }, []);
 
   const handleHtmlAutosave = useCallback((input: AssistantHtmlInteractionPayload) => {
     useAssistantArtifactStore.getState().saveHtmlInteractionState({
@@ -3631,6 +3627,17 @@ export default function ChatDetailPage() {
         </Box>}
       </Box>
 
+      {isAssistantChat && fullscreenAssistantArtifactId ? (
+        <Suspense fallback={null}>
+          <AssistantHtmlFullscreenDialog
+            artifactId={fullscreenAssistantArtifactId}
+            onClose={handleCloseAssistantHtmlFullscreen}
+            onAutosave={handleHtmlAutosave}
+            onSubmit={handleHtmlSubmit}
+          />
+        </Suspense>
+      ) : null}
+
       {chatInteractionDisabled || (isAssistantChat && !rightPanelOpen) ? null : <RightPanel
         title={isAssistantChat ? '助手能力' : sidebarTitle}
         hideMobileTitle
@@ -3661,8 +3668,6 @@ export default function ChatDetailPage() {
                     onSelectedArtifactChange={setSelectedAssistantArtifactId}
                     onHtmlAutosave={handleHtmlAutosave}
                     onHtmlSubmit={handleHtmlSubmit}
-                    fullscreenArtifactId={fullscreenAssistantArtifactId}
-                    onFullscreenArtifactClose={handleCloseAssistantHtmlFullscreen}
                     onAgentEnabledChange={agentEntitled ? (enabled) => {
                       writeAssistantAgentDefaultEnabled(enabled);
                       const aiSearchAvailable = authMode === 'cloud' && currentUser?.aiSearchEntitled === true;

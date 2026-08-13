@@ -44,8 +44,6 @@ interface AssistantAgentPanelProps {
   onAgentEnabledChange?: (enabled: boolean) => void;
   onHtmlAutosave?: (input: AssistantHtmlInteractionPayload) => void | Promise<void>;
   onHtmlSubmit?: (input: AssistantHtmlInteractionPayload) => void | Promise<void>;
-  fullscreenArtifactId?: string | null;
-  onFullscreenArtifactClose?: () => void;
 }
 
 const artifactKindLabels: Record<AssistantArtifactKind, string> = {
@@ -474,16 +472,12 @@ function AssistantArtifactList({
   onSelectedArtifactChange,
   onHtmlAutosave,
   onHtmlSubmit,
-  fullscreenArtifactId,
-  onFullscreenArtifactClose,
 }: {
   chatId: string;
   selectedArtifactId?: string | null;
   onSelectedArtifactChange?: (artifactId: string | null) => void;
   onHtmlAutosave?: (input: AssistantHtmlInteractionPayload) => void | Promise<void>;
   onHtmlSubmit?: (input: AssistantHtmlInteractionPayload) => void | Promise<void>;
-  fullscreenArtifactId?: string | null;
-  onFullscreenArtifactClose?: () => void;
 }) {
   const artifactItems = useAssistantArtifactStore((state) => state.items);
   const [viewMode, setViewMode] = useState<ArtifactViewMode>('list');
@@ -555,20 +549,9 @@ function AssistantArtifactList({
     setPendingFullscreenVersionId(null);
   };
   const closeFullscreen = useCallback(() => {
-    const externallyRequested = Boolean(fullscreenArtifactId && fullscreenId === fullscreenArtifactId);
     setFullscreenId(null);
     setPendingFullscreenVersionId(null);
-    if (externallyRequested) onFullscreenArtifactClose?.();
-  }, [fullscreenArtifactId, fullscreenId, onFullscreenArtifactClose]);
-  useEffect(() => {
-    if (!fullscreenArtifactId || fullscreenId === fullscreenArtifactId) return;
-    const item = artifacts.find((artifact) => artifact.id === fullscreenArtifactId);
-    if (!item) return;
-    setSelectedId(item.id);
-    setFullscreenId(item.id);
-    setFullscreenVersionId(getArtifactCurrentVersion(item)?.id || null);
-    setPendingFullscreenVersionId(null);
-  }, [artifacts, fullscreenArtifactId, fullscreenId]);
+  }, []);
   useEffect(() => {
     if (!fullscreenItem) return undefined;
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -1049,8 +1032,6 @@ export default function AssistantAgentPanel({
   onAgentEnabledChange,
   onHtmlAutosave,
   onHtmlSubmit,
-  fullscreenArtifactId = null,
-  onFullscreenArtifactClose,
 }: AssistantAgentPanelProps) {
   const capabilities = chat.modeState.assistantCapabilities || {};
   const agentEnabled = Boolean(capabilities.agent);
@@ -1083,7 +1064,7 @@ export default function AssistantAgentPanel({
               />
             </Stack>
           </Box>
-          {agentEnabled || fullscreenArtifactId ? (
+          {agentEnabled ? (
             <>
               <AssistantLocalWorkspaceFiles chatId={chat.id} />
               <AssistantArtifactList
@@ -1092,8 +1073,6 @@ export default function AssistantAgentPanel({
                 onSelectedArtifactChange={onSelectedArtifactChange}
                 onHtmlAutosave={onHtmlAutosave}
                 onHtmlSubmit={onHtmlSubmit}
-                fullscreenArtifactId={fullscreenArtifactId}
-                onFullscreenArtifactClose={onFullscreenArtifactClose}
               />
             </>
           ) : (
