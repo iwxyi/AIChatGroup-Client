@@ -15,23 +15,14 @@ function build(displayMode: 'light' | 'dark') {
 }
 
 describe('assistant HTML viewer display mode', () => {
-  it('injects dark viewer mapping without rewriting source styles', () => {
+  it('keeps legacy HTML unchanged in dark application mode', () => {
     const document = build('dark');
     expect(document).toContain('.card{background:#fff;color:#111}');
     expect(document).toContain('displayMode":"dark"');
     expect(document).toContain('applyDisplayMode()');
-    expect(document).toContain('darkBackground');
-    expect(document).toContain('darkForeground');
-    expect(document).toContain('darkBorder');
-    expect(document).toContain('coloredForeground');
-    expect(document).toContain('coloredBackground');
-    expect(document).toContain('originalLightness');
-    expect(document).toContain("alpha<1?'rgb('");
-    expect(document).toContain('coloredBorder');
-    expect(document).toContain('<=10');
-    expect(document).toContain('html{color-scheme:dark}');
-    expect(document).toContain("source.match(/[0-9.]+/g)");
-    expect(document).not.toContain("rgba?(s*");
+    expect(document).not.toContain('html{color-scheme:dark}');
+    expect(document).not.toContain('setViewerColor');
+    expect(document).not.toContain('getComputedStyle');
   });
 
   it('keeps the original HTML available in light mode', () => {
@@ -51,10 +42,11 @@ describe('assistant HTML viewer display mode', () => {
     });
     expect(document).toContain('hasNativeThemeContract":true');
     expect(document).toContain("setAttribute('data-pneumata-theme',config.displayMode)");
-    expect(document).toContain('if(config.hasNativeThemeContract||!dark)return');
+    expect(document).toContain('html{color-scheme:dark}');
+    expect(document).toContain('if(!config.hasNativeThemeContract)return');
   });
 
-  it('keeps compatibility conversion for an incomplete native theme contract', () => {
+  it('keeps original styling for an incomplete native theme contract', () => {
     const document = buildAssistantHtmlDocument({
       html: '<style>:root{--pneumata-bg:#fff}html[data-pneumata-theme="dark"]{--pneumata-bg:#111}</style><div>不完整主题</div>',
       manifest,
@@ -64,6 +56,7 @@ describe('assistant HTML viewer display mode', () => {
       displayMode: 'dark',
     });
     expect(document).toContain('hasNativeThemeContract":false');
+    expect(document).not.toContain('html{color-scheme:dark}');
   });
 
 });
