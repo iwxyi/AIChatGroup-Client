@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Box, Button, Checkbox, Chip, CircularProgress, Dialog, DialogContent, DialogTitle, Divider, IconButton, MenuItem, Select, Stack, Switch, Tooltip, Typography } from '@mui/material';
 import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined';
 import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined';
@@ -185,8 +185,8 @@ function artifactPreviewText(item: AssistantArtifactItem) {
   return content.replace(/\s+/g, ' ').slice(0, 420);
 }
 
-function AssistantDataPreview({ item, version, maxRows = 8 }: { item: AssistantArtifactItem; version?: AssistantArtifactVersion | null; maxRows?: number }) {
-  const preview = getAssistantArtifactDataPreview(item, maxRows, version);
+function AssistantDataPreview({ item, version, maxRows = 8, edgeRows = 0 }: { item: AssistantArtifactItem; version?: AssistantArtifactVersion | null; maxRows?: number; edgeRows?: number }) {
+  const preview = getAssistantArtifactDataPreview(item, maxRows, version, edgeRows);
   if (!preview) return <Typography variant="caption" color="text.secondary">数据预览不可用。</Typography>;
   const cell = (value: unknown) => String(value == null ? '' : typeof value === 'object' ? JSON.stringify(value) : value)
     .replace(/\s+/g, ' ')
@@ -196,27 +196,37 @@ function AssistantDataPreview({ item, version, maxRows = 8 }: { item: AssistantA
       <Box sx={{ overflow: 'hidden', width: '100%' }}>
         <Box component="table" sx={{ borderCollapse: 'collapse', width: 'max-content', minWidth: '100%', fontSize: 11, color: 'text.primary' }}>
           <Box component="thead">
-            <Box component="tr">{preview.columns.map((column) => <Box component="th" key={column} sx={{ px: 0.75, py: 0.5, borderBottom: '1px solid', borderColor: 'divider', textAlign: 'left', whiteSpace: 'nowrap', fontWeight: 700 }}>{column}</Box>)}</Box>
+          <Box component="tr">{preview.columns.map((column) => <Box component="th" key={column} sx={{ height: 28, px: 0.75, py: 0, borderBottom: '1px solid', borderColor: 'divider', textAlign: 'left', whiteSpace: 'nowrap', fontWeight: 700, lineHeight: '28px' }}>{column}</Box>)}</Box>
           </Box>
           <Box component="tbody">
-            {preview.rows.map((row, index) => <Box component="tr" key={index}>{preview.columns.map((column) => <Box component="td" key={column} sx={{ px: 0.75, py: 0.45, borderBottom: '1px solid', borderColor: 'divider', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cell(row[column])}</Box>)}</Box>)}
+            {preview.rows.map((row, index) => (
+              <Fragment key={index}>
+                {preview.omittedRows > 0 && edgeRows > 0 && index === Math.min(edgeRows, preview.rows.length) ? (
+                  <Box component="tr"><Box component="td" colSpan={preview.columns.length} sx={{ height: 24, px: 0.75, borderBottom: '1px solid', borderColor: 'divider', color: 'text.secondary', textAlign: 'center', fontStyle: 'italic' }}>省略中间 {preview.omittedRows} 行</Box></Box>
+                ) : null}
+                <Box component="tr">{preview.columns.map((column) => <Box component="td" key={column} title={cell(row[column])} sx={{ height: 26, px: 0.75, py: 0, borderBottom: '1px solid', borderColor: 'divider', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: '26px' }}>{cell(row[column])}</Box>)}</Box>
+              </Fragment>
+            ))}
           </Box>
         </Box>
-        {preview.truncated ? <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>预览前 {preview.rows.length} 行，共 {preview.totalRows} 行</Typography> : null}
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', height: 24, mt: 0.5, lineHeight: '24px' }}>{preview.truncated ? `预览 ${preview.rows.length} 行，共 ${preview.totalRows} 行` : `共 ${preview.totalRows} 行`}</Typography>
       </Box>
     );
   }
   return (
     <Stack spacing={0.5} sx={{ minWidth: 0 }}>
       {preview.rows.map((row, index) => (
-        <Box key={index} sx={{ p: 0.75, border: '1px solid', borderColor: 'divider', borderRadius: 0.75, bgcolor: 'action.hover' }}>
+        <Fragment key={index}>
+          {preview.omittedRows > 0 && edgeRows > 0 && index === Math.min(edgeRows, preview.rows.length) ? <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center', py: 0.25, fontStyle: 'italic' }}>省略中间 {preview.omittedRows} 条</Typography> : null}
+          <Box sx={{ p: 0.75, border: '1px solid', borderColor: 'divider', borderRadius: 0.75, bgcolor: 'action.hover' }}>
           <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 0.25 }}>记录 {index + 1}</Typography>
           <Stack spacing={0.15}>
             {preview.columns.slice(0, 8).map((column) => <Typography key={column} variant="caption" color="text.secondary" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}><Box component="span" sx={{ color: 'text.primary', fontWeight: 600 }}>{column}：</Box>{cell(row[column])}</Typography>)}
           </Stack>
-        </Box>
+          </Box>
+        </Fragment>
       ))}
-      {preview.truncated ? <Typography variant="caption" color="text.secondary">预览前 {preview.rows.length} 条，共 {preview.totalRows} 条</Typography> : null}
+      <Typography variant="caption" color="text.secondary">{preview.truncated ? `预览 ${preview.rows.length} 条，共 ${preview.totalRows} 条` : `共 ${preview.totalRows} 条`}</Typography>
     </Stack>
   );
 }
@@ -391,7 +401,7 @@ function ArtifactThumbnail({ item, mode, expanded = false }: { item: AssistantAr
   const content = getAssistantArtifactCurrentContent(item);
   const renderMermaid = isRenderableMermaid(item, content);
   const previewHeight = expanded && (item.kind === 'table' || item.kind === 'json')
-    ? 520
+    ? 590
     : item.kind === 'html'
     ? mode === 'list' ? 180 : mode === 'gallery' ? 150 : 112
     : mode === 'list' ? 'clamp(240px, 46vh, 380px)' : mode === 'gallery' ? 220 : 128;
@@ -422,7 +432,7 @@ function ArtifactThumbnail({ item, mode, expanded = false }: { item: AssistantAr
       ) : item.kind === 'html' ? (
         <AssistantHtmlStaticFrame artifactId={item.id} versionId={item.currentVersionId} title={item.title} html={content} sx={{ width: '100%', height: '100%', border: 0, pointerEvents: 'none' }} />
       ) : item.kind === 'table' || item.kind === 'json' ? (
-        <Box sx={{ p: mode === 'icons' ? 0.5 : 0.75, overflow: expanded ? 'auto' : 'hidden', height: '100%' }}><AssistantDataPreview item={item} maxRows={mode === 'list' ? 20 : 10} /></Box>
+        <Box sx={{ p: mode === 'icons' ? 0.5 : 0.75, overflow: 'hidden', height: '100%' }}><AssistantDataPreview item={item} maxRows={mode === 'list' ? (expanded ? 16 : 4) : 10} edgeRows={mode === 'list' && expanded ? 8 : 0} /></Box>
       ) : item.kind === 'document' ? (
         <Box sx={{ p: 1, overflow: 'hidden', bgcolor: (theme) => theme.palette.mode === 'light' ? '#fff' : 'rgba(2,6,23,0.52)', ...scaledCanvasSx }}>
           <MarkdownText text={content} forceRich />

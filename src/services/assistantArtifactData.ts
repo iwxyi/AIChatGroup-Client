@@ -9,6 +9,7 @@ export interface AssistantArtifactDataPreview {
   rows: Array<Record<string, unknown>>;
   totalRows: number;
   truncated: boolean;
+  omittedRows: number;
 }
 
 function parseCsvLine(line: string) {
@@ -108,7 +109,7 @@ export function summarizeAssistantArtifactData(item: AssistantArtifactItem) {
   }
 }
 
-export function getAssistantArtifactDataPreview(item: AssistantArtifactItem, maxRows = 8, selectedVersion?: AssistantArtifactVersion | null): AssistantArtifactDataPreview | null {
+export function getAssistantArtifactDataPreview(item: AssistantArtifactItem, maxRows = 8, selectedVersion?: AssistantArtifactVersion | null, edgeRows = 0): AssistantArtifactDataPreview | null {
   const version = selectedVersion || item.versions.find((entry) => entry.id === item.currentVersionId) || item.versions.at(-1);
   if (!version) return null;
   try {
@@ -121,7 +122,20 @@ export function getAssistantArtifactDataPreview(item: AssistantArtifactItem, max
       : Array.from(new Set(rows.flatMap((row) => Object.keys(row))));
     const showAll = !Number.isFinite(maxRows);
     const limit = showAll ? rows.length : Math.min(MAX_RESULT_ROWS, Math.max(1, Math.floor(maxRows)));
-    return { format, columns: showAll ? columns : columns.slice(0, 40), rows: rows.slice(0, limit), totalRows: rows.length, truncated: !showAll && rows.length > limit };
+    const useEdgeRows = !showAll && edgeRows > 0 && rows.length > limit
+      ? Math.min(edgeRows, Math.floor(limit / 2))
+      : 0;
+    const previewRows = useEdgeRows
+      ? [...rows.slice(0, useEdgeRows), ...rows.slice(-useEdgeRows)]
+      : rows.slice(0, limit);
+    return {
+      format,
+      columns: showAll ? columns : columns.slice(0, 40),
+      rows: previewRows,
+      totalRows: rows.length,
+      truncated: !showAll && rows.length > limit,
+      omittedRows: Math.max(0, rows.length - previewRows.length),
+    };
   } catch {
     return null;
   }
