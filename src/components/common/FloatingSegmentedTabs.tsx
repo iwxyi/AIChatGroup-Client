@@ -1,4 +1,5 @@
 import { Box, ButtonBase } from '@mui/material';
+import type { Theme } from '@mui/material/styles';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import { motion, reducedMotionSx, transition } from '../../styles/motion';
@@ -16,6 +17,9 @@ const TOUCH_SCROLL_INTENT_PX = 8;
 const TOUCH_POINTER_Y_TOLERANCE_PX = 68;
 const TOUCH_POINTER_X_TOLERANCE_PX = 58;
 const TAB_SCROLL_PADDING_PX = 6;
+const TAB_INDICATOR_MIN_DURATION_MS = 140;
+const TAB_INDICATOR_MAX_DURATION_MS = 260;
+const TAB_EDGE_FADE_WIDTH_PX = 22;
 
 export type FloatingSegmentedTabsProps<T extends string | number> = {
   value: T;
@@ -54,7 +58,15 @@ export default function FloatingSegmentedTabs<T extends string | number>({
   const animateScrollRef = useRef(false);
   const hasPositionedScrollRef = useRef(false);
   const [previewValue, setPreviewValue] = useState<T | null>(null);
+  const [scrollEdges, setScrollEdges] = useState({ left: false, right: false });
   const visualValue = previewValue ?? value;
+
+  const tabFeedbackBg = useCallback((theme: Theme) => (
+    theme.palette.mode === 'light' ? 'rgba(15,23,42,0.055)' : 'rgba(226,232,240,0.085)'
+  ), []);
+  const tabPressedBg = useCallback((theme: Theme) => (
+    theme.palette.mode === 'light' ? 'rgba(15,23,42,0.07)' : 'rgba(226,232,240,0.11)'
+  ), []);
 
   const markIndicatorAnimation = useCallback(() => {
     animateIndicatorRef.current = true;
@@ -155,6 +167,22 @@ export default function FloatingSegmentedTabs<T extends string | number>({
     }
   }, [animateScrollTo, itemValues, value]);
 
+  const updateScrollEdges = useCallback(() => {
+    const container = scrollContainerRef.current;
+    if (!container) {
+      setScrollEdges({ left: false, right: false });
+      return;
+    }
+    const maxLeft = Math.max(0, container.scrollWidth - container.clientWidth);
+    const nextEdges = {
+      left: container.scrollLeft > 1,
+      right: container.scrollLeft < maxLeft - 1,
+    };
+    setScrollEdges((current) => (
+      current.left === nextEdges.left && current.right === nextEdges.right ? current : nextEdges
+    ));
+  }, []);
+
   const updateIndicator = useCallback(() => {
     const group = groupRef.current;
     const target = itemRefs.current.get(String(visualValue));
@@ -170,14 +198,8 @@ export default function FloatingSegmentedTabs<T extends string | number>({
     const currentLeft = Number(indicator.dataset.left || '0');
     const nextLeft = targetBounds.left - groupBounds.left + group.scrollLeft;
     const distance = Math.abs(nextLeft - currentLeft);
-    const previewDuration = Math.max(
-      motion.durations.fast,
-      Math.min(motion.durations.settle, Math.round(distance * 0.58)),
-    );
-    const settledDuration = Math.max(
-      motion.durations.navTrack,
-      Math.min(motion.durations.settle, Math.round(distance * 0.72)),
-    );
+    const previewDuration = Math.max(TAB_INDICATOR_MIN_DURATION_MS, Math.min(TAB_INDICATOR_MAX_DURATION_MS, Math.round(distance * 0.5)));
+    const settledDuration = Math.max(TAB_INDICATOR_MIN_DURATION_MS, Math.min(TAB_INDICATOR_MAX_DURATION_MS, Math.round(distance * 0.62)));
     const shouldAnimate = animateIndicatorRef.current || previewValueRef.current !== null;
     const duration = previewValueRef.current !== null ? previewDuration : settledDuration;
     const easing = previewValueRef.current !== null ? motion.softOut : motion.standard;
@@ -194,7 +216,8 @@ export default function FloatingSegmentedTabs<T extends string | number>({
   useLayoutEffect(() => {
     updateScrollPosition();
     updateIndicator();
-  }, [items, updateIndicator, updateScrollPosition]);
+    updateScrollEdges();
+  }, [items, updateIndicator, updateScrollEdges, updateScrollPosition]);
 
   useEffect(() => stopScrollAnimation, [stopScrollAnimation]);
 
@@ -210,10 +233,11 @@ export default function FloatingSegmentedTabs<T extends string | number>({
     const handleResize = () => {
       updateScrollPosition();
       updateIndicator();
+      updateScrollEdges();
     };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, [updateIndicator, updateScrollPosition]);
+  }, [updateIndicator, updateScrollEdges, updateScrollPosition]);
 
   useEffect(() => {
     const handleWindowBlur = () => {
@@ -397,6 +421,7 @@ export default function FloatingSegmentedTabs<T extends string | number>({
     const container = scrollContainerRef.current;
     if (!container) return undefined;
 
+    const handleScroll = () => updateScrollEdges();
     const handleWheel = (event: WheelEvent) => {
       if (container.scrollWidth <= container.clientWidth + 1) return;
       const delta = Math.abs(event.deltaX) >= Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
@@ -407,126 +432,183 @@ export default function FloatingSegmentedTabs<T extends string | number>({
       stopScrollAnimation();
       event.preventDefault();
       container.scrollLeft = nextLeft;
+      updateScrollEdges();
     };
 
+    updateScrollEdges();
+    container.addEventListener('scroll', handleScroll, { passive: true });
     container.addEventListener('wheel', handleWheel, { passive: false });
-    return () => container.removeEventListener('wheel', handleWheel);
-  }, [stopScrollAnimation]);
+    return () => {
+      container.removeEventListener('scroll', handleScroll);
+      container.removeEventListener('wheel', handleWheel);
+    };
+  }, [stopScrollAnimation, updateScrollEdges]);
 
   return (
-    <Box ref={scrollContainerRef} sx={buildFloatingTabGroupSx()}>
-      <Box
-        ref={groupRef}
-        sx={{
-          position: 'relative',
-          display: 'flex',
-          gap: comfortable ? { xs: 0.25, sm: 0.4 } : { xs: 0.25, sm: 0.35 },
-          minWidth: 0,
-        }}
-      >
+    <Box
+      sx={{
+        position: 'relative',
+        display: 'inline-flex',
+        maxWidth: '100%',
+        '&::before, &::after': {
+          content: '""',
+          position: 'absolute',
+          top: 1,
+          bottom: 1,
+          width: TAB_EDGE_FADE_WIDTH_PX,
+          zIndex: 3,
+          pointerEvents: 'none',
+          opacity: 0,
+          transition: transition(['opacity'], motion.durations.base, motion.softOut),
+        },
+        '&::before': {
+          left: 1,
+          borderTopLeftRadius: { xs: '14px', sm: '15px' },
+          borderBottomLeftRadius: { xs: '14px', sm: '15px' },
+          opacity: scrollEdges.left ? 1 : 0,
+          background: (theme) => `linear-gradient(90deg, ${theme.palette.mode === 'light' ? 'rgba(255,255,255,0.92)' : 'rgba(16,18,26,0.92)'}, transparent)`,
+        },
+        '&::after': {
+          right: 1,
+          borderTopRightRadius: { xs: '14px', sm: '15px' },
+          borderBottomRightRadius: { xs: '14px', sm: '15px' },
+          opacity: scrollEdges.right ? 1 : 0,
+          background: (theme) => `linear-gradient(270deg, ${theme.palette.mode === 'light' ? 'rgba(255,255,255,0.92)' : 'rgba(16,18,26,0.92)'}, transparent)`,
+        },
+        ...reducedMotionSx,
+      }}
+    >
+      <Box ref={scrollContainerRef} sx={buildFloatingTabGroupSx()}>
         <Box
-          aria-hidden
-          ref={indicatorRef}
+          ref={groupRef}
           sx={{
-            position: 'absolute',
-            zIndex: 0,
-            top: 0,
-            bottom: 0,
-            left: 0,
-            width: 0,
-            opacity: 0,
-            transform: 'translateX(0)',
-            borderRadius: { xs: '10px', sm: '11px' },
-            pointerEvents: 'none',
-            bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(49,90,156,0.12)' : 'rgba(120,156,220,0.18)',
-            boxShadow: (theme) => theme.palette.mode === 'light'
-              ? '0 8px 18px rgba(49,90,156,0.12), 0 1px 0 rgba(255,255,255,0.72) inset'
-              : '0 10px 22px rgba(0,0,0,0.24), 0 1px 0 rgba(255,255,255,0.06) inset',
-            transition: transition(['transform', 'width', 'opacity', 'background-color', 'box-shadow'], motion.durations.navTrack, motion.softOut),
-            willChange: 'transform, width',
-            '@media (prefers-reduced-motion: reduce)': {
-              transition: transition(['transform', 'width', 'opacity'], motion.durations.fast, motion.softOut),
-            },
+            position: 'relative',
+            display: 'flex',
+            gap: comfortable ? { xs: 0.25, sm: 0.4 } : { xs: 0.25, sm: 0.35 },
+            minWidth: 0,
           }}
-        />
-        {items.map((item) => {
-          const selected = item.value === visualValue;
-          return (
-            <ButtonBase
-              key={String(item.value)}
-              disableRipple
-              ref={(node) => {
-                const key = String(item.value);
-                if (node) itemRefs.current.set(key, node);
-                else itemRefs.current.delete(key);
-              }}
-              onClick={() => {
-                if (suppressClickRef.current) {
-                  suppressClickRef.current = false;
-                  return;
-                }
-                markIndicatorAnimation();
-                markScrollAnimation();
-                commitChange(item.value);
-              }}
-              onPointerDown={(event) => handlePointerDown(item.value, event)}
-              onPointerMove={handlePointerMove}
-              onPointerUp={handlePointerUp}
-              onPointerCancel={handlePointerCancel}
-              onKeyDown={(event) => handleKeyDown(item.value, event)}
-              onBlur={() => {
-                if (!pointerRef.current) setVisualPreview(null);
-              }}
-              aria-pressed={item.value === value}
-              sx={{
-                position: 'relative',
-                zIndex: 1,
-                minHeight: { xs: 36, sm: 38 },
-                minWidth: equalWidth
-                  ? comfortable ? { xs: 58, sm: 74, md: 88 } : { xs: 58, sm: 68 }
-                  : 'max-content',
-                flex: equalWidth ? '1 1 auto' : '0 1 auto',
-                px: comfortable ? { xs: 1.2, sm: 1.8, md: 2.2 } : { xs: 1.35, sm: 1.75 },
-                borderRadius: { xs: '10px', sm: '11px' },
-                color: selected ? 'primary.main' : 'text.secondary',
-                bgcolor: selected
-                  ? (theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.055)' : 'rgba(226,232,240,0.085)'
-                  : 'transparent',
-                boxShadow: 'none',
-                touchAction: 'pan-x pan-y',
-                fontWeight: 760,
-                fontSize: { xs: '0.8rem', sm: '0.875rem' },
-                whiteSpace: 'nowrap',
-                opacity: selected ? 1 : 0.78,
-                overflow: 'hidden',
-                outline: '1px solid transparent',
-                transition: transition(['background-color', 'color', 'opacity', 'box-shadow', 'outline-color', 'transform'], motion.durations.base, motion.softOut),
-                '&:hover': {
-                  opacity: 1,
-                  bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.055)' : 'rgba(226,232,240,0.085)',
-                  outlineColor: (theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.045)' : 'rgba(226,232,240,0.06)',
-                },
-                '&:active': {
-                  transform: 'scale(0.986)',
-                  transitionTimingFunction: motion.navDrag,
-                  transitionDuration: `${motion.durations.fast}ms`,
-                  bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.055)' : 'rgba(226,232,240,0.085)',
-                },
-                '&:focus-visible': {
-                  outlineColor: 'primary.main',
-                  boxShadow: (theme) => theme.palette.mode === 'light'
-                    ? '0 0 0 3px rgba(49,90,156,0.13)'
-                    : '0 0 0 3px rgba(120,156,220,0.18)',
-                },
-                ...reducedMotionSx,
-              }}
-            >
-              <Box component="span" sx={{ display: 'block', minWidth: 0, whiteSpace: 'nowrap' }}>
-                {item.label}
-              </Box>
-            </ButtonBase>
-          );
-        })}
+        >
+          <Box
+            aria-hidden
+            ref={indicatorRef}
+            sx={{
+              position: 'absolute',
+              zIndex: 0,
+              top: 0,
+              bottom: 0,
+              left: 0,
+              width: 0,
+              opacity: 0,
+              transform: 'translateX(0)',
+              borderRadius: { xs: '10px', sm: '11px' },
+              pointerEvents: 'none',
+              bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(49,90,156,0.12)' : 'rgba(120,156,220,0.18)',
+              boxShadow: (theme) => theme.palette.mode === 'light'
+                ? '0 8px 18px rgba(49,90,156,0.12), 0 1px 0 rgba(255,255,255,0.72) inset'
+                : '0 10px 22px rgba(0,0,0,0.24), 0 1px 0 rgba(255,255,255,0.06) inset',
+              transition: transition(['transform', 'width', 'opacity', 'background-color', 'box-shadow'], motion.durations.navTrack, motion.softOut),
+              willChange: 'transform, width',
+              '@media (prefers-reduced-motion: reduce)': {
+                transition: transition(['transform', 'width', 'opacity'], motion.durations.fast, motion.softOut),
+              },
+            }}
+          />
+          {items.map((item) => {
+            const selected = item.value === visualValue;
+            return (
+              <ButtonBase
+                key={String(item.value)}
+                disableRipple
+                ref={(node) => {
+                  const key = String(item.value);
+                  if (node) itemRefs.current.set(key, node);
+                  else itemRefs.current.delete(key);
+                }}
+                onClick={() => {
+                  if (suppressClickRef.current) {
+                    suppressClickRef.current = false;
+                    return;
+                  }
+                  markIndicatorAnimation();
+                  markScrollAnimation();
+                  commitChange(item.value);
+                }}
+                onPointerDown={(event) => handlePointerDown(item.value, event)}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerUp}
+                onPointerCancel={handlePointerCancel}
+                onKeyDown={(event) => handleKeyDown(item.value, event)}
+                onBlur={() => {
+                  if (!pointerRef.current) setVisualPreview(null);
+                }}
+                aria-pressed={item.value === value}
+                sx={{
+                  position: 'relative',
+                  zIndex: 1,
+                  minHeight: { xs: 36, sm: 38 },
+                  minWidth: equalWidth
+                    ? comfortable ? { xs: 58, sm: 74, md: 88 } : { xs: 58, sm: 68 }
+                    : 'max-content',
+                  flex: equalWidth ? '1 1 auto' : '0 1 auto',
+                  px: comfortable ? { xs: 1.2, sm: 1.8, md: 2.2 } : { xs: 1.35, sm: 1.75 },
+                  borderRadius: { xs: '10px', sm: '11px' },
+                  color: selected ? 'primary.main' : 'text.secondary',
+                  bgcolor: 'transparent',
+                  boxShadow: 'none',
+                  touchAction: 'pan-x pan-y',
+                  fontWeight: 760,
+                  fontSize: { xs: '0.8rem', sm: '0.875rem' },
+                  whiteSpace: 'nowrap',
+                  opacity: selected ? 1 : 0.78,
+                  overflow: 'hidden',
+                  outline: '1px solid transparent',
+                  transition: transition(['background-color', 'color', 'opacity', 'box-shadow', 'outline-color', 'transform'], motion.durations.base, motion.softOut),
+                  '&::before': {
+                    content: '""',
+                    position: 'absolute',
+                    inset: 0,
+                    zIndex: 0,
+                    borderRadius: 'inherit',
+                    bgcolor: tabFeedbackBg,
+                    opacity: selected ? 1 : 0,
+                    pointerEvents: 'none',
+                    transition: transition(['opacity', 'background-color'], motion.durations.base, motion.softOut),
+                  },
+                  '@media (hover: hover) and (pointer: fine)': {
+                    '&:hover': {
+                      opacity: 1,
+                      outlineColor: (theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.045)' : 'rgba(226,232,240,0.06)',
+                    },
+                    '&:hover::before': {
+                      opacity: 1,
+                    },
+                  },
+                  '&:active': {
+                    transform: 'scale(0.986)',
+                    transitionTimingFunction: motion.navDrag,
+                    transitionDuration: `${motion.durations.fast}ms`,
+                  },
+                  '&:active::before': {
+                    opacity: 1,
+                    bgcolor: tabPressedBg,
+                    transitionDuration: `${motion.durations.fast}ms`,
+                  },
+                  '&:focus-visible': {
+                    outlineColor: 'primary.main',
+                    boxShadow: (theme) => theme.palette.mode === 'light'
+                      ? '0 0 0 3px rgba(49,90,156,0.13)'
+                      : '0 0 0 3px rgba(120,156,220,0.18)',
+                  },
+                  ...reducedMotionSx,
+                }}
+              >
+                <Box component="span" sx={{ position: 'relative', zIndex: 1, display: 'block', minWidth: 0, whiteSpace: 'nowrap' }}>
+                  {item.label}
+                </Box>
+              </ButtonBase>
+            );
+          })}
+        </Box>
       </Box>
     </Box>
   );
