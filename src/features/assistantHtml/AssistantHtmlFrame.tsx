@@ -29,6 +29,7 @@ export default function AssistantHtmlFrame({
   version,
   manifest,
   inline = false,
+  fillContainer = false,
   readOnly = false,
   onAutosave,
   onSubmit,
@@ -38,6 +39,7 @@ export default function AssistantHtmlFrame({
   version: AssistantArtifactVersion;
   manifest: AssistantHtmlRuntimeManifest;
   inline?: boolean;
+  fillContainer?: boolean;
   readOnly?: boolean;
   onAutosave?: (input: AssistantHtmlInteractionPayload) => void | Promise<void>;
   onSubmit?: (input: AssistantHtmlInteractionPayload) => void | Promise<void>;
@@ -106,7 +108,7 @@ export default function AssistantHtmlFrame({
   }, [artifactId, baseVersionId, channelToken, inline, interactionId, manifest, onAutosave, onOpenFullscreen, onSubmit, readOnly, version.id]);
 
   return (
-    <Box sx={{ position: 'relative', width: '100%', minHeight: inline ? 160 : 'calc(100dvh - 110px)' }}>
+    <Box sx={{ position: 'relative', width: '100%', height: fillContainer ? '100%' : 'auto', minHeight: fillContainer ? 0 : inline ? 160 : 'calc(100dvh - 110px)', flex: fillContainer ? 1 : undefined }}>
       {!ready ? <Box sx={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', pointerEvents: 'none' }}><CircularProgress size={20} /></Box> : null}
       <Box
         ref={frameRef}
@@ -114,7 +116,7 @@ export default function AssistantHtmlFrame({
         title="HTML 交互内容"
         srcDoc={srcDoc}
         sandbox="allow-scripts"
-        sx={{ width: '100%', height: inline ? height : 'calc(100dvh - 110px)', minHeight: inline ? 160 : 420, border: 0, display: 'block', bgcolor: '#fff' }}
+        sx={{ width: '100%', height: fillContainer ? '100%' : inline ? height : 'calc(100dvh - 110px)', minHeight: fillContainer ? 0 : inline ? 160 : 420, border: 0, display: 'block', bgcolor: '#fff' }}
       />
       {error ? <Typography variant="caption" color="error" sx={{ display: 'block', mt: 0.5 }}>{error}</Typography> : null}
     </Box>

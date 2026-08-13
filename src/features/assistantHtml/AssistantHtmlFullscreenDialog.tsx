@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Dialog, DialogContent, DialogTitle, IconButton, Stack, Typography } from '@mui/material';
 import CloseOutlinedIcon from '@mui/icons-material/CloseOutlined';
 import ContentCopyOutlinedIcon from '@mui/icons-material/ContentCopyOutlined';
@@ -47,6 +47,7 @@ export default function AssistantHtmlFullscreenDialog({ artifactId, onClose, onA
 }) {
   const artifact = useAssistantArtifactStore((state) => state.items.find((item) => item.id === artifactId && item.kind === 'html' && item.deletedAt == null) || null);
   const [versionId, setVersionId] = useState<string | null>(null);
+  const historyMarkerRef = useRef(`assistant-html-fullscreen:${Date.now()}:${Math.random().toString(36).slice(2, 10)}`);
 
   useEffect(() => {
     if (artifactId) void ensureAssistantArtifactStoreHydrated();
@@ -55,6 +56,27 @@ export default function AssistantHtmlFullscreenDialog({ artifactId, onClose, onA
   useEffect(() => {
     setVersionId(artifact ? currentVersion(artifact)?.id || null : null);
   }, [artifact?.id]);
+
+  useEffect(() => {
+    if (!artifactId) return undefined;
+    const marker = historyMarkerRef.current;
+    const currentState = window.history.state;
+    const baseState = currentState && typeof currentState === 'object' ? currentState as Record<string, unknown> : {};
+    if (baseState.assistantHtmlFullscreen !== marker) {
+      window.history.pushState({ ...baseState, assistantHtmlFullscreen: marker }, '', window.location.href);
+    }
+    const handlePopState = () => onClose();
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [artifactId, onClose]);
+
+  const requestClose = useCallback(() => {
+    if (window.history.state?.assistantHtmlFullscreen === historyMarkerRef.current) {
+      window.history.back();
+      return;
+    }
+    onClose();
+  }, [onClose]);
 
   const version = useMemo(() => artifact ? visibleVersion(artifact, versionId) : null, [artifact, versionId]);
   const latestVersion = artifact ? currentVersion(artifact) : null;
@@ -66,10 +88,10 @@ export default function AssistantHtmlFullscreenDialog({ artifactId, onClose, onA
   };
 
   return (
-    <Dialog open={Boolean(artifactId)} onClose={onClose} fullScreen>
+    <Dialog open={Boolean(artifactId)} onClose={requestClose} fullScreen>
       {artifact && version?.htmlRuntime ? (
         <>
-          <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, px: { xs: 1, sm: 2 }, py: 0.75, borderBottom: '1px solid', borderColor: 'divider' }}>
+          <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, px: { xs: 1, sm: 2 }, py: 0.75, borderBottom: '1px solid', borderColor: 'divider', flexShrink: 0 }}>
             <Box sx={{ minWidth: 0 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{artifact.title}</Typography>
             </Box>
@@ -79,14 +101,15 @@ export default function AssistantHtmlFullscreenDialog({ artifactId, onClose, onA
               <IconButton onClick={() => stepVersion(1)} disabled={versionIndex < 0 || versionIndex >= artifact.versions.length - 1} aria-label="下一版本"><NavigateNextOutlinedIcon /></IconButton>
               <IconButton onClick={() => void copyTextToClipboard(version.content)} aria-label="复制 HTML"><ContentCopyOutlinedIcon /></IconButton>
               <IconButton onClick={() => downloadHtml(artifact, version)} aria-label="下载 HTML"><DownloadOutlinedIcon /></IconButton>
-              <IconButton onClick={onClose} aria-label="关闭 HTML 页面"><CloseOutlinedIcon /></IconButton>
+              <IconButton onClick={requestClose} aria-label="关闭 HTML 页面"><CloseOutlinedIcon /></IconButton>
             </Stack>
           </DialogTitle>
-          <DialogContent sx={{ p: 0, bgcolor: '#fff' }}>
+          <DialogContent sx={{ p: 0, bgcolor: '#fff', display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
             <AssistantHtmlFrame
               artifactId={artifact.id}
               version={version}
               manifest={version.htmlRuntime}
+              fillContainer
               readOnly={version.stage === 'submitted' || (version.id !== latestVersion?.id && version.stage !== 'autosave')}
               onAutosave={onAutosave}
               onSubmit={onSubmit}
