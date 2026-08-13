@@ -2,11 +2,20 @@ export type AssistantArtifactKind = 'document' | 'code' | 'diagram' | 'html' | '
 
 export type AssistantDataOperationKind = 'query' | 'insert' | 'update' | 'delete';
 
-export interface AssistantDataFilter {
-  field: string;
-  operator?: 'eq' | 'contains' | 'startsWith' | 'endsWith' | 'gt' | 'gte' | 'lt' | 'lte';
-  value: unknown;
-}
+export type AssistantDataFilterOperator =
+  | 'eq' | 'contains' | 'startsWith' | 'endsWith'
+  | 'gt' | 'gte' | 'lt' | 'lte'
+  | 'exists' | 'notExists' | 'isNull' | 'isNotNull';
+
+export type AssistantDataFilter =
+  | {
+      field: string;
+      operator?: AssistantDataFilterOperator;
+      value?: unknown;
+    }
+  | { all: AssistantDataFilter[] }
+  | { any: AssistantDataFilter[] }
+  | { not: AssistantDataFilter };
 
 export interface AssistantArtifactDataOperation {
   kind: AssistantDataOperationKind;

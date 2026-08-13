@@ -61,26 +61,48 @@ function parseJsonRecords(content: string) {
   throw new Error('JSON 必须是对象或对象数组');
 }
 
+function getFieldValue(row: Record<string, unknown>, field: string) {
+  if (field in row) return { exists: true, value: row[field] };
+  const parts = field.split('.').filter(Boolean);
+  if (!parts.length) return { exists: false, value: undefined };
+  let current: unknown = row;
+  for (const part of parts) {
+    if (!current || typeof current !== 'object' || !(part in current)) return { exists: false, value: undefined };
+    current = (current as Record<string, unknown>)[part];
+  }
+  return { exists: true, value: current };
+}
+
+function matchesFilter(row: Record<string, unknown>, filter: AssistantDataFilter): boolean {
+  if ('all' in filter) return filter.all.every((entry) => matchesFilter(row, entry));
+  if ('any' in filter) return filter.any.some((entry) => matchesFilter(row, entry));
+  if ('not' in filter) return !matchesFilter(row, filter.not);
+  const field = getFieldValue(row, filter.field);
+  const actual = field.value;
+  const expected = filter.value;
+  const operator = filter.operator || 'eq';
+  if (operator === 'exists') return field.exists;
+  if (operator === 'notExists') return !field.exists;
+  if (operator === 'isNull') return field.exists && (actual === null || actual === undefined);
+  if (operator === 'isNotNull') return field.exists && actual !== null && actual !== undefined;
+  if (operator === 'contains') return String(actual ?? '').toLowerCase().includes(String(expected ?? '').toLowerCase());
+  if (operator === 'startsWith') return String(actual ?? '').toLowerCase().startsWith(String(expected ?? '').toLowerCase());
+  if (operator === 'endsWith') return String(actual ?? '').toLowerCase().endsWith(String(expected ?? '').toLowerCase());
+  const actualNumber = Number(actual);
+  const expectedNumber = Number(expected);
+  const actualDate = Date.parse(String(actual ?? ''));
+  const expectedDate = Date.parse(String(expected ?? ''));
+  const left = Number.isFinite(actualNumber) && Number.isFinite(expectedNumber) ? actualNumber : actualDate;
+  const right = Number.isFinite(actualNumber) && Number.isFinite(expectedNumber) ? expectedNumber : expectedDate;
+  if (operator === 'gt') return Number.isFinite(left) && Number.isFinite(right) && left > right;
+  if (operator === 'gte') return Number.isFinite(left) && Number.isFinite(right) && left >= right;
+  if (operator === 'lt') return Number.isFinite(left) && Number.isFinite(right) && left < right;
+  if (operator === 'lte') return Number.isFinite(left) && Number.isFinite(right) && left <= right;
+  return String(actual ?? '') === String(expected ?? '');
+}
+
 function matches(row: Record<string, unknown>, filters: AssistantDataFilter[] = []) {
-  return filters.every((filter) => {
-    const actual = row[filter.field];
-    const expected = filter.value;
-    const operator = filter.operator || 'eq';
-    if (operator === 'contains') return String(actual ?? '').toLowerCase().includes(String(expected ?? '').toLowerCase());
-    if (operator === 'startsWith') return String(actual ?? '').toLowerCase().startsWith(String(expected ?? '').toLowerCase());
-    if (operator === 'endsWith') return String(actual ?? '').toLowerCase().endsWith(String(expected ?? '').toLowerCase());
-    const actualNumber = Number(actual);
-    const expectedNumber = Number(expected);
-    const actualDate = Date.parse(String(actual ?? ''));
-    const expectedDate = Date.parse(String(expected ?? ''));
-    const left = Number.isFinite(actualNumber) && Number.isFinite(expectedNumber) ? actualNumber : actualDate;
-    const right = Number.isFinite(actualNumber) && Number.isFinite(expectedNumber) ? expectedNumber : expectedDate;
-    if (operator === 'gt') return Number.isFinite(left) && Number.isFinite(right) && left > right;
-    if (operator === 'gte') return Number.isFinite(left) && Number.isFinite(right) && left >= right;
-    if (operator === 'lt') return Number.isFinite(left) && Number.isFinite(right) && left < right;
-    if (operator === 'lte') return Number.isFinite(left) && Number.isFinite(right) && left <= right;
-    return String(actual ?? '') === String(expected ?? '');
-  });
+  return filters.every((filter) => matchesFilter(row, filter));
 }
 
 function resolveContent(version: AssistantArtifactVersion, filePath?: string | null) {
@@ -153,8 +175,8 @@ export function applyAssistantArtifactDataOperation(item: AssistantArtifactItem,
     let affectedRows = 0;
     if (operation.kind === 'query') {
       const sorted = operation.sort ? [...matched].sort((left, right) => {
-        const a = left[operation.sort!.field];
-        const b = right[operation.sort!.field];
+        const a = getFieldValue(left, operation.sort!.field).value;
+        const b = getFieldValue(right, operation.sort!.field).value;
         const aNumber = Number(a);
         const bNumber = Number(b);
         const comparison = Number.isFinite(aNumber) && Number.isFinite(bNumber)

@@ -451,6 +451,41 @@ describe('assistantAgentOrchestrator validation', () => {
     expect(patchSet.assistantMessage).toContain('attachment:image-1-2');
   });
 
+  it('preserves grouped data filters from the writer response', async () => {
+    generateResponseMock.mockResolvedValue(JSON.stringify({
+      assistantMessage: '已查询。',
+      patches: [],
+      dataOperations: [{
+        kind: 'query',
+        artifactId: 'data-a',
+        filter: [{ any: [
+          { field: 'profile.name', operator: 'eq', value: '张三' },
+          { not: { field: 'score', operator: 'lt', value: 60 } },
+        ] }],
+      }],
+    }));
+    const plan: AssistantAgentChangePlan = {
+      intent: 'update',
+      scope: { targetMode: 'single', artifactIds: ['data-a'] },
+      operations: [{ kind: 'search', instruction: '查询数据' }],
+      requiresConfirmation: false,
+      confidence: 1,
+    };
+    const dataArtifact = { ...artifact({ id: 'data-a', kind: 'json' as const }), versions: [{
+      id: 'version-a', artifactId: 'data-a', content: '[]', sourceMessageId: 'message-a', createdAt: 1,
+    }] };
+    const patchSet = await writeAssistantAgentPatchSet({
+      api: { provider: 'openai', apiKey: 'k', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4.1' },
+      chatId: 'chat-a', messages: [], userMessage: {
+        id: 'message-user', chatId: 'chat-a', type: 'user', senderId: 'user', senderName: '用户', content: '查询数据', emotion: 0, timestamp: 1, isDeleted: false,
+      }, plan, existingArtifacts: [dataArtifact],
+    });
+    expect(patchSet.dataOperations?.[0]?.filter).toEqual([{ any: [
+      { field: 'profile.name', operator: 'eq', value: '张三' },
+      { not: { field: 'score', operator: 'lt', value: 60 } },
+    ] }]);
+  });
+
   it('uses the latest image as target for implicit image text edits when the writer asks to reupload', async () => {
     generateResponseMock.mockResolvedValue(JSON.stringify({
       assistantMessage: '请重新上传要修改的图片，或确认是上一条里那张图片。',

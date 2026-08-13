@@ -8,6 +8,7 @@ import type {
   AssistantArtifactFile,
   AssistantArtifactItem,
   AssistantArtifactKind,
+  AssistantDataFilter,
 } from '../types/assistantArtifact';
 import type { Message, MessageAttachment } from '../types/message';
 import type { APIConfig } from '../types/settings';
@@ -345,7 +346,7 @@ function buildWriterPrompt(options: { includeImages: boolean; includeLocalFiles:
     '本地文件：localFiles 是唯一授权内容；不得假装读取未提供的文件。',
   );
   if (options.includeData) sections.push(
-    'CSV/JSON：已有数据产物优先使用 dataOperations 做本地增量 query/insert/update/delete，不要把完整大文件放入上下文；query 最多返回 100 行。创建新的 CSV/JSON 仍使用 patches，更新已有数据产物时只返回 dataOperations，不要伪造完整文件内容。',
+    'CSV/JSON：已有数据产物优先使用 dataOperations 做本地增量 query/insert/update/delete，不要把完整大文件放入上下文；query 最多返回 100 行。创建新的 CSV/JSON 仍使用 patches，更新已有数据产物时只返回 dataOperations，不要伪造完整文件内容。筛选条件支持 field 的点路径（如 profile.name）、比较 eq/contains/startsWith/endsWith/gt/gte/lt/lte，以及 exists/notExists/isNull/isNotNull；顶层 filter 数组是 AND，可用 all/any/not 组合 AND/OR/NOT。',
   );
   if (options.includeHtml) sections.push(
     'HTML：structured_input 生成小型交互控件，interactive_workspace 生成完整页面，visual_explanation 按规模选择；禁止 script、事件属性、iframe/object/embed、外部资源和网络请求，只用声明式控件与 data-pneumata-action。submission.fields 必须与 name 一致；提交回流必须 update 原产物并使用完整新版本。颜色使用 --pneumata-* 变量，并提供 light/dark 属性主题和 prefers-color-scheme dark；HTML 只是交互手段，不在 assistantMessage 输出源码。',
@@ -379,7 +380,8 @@ function buildWriterPrompt(options: { includeImages: boolean; includeLocalFiles:
     '12.4 HTML 正文只能放在 patches[].content，严禁放进 assistantMessage 的 Markdown 代码块或直接正文。assistantMessage 只保留一句简短说明；程序会提供产物打开入口。',
     '',
     '输出格式：',
-    '{"assistantMessage":"面向用户的自然回复文案","patches":[{"action":"create|update","artifactId":"...","kind":"document|code|diagram|html|table|json|text","title":"...","summary":"...","language":"...","content":"完整内容","files":[],"baseVersionId":"...","changeSummary":"...","dataDescriptor":{"description":"...","primaryKey":"...","fields":[{"name":"...","type":"string|number|boolean|date|datetime|array|object","description":"..."}]},"htmlRuntime":{}}],"dataOperations":[{"kind":"query|insert|update|delete","artifactId":"...","baseVersionId":"...","filePath":"...","filter":[{"field":"...","operator":"eq|contains|startsWith|endsWith|gt|gte|lt|lte","value":"..."}],"values":{},"limit":100,"offset":0,"sort":{"field":"...","direction":"asc|desc"}}],"mediaTasks":[]}',
+    'dataOperations.filter 顶层数组表示 AND；复杂条件可使用 {"all":[...]}, {"any":[...]}, {"not":{...}}。',
+    '{"assistantMessage":"面向用户的自然回复文案","patches":[{"action":"create|update","artifactId":"...","kind":"document|code|diagram|html|table|json|text","title":"...","summary":"...","language":"...","content":"完整内容","files":[],"baseVersionId":"...","changeSummary":"...","dataDescriptor":{"description":"...","primaryKey":"...","fields":[{"name":"...","type":"string|number|boolean|date|datetime|array|object","description":"..."}]},"htmlRuntime":{}}],"dataOperations":[{"kind":"query|insert|update|delete","artifactId":"...","baseVersionId":"...","filePath":"...","filter":[{"field":"...","operator":"eq|contains|startsWith|endsWith|gt|gte|lt|lte|exists|notExists|isNull|isNotNull","value":"..."}],"values":{},"limit":100,"offset":0,"sort":{"field":"...","direction":"asc|desc"}}],"mediaTasks":[]}',
   );
   return sections.join('\n');
 }
@@ -477,6 +479,21 @@ function normalizeFiles(value: unknown): AssistantArtifactFile[] | undefined {
 
 function normalizeDataOperations(value: unknown): AssistantArtifactDataOperation[] {
   if (!Array.isArray(value)) return [];
+  const normalizeFilter = (entry: unknown, depth = 0): AssistantDataFilter | null => {
+    if (depth > 5 || !isRecord(entry)) return null;
+    if (Array.isArray(entry.all)) return { all: entry.all.flatMap((child) => { const normalized = normalizeFilter(child, depth + 1); return normalized ? [normalized] : []; }) };
+    if (Array.isArray(entry.any)) return { any: entry.any.flatMap((child) => { const normalized = normalizeFilter(child, depth + 1); return normalized ? [normalized] : []; }) };
+    if (entry.not !== undefined) {
+      const normalized = normalizeFilter(entry.not, depth + 1);
+      return normalized ? { not: normalized } : null;
+    }
+    const field = text(entry.field, 160);
+    if (!field) return null;
+    const operator = ['eq', 'contains', 'startsWith', 'endsWith', 'gt', 'gte', 'lt', 'lte', 'exists', 'notExists', 'isNull', 'isNotNull'].includes(String(entry.operator))
+      ? entry.operator as NonNullable<AssistantArtifactDataOperation['filter']>[number]['operator']
+      : 'eq';
+    return { field, operator, value: entry.value };
+  };
   return value.slice(0, 20).flatMap((item): AssistantArtifactDataOperation[] => {
     if (!isRecord(item)) return [];
     const kind = ['query', 'insert', 'update', 'delete'].includes(String(item.kind))
@@ -485,13 +502,8 @@ function normalizeDataOperations(value: unknown): AssistantArtifactDataOperation
     const artifactId = text(item.artifactId, 160);
     if (!kind || !artifactId) return [];
     const filter = Array.isArray(item.filter) ? item.filter.flatMap((entry) => {
-      if (!isRecord(entry)) return [];
-      const field = text(entry.field, 160);
-      if (!field) return [];
-      const operator = ['eq', 'contains', 'startsWith', 'endsWith', 'gt', 'gte', 'lt', 'lte'].includes(String(entry.operator))
-        ? entry.operator as NonNullable<AssistantArtifactDataOperation['filter']>[number]['operator']
-        : 'eq';
-      return [{ field, operator, value: entry.value }];
+      const normalized = normalizeFilter(entry);
+      return normalized ? [normalized] : [];
     }) : undefined;
     return [{
       kind,

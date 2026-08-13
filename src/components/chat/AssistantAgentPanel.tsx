@@ -400,8 +400,10 @@ function AssistantLocalWorkspaceFiles({ chatId }: { chatId: string }) {
 function ArtifactThumbnail({ item, mode, expanded = false }: { item: AssistantArtifactItem; mode: ArtifactViewMode; expanded?: boolean }) {
   const content = getAssistantArtifactCurrentContent(item);
   const renderMermaid = isRenderableMermaid(item, content);
-  const previewHeight = expanded && (item.kind === 'table' || item.kind === 'json')
-    ? 590
+  const isDataPreview = item.kind === 'table' || item.kind === 'json';
+  const autoHeightDataPreview = isDataPreview && mode === 'list';
+  const previewHeight = autoHeightDataPreview
+    ? 'auto'
     : item.kind === 'html'
     ? mode === 'list' ? 180 : mode === 'gallery' ? 150 : 112
     : mode === 'list' ? 'clamp(240px, 46vh, 380px)' : mode === 'gallery' ? 220 : 128;
@@ -418,7 +420,7 @@ function ArtifactThumbnail({ item, mode, expanded = false }: { item: AssistantAr
       sx={{
         position: 'relative',
         height: previewHeight,
-        overflow: 'hidden',
+        overflow: autoHeightDataPreview ? 'visible' : 'hidden',
         borderRadius: 1,
         border: '1px solid',
         borderColor: (theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.08)' : 'rgba(226,232,240,0.12)',
@@ -431,8 +433,8 @@ function ArtifactThumbnail({ item, mode, expanded = false }: { item: AssistantAr
         </Box>
       ) : item.kind === 'html' ? (
         <AssistantHtmlStaticFrame artifactId={item.id} versionId={item.currentVersionId} title={item.title} html={content} sx={{ width: '100%', height: '100%', border: 0, pointerEvents: 'none' }} />
-      ) : item.kind === 'table' || item.kind === 'json' ? (
-        <Box sx={{ p: mode === 'icons' ? 0.5 : 0.75, overflow: 'hidden', height: '100%' }}><AssistantDataPreview item={item} maxRows={mode === 'list' ? (expanded ? 16 : 4) : 10} edgeRows={mode === 'list' && expanded ? 8 : 0} /></Box>
+      ) : isDataPreview ? (
+        <Box sx={{ p: mode === 'icons' ? 0.5 : 0.75, overflow: 'hidden', height: autoHeightDataPreview ? 'auto' : '100%' }}><AssistantDataPreview item={item} maxRows={mode === 'list' ? (expanded ? 16 : 4) : 10} edgeRows={mode === 'list' && expanded ? 8 : 0} /></Box>
       ) : item.kind === 'document' ? (
         <Box sx={{ p: 1, overflow: 'hidden', bgcolor: (theme) => theme.palette.mode === 'light' ? '#fff' : 'rgba(2,6,23,0.52)', ...scaledCanvasSx }}>
           <MarkdownText text={content} forceRich />
@@ -460,7 +462,7 @@ function ArtifactThumbnail({ item, mode, expanded = false }: { item: AssistantAr
           </Typography>
         </Box>
       )}
-      <ThumbnailFade />
+      {!autoHeightDataPreview ? <ThumbnailFade /> : null}
     </Box>
   );
 }

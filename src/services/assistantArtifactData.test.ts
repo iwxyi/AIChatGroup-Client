@@ -54,6 +54,47 @@ describe('assistant artifact data operations', () => {
     expect(applied.result.columns).toEqual(['id', 'value']);
   });
 
+  it('supports nested JSON paths and grouped AND/OR/NOT filters', () => {
+    const item = { ...table(JSON.stringify([
+      { id: 1, profile: { name: '张三' }, score: 75 },
+      { id: 2, profile: { name: '李四' }, score: 65 },
+      { id: 3, score: 55 },
+    ])), kind: 'json' as const };
+    const applied = applyAssistantArtifactDataOperation(item, {
+      kind: 'query',
+      artifactId: 'words',
+      filter: [{ all: [
+        { any: [
+          { field: 'profile.name', operator: 'eq', value: '张三' },
+          { field: 'score', operator: 'gte', value: 70 },
+        ] },
+        { not: { field: 'profile.name', operator: 'eq', value: '李四' } },
+      ] }],
+    }, 2);
+    expect(applied.result.totalRows).toBe(1);
+    expect(applied.result.rows?.[0]).toMatchObject({ id: 1, score: 75 });
+  });
+
+  it('supports exists and null checks', () => {
+    const item = { ...table(JSON.stringify([
+      { id: 1, note: null },
+      { id: 2, note: 'ok' },
+      { id: 3 },
+    ])), kind: 'json' as const };
+    const applied = applyAssistantArtifactDataOperation(item, {
+      kind: 'query', artifactId: 'words', filter: [
+        { field: 'note', operator: 'isNull' },
+      ],
+    }, 2);
+    expect(applied.result.rows?.map((row) => row.id)).toEqual([1]);
+    const missing = applyAssistantArtifactDataOperation(item, {
+      kind: 'query', artifactId: 'words', filter: [
+        { field: 'note', operator: 'notExists' },
+      ],
+    }, 2);
+    expect(missing.result.rows?.map((row) => row.id)).toEqual([3]);
+  });
+
   it('returns the complete data preview when requested by fullscreen', () => {
     const content = ['id,name', ...Array.from({ length: 25 }, (_, index) => `${index},row-${index}`)].join('\n');
     const preview = getAssistantArtifactDataPreview(table(content), Number.POSITIVE_INFINITY);
