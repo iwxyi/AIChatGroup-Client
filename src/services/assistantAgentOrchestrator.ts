@@ -239,42 +239,24 @@ export function buildCompactImageReferenceRegistry(messages: Message[]) {
     .slice(0, MAX_IMAGE_REFERENCES);
 }
 
-function buildPlannerPrompt() {
-  return [
-    '你是企业级 Agent Orchestrator 的 Intent Planner。',
-    '你只负责决策，不生成产物正文。必须只输出严格 JSON，不要 Markdown，不要解释。',
-    '',
-    '你会收到：用户最近对话、图片引用注册表、完整产物注册表、交互焦点、用户最新输入。',
-    '你也会收到 toolCapabilities，表示本会话当前允许使用哪些底层能力。',
-    '不要假设用户会说“流程图/文件/产物”。用户可能只说“字体大了”“这个太挤”“把它改成横向”。',
-    '必须结合交互焦点、当前可见/最近触达/当前活跃产物、图片引用注册表、产物注册表来判断。',
-    '',
-    '规则：',
-    '1. 普通问答输出 intent=chat，并在 assistantMessage 中直接给出用户可见回答。',
-    '1a. 如果用户需要最新消息、实时事实、网页资料、外部来源核验，且 toolCapabilities.webSearch=true，必须输出 intent=search，并给 searchQuery。不要在 assistantMessage 中声称无法联网。',
-    '1b. 如果需要搜索但 toolCapabilities.webSearch=false，输出 intent=chat，并说明当前未开启搜索能力。',
-    '1c. 如果用户要求处理本地授权文件夹里的文件，而 toolCapabilities.localWorkspace=true，但用户没有明确文件、目录、选择范围或交互焦点，必须输出 intent=clarify；不要假装已经读取文件。',
-    '1d. 如果需要本地文件但 toolCapabilities.localWorkspace=false，输出 intent=chat，并说明当前未授权本地工作区。',
-    '1e. 如果用户明确要求读取、总结、转换、比较或基于本地文件生成产物，且 localWorkspaceFileRegistry 中能定位到文件，必须在 localFilePaths 中列出要读取的文件相对路径。不要选择目录；不要选择未出现在 registry 中的路径。',
-    '1f. 如果 interactionFocus.selectedLocalWorkspaceFiles 非空，优先使用这些用户显式选择的文件；除非用户明确要求别的文件，否则不要改选。',
-    '1g. 如果 interactionFocus.selectedArtifactId 存在且用户说“这个/刚才那个/当前产物/标题大一点/改成...”等相对指代，必须优先把该产物作为 update 目标。',
-    '2. 需要创建产物输出 intent=create。',
-    '2a. 用户要求生成图片、海报、插画、照片、图像素材，或要求基于上一张/刚才那张/某张参考图生成变体时，也属于 intent=create；Planner 只规划，不输出图片提示词正文。',
-    '2b. 用户要求生成文档、方案、表格、网页、代码、图表、JSON、可沉淀资料时，属于 intent=create，不要退回普通聊天。',
-    '2c. 每轮必须选择 responseExperience，它描述最合适的回答体验，而不是用户是否提到 HTML。direct_answer 用于文字/Markdown 已足够清楚；source_code 只用于用户明确要源码、示例、教程、解释、调试或复制代码。source_code 输出 intent=chat、assistantMessage 为空，让普通回复模型生成代码块，禁止创建可运行产物。',
-    '2d. structured_input 用于少量字段或单步选择，包括完成任务前收集信息、单题投票、单题选择、简短反馈和小表单；即使需要提交给助手，也应优先作为消息内的小型交互控件。例如“做一个周末活动投票”或“帮我制定旅行计划”缺少目的地、预算、天数和偏好时。使用 intent=create。',
-    '2e. interactive_workspace 只用于多题试卷、多题问卷、计算器、配置器、连续练习、审批等需要较大空间或持续版本化的完整操作流程。例如“给我做一套高三英语试卷”。不要把单题投票、少字段表单归入 interactive_workspace。使用 intent=create/update。',
-    '2f. visual_explanation 用于天梯图、复杂对比表、数据可视化、复杂公式、交互图表等视觉表达明显优于纯文字的内容。例如“显卡天梯图”。使用 intent=create/update。不要要求用户说网页、HTML、产物或交互。',
-    '2g. responseExperience 必须从用户真正想完成的任务推断。用户说“我想去旅游，帮我制定计划”时可以主动选择 structured_input 收集必要信息；用户说“给我做一套符合高三的英语试卷”时选择 interactive_workspace；用户说“给我看看显卡天梯图”时选择 visual_explanation。HTML 只是内部实现手段，不是用户目标。',
-    '3. 需要修改一个或多个现有产物输出 intent=update，scope.artifactIds 可以是多个。',
-    '3a. 如果没有 selectedArtifactId，但 artifactRegistry 中只有一个明显相关产物，可以直接 update；如果有多个相关产物且用户没有点名，必须 clarify。',
-    '4. 目标不明确且会影响多个候选时输出 intent=clarify，并给 clarificationQuestion；不要猜 target。',
-    '5. 不允许猜 target。低置信度、多候选、缺少焦点时必须 clarify。',
-    '6. Planner 不输出产物正文，不输出 patch；只有 intent=chat/clarify 时 assistantMessage 才作为用户可见回复。',
-    '',
-    '输出格式：',
-    '{"intent":"chat|create|update|clarify|search","assistantMessage":"普通聊天或澄清时的可见回复；source_code 时为空","responseExperience":"direct_answer|source_code|structured_input|interactive_workspace|visual_explanation","searchQuery":"搜索时使用的具体查询；非搜索为空","localFilePaths":[{"directoryId":"...","path":"相对路径"}],"scope":{"targetMode":"single|multi|workspace|selection|unknown","artifactIds":[]},"operations":[{"kind":"style_change|content_edit|structure_edit|create|export|review|search|other","instruction":"..."}],"requiresConfirmation":false,"clarificationQuestion":"","confidence":0.0,"rationale":"..."}',
-  ].join('\n');
+function buildPlannerPrompt(options: { includeImages: boolean; includeLocalFiles: boolean; includeSearch: boolean }) {
+  const sections = [
+    '你是 Agent Intent Planner。只负责决策，不生成产物正文；只输出严格 JSON。',
+    '结合用户输入、最近对话、产物注册表和交互焦点判断，不要要求用户使用“HTML/产物”等技术词。',
+    '普通问答=chat；创建结果=create；修改现有产物=update；目标不明确=clarify。不要猜多个候选目标。',
+    '需要创建图片或图片变体=create。',
+    'structured_input 用于少量字段、单题投票、单题选择、简短反馈和小表单；interactive_workspace 只用于多题试卷/问卷、计算器、配置器、连续练习和审批等较大流程；visual_explanation 用于复杂图表、对比表和公式。HTML 只是实现方式。',
+    'source_code 只在用户明确要源码时使用，并输出 intent=chat；每轮必须选择 responseExperience。',
+    'selectedArtifactId 存在且用户说“这个/当前产物/改一下”等相对指代时优先作为 update 目标；没有唯一目标则 clarify。',
+  ];
+  if (options.includeSearch) sections.push('搜索：需要实时消息、网页资料或外部核验且 webSearch=true 时输出 search 并填写 searchQuery；未开启时说明能力未开启。');
+  if (options.includeLocalFiles) sections.push('本地文件：只使用 registry 中的文件；用户未明确目标时 clarify，未授权时不要假装读取；输出 localFilePaths 时必须使用 registry 中的 directoryId/path。');
+  if (options.includeImages) sections.push('图片：结合图片注册表判断目标/参考图，不要虚构图片 ID；图片生成仍由后续 writer/media task 处理。');
+  sections.push(
+    '输出：',
+    '{"intent":"chat|create|update|clarify|search","assistantMessage":"chat/clarify 可见回复","responseExperience":"direct_answer|source_code|structured_input|interactive_workspace|visual_explanation","searchQuery":"","localFilePaths":[],"scope":{"targetMode":"single|multi|workspace|selection|unknown","artifactIds":[]},"operations":[{"kind":"style_change|content_edit|structure_edit|create|export|review|search|other","instruction":"..."}],"requiresConfirmation":false,"clarificationQuestion":"","confidence":0,"rationale":"..."}',
+  );
+  return sections.join('\n');
 }
 
 function normalizePlan(raw: unknown, existingArtifacts: AssistantArtifactItem[], localWorkspaceFileRegistry: Array<{ directoryId: string; path: string; kind: string }> = []): AssistantAgentChangePlan {
@@ -334,8 +316,8 @@ function normalizePlan(raw: unknown, existingArtifacts: AssistantArtifactItem[],
   };
 }
 
-function buildWriterPrompt() {
-  return [
+function buildWriterPrompt(options: { includeImages: boolean; includeLocalFiles: boolean; includeHtml: boolean }) {
+  const sections = [
     '你是企业级 Artifact Patch Writer。',
     '必须只输出严格 JSON，不要 Markdown，不要解释。',
     '根据 changePlan、用户输入、最近对话、图片引用注册表、产物注册表和必要的当前版本正文，生成可提交的 patch set。',
@@ -350,8 +332,18 @@ function buildWriterPrompt() {
     '6. 不确定时 assistantMessage 说明无法安全修改，patches 为空。',
     '6.1 如果 targetArtifacts 中 currentVersionContentTruncated 或 currentVersionFiles[].contentTruncated 为 true，说明完整正文未发送给你；任何 update patch 仍然必须输出完整新版本。若无法基于已发送内容安全重建完整版本，必须返回 patches=[] 并要求用户缩小修改范围或打开具体文件后重试，禁止编造缺失正文。',
     '6.2 assistantMessage 不要重复输出 patches[].content 或 files[].content 的完整正文/源码。产物正文只放在 patch content/files 中；assistantMessage 只写简短说明、必要的前言或图片槽位。',
-    '7. 如需生成图片，不要把图片当作 markdown 文档或代码块，必须输出 mediaTasks；图片提示词由文本模型生成，图片由独立图片模型执行。',
-    '7.1 assistantMessage 是展示给用户看的自然回复，必须直接回应用户请求；如果回复是一篇文章、报告、教程或多图说明，可以用 Markdown 把图片槽位自然插入正文中。',
+  ];
+  if (options.includeImages) sections.push(
+    '图片：如需生成图片必须输出 mediaTasks，不要把图片写成代码或 Markdown 正文；图片引用 ID 必须来自 registry，区分 target/reference/style，最多 9 个任务；仅在需要图片时生成 prompt。',
+  );
+  if (options.includeLocalFiles) sections.push(
+    '本地文件：localFiles 是唯一授权内容；不得假装读取未提供的文件。',
+  );
+  if (options.includeHtml) sections.push(
+    'HTML：structured_input 生成小型交互控件，interactive_workspace 生成完整页面，visual_explanation 按规模选择；禁止 script、事件属性、iframe/object/embed、外部资源和网络请求，只用声明式控件与 data-pneumata-action。submission.fields 必须与 name 一致；提交回流必须 update 原产物并使用完整新版本。颜色使用 --pneumata-* 变量，并提供 light/dark 属性主题和 prefers-color-scheme dark；HTML 只是交互手段，不在 assistantMessage 输出源码。',
+  );
+  sections.push('assistantMessage 是用户可见的简短自然回复，不重复完整产物正文。');
+  if (options.includeImages) sections.push(
     '7.2 mediaTasks.prompt 是给图片模型的完整提示词；aspectRatio、imageSize、referenceImageIds 等图片要求只能放在 mediaTasks 中，不要混入聊天正文。',
     '7.3 每个图片任务必须有稳定 slotId，例如 image-1、cover、step-2；assistantMessage 中用 Markdown 图片占位符引用：![给用户看的图片说明](attachment:slotId)。slotId 必须和 mediaTasks[].slotId 完全一致。',
     '7.4 mediaTasks.userCaption 是该图片在正文中的用户可见说明，应和 Markdown 图片占位符的 alt 文本一致或高度接近；不得写图片模型提示词。',
@@ -368,6 +360,8 @@ function buildWriterPrompt() {
     '8.4 如果 target 图对应 imageReferenceRegistry[].artifactId，且用户是在修改同一张图或同一组图，必须把 mediaTasks[].targetArtifactId 设置为该 artifactId；这样图片完成后会追加为同一产物的新版本。批量修改多张图时，每个 mediaTask 对应一个 targetArtifactId。',
     '9. 当前没有可靠蒙版/区域标注能力时，局部修改只能作为“参考原图重新生成整体变体”。必须在 assistantMessage 中说明是整体变体；如果用户明确要求精确局部编辑且缺少区域信息，先澄清。',
     '10. 图片任务可按用户自然语言要求输出 aspectRatio 和 imageSize。aspectRatio 仅可为 1:1、2:3、3:2、3:4、4:3、4:5、5:4、9:16、16:9、21:9；imageSize 仅可为 1K、2K、4K。用户没有要求时省略。',
+  );
+  sections.push(
     '11. 如果 assistantMessage、patch content 或 files 中需要写应用内链接，必须使用跨平台 AppLink：ssmm://character/{id}?action=edit、ssmm://chat/{id}?action=open、ssmm://settings?action=open&tab=models&card=models。禁止输出 /characters/...、/chats/...、#/...、http://localhost/... 或任何平台私有路由。',
     '11.1 只有当 ID 来自用户输入、recentConversation、artifactRegistry、targetArtifacts、localFiles 或其他明确上下文时，才能写入 AppLink；禁止编造角色、会话、产物或文件 ID。外部网页来源继续使用 https:// 链接。',
     '12. 遵循 changePlan.responseExperience。structured_input 生成简洁 HTML 表单片段；interactive_workspace 生成 <!doctype html>/<html> 完整交互文档；visual_explanation 根据内容规模生成 HTML 片段或完整文档，并优先可读、可比较的视觉表达。这三类使用 kind=html；需要提交时输出 htmlRuntime。不要在用户可见文案中谈论 HTML、网页、全屏、气泡、presentation 或 viewport。source_code 不应进入 Writer；若意外收到，必须返回 patches=[]。',
@@ -375,11 +369,11 @@ function buildWriterPrompt() {
     '12.2 htmlRuntime.executionMode 固定为 declarative。submission.fields 必须完整列出允许提交的字段名、类型、必填、长度和选项，并与 HTML 中 name 属性一致。',
     '12.3 如果 userMessage.htmlSubmission 存在，本轮必须 update 其目标 HTML 产物，baseVersionId 使用提交版本，生成包含审批、批改、分析、结果或下一步交互的完整新版本；不得创建无关的新产物。',
     '12.4 HTML 正文只能放在 patches[].content，严禁放进 assistantMessage 的 Markdown 代码块或直接正文。assistantMessage 只保留一句简短说明；程序会提供产物打开入口。',
-    '12.5 HTML 必须使用少量语义 CSS 变量统一表达页面颜色，至少包括 --pneumata-bg、--pneumata-surface、--pneumata-text、--pneumata-muted、--pneumata-border、--pneumata-accent；元素样式引用变量，不散落重复硬编码颜色。必须同时提供 html[data-pneumata-theme="light"]、html[data-pneumata-theme="dark"] 两组变量覆盖和 @media (prefers-color-scheme: dark) 变量覆盖：属性选择器供应用查看器明确切换并优先于系统主题，媒体查询保证下载导出后独立使用。不要复制两套结构或完整样式，只覆盖变量。',
     '',
     '输出格式：',
     '{"assistantMessage":"面向用户的自然回复文案","patches":[{"action":"create|update","artifactId":"...","kind":"document|code|diagram|html|table|json|text","title":"...","summary":"...","language":"...","content":"完整内容","files":[{"id":"...","path":"...","language":"...","content":"完整文件内容"}],"baseVersionId":"...","changeSummary":"...","htmlRuntime":{"schemaVersion":1,"executionMode":"declarative","autosave":{"enabled":true,"debounceMs":900},"submission":{"interactionId":"stable-id","label":"提交","resultType":"form|quiz|selection|custom","fields":[{"name":"answer","type":"text|textarea|number|boolean|single_choice|multi_choice","label":"回答","required":true,"maxLength":8000,"options":[]}],"sendToAssistant":true,"createArtifactVersion":true}}}],"mediaTasks":[]}',
-  ].join('\n');
+  );
+  return sections.join('\n');
 }
 
 function looksLikeImplicitLatestImageEdit(textValue: string) {
@@ -751,7 +745,11 @@ export async function planAssistantAgentChange(params: {
   };
   const raw = await generateResponse(
     params.api,
-    buildPlannerPrompt(),
+    buildPlannerPrompt({
+      includeImages: Boolean(payload.imageReferenceRegistry.length || payload.userMessage.imageAttachments.length),
+      includeLocalFiles: Boolean(params.toolCapabilities?.localWorkspace || payload.localWorkspaceFileRegistry.length),
+      includeSearch: Boolean(params.toolCapabilities?.webSearch),
+    }),
     [{ role: 'user', content: stringifyAgentPayload(payload, 'Assistant Agent planner') }],
     undefined,
     {
@@ -781,6 +779,7 @@ export async function writeAssistantAgentPatchSet(params: {
 }) {
   const registryMessages = withLatestUserMessage(params.messages, params.userMessage);
   const imageReferenceRegistry = buildImageReferenceRegistry(registryMessages);
+  const userImageAttachments = buildCompactImageAttachmentRefs(params.userMessage);
   const blockedUpdateArtifactIds = new Set<string>();
   const activeTargetArtifacts = params.existingArtifacts
     .filter((artifact) => params.plan.scope.artifactIds.includes(artifact.id));
@@ -821,7 +820,7 @@ export async function writeAssistantAgentPatchSet(params: {
     userMessage: {
       id: params.userMessage.id,
       content: params.userMessage.content,
-      imageAttachments: buildCompactImageAttachmentRefs(params.userMessage),
+      imageAttachments: userImageAttachments,
       htmlSubmission: params.userMessage.metadata?.assistantHtmlSubmission,
     },
     recentConversation: recentConversation(params.messages),
@@ -833,7 +832,16 @@ export async function writeAssistantAgentPatchSet(params: {
   };
   const raw = await generateResponse(
     params.api,
-    buildWriterPrompt(),
+    buildWriterPrompt({
+      includeImages: Boolean(
+        imageReferenceRegistry.size
+        || userImageAttachments.length
+        || /图片|照片|插画|海报|头像|生图|生成.*图|画一张|参考图/i.test(params.userMessage.content)
+        || params.plan.operations.some((operation) => /图片|照片|插画|海报|生图|图像/i.test(operation.instruction)),
+      ),
+      includeLocalFiles: Boolean(params.localFiles?.length),
+      includeHtml: Boolean(params.plan.responseExperience === 'structured_input' || params.plan.responseExperience === 'interactive_workspace' || params.plan.responseExperience === 'visual_explanation' || params.userMessage.metadata?.assistantHtmlSubmission || activeTargetArtifacts.some((artifact) => artifact.kind === 'html')),
+    }),
     [{ role: 'user', content: stringifyAgentPayload(payload, 'Assistant Agent writer') }],
     undefined,
     {
