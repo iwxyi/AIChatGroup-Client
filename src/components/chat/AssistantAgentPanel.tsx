@@ -387,10 +387,12 @@ function AssistantLocalWorkspaceFiles({ chatId }: { chatId: string }) {
   );
 }
 
-function ArtifactThumbnail({ item, mode }: { item: AssistantArtifactItem; mode: ArtifactViewMode }) {
+function ArtifactThumbnail({ item, mode, expanded = false }: { item: AssistantArtifactItem; mode: ArtifactViewMode; expanded?: boolean }) {
   const content = getAssistantArtifactCurrentContent(item);
   const renderMermaid = isRenderableMermaid(item, content);
-  const previewHeight = item.kind === 'html'
+  const previewHeight = expanded && (item.kind === 'table' || item.kind === 'json')
+    ? 520
+    : item.kind === 'html'
     ? mode === 'list' ? 180 : mode === 'gallery' ? 150 : 112
     : mode === 'list' ? 'clamp(240px, 46vh, 380px)' : mode === 'gallery' ? 220 : 128;
   const contentScale = mode === 'icons' ? 0.52 : 1;
@@ -420,7 +422,7 @@ function ArtifactThumbnail({ item, mode }: { item: AssistantArtifactItem; mode: 
       ) : item.kind === 'html' ? (
         <AssistantHtmlStaticFrame artifactId={item.id} versionId={item.currentVersionId} title={item.title} html={content} sx={{ width: '100%', height: '100%', border: 0, pointerEvents: 'none' }} />
       ) : item.kind === 'table' || item.kind === 'json' ? (
-        <Box sx={{ p: mode === 'icons' ? 0.5 : 0.75, overflow: 'hidden', height: '100%' }}><AssistantDataPreview item={item} maxRows={mode === 'list' ? 20 : 10} /></Box>
+        <Box sx={{ p: mode === 'icons' ? 0.5 : 0.75, overflow: expanded ? 'auto' : 'hidden', height: '100%' }}><AssistantDataPreview item={item} maxRows={mode === 'list' ? 20 : 10} /></Box>
       ) : item.kind === 'document' ? (
         <Box sx={{ p: 1, overflow: 'hidden', bgcolor: (theme) => theme.palette.mode === 'light' ? '#fff' : 'rgba(2,6,23,0.52)', ...scaledCanvasSx }}>
           <MarkdownText text={content} forceRich />
@@ -772,10 +774,10 @@ function AssistantArtifactList({
               {item.summary}
             </Typography>
           ) : null}
-          <ArtifactThumbnail item={item} mode={viewMode} />
+          <ArtifactThumbnail item={item} mode={viewMode} expanded={expanded} />
           {viewMode === 'list' ? (
             <Box>
-              {expanded && item.kind !== 'diagram' && item.kind !== 'html' ? <ArtifactPreview item={item} /> : null}
+              {expanded && item.kind !== 'diagram' && item.kind !== 'html' && item.kind !== 'table' && item.kind !== 'json' ? <ArtifactPreview item={item} /> : null}
               {canExpand && item.kind !== 'diagram' && item.kind !== 'html' ? (
                 <Button
                   size="small"
