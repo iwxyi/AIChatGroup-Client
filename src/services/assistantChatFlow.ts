@@ -176,7 +176,23 @@ function formatAssistantDataResults(results: AssistantArtifactDataResult[]) {
   return results.map((result, index) => {
     if (result.error) return `数据操作 ${index + 1} 失败：${result.error}`;
     if (result.operation === 'query') {
-      return `查询结果 ${index + 1}：匹配 ${result.totalRows || 0} 行${result.truncated ? '，仅显示前 100 行' : ''}\n${JSON.stringify(result.rows || [], null, 2)}`;
+      if (result.format !== 'csv') {
+        return `查询结果 ${index + 1}：匹配 ${result.totalRows || 0} 行${result.truncated ? '，仅显示前 100 行' : ''}\n\n${JSON.stringify(result.rows || [], null, 2)}`;
+      }
+      const columns = result.columns?.length
+        ? result.columns
+        : Array.from(new Set((result.rows || []).flatMap((row) => Object.keys(row))));
+      const cell = (value: unknown) => String(value == null ? '' : typeof value === 'object' ? JSON.stringify(value) : value)
+        .replace(/\|/g, '\\|')
+        .replace(/\r?\n/g, ' ');
+      const table = columns.length
+        ? [
+          `| ${columns.map(cell).join(' | ')} |`,
+          `| ${columns.map(() => '---').join(' | ')} |`,
+          ...(result.rows || []).map((row) => `| ${columns.map((column) => cell(row[column])).join(' | ')} |`),
+        ].join('\n')
+        : '没有可展示的字段。';
+      return `查询结果 ${index + 1}：匹配 ${result.totalRows || 0} 行${result.truncated ? '，仅显示前 100 行' : ''}\n\n${table}`;
     }
     return `数据操作 ${index + 1}：${result.operation} 已影响 ${result.affectedRows} 行。`;
   }).join('\n\n');
@@ -654,6 +670,11 @@ function artifactFenceLanguage(patch: AssistantAgentPatchSet['patches'][number])
 }
 
 function formatPatchForBubble(patch: AssistantAgentPatchSet['patches'][number]) {
+  if (patch.kind === 'table' || patch.kind === 'json') {
+    const fileCount = patch.files?.length || 0;
+    const contentSize = patch.content.length + (patch.files || []).reduce((total, file) => total + file.content.length, 0);
+    return `\n\n已${patch.action === 'create' ? '创建' : '更新'}数据产物「${patch.title}」${fileCount ? `，包含 ${fileCount} 个文件` : ''}（约 ${contentSize.toLocaleString('zh-CN')} 个字符）。完整内容请在产物中查看或下载。`;
+  }
   if (patch.kind === 'document') return `\n\n## ${patch.title}\n\n${patch.content}`;
   if (patch.files?.length) {
     return patch.files.map((file) => [

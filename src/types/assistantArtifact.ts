@@ -25,6 +25,8 @@ export interface AssistantArtifactDataResult {
   affectedRows: number;
   totalRows?: number;
   rows?: Array<Record<string, unknown>>;
+  format?: 'csv' | 'json';
+  columns?: string[];
   truncated?: boolean;
   error?: string;
 }

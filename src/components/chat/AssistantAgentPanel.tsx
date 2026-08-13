@@ -37,6 +37,7 @@ import { useLocalWorkspaceStore } from '../../stores/useLocalWorkspaceStore';
 import type { LocalWorkspaceFileEntry } from '../../services/localWorkspaceService';
 import AssistantHtmlFrame, { type AssistantHtmlInteractionPayload } from '../../features/assistantHtml/AssistantHtmlFrame';
 import AssistantHtmlStaticFrame from '../../features/assistantHtml/AssistantHtmlStaticFrame';
+import { getAssistantArtifactDataPreview } from '../../services/assistantArtifactData';
 
 interface AssistantAgentPanelProps {
   chat: GroupChat;
@@ -182,6 +183,42 @@ function artifactPreviewText(item: AssistantArtifactItem) {
   const content = getAssistantArtifactCurrentContent(item).trim();
   if (!content) return '当前版本为空。';
   return content.replace(/\s+/g, ' ').slice(0, 420);
+}
+
+function AssistantDataPreview({ item, version, maxRows = 8 }: { item: AssistantArtifactItem; version?: AssistantArtifactVersion | null; maxRows?: number }) {
+  const preview = getAssistantArtifactDataPreview(item, maxRows, version);
+  if (!preview) return <Typography variant="caption" color="text.secondary">数据预览不可用。</Typography>;
+  const cell = (value: unknown) => String(value == null ? '' : typeof value === 'object' ? JSON.stringify(value) : value)
+    .replace(/\s+/g, ' ')
+    .slice(0, 80);
+  if (preview.format === 'csv') {
+    return (
+      <Box sx={{ overflow: 'hidden', width: '100%' }}>
+        <Box component="table" sx={{ borderCollapse: 'collapse', width: 'max-content', minWidth: '100%', fontSize: 11, color: 'text.primary' }}>
+          <Box component="thead">
+            <Box component="tr">{preview.columns.map((column) => <Box component="th" key={column} sx={{ px: 0.75, py: 0.5, borderBottom: '1px solid', borderColor: 'divider', textAlign: 'left', whiteSpace: 'nowrap', fontWeight: 700 }}>{column}</Box>)}</Box>
+          </Box>
+          <Box component="tbody">
+            {preview.rows.map((row, index) => <Box component="tr" key={index}>{preview.columns.map((column) => <Box component="td" key={column} sx={{ px: 0.75, py: 0.45, borderBottom: '1px solid', borderColor: 'divider', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cell(row[column])}</Box>)}</Box>)}
+          </Box>
+        </Box>
+        {preview.truncated ? <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>预览前 {preview.rows.length} 行，共 {preview.totalRows} 行</Typography> : null}
+      </Box>
+    );
+  }
+  return (
+    <Stack spacing={0.5} sx={{ minWidth: 0 }}>
+      {preview.rows.map((row, index) => (
+        <Box key={index} sx={{ p: 0.75, border: '1px solid', borderColor: 'divider', borderRadius: 0.75, bgcolor: 'action.hover' }}>
+          <Typography variant="caption" sx={{ display: 'block', fontWeight: 700, mb: 0.25 }}>记录 {index + 1}</Typography>
+          <Stack spacing={0.15}>
+            {preview.columns.slice(0, 8).map((column) => <Typography key={column} variant="caption" color="text.secondary" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}><Box component="span" sx={{ color: 'text.primary', fontWeight: 600 }}>{column}：</Box>{cell(row[column])}</Typography>)}
+          </Stack>
+        </Box>
+      ))}
+      {preview.truncated ? <Typography variant="caption" color="text.secondary">预览前 {preview.rows.length} 条，共 {preview.totalRows} 条</Typography> : null}
+    </Stack>
+  );
 }
 
 function isSelectableLocalWorkspaceFile(entry: LocalWorkspaceFileEntry) {
@@ -382,6 +419,8 @@ function ArtifactThumbnail({ item, mode }: { item: AssistantArtifactItem; mode: 
         </Box>
       ) : item.kind === 'html' ? (
         <AssistantHtmlStaticFrame artifactId={item.id} versionId={item.currentVersionId} title={item.title} html={content} sx={{ width: '100%', height: '100%', border: 0, pointerEvents: 'none' }} />
+      ) : item.kind === 'table' || item.kind === 'json' ? (
+        <Box sx={{ p: mode === 'icons' ? 0.5 : 0.75, overflow: 'hidden', height: '100%' }}><AssistantDataPreview item={item} maxRows={mode === 'list' ? 8 : 4} /></Box>
       ) : item.kind === 'document' ? (
         <Box sx={{ p: 1, overflow: 'hidden', bgcolor: (theme) => theme.palette.mode === 'light' ? '#fff' : 'rgba(2,6,23,0.52)', ...scaledCanvasSx }}>
           <MarkdownText text={content} forceRich />
@@ -442,6 +481,9 @@ function ArtifactPreview({ item, version, expanded = false, fullscreen = false, 
     return (
       <AssistantHtmlStaticFrame artifactId={item.id} versionId={version?.id || item.currentVersionId} title={item.title} html={content} sx={{ width: '100%', minHeight: expanded ? '72vh' : 360, border: 0, borderRadius: 1 }} />
     );
+  }
+  if (item.kind === 'table' || item.kind === 'json') {
+    return <AssistantDataPreview item={item} version={version} maxRows={expanded ? 30 : 8} />;
   }
   return (
     <Box

@@ -565,6 +565,30 @@ describe('assistantChatFlow media artifacts', () => {
     expect(buildAgentArtifactReplyContent(patchSet)).toContain('```mermaid');
   });
 
+  it('keeps CSV and JSON source content out of the chat bubble', () => {
+    const patchSet: AssistantAgentPatchSet = {
+      assistantMessage: '已整理好数据文件。',
+      patches: [{
+        action: 'create',
+        kind: 'table',
+        title: '数据记录',
+        content: 'id,name\n1,alpha\n2,beta',
+      }, {
+        action: 'create',
+        kind: 'json',
+        title: '结构化数据',
+        content: '{"id":1,"name":"alpha"}',
+      }],
+      mediaTasks: [],
+    };
+
+    const content = buildAgentArtifactReplyContent(patchSet);
+    expect(content).toContain('已整理好数据文件');
+    expect(content).toContain('完整内容请在产物中查看或下载');
+    expect(content).not.toContain('id,name');
+    expect(content).not.toContain('"name":"alpha"');
+  });
+
   it('keeps the user-facing assistant message separate from image prompts', () => {
     const patchSet: AssistantAgentPatchSet = {
       assistantMessage: '我为你生成一张红烧肉照片，肥瘦相间、酱色油亮，适合直接查看。',

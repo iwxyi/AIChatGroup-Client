@@ -46,4 +46,11 @@ describe('assistant artifact data operations', () => {
     expect(applied.item.currentVersionId).not.toBe('v1');
     expect(applied.item.versions.at(-1)?.content).toContain('hello,2');
   });
+
+  it('marks JSON query results as JSON for the chat renderer', () => {
+    const item = { ...table('[{"id":1,"value":"a"}]'), kind: 'json' as const };
+    const applied = applyAssistantArtifactDataOperation(item, { kind: 'query', artifactId: 'words' }, 2);
+    expect(applied.result.format).toBe('json');
+    expect(applied.result.columns).toEqual(['id', 'value']);
+  });
 });

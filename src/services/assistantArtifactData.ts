@@ -3,6 +3,14 @@ export type AssistantDataFormat = 'csv' | 'json';
 
 const MAX_RESULT_ROWS = 100;
 
+export interface AssistantArtifactDataPreview {
+  format: AssistantDataFormat;
+  columns: string[];
+  rows: Array<Record<string, unknown>>;
+  totalRows: number;
+  truncated: boolean;
+}
+
 function parseCsvLine(line: string) {
   const cells: string[] = [];
   let cell = '';
@@ -100,6 +108,24 @@ export function summarizeAssistantArtifactData(item: AssistantArtifactItem) {
   }
 }
 
+export function getAssistantArtifactDataPreview(item: AssistantArtifactItem, maxRows = 8, selectedVersion?: AssistantArtifactVersion | null): AssistantArtifactDataPreview | null {
+  const version = selectedVersion || item.versions.find((entry) => entry.id === item.currentVersionId) || item.versions.at(-1);
+  if (!version) return null;
+  try {
+    const resolved = resolveContent(version, version.files?.length === 1 ? version.files[0].path : null);
+    const format: AssistantDataFormat = item.kind === 'json' || /\.json$/i.test(resolved.filePath || '') ? 'json' : 'csv';
+    const parsed = format === 'csv' ? parseCsv(resolved.content) : parseJsonRecords(resolved.content);
+    const rows = parsed.rows;
+    const columns = format === 'csv' && 'columns' in parsed
+      ? parsed.columns
+      : Array.from(new Set(rows.flatMap((row) => Object.keys(row))));
+    const limit = Math.min(MAX_RESULT_ROWS, Math.max(1, Math.floor(maxRows)));
+    return { format, columns: columns.slice(0, 40), rows: rows.slice(0, limit), totalRows: rows.length, truncated: rows.length > limit };
+  } catch {
+    return null;
+  }
+}
+
 export function applyAssistantArtifactDataOperation(item: AssistantArtifactItem, operation: AssistantArtifactDataOperation, timestamp: number) {
   const version = item.versions.find((entry) => entry.id === item.currentVersionId) || item.versions.at(-1);
   if (!version) return { item, result: { operation: operation.kind, affectedRows: 0, error: '产物没有可用版本' } satisfies AssistantArtifactDataResult };
@@ -123,7 +149,10 @@ export function applyAssistantArtifactDataOperation(item: AssistantArtifactItem,
       }) : matched;
       const offset = Math.max(0, Math.floor(operation.offset || 0));
       const limit = Math.min(MAX_RESULT_ROWS, Math.max(1, Math.floor(operation.limit || MAX_RESULT_ROWS)));
-      return { item, result: { operation: 'query', affectedRows: 0, totalRows: sorted.length, rows: sorted.slice(offset, offset + limit), truncated: sorted.length > offset + limit } satisfies AssistantArtifactDataResult };
+      const columns = format === 'csv' && 'columns' in parsed
+        ? parsed.columns
+        : Array.from(new Set(sorted.flatMap((row) => Object.keys(row))));
+      return { item, result: { operation: 'query', affectedRows: 0, totalRows: sorted.length, rows: sorted.slice(offset, offset + limit), format, columns, truncated: sorted.length > offset + limit } satisfies AssistantArtifactDataResult };
     }
     if (operation.kind === 'insert') {
       if (!operation.values) throw new Error('insert 缺少 values');
