@@ -489,7 +489,9 @@ export default function FloatingSegmentedTabs<T extends string | number>({
                 px: comfortable ? { xs: 1.2, sm: 1.8, md: 2.2 } : { xs: 1.35, sm: 1.75 },
                 borderRadius: { xs: '10px', sm: '11px' },
                 color: selected ? 'primary.main' : 'text.secondary',
-                bgcolor: 'transparent',
+                bgcolor: selected
+                  ? (theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.055)' : 'rgba(226,232,240,0.085)'
+                  : 'transparent',
                 boxShadow: 'none',
                 touchAction: 'pan-x pan-y',
                 fontWeight: 760,
@@ -501,16 +503,14 @@ export default function FloatingSegmentedTabs<T extends string | number>({
                 transition: transition(['background-color', 'color', 'opacity', 'box-shadow', 'outline-color', 'transform'], motion.durations.base, motion.softOut),
                 '&:hover': {
                   opacity: 1,
-                  bgcolor: selected
-                    ? 'transparent'
-                    : (theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.045)' : 'rgba(226,232,240,0.07)',
+                  bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.055)' : 'rgba(226,232,240,0.085)',
                   outlineColor: (theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.045)' : 'rgba(226,232,240,0.06)',
                 },
                 '&:active': {
                   transform: 'scale(0.986)',
                   transitionTimingFunction: motion.navDrag,
                   transitionDuration: `${motion.durations.fast}ms`,
-                  bgcolor: 'transparent',
+                  bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.055)' : 'rgba(226,232,240,0.085)',
                 },
                 '&:focus-visible': {
                   outlineColor: 'primary.main',
