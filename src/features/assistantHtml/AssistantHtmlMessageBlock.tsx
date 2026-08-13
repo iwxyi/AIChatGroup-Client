@@ -35,7 +35,7 @@ export default function AssistantHtmlMessageBlock({ artifactRef, onAutosave, onS
     || (version.id !== artifact.currentVersionId && version.stage !== 'autosave');
   if (interactive) {
     return (
-      <Box sx={{ width: '100%', border: '1px solid', borderColor: 'divider', borderRadius: 1, overflow: 'hidden', bgcolor: '#fff' }}>
+      <Box sx={{ width: '100%', border: '1px solid', borderColor: 'divider', borderRadius: 1, overflow: 'hidden', bgcolor: 'background.paper' }}>
         <AssistantHtmlFrame
           artifactId={artifact.id}
           version={version}
@@ -50,7 +50,7 @@ export default function AssistantHtmlMessageBlock({ artifactRef, onAutosave, onS
   }
   const previewManifest = {
     ...manifest,
-    viewport: { preferredHeight: 320, maxInlineHeight: 360 },
+    viewport: { preferredHeight: 200, maxInlineHeight: 220 },
   };
   return (
     <Box
@@ -65,12 +65,12 @@ export default function AssistantHtmlMessageBlock({ artifactRef, onAutosave, onS
       }}
       sx={{
         position: 'relative',
-        width: 'min(100%, 680px)',
+        width: 'min(100%, 560px)',
         border: '1px solid',
         borderColor: 'divider',
         borderRadius: 1,
         overflow: 'hidden',
-        bgcolor: '#fff',
+        bgcolor: 'background.paper',
         cursor: onOpenFullscreen ? 'pointer' : 'default',
         '&:hover': onOpenFullscreen ? { borderColor: 'primary.main' } : undefined,
       }}

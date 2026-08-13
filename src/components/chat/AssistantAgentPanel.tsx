@@ -36,6 +36,7 @@ import { ensureAssistantArtifactStoreHydrated, getAssistantArtifactCurrentConten
 import { useLocalWorkspaceStore } from '../../stores/useLocalWorkspaceStore';
 import type { LocalWorkspaceFileEntry } from '../../services/localWorkspaceService';
 import AssistantHtmlFrame, { type AssistantHtmlInteractionPayload } from '../../features/assistantHtml/AssistantHtmlFrame';
+import AssistantHtmlStaticFrame from '../../features/assistantHtml/AssistantHtmlStaticFrame';
 
 interface AssistantAgentPanelProps {
   chat: GroupChat;
@@ -352,11 +353,9 @@ function AssistantLocalWorkspaceFiles({ chatId }: { chatId: string }) {
 function ArtifactThumbnail({ item, mode }: { item: AssistantArtifactItem; mode: ArtifactViewMode }) {
   const content = getAssistantArtifactCurrentContent(item);
   const renderMermaid = isRenderableMermaid(item, content);
-  const previewHeight = mode === 'list'
-    ? 'clamp(240px, 46vh, 380px)'
-    : mode === 'gallery'
-      ? 220
-      : 128;
+  const previewHeight = item.kind === 'html'
+    ? mode === 'list' ? 180 : mode === 'gallery' ? 150 : 112
+    : mode === 'list' ? 'clamp(240px, 46vh, 380px)' : mode === 'gallery' ? 220 : 128;
   const contentScale = mode === 'icons' ? 0.52 : 1;
   const scaledCanvasSx = {
     width: `${100 / contentScale}%`,
@@ -382,7 +381,7 @@ function ArtifactThumbnail({ item, mode }: { item: AssistantArtifactItem; mode: 
           <MermaidDiagram source={content} />
         </Box>
       ) : item.kind === 'html' ? (
-        <Box component="iframe" title={item.title} srcDoc={content} sandbox="" sx={{ ...scaledCanvasSx, border: 0, bgcolor: '#fff' }} />
+        <AssistantHtmlStaticFrame artifactId={item.id} versionId={item.currentVersionId} title={item.title} html={content} sx={{ width: '100%', height: '100%', border: 0, pointerEvents: 'none' }} />
       ) : item.kind === 'document' ? (
         <Box sx={{ p: 1, overflow: 'hidden', bgcolor: (theme) => theme.palette.mode === 'light' ? '#fff' : 'rgba(2,6,23,0.52)', ...scaledCanvasSx }}>
           <MarkdownText text={content} forceRich />
@@ -441,7 +440,7 @@ function ArtifactPreview({ item, version, expanded = false, fullscreen = false, 
       return <AssistantHtmlFrame artifactId={item.id} version={version} manifest={version.htmlRuntime} readOnly={readOnly} onAutosave={onHtmlAutosave} onSubmit={onHtmlSubmit} />;
     }
     return (
-      <Box component="iframe" title={item.title} srcDoc={content} sandbox="" sx={{ width: '100%', minHeight: expanded ? '72vh' : 360, border: 0, borderRadius: 1, bgcolor: '#fff' }} />
+      <AssistantHtmlStaticFrame artifactId={item.id} versionId={version?.id || item.currentVersionId} title={item.title} html={content} sx={{ width: '100%', minHeight: expanded ? '72vh' : 360, border: 0, borderRadius: 1 }} />
     );
   }
   return (

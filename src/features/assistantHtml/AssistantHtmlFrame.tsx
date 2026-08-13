@@ -4,6 +4,7 @@ import type { AssistantArtifactVersion, AssistantHtmlRuntimeManifest } from '../
 import { buildAssistantHtmlDocument } from './assistantHtmlDocument';
 import { parseAssistantHtmlBridgeEvent } from './assistantHtmlBridge';
 import { validateAssistantHtmlPayload } from './assistantHtmlValidation';
+import { useTheme } from '@mui/material/styles';
 
 export interface AssistantHtmlInteractionPayload {
   artifactId: string;
@@ -45,6 +46,7 @@ export default function AssistantHtmlFrame({
   onSubmit?: (input: AssistantHtmlInteractionPayload) => void | Promise<void>;
   onOpenFullscreen?: () => void;
 }) {
+  const theme = useTheme();
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   const channelToken = useMemo(createHtmlChannelToken, [artifactId, version.id]);
   const [height, setHeight] = useState(manifest.viewport?.preferredHeight || (inline ? 280 : 720));
@@ -60,7 +62,8 @@ export default function AssistantHtmlFrame({
     versionId: version.id,
     interactionState: version.interactionState,
     readOnly,
-  }), [artifactId, channelToken, manifest, readOnly, version]);
+    displayMode: theme.palette.mode,
+  }), [artifactId, channelToken, manifest, readOnly, theme.palette.mode, version]);
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -116,7 +119,7 @@ export default function AssistantHtmlFrame({
         title="HTML 交互内容"
         srcDoc={srcDoc}
         sandbox="allow-scripts"
-        sx={{ width: '100%', height: fillContainer ? '100%' : inline ? height : 'calc(100dvh - 110px)', minHeight: fillContainer ? 0 : inline ? 160 : 420, border: 0, display: 'block', bgcolor: '#fff' }}
+        sx={{ width: '100%', height: fillContainer ? '100%' : inline ? height : 'calc(100dvh - 110px)', minHeight: fillContainer ? 0 : inline ? 160 : 420, border: 0, display: 'block', bgcolor: theme.palette.mode === 'dark' ? '#181a20' : '#fff' }}
       />
       {error ? <Typography variant="caption" color="error" sx={{ display: 'block', mt: 0.5 }}>{error}</Typography> : null}
     </Box>
