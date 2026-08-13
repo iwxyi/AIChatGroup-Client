@@ -420,7 +420,7 @@ function ArtifactThumbnail({ item, mode }: { item: AssistantArtifactItem; mode: 
       ) : item.kind === 'html' ? (
         <AssistantHtmlStaticFrame artifactId={item.id} versionId={item.currentVersionId} title={item.title} html={content} sx={{ width: '100%', height: '100%', border: 0, pointerEvents: 'none' }} />
       ) : item.kind === 'table' || item.kind === 'json' ? (
-        <Box sx={{ p: mode === 'icons' ? 0.5 : 0.75, overflow: 'hidden', height: '100%' }}><AssistantDataPreview item={item} maxRows={mode === 'list' ? 8 : 4} /></Box>
+        <Box sx={{ p: mode === 'icons' ? 0.5 : 0.75, overflow: 'hidden', height: '100%' }}><AssistantDataPreview item={item} maxRows={mode === 'list' ? 20 : 10} /></Box>
       ) : item.kind === 'document' ? (
         <Box sx={{ p: 1, overflow: 'hidden', bgcolor: (theme) => theme.palette.mode === 'light' ? '#fff' : 'rgba(2,6,23,0.52)', ...scaledCanvasSx }}>
           <MarkdownText text={content} forceRich />
@@ -483,7 +483,7 @@ function ArtifactPreview({ item, version, expanded = false, fullscreen = false, 
     );
   }
   if (item.kind === 'table' || item.kind === 'json') {
-    return <AssistantDataPreview item={item} version={version} maxRows={expanded ? 30 : 8} />;
+    return <AssistantDataPreview item={item} version={version} maxRows={fullscreen ? Number.POSITIVE_INFINITY : expanded ? 30 : 8} />;
   }
   return (
     <Box

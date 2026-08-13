@@ -119,8 +119,9 @@ export function getAssistantArtifactDataPreview(item: AssistantArtifactItem, max
     const columns = format === 'csv' && 'columns' in parsed
       ? parsed.columns
       : Array.from(new Set(rows.flatMap((row) => Object.keys(row))));
-    const limit = Math.min(MAX_RESULT_ROWS, Math.max(1, Math.floor(maxRows)));
-    return { format, columns: columns.slice(0, 40), rows: rows.slice(0, limit), totalRows: rows.length, truncated: rows.length > limit };
+    const showAll = !Number.isFinite(maxRows);
+    const limit = showAll ? rows.length : Math.min(MAX_RESULT_ROWS, Math.max(1, Math.floor(maxRows)));
+    return { format, columns: showAll ? columns : columns.slice(0, 40), rows: rows.slice(0, limit), totalRows: rows.length, truncated: !showAll && rows.length > limit };
   } catch {
     return null;
   }

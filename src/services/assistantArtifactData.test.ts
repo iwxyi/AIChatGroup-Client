@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AssistantArtifactItem } from '../types/assistantArtifact';
-import { applyAssistantArtifactDataOperation, summarizeAssistantArtifactData } from './assistantArtifactData';
+import { applyAssistantArtifactDataOperation, getAssistantArtifactDataPreview, summarizeAssistantArtifactData } from './assistantArtifactData';
 
 function table(content: string): AssistantArtifactItem {
   return {
@@ -52,5 +52,12 @@ describe('assistant artifact data operations', () => {
     const applied = applyAssistantArtifactDataOperation(item, { kind: 'query', artifactId: 'words' }, 2);
     expect(applied.result.format).toBe('json');
     expect(applied.result.columns).toEqual(['id', 'value']);
+  });
+
+  it('returns the complete data preview when requested by fullscreen', () => {
+    const content = ['id,name', ...Array.from({ length: 25 }, (_, index) => `${index},row-${index}`)].join('\n');
+    const preview = getAssistantArtifactDataPreview(table(content), Number.POSITIVE_INFINITY);
+    expect(preview?.rows).toHaveLength(25);
+    expect(preview?.truncated).toBe(false);
   });
 });

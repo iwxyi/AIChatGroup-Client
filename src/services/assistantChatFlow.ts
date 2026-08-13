@@ -553,6 +553,7 @@ async function persistAssistantArtifactsFromReply(params: {
       signal: params.signal,
     });
     let dataResults: AssistantArtifactDataResult[] = [];
+    let dataArtifacts = [] as Awaited<ReturnType<typeof useAssistantArtifactStore.getState>>['items'];
     if (patchSet.dataOperations?.length) {
       const applied = useAssistantArtifactStore.getState().applyDataOperations({
         chatId: params.chatId,
@@ -560,7 +561,12 @@ async function persistAssistantArtifactsFromReply(params: {
         timestamp: params.timestamp || Date.now(),
       });
       dataResults = applied.results;
-      if (applied.artifacts.length) {
+      dataArtifacts = applied.artifacts;
+      if (!dataArtifacts.length) {
+        const dataArtifactIds = new Set(patchSet.dataOperations.map((operation) => operation.artifactId));
+        dataArtifacts = useAssistantArtifactStore.getState().items.filter((artifact) => dataArtifactIds.has(artifact.id));
+      }
+      if (dataArtifacts.length) {
         patchesCommitted += applied.artifacts.length;
       }
     }
@@ -595,14 +601,18 @@ async function persistAssistantArtifactsFromReply(params: {
         upsertMessage: params.upsertMessage,
       }).catch(() => undefined);
     }
-    if (patchSet.patches.length) {
-      const changedArtifacts = useAssistantArtifactStore.getState().commitPatchSet({
-        chatId: params.chatId,
-        messageId: assistantMessage.id,
-        patches: patchSet.patches,
-        timestamp: assistantMessage.timestamp,
-      });
-      if (changedArtifacts.length) {
+    if (patchSet.patches.length || dataArtifacts.length) {
+      const changedArtifacts = patchSet.patches.length
+        ? useAssistantArtifactStore.getState().commitPatchSet({
+          chatId: params.chatId,
+          messageId: assistantMessage.id,
+          patches: patchSet.patches,
+          timestamp: assistantMessage.timestamp,
+        })
+        : [];
+      const artifactsById = new Map([...dataArtifacts, ...changedArtifacts].map((artifact) => [artifact.id, artifact]));
+      const linkedArtifacts = Array.from(artifactsById.values());
+      if (linkedArtifacts.length) {
         const messageWithArtifacts = await persistLocalFirstMessage({
           message: {
             ...assistantMessage,
@@ -610,7 +620,7 @@ async function persistAssistantArtifactsFromReply(params: {
               ...(assistantMessage.metadata || {}),
               assistant: {
                 ...(assistantMessage.metadata?.assistant || {}),
-                artifacts: changedArtifacts.map((artifact) => {
+                artifacts: linkedArtifacts.map((artifact) => {
                   const version = artifact.versions.find((item) => item.id === artifact.currentVersionId)
                     || artifact.versions.at(-1);
                   const htmlRuntime = artifact.kind === 'html' ? version?.htmlRuntime : undefined;
