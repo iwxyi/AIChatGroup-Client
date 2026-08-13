@@ -46,6 +46,7 @@ interface MessageBubbleProps {
   onCreateRevision?: (message: Message, content: string) => void | Promise<void>;
   onSwitchRevision?: (message: Message, direction: -1 | 1) => void | Promise<void>;
   onOpenArtifact?: (artifactId: string) => void;
+  onOpenHtmlFullscreen?: (artifactId: string) => void;
   onHtmlAutosave?: (input: AssistantHtmlInteractionPayload) => void | Promise<void>;
   onHtmlSubmit?: (input: AssistantHtmlInteractionPayload) => void | Promise<void>;
 }
@@ -112,7 +113,7 @@ function buildWithdrawalDebugTitle(withdrawal: NonNullable<Message['metadata']>[
   );
 }
 
-function MessageBubble({ message, character, characters = [], onDelete, onAnalyze, onExpressionFeedback, onRetryMedia, onOpenImage, onAddImagesToReference, onOpenDiagram, onCharacterAvatarClick, pending = false, currentUser, selfMemberId = null, privateConversation = false, branchVersionInfo, onCreateRevision, onSwitchRevision, onOpenArtifact, onHtmlAutosave, onHtmlSubmit }: MessageBubbleProps) {
+function MessageBubble({ message, character, characters = [], onDelete, onAnalyze, onExpressionFeedback, onRetryMedia, onOpenImage, onAddImagesToReference, onOpenDiagram, onCharacterAvatarClick, pending = false, currentUser, selfMemberId = null, privateConversation = false, branchVersionInfo, onCreateRevision, onSwitchRevision, onOpenArtifact, onOpenHtmlFullscreen, onHtmlAutosave, onHtmlSubmit }: MessageBubbleProps) {
   const customBubbleStyles = useSettingsStore((state) => state.customBubbleStyles);
   const userBubbleStyleId = useSettingsStore((state) => state.userBubbleStyleId);
   const userBubbleStyle = useSettingsStore((state) => state.userBubbleStyle);
@@ -511,7 +512,7 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
             </Box>
           ) : null}
           {previewHtmlArtifactRefs.map((artifact) => (
-            <AssistantHtmlMessageBlock key={`${artifact.id}:${artifact.versionId || 'current'}`} artifactRef={artifact} onOpenArtifact={onOpenArtifact} />
+            <AssistantHtmlMessageBlock key={`${artifact.id}:${artifact.versionId || 'current'}`} artifactRef={artifact} onOpenFullscreen={onOpenHtmlFullscreen} />
           ))}
         </Box>
 
@@ -677,6 +678,7 @@ function areMessageBubblePropsEqual(previous: MessageBubbleProps, next: MessageB
     && previous.onCreateRevision === next.onCreateRevision
     && previous.onSwitchRevision === next.onSwitchRevision
     && previous.onOpenArtifact === next.onOpenArtifact
+    && previous.onOpenHtmlFullscreen === next.onOpenHtmlFullscreen
     && previous.onHtmlAutosave === next.onHtmlAutosave
     && previous.onHtmlSubmit === next.onHtmlSubmit;
 }

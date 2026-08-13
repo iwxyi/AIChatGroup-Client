@@ -826,6 +826,8 @@ export default function ChatDetailPage() {
   const [chatPageSettingsOpen, setChatPageSettingsOpen] = useState(false);
   const [uiHydrated, setUiHydrated] = useState(() => useUIStore.persist.hasHydrated());
   const [selectedAssistantArtifactId, setSelectedAssistantArtifactId] = useState<string | null>(null);
+  const [fullscreenAssistantArtifactId, setFullscreenAssistantArtifactId] = useState<string | null>(null);
+  const closeAssistantPanelAfterFullscreenRef = useRef(false);
   const [pendingAppCommand, setPendingAppCommand] = useState<PendingAppCommand | null>(null);
   const [visiblePendingAppCommand, setVisiblePendingAppCommand] = useState<PendingAppCommand | null>(null);
   const [pendingAppCommandChoiceId, setPendingAppCommandChoiceId] = useState<string | null>(null);
@@ -2061,6 +2063,18 @@ export default function ChatDetailPage() {
   const handleOpenAssistantArtifact = useCallback((artifactId: string) => {
     setSelectedAssistantArtifactId(artifactId);
     setRightPanelOpen(true);
+  }, [setRightPanelOpen]);
+
+  const handleOpenAssistantHtmlFullscreen = useCallback((artifactId: string) => {
+    closeAssistantPanelAfterFullscreenRef.current = !rightPanelOpen;
+    setFullscreenAssistantArtifactId(artifactId);
+    if (!rightPanelOpen) setRightPanelOpen(true);
+  }, [rightPanelOpen, setRightPanelOpen]);
+
+  const handleCloseAssistantHtmlFullscreen = useCallback(() => {
+    setFullscreenAssistantArtifactId(null);
+    if (closeAssistantPanelAfterFullscreenRef.current) setRightPanelOpen(false);
+    closeAssistantPanelAfterFullscreenRef.current = false;
   }, [setRightPanelOpen]);
 
   const handleHtmlAutosave = useCallback((input: AssistantHtmlInteractionPayload) => {
@@ -3497,6 +3511,7 @@ export default function ChatDetailPage() {
             onAddImagesToReference={handleAddImagesToReference}
             onCharacterAvatarClick={openCharacterPreview}
             onOpenArtifact={isAssistantChat ? handleOpenAssistantArtifact : undefined}
+            onOpenHtmlFullscreen={isAssistantChat ? handleOpenAssistantHtmlFullscreen : undefined}
             onHtmlAutosave={isAssistantChat && !chatInteractionDisabled ? handleHtmlAutosave : undefined}
             onHtmlSubmit={isAssistantChat && !chatInteractionDisabled ? handleHtmlSubmit : undefined}
             selfMemberId={effectiveAiDirectPerspectiveMemberId}
@@ -3646,6 +3661,8 @@ export default function ChatDetailPage() {
                     onSelectedArtifactChange={setSelectedAssistantArtifactId}
                     onHtmlAutosave={handleHtmlAutosave}
                     onHtmlSubmit={handleHtmlSubmit}
+                    fullscreenArtifactId={fullscreenAssistantArtifactId}
+                    onFullscreenArtifactClose={handleCloseAssistantHtmlFullscreen}
                     onAgentEnabledChange={agentEntitled ? (enabled) => {
                       writeAssistantAgentDefaultEnabled(enabled);
                       const aiSearchAvailable = authMode === 'cloud' && currentUser?.aiSearchEntitled === true;

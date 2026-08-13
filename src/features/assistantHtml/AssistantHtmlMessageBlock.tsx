@@ -17,11 +17,12 @@ function resolveInlineVersion(artifact: AssistantArtifactItem, ref: ArtifactRef)
   return attempt || referenced;
 }
 
-export default function AssistantHtmlMessageBlock({ artifactRef, onAutosave, onSubmit, onOpenArtifact }: {
+export default function AssistantHtmlMessageBlock({ artifactRef, onAutosave, onSubmit, onOpenArtifact, onOpenFullscreen }: {
   artifactRef: ArtifactRef;
   onAutosave?: (input: AssistantHtmlInteractionPayload) => void | Promise<void>;
   onSubmit?: (input: AssistantHtmlInteractionPayload) => void | Promise<void>;
   onOpenArtifact?: (artifactId: string) => void;
+  onOpenFullscreen?: (artifactId: string) => void;
 }) {
   const artifact = useAssistantArtifactStore((state) => state.items.find((item) => item.id === artifactRef.id && item.deletedAt == null) || null);
   if (!artifact || artifact.kind !== 'html') return null;
@@ -53,13 +54,13 @@ export default function AssistantHtmlMessageBlock({ artifactRef, onAutosave, onS
   };
   return (
     <Box
-      role={onOpenArtifact ? 'button' : undefined}
-      tabIndex={onOpenArtifact ? 0 : undefined}
-      onClick={() => onOpenArtifact?.(artifact.id)}
+      role={onOpenFullscreen ? 'button' : undefined}
+      tabIndex={onOpenFullscreen ? 0 : undefined}
+      onClick={() => onOpenFullscreen?.(artifact.id)}
       onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault();
-          onOpenArtifact?.(artifact.id);
+          onOpenFullscreen?.(artifact.id);
         }
       }}
       sx={{
@@ -70,12 +71,12 @@ export default function AssistantHtmlMessageBlock({ artifactRef, onAutosave, onS
         borderRadius: 1,
         overflow: 'hidden',
         bgcolor: '#fff',
-        cursor: onOpenArtifact ? 'pointer' : 'default',
-        '&:hover': onOpenArtifact ? { borderColor: 'primary.main' } : undefined,
+        cursor: onOpenFullscreen ? 'pointer' : 'default',
+        '&:hover': onOpenFullscreen ? { borderColor: 'primary.main' } : undefined,
       }}
     >
       <Box sx={{ pointerEvents: 'none' }}>
-        <AssistantHtmlFrame artifactId={artifact.id} version={version} manifest={previewManifest} inline readOnly onOpenFullscreen={() => onOpenArtifact?.(artifact.id)} />
+        <AssistantHtmlFrame artifactId={artifact.id} version={version} manifest={previewManifest} inline readOnly onOpenFullscreen={() => onOpenFullscreen?.(artifact.id)} />
       </Box>
     </Box>
   );
