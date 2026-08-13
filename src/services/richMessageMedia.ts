@@ -6,6 +6,7 @@ import { generateImageWithAdapter, synthesizeSpeechWithAdapter } from './aiGener
 import { storageKey } from '../constants/brand';
 import { reportRecoverableError } from './diagnostics';
 import { isCloudSyncEnabled } from './cloudSyncPreference';
+import { synthesizeSpeech } from './speech';
 
 function findProfile(profiles: AIModelProfile[], id?: string | null) {
   const profile = id ? profiles.find((item) => item.id === id) : null;
@@ -404,33 +405,30 @@ async function runRichMediaQueueEntry(entry: RichMediaQueueEntry) {
     const profile = findGenerationProfile(entry.aiProfiles, 'audio', entry.character?.modelProfileIds?.audio);
     if (!profile) throw new Error('语音模型未配置');
     const voice = entry.character?.voiceConfig?.voiceName || profile.model;
-    const audio = await synthesizeSpeechWithAdapter({
-      profile,
-      intent: 'chat-audio',
-      input: attachment.promptText || workingMessage.content,
-      voice,
-      format: 'mp3',
-    });
-    const latestAttachment = getLatestRichMediaMessage(messageId, workingMessage).metadata?.attachments?.find((item) => item.id === attachment.id);
-    if (latestAttachment?.generationJobId !== generationJobId) return;
-    const dataUrl = await blobToDataUrl(audio.blob);
-    const asset = isLocalOnlyMediaMode()
-      ? { id: undefined, url: dataUrl, mimeType: audio.mimeType, sizeBytes: dataUrl.length, checksum: undefined }
-      : await api.createMediaAsset({
+    const speechText = attachment.promptText || workingMessage.content;
+    const localOnly = isLocalOnlyMediaMode();
+    const speechResult = !localOnly
+      ? await synthesizeSpeech({
+          providerCode: profile.provider,
+          text: speechText,
+          voice,
           chatId: workingMessage.chatId,
           messageId: workingMessage.serverId || workingMessage.id,
           attachmentId: attachment.id,
-          kind: 'audio',
-          dataUrl,
-        });
+        })
+      : null;
+    const latestAttachment = getLatestRichMediaMessage(messageId, workingMessage).metadata?.attachments?.find((item) => item.id === attachment.id);
+    if (latestAttachment?.generationJobId !== generationJobId) return;
+    const dataUrl = speechResult?.audioDataUrl || await blobToDataUrl((await synthesizeSpeechWithAdapter({ profile, intent: 'chat-audio', input: speechText, voice, format: 'mp3' })).blob);
+    const asset = speechResult?.asset || { id: undefined, url: dataUrl, mimeType: speechResult?.mimeType || 'audio/mpeg', sizeBytes: dataUrl.length, checksum: undefined };
     workingMessage = updateRichMediaMessage({
       message: workingMessage,
       attachmentId: attachment.id,
       patch: {
         status: 'ready',
         assetId: asset.id,
-        url: asset.url || dataUrl,
-        mimeType: asset.mimeType,
+          url: asset.url || dataUrl,
+          mimeType: asset.mimeType,
         sizeBytes: asset.sizeBytes,
         generationJobId,
       },

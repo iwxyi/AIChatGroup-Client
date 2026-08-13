@@ -1038,6 +1038,38 @@ class ApiClient {
     return this.request<{ id: string; url: string; mimeType: string; sizeBytes: number; checksum?: string }>('POST', '/media-assets', data);
   }
 
+  async synthesizeSpeech(data: {
+    providerCode?: string;
+    text: string;
+    voice?: string;
+    language?: string;
+    emotion?: string;
+    style?: string;
+    speed?: number;
+    pitch?: number;
+    chatId?: string;
+    messageId?: string;
+    attachmentId?: string;
+  }) {
+    return this.request<{
+      provider: string;
+      mimeType: string;
+      audioDataUrl: string;
+      cached?: boolean;
+      asset?: { id: string; url: string; mimeType: string; sizeBytes: number; checksum?: string };
+    }>('POST', '/speech/tts', data);
+  }
+
+  async transcribeSpeech(data: {
+    providerCode?: string;
+    audioDataUrl: string;
+    fileName?: string;
+    language?: string;
+    prompt?: string;
+  }) {
+    return this.request<{ provider: string; text: string; raw?: Record<string, unknown> }>('POST', '/speech/stt', data);
+  }
+
   async listCharacterVisualAssets(characterId: string) {
     return this.request<Array<{
       id: string; characterId: string; url: string; mimeType: string; sizeBytes: number; checksum?: string; label?: string | null;
