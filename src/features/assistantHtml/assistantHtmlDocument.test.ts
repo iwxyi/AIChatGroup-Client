@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildAssistantHtmlDocument } from './assistantHtmlDocument';
+import { modifyAssistantCssColor, transformAssistantCssColors } from './assistantHtmlDarkTheme';
 
 const manifest = { schemaVersion: 1, presentation: 'fullscreen', executionMode: 'declarative' } as const;
 
@@ -15,9 +16,9 @@ function build(displayMode: 'light' | 'dark') {
 }
 
 describe('assistant HTML viewer display mode', () => {
-  it('keeps legacy HTML unchanged in dark application mode', () => {
+  it('uses static professional conversion for legacy HTML in dark mode', () => {
     const document = build('dark');
-    expect(document).toContain('.card{background:#fff;color:#111}');
+    expect(document).toContain('.card{background:#111318;color:#dce0e3}');
     expect(document).toContain('displayMode":"dark"');
     expect(document).toContain('applyDisplayMode()');
     expect(document).not.toContain('html{color-scheme:dark}');
@@ -27,8 +28,16 @@ describe('assistant HTML viewer display mode', () => {
 
   it('keeps the original HTML available in light mode', () => {
     const document = build('light');
+    expect(document).toContain('.card{background:#fff;color:#111}');
     expect(document).toContain('<div class="card">原始内容</div>');
     expect(document).toContain('displayMode":"light"');
+  });
+
+  it('uses role-aware Dark Reader-derived static conversion for legacy colors', () => {
+    expect(modifyAssistantCssColor('#111827', 'foreground')).toBe('#d4d9dd');
+    expect(modifyAssistantCssColor('#ffffff', 'background')).toBe('#111318');
+    expect(modifyAssistantCssColor('rgba(250, 255, 189, 0.5)', 'background')).toMatch(/^#[0-9a-f]{8}$/i);
+    expect(transformAssistantCssColors('.card{background:#fff;color:#111827;border:1px solid #e5e7eb}')).toContain('background:#111318');
   });
 
   it('prefers an artifact native theme contract over compatibility conversion', () => {
@@ -46,7 +55,7 @@ describe('assistant HTML viewer display mode', () => {
     expect(document).toContain('if(!config.hasNativeThemeContract)return');
   });
 
-  it('keeps original styling for an incomplete native theme contract', () => {
+  it('uses professional conversion fallback for an incomplete native theme contract', () => {
     const document = buildAssistantHtmlDocument({
       html: '<style>:root{--pneumata-bg:#fff}html[data-pneumata-theme="dark"]{--pneumata-bg:#111}</style><div>不完整主题</div>',
       manifest,

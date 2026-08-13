@@ -1,4 +1,5 @@
 import type { AssistantHtmlRuntimeManifest } from '../../types/assistantArtifact';
+import { transformAssistantCssColors, transformAssistantInlineStyles } from './assistantHtmlDarkTheme';
 
 function escapeScriptJson(value: unknown) {
   return JSON.stringify(value).replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026');
@@ -43,6 +44,7 @@ export function buildAssistantHtmlDocument(params: {
     && /html\s*\[\s*data-pneumata-theme\s*=\s*["']light["']/iu.test(params.html)
     && /html\s*\[\s*data-pneumata-theme\s*=\s*["']dark["']/iu.test(params.html)
     && /prefers-color-scheme\s*:\s*dark/iu.test(params.html);
+  const shouldConvertLegacyTheme = !hasNativeThemeContract && params.displayMode === 'dark';
   const nonce = params.channelToken.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80);
   const runtimeConfig = {
     channelToken: params.channelToken,
@@ -69,8 +71,9 @@ document.addEventListener('click',(event)=>{const target=event.target.closest('[
 document.addEventListener('submit',(event)=>{event.preventDefault();if(!config.readOnly)send('submit',{payload:read()});});
 const report=()=>send('resize',{height:Math.min(Math.max(document.documentElement.scrollHeight,160),1600)});new ResizeObserver(report).observe(document.documentElement);
 restore();applyDisplayMode();report();send('ready',{height:document.documentElement.scrollHeight});})();`;
-  const styles = safeStyleContent(params.html);
+  const styles = shouldConvertLegacyTheme ? transformAssistantCssColors(safeStyleContent(params.html)) : safeStyleContent(params.html);
   const displayStyles = hasNativeThemeContract && params.displayMode ? `html{color-scheme:${params.displayMode}}` : '';
   const body = bodyContent(params.html).replace(/<style\b[^>]*>[\s\S]*?<\/style\s*>/gi, '');
-  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; script-src 'nonce-${nonce}'; connect-src 'none'; form-action 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'"><style>html,body{margin:0;padding:0;background:transparent;color:#111827;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}*{box-sizing:border-box}button,input,select,textarea{font:inherit}${styles}${displayStyles}</style></head><body>${body}<script nonce="${nonce}">${runtime}</script></body></html>`;
+  const transformedBody = shouldConvertLegacyTheme ? transformAssistantInlineStyles(body) : body;
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; script-src 'nonce-${nonce}'; connect-src 'none'; form-action 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'"><style>html,body{margin:0;padding:0;background:transparent;color:#111827;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}*{box-sizing:border-box}button,input,select,textarea{font:inherit}${styles}${displayStyles}</style></head><body>${transformedBody}<script nonce="${nonce}">${runtime}</script></body></html>`;
 }
