@@ -88,7 +88,7 @@ export default function AssistantHtmlFullscreenDialog({ artifactId, onClose, onA
   };
 
   return (
-    <Dialog open={Boolean(artifactId)} onClose={requestClose} fullScreen>
+    <Dialog open={Boolean(artifactId)} onClose={requestClose} fullScreen slotProps={{ paper: { sx: { bgcolor: 'background.default', color: 'text.primary' } } }}>
       {artifact && version?.htmlRuntime ? (
         <>
           <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, px: { xs: 1, sm: 2 }, py: 0.75, borderBottom: '1px solid', borderColor: 'divider', flexShrink: 0 }}>
@@ -104,7 +104,7 @@ export default function AssistantHtmlFullscreenDialog({ artifactId, onClose, onA
               <IconButton onClick={requestClose} aria-label="关闭 HTML 页面"><CloseOutlinedIcon /></IconButton>
             </Stack>
           </DialogTitle>
-          <DialogContent sx={{ p: 0, bgcolor: '#fff', display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+          <DialogContent sx={{ p: 0, bgcolor: 'background.default', display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
             <AssistantHtmlFrame
               artifactId={artifact.id}
               version={version}
