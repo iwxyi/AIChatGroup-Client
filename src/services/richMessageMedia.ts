@@ -407,11 +407,15 @@ async function runRichMediaQueueEntry(entry: RichMediaQueueEntry) {
     const voice = entry.character?.voiceConfig?.voiceName || profile.model;
     const speechText = attachment.promptText || workingMessage.content;
     const localOnly = isLocalOnlyMediaMode();
+    const voiceStyle = entry.character?.voiceConfig?.style || entry.character?.voiceConfig?.instructions;
+    const voiceEmotion = entry.character?.voiceConfig?.emotion;
     const speechResult = !localOnly
       ? await synthesizeSpeech({
           providerCode: profile.provider,
           text: speechText,
           voice,
+          style: voiceStyle,
+          emotion: voiceEmotion,
           chatId: workingMessage.chatId,
           messageId: workingMessage.serverId || workingMessage.id,
           attachmentId: attachment.id,
@@ -419,7 +423,7 @@ async function runRichMediaQueueEntry(entry: RichMediaQueueEntry) {
       : null;
     const latestAttachment = getLatestRichMediaMessage(messageId, workingMessage).metadata?.attachments?.find((item) => item.id === attachment.id);
     if (latestAttachment?.generationJobId !== generationJobId) return;
-    const dataUrl = speechResult?.audioDataUrl || await blobToDataUrl((await synthesizeSpeechWithAdapter({ profile, intent: 'chat-audio', input: speechText, voice, format: 'mp3' })).blob);
+    const dataUrl = speechResult?.audioDataUrl || await blobToDataUrl((await synthesizeSpeechWithAdapter({ profile, intent: 'chat-audio', input: speechText, voice, style: voiceStyle, emotion: voiceEmotion, format: 'mp3' })).blob);
     const asset = speechResult?.asset || { id: undefined, url: dataUrl, mimeType: speechResult?.mimeType || 'audio/mpeg', sizeBytes: dataUrl.length, checksum: undefined };
     workingMessage = updateRichMediaMessage({
       message: workingMessage,

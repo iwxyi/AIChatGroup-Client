@@ -1538,6 +1538,20 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
                           value={voiceConfig.pitch || ''}
                           onChange={(e) => setVoiceConfig((prev) => ({ ...prev, pitch: e.target.value }))}
                         />
+                        <TextField
+                          size="small"
+                          label={i18n.language.startsWith('zh') ? '默认情绪' : 'Default emotion'}
+                          placeholder={i18n.language.startsWith('zh') ? '如温柔、撒娇、克制' : 'e.g. warm, playful, restrained'}
+                          value={voiceConfig.emotion || ''}
+                          onChange={(e) => setVoiceConfig((prev) => ({ ...prev, emotion: e.target.value }))}
+                        />
+                        <TextField
+                          size="small"
+                          label={i18n.language.startsWith('zh') ? '语音指令' : 'Voice instructions'}
+                          placeholder={i18n.language.startsWith('zh') ? '传给支持 instructions 的 TTS' : 'Passed to TTS providers that support instructions'}
+                          value={voiceConfig.instructions || ''}
+                          onChange={(e) => setVoiceConfig((prev) => ({ ...prev, instructions: e.target.value }))}
+                        />
                       </Box>
                     </CardContent>
                   </Card>

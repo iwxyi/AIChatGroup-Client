@@ -64,6 +64,10 @@ export interface CharacterVoiceConfig {
   role?: string;
   rate?: string;
   pitch?: string;
+  emotion?: string;
+  stability?: number;
+  similarity?: number;
+  instructions?: string;
 }
 
 export interface CharacterCoreProfile {

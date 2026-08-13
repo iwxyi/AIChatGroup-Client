@@ -4,6 +4,7 @@ import SendIcon from '@mui/icons-material/Send';
 import StopRoundedIcon from '@mui/icons-material/StopRounded';
 import CloseIcon from '@mui/icons-material/Close';
 import ImageIcon from '@mui/icons-material/ImageOutlined';
+import MicIcon from '@mui/icons-material/MicNoneOutlined';
 import { useTranslation } from 'react-i18next';
 import { useShallow } from 'zustand/react/shallow';
 import { useUIStore } from '../../stores/useUIStore';
@@ -12,6 +13,8 @@ import type { MessageAttachment } from '../../types/message';
 import type { AIModelInputCapabilities } from '../../types/settings';
 import { buildImageAttachmentHoverInfo } from '../../services/messageAttachmentHoverInfo';
 import { normalizeInputCapabilities } from '../../types/settings';
+import { useSettingsStore } from '../../stores/useSettingsStore';
+import { transcribeSpeech } from '../../services/speech';
 
 interface ChatInputProps {
   mode: 'guide' | 'speakAs' | 'memberSpeak';
@@ -79,6 +82,8 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
   const [isSending, setIsSending] = useState(false);
   const [inputFocused, setInputFocused] = useState(false);
   const [isImageDragActive, setIsImageDragActive] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
   const { t } = useTranslation();
   const { setRightPanelGestureOffset, setRightPanelGestureDragging } = useUIStore(useShallow((state) => ({
     setRightPanelGestureOffset: state.setRightPanelGestureOffset,
@@ -99,6 +104,9 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
   const panelHandleCleanupRef = useRef<(() => void) | null>(null);
   const panelHandleClickSuppressedRef = useRef(false);
   const imageDragDepthRef = useRef(0);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const recordedChunksRef = useRef<Blob[]>([]);
+  const audioModel = useSettingsStore((state) => state.aiProfiles.find((profile) => profile.type === 'audio' && (profile.audioCapability === 'stt' || profile.audioCapability === 'both') && (profile.isDefault || profile.provider)));
 
   useEffect(() => {
     if (!autoFocus) return;
@@ -174,6 +182,59 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
       void handleSend();
     }
   };
+
+  const blobToDataUrl = useCallback((blob: Blob) => new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(reader.error || new Error('读取录音失败'));
+    reader.readAsDataURL(blob);
+  }), []);
+
+  const startRecording = useCallback(async () => {
+    if (disabled || isSending || isTranscribing || !audioModel || !navigator.mediaDevices?.getUserMedia) {
+      if (!audioModel) onSendError?.('请先在模型页面配置语音转文字模型');
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      recordedChunksRef.current = [];
+      recorder.ondataavailable = (event) => { if (event.data.size) recordedChunksRef.current.push(event.data); };
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((track) => track.stop());
+        const blob = new Blob(recordedChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+        if (!blob.size) return;
+        setIsTranscribing(true);
+        try {
+          const result = await transcribeSpeech({ providerCode: audioModel.provider, audioDataUrl: await blobToDataUrl(blob), fileName: 'voice-input.webm', language: 'zh' });
+          if (result.text.trim()) {
+            setText((current) => {
+              const next = current.trim() ? `${current.trim()} ${result.text.trim()}` : result.text.trim();
+              publishDraftActivity(next, inputFocused);
+              return next;
+            });
+          }
+        } catch (error) {
+          onSendError?.(error instanceof Error ? error.message : '语音转文字失败');
+        } finally {
+          setIsTranscribing(false);
+        }
+      };
+      recorderRef.current = recorder;
+      recorder.start();
+      setIsRecording(true);
+    } catch (error) {
+      onSendError?.(error instanceof Error ? error.message : '无法访问麦克风');
+    }
+  }, [audioModel, blobToDataUrl, disabled, inputFocused, isSending, isTranscribing, onSendError, publishDraftActivity]);
+
+  const stopRecording = useCallback(() => {
+    const recorder = recorderRef.current;
+    if (!recorder || recorder.state === 'inactive') return;
+    recorder.stop();
+    recorderRef.current = null;
+    setIsRecording(false);
+  }, []);
 
   const addImageFiles = useCallback(async (selectedFiles: File[]) => {
     if (disabled || isSending || showStopReply) return;
@@ -564,6 +625,22 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
             </Tooltip>
           </>
         ) : null}
+        <Tooltip title={isTranscribing ? '语音识别中' : isRecording ? '松开结束录音' : '按住说话'} arrow>
+          <span>
+            <IconButton
+              color={isRecording ? 'error' : 'default'}
+              aria-label="语音输入"
+              disabled={disabled || isSending || isTranscribing}
+              onPointerDown={(event) => { event.preventDefault(); void startRecording(); }}
+              onPointerUp={(event) => { event.preventDefault(); stopRecording(); }}
+              onPointerCancel={stopRecording}
+              onPointerLeave={() => { if (isRecording) stopRecording(); }}
+              sx={{ flexShrink: 0, width: 42, height: 42, bgcolor: isRecording ? 'error.main' : 'action.hover', color: isRecording ? 'error.contrastText' : 'text.secondary' }}
+            >
+              {isTranscribing ? <CircularProgress size={20} /> : <MicIcon />}
+            </IconButton>
+          </span>
+        </Tooltip>
         <TextField
           fullWidth
           multiline

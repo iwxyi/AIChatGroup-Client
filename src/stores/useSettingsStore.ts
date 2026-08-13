@@ -392,6 +392,7 @@ function createProfile(index: number): AIModelProfile {
     id: `profile-${Date.now()}-${index}`,
     name: `Model ${index + 1}`,
     isDefault: false,
+    audioCapability: undefined,
   };
 }
 

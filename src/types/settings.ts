@@ -6,6 +6,7 @@ export type OfficialAIProvider = 'official' | `official-${string}`;
 export type BuiltInAIProvider = OfficialAIProvider | 'openai' | 'anthropic' | 'google' | 'xai' | 'deepseek' | 'alibaba' | 'zhipu' | 'moonshot' | 'minimax' | 'bytedance' | 'microsoft' | 'custom';
 export type AIProvider = BuiltInAIProvider | (string & {});
 export type AIModelType = 'text' | 'image' | 'audio' | 'document';
+export type AudioModelCapability = 'tts' | 'stt' | 'both';
 export type ThemeMode = 'light' | 'dark' | 'system';
 export type ThemePresetId = 'rednote' | 'jade' | 'reader' | 'imperial' | 'night' | 'mirage' | 'aurora' | 'paper' | 'sakura' | 'ember' | 'graphite' | 'dopamine' | 'morandi';
 export type Language = 'zh' | 'en';
@@ -44,6 +45,7 @@ export interface AIModelProfile extends APIConfig {
   id: string;
   name: string;
   type: AIModelType;
+  audioCapability?: AudioModelCapability;
   isDefault?: boolean;
   imageCapabilities?: Partial<AIModelImageCapabilities>;
   inputCapabilities?: Partial<AIModelInputCapabilities>;

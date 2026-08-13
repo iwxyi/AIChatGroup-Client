@@ -19,7 +19,7 @@ import { useCharacterStore } from '../stores/useCharacterStore';
 import { useAuthStore } from '../stores/useAuthStore';
 import { isLikelyBrowserCorsError, listAvailableModels, testConnection, type AvailableModelInfo } from '../services/aiClient';
 import { api, type OfficialAiProviderInfo } from '../services/api';
-import type { AIModelImageCapabilities, AIModelInputCapabilities, AIModelType, AIProvider } from '../types/settings';
+import type { AIModelImageCapabilities, AIModelInputCapabilities, AIModelType, AIProvider, AudioModelCapability } from '../types/settings';
 import { normalizeImageCapabilities, normalizeInputCapabilities, inferTextInputCapabilities, buildTextInputCapabilityPatch, getInputCapabilityLockState, getAttachmentUiCapabilitySummary, getInputCapabilityBadge, getInputCapabilityWarning, shouldShowInputCapabilityWarning, getReasoningModeUiMeta, normalizeAIModelAdvancedOptions } from '../types/settings';
 import { normalizeCharacterModelProfileIds } from '../types/character';
 import ConfirmDialog from '../components/common/ConfirmDialog';
@@ -1256,6 +1256,29 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
                       sx={fieldSx()}
                     />
                   </Box>
+                  {activeType === 'audio' ? (
+                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1 }}>
+                      <TextField
+                        size="small"
+                        label={i18n.language.startsWith('zh') ? '用户侧模型 ID' : 'User-facing model ID'}
+                        value={profile.model}
+                        onChange={(e) => updateAIProfile(profile.id, { model: e.target.value })}
+                        helperText={i18n.language.startsWith('zh') ? '角色和调用链按此 ID 保存，切换供应商时不必改角色配置。' : 'Characters reference this stable ID when providers change.'}
+                      />
+                      <FormControl size="small" fullWidth>
+                        <InputLabel>{i18n.language.startsWith('zh') ? '语音用途' : 'Audio capability'}</InputLabel>
+                        <Select
+                          value={profile.audioCapability || 'tts'}
+                          label={i18n.language.startsWith('zh') ? '语音用途' : 'Audio capability'}
+                          onChange={(e) => updateAIProfile(profile.id, { audioCapability: e.target.value as AudioModelCapability })}
+                        >
+                          <MenuItem value="tts">文字转语音（TTS）</MenuItem>
+                          <MenuItem value="stt">语音转文字（STT）</MenuItem>
+                          <MenuItem value="both">TTS + STT</MenuItem>
+                        </Select>
+                      </FormControl>
+                    </Box>
+                  ) : null}
                   <Divider />
 
                   <FormControl fullWidth size="small">
