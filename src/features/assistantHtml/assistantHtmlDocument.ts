@@ -39,6 +39,10 @@ export function buildAssistantHtmlDocument(params: {
   readOnly?: boolean;
   displayMode?: 'light' | 'dark';
 }) {
+  const hasNativeThemeContract = /--pneumata-(?:bg|surface|text|muted|border|accent)\s*:/iu.test(params.html)
+    && /html\s*\[\s*data-pneumata-theme\s*=\s*["']light["']/iu.test(params.html)
+    && /html\s*\[\s*data-pneumata-theme\s*=\s*["']dark["']/iu.test(params.html)
+    && /prefers-color-scheme\s*:\s*dark/iu.test(params.html);
   const nonce = params.channelToken.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80);
   const runtimeConfig = {
     channelToken: params.channelToken,
@@ -50,6 +54,7 @@ export function buildAssistantHtmlDocument(params: {
     autosaveDebounceMs: params.manifest.autosave?.debounceMs || 900,
     readOnly: params.readOnly === true,
     displayMode: params.displayMode || 'light',
+    hasNativeThemeContract,
   };
   const runtime = `(function(){
 const config=${escapeScriptJson(runtimeConfig)};
@@ -70,7 +75,7 @@ const coloredForeground=(color)=>{const hsl=rgbToHsl(color);hsl.l=Math.max(hsl.l
 const coloredBackground=(color)=>{const hsl=rgbToHsl(color);const originalLightness=hsl.l;hsl.l=Math.max(0.14,Math.min(0.3,0.14+(1-originalLightness)*0.22));if(originalLightness>0.68)hsl.s*=0.58;return hslToColor(hsl);};
 const coloredBorder=(color)=>{const hsl=rgbToHsl(color);hsl.l=Math.min(Math.max(hsl.l,0.42),0.58);return hslToColor(hsl);};
 const setViewerColor=(node,property,value)=>node.style.setProperty(property,value,'important');
-const applyDisplayMode=()=>{const dark=config.displayMode==='dark';document.documentElement.style.colorScheme=dark?'dark':'light';if(!dark)return;for(const node of document.querySelectorAll('body,body *')){if(node.matches('img,picture,video,canvas'))continue;const style=getComputedStyle(node);const background=parseColor(style.backgroundColor);const foreground=parseColor(style.color);const border=parseColor(style.borderTopColor);if(background&&background.a>0)setViewerColor(node,'background-color',neutral(background)?darkBackground(background):coloredBackground(background));if(foreground&&foreground.a>0&&(!background||background.a===0||neutral(background)))setViewerColor(node,'color',neutral(foreground)?darkForeground(foreground):coloredForeground(foreground));if(border&&border.a>0)setViewerColor(node,'border-color',neutral(border)?darkBorder(border):coloredBorder(border));}};
+const applyDisplayMode=()=>{const dark=config.displayMode==='dark';document.documentElement.style.colorScheme=dark?'dark':'light';document.documentElement.setAttribute('data-pneumata-theme',config.displayMode);if(config.hasNativeThemeContract||!dark)return;for(const node of document.querySelectorAll('body,body *')){if(node.matches('img,picture,video,canvas'))continue;const style=getComputedStyle(node);const background=parseColor(style.backgroundColor);const foreground=parseColor(style.color);const border=parseColor(style.borderTopColor);if(background&&background.a>0)setViewerColor(node,'background-color',neutral(background)?darkBackground(background):coloredBackground(background));if(foreground&&foreground.a>0&&(!background||background.a===0||neutral(background)))setViewerColor(node,'color',neutral(foreground)?darkForeground(foreground):coloredForeground(foreground));if(border&&border.a>0)setViewerColor(node,'border-color',neutral(border)?darkBorder(border):coloredBorder(border));}};
 let timer=0;const autosave=()=>{clearTimeout(timer);timer=setTimeout(()=>send('autosave',{payload:read()}),config.autosaveDebounceMs);};
 if(config.readOnly){for(const node of document.querySelectorAll('input,select,textarea,button'))node.disabled=true;}else{document.addEventListener('input',autosave);document.addEventListener('change',autosave);}
 document.addEventListener('click',(event)=>{const target=event.target.closest('[data-pneumata-action]');if(!target)return;const action=target.getAttribute('data-pneumata-action');if(action==='open_fullscreen'){event.preventDefault();send('open_fullscreen',{});return;}if(config.readOnly)return;if(action==='save'){event.preventDefault();send('autosave',{payload:read()});}else if(action==='submit'){event.preventDefault();send('submit',{payload:read()});}else if(action==='close'){event.preventDefault();send('close',{});}else if(action==='reset'){event.preventDefault();for(const form of document.forms)form.reset();autosave();}});

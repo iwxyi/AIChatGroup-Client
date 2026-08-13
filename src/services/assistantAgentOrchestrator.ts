@@ -375,6 +375,7 @@ function buildWriterPrompt() {
     '12.2 htmlRuntime.executionMode 固定为 declarative。submission.fields 必须完整列出允许提交的字段名、类型、必填、长度和选项，并与 HTML 中 name 属性一致。',
     '12.3 如果 userMessage.htmlSubmission 存在，本轮必须 update 其目标 HTML 产物，baseVersionId 使用提交版本，生成包含审批、批改、分析、结果或下一步交互的完整新版本；不得创建无关的新产物。',
     '12.4 HTML 正文只能放在 patches[].content，严禁放进 assistantMessage 的 Markdown 代码块或直接正文。assistantMessage 只保留一句简短说明；程序会提供产物打开入口。',
+    '12.5 HTML 必须使用少量语义 CSS 变量统一表达页面颜色，至少包括 --pneumata-bg、--pneumata-surface、--pneumata-text、--pneumata-muted、--pneumata-border、--pneumata-accent；元素样式引用变量，不散落重复硬编码颜色。必须同时提供 html[data-pneumata-theme="light"]、html[data-pneumata-theme="dark"] 两组变量覆盖和 @media (prefers-color-scheme: dark) 变量覆盖：属性选择器供应用查看器明确切换并优先于系统主题，媒体查询保证下载导出后独立使用。不要复制两套结构或完整样式，只覆盖变量。',
     '',
     '输出格式：',
     '{"assistantMessage":"面向用户的自然回复文案","patches":[{"action":"create|update","artifactId":"...","kind":"document|code|diagram|html|table|json|text","title":"...","summary":"...","language":"...","content":"完整内容","files":[{"id":"...","path":"...","language":"...","content":"完整文件内容"}],"baseVersionId":"...","changeSummary":"...","htmlRuntime":{"schemaVersion":1,"executionMode":"declarative","autosave":{"enabled":true,"debounceMs":900},"submission":{"interactionId":"stable-id","label":"提交","resultType":"form|quiz|selection|custom","fields":[{"name":"answer","type":"text|textarea|number|boolean|single_choice|multi_choice","label":"回答","required":true,"maxLength":8000,"options":[]}],"sendToAssistant":true,"createArtifactVersion":true}}}],"mediaTasks":[]}',
