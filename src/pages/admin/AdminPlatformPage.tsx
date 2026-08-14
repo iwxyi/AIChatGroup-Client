@@ -817,7 +817,7 @@ export default function AdminPlatformPage() {
               </Stack>
               {fields.length ? fields.map((field) => (
                 field.key === 'defaultVoice' && String(selected.category || '') === 'tts' ? (
-                  <Stack key={field.key} direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ sm: 'flex-start' }}>
+                  <Stack key={field.key} direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ alignItems: { sm: 'flex-start' } }}>
                     <Autocomplete
                       freeSolo
                       fullWidth
