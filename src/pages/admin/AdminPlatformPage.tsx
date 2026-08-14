@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import SaveIcon from '@mui/icons-material/Save';
-import { Alert, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, MenuItem, Stack, Tab, Table, TableBody, TableCell, TableHead, TableRow, Tabs, TextField, Switch, Tooltip, Typography } from '@mui/material';
+import { Alert, Autocomplete, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, MenuItem, Stack, Tab, Table, TableBody, TableCell, TableHead, TableRow, Tabs, TextField, Switch, Tooltip, Typography } from '@mui/material';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import AdminRequestState, { getAdminErrorMessage } from '../../components/admin/AdminRequestState';
 import { AdminMetricGrid, AdminSection, AdminTableFrame, type AdminMetricItem } from '../../components/admin/AdminSurface';
@@ -452,6 +452,9 @@ export default function AdminPlatformPage() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [ttsVoices, setTtsVoices] = useState<Array<{ id: string; name: string; language?: string; gender?: string }>>([]);
+  const [ttsVoicesLoading, setTtsVoicesLoading] = useState(false);
+  const [ttsVoicesError, setTtsVoicesError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const visibleTabs = useMemo(
     () => CATEGORY_TABS.filter((item) => (item.value === 'ai' ? canReadAi : canReadPlatform)),
@@ -561,6 +564,20 @@ export default function AdminPlatformPage() {
     setSearchParams(nextSearchParams, { replace: true });
   }, [category, searchParams, setSearchParams, visibleTabs]);
 
+  const loadTtsVoices = async (providerCode: string) => {
+    setTtsVoicesLoading(true);
+    setTtsVoicesError(null);
+    try {
+      const result = await adminApi.getPlatformTtsVoices(providerCode);
+      setTtsVoices(result.voices || []);
+    } catch (voiceError) {
+      setTtsVoices([]);
+      setTtsVoicesError(getAdminErrorMessage(voiceError));
+    } finally {
+      setTtsVoicesLoading(false);
+    }
+  };
+
   const openEditor = (item: Record<string, unknown>) => {
     const capabilities = integrationCapabilities(item);
     setSelectedKey(integrationKey(item));
@@ -570,6 +587,9 @@ export default function AdminPlatformPage() {
     setTestResult(null);
     setBalanceResult(null);
     setEditorOpen(true);
+    setTtsVoices([]);
+    setTtsVoicesError(null);
+    if (String(item.category || '') === 'tts') void loadTtsVoices(String(item.providerCode || ''));
   };
 
   const buildEditorPayload = () => {
@@ -796,7 +816,36 @@ export default function AdminPlatformPage() {
                 />
               </Stack>
               {fields.length ? fields.map((field) => (
-                field.type === 'boolean' ? (
+                field.key === 'defaultVoice' && String(selected.category || '') === 'tts' ? (
+                  <Stack key={field.key} direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ sm: 'flex-start' }}>
+                    <Autocomplete
+                      freeSolo
+                      fullWidth
+                      loading={ttsVoicesLoading}
+                      options={ttsVoices}
+                      value={ttsVoices.find((voice) => voice.id === String(editor[field.key] || '')) || String(editor[field.key] || '') || null}
+                      getOptionLabel={(option) => typeof option === 'string' ? option : `${option.name}（${option.id}）`}
+                      isOptionEqualToValue={(option, value) => typeof value !== 'string' && option.id === value.id}
+                      onChange={(_event, value) => setEditor((prev) => ({ ...prev, [field.key]: typeof value === 'string' ? value : value?.id || '' }))}
+                      onInputChange={(_event, value, reason) => {
+                        if (reason === 'input') setEditor((prev) => ({ ...prev, [field.key]: value }));
+                      }}
+                      renderInput={(params) => (
+                        <TextField
+                          {...params}
+                          label="默认发音人"
+                          required={field.required}
+                          placeholder="选择平台音色或直接填写 Voice ID"
+                          helperText={ttsVoicesError || (ttsVoicesLoading ? '正在读取当前平台的音色目录…' : '列表来自当前 TTS Provider；也可以直接填写自定义 Voice ID')}
+                          error={Boolean(ttsVoicesError)}
+                        />
+                      )}
+                    />
+                    <Button variant="outlined" startIcon={<RefreshIcon />} disabled={ttsVoicesLoading || !selected} onClick={() => void loadTtsVoices(String(selected.providerCode || ''))} sx={{ minWidth: 112, height: 56 }}>
+                      {ttsVoicesLoading ? '读取中' : '刷新音色'}
+                    </Button>
+                  </Stack>
+                ) : field.type === 'boolean' ? (
                   <FormControlLabel
                     key={field.key}
                     control={<Switch checked={Boolean(editor[field.key])} onChange={(event) => setEditor((prev) => ({ ...prev, [field.key]: event.target.checked }))} />}

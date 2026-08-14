@@ -341,6 +341,10 @@ class AdminApiClient {
     return this.request<{ items: Array<Record<string, unknown>>; requestOrigin?: string }>('GET', '/platform/integrations');
   }
 
+  getPlatformTtsVoices(providerCode: string) {
+    return this.request<{ provider: string; voices: Array<{ id: string; name: string; language?: string; gender?: string; styles?: string[] }> }>('GET', `/platform/integrations/tts/${encodeURIComponent(providerCode)}/voices`);
+  }
+
   updatePlatformIntegration(category: string, providerCode: string, payload: Record<string, unknown>) {
     return this.request<Record<string, unknown>>('PUT', `/platform/integrations/${encodeURIComponent(category)}/${encodeURIComponent(providerCode)}`, payload);
   }
