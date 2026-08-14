@@ -42,7 +42,7 @@ import type { AICharacter, PersonalityParams, CharacterBehaviorParams, Character
 import { getCharacterGroupList, normalizeCharacterGroup, normalizeCharacterModelProfileIds, getDuplicateCharacterNameKeys, getDuplicateCharacterWarningText, hasDuplicateCharacterName } from '../../types/character';
 import type { BubbleStyleDefinition } from '../../types/bubbleStyle';
 import { DEFAULT_PERSONALITY, DEFAULT_CHARACTER_BEHAVIOR, DEFAULT_CHARACTER_MEMORY, DEFAULT_CHARACTER_INTERVENTION, DEFAULT_CORE_PROFILE } from '../../types/character';
-import { generateCharacterProfile, generateCharacterVisualIdentityDraft } from '../../services/characterGenerator';
+import { generateCharacterProfile, generateCharacterVisualIdentityDraft, generateCharacterVoiceProfileDraft } from '../../services/characterGenerator';
 import { useSettingsStore } from '../../stores/useSettingsStore';
 import { useCharacterStore } from '../../stores/useCharacterStore';
 import { useCharacterArtifactStore, type CharacterArtifactEntry } from '../../stores/useCharacterArtifactStore';
@@ -334,6 +334,7 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
   const [speechVoices, setSpeechVoices] = useState<Array<{ id: string; name: string; language?: string; gender?: string; age?: string; traits?: string[]; styles?: string[] }>>([]);
   const [speechVoicesLoading, setSpeechVoicesLoading] = useState(false);
   const [assigningVoice, setAssigningVoice] = useState(false);
+  const [generatingVoiceProfile, setGeneratingVoiceProfile] = useState(false);
   const [voiceAssignmentError, setVoiceAssignmentError] = useState<string | null>(null);
   const [group, setGroup] = useState(initial?.group || '');
   const [memory, setMemory] = useState<CharacterMemoryConfig>(initial?.memory || DEFAULT_CHARACTER_MEMORY);
@@ -705,6 +706,41 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
       setVoiceConfig((prev) => ({ ...prev, ...result.voiceConfig, enabled: true, voiceProfile: profile }));
     } finally {
       setAssigningVoice(false);
+    }
+  };
+
+  const handleGenerateVoiceProfile = async () => {
+    if (generatingVoiceProfile) return;
+    const textModelProfileId = modelProfileIds.text || null;
+    const selectedProfile = settings.aiProfiles.find((profile) => profile.id === textModelProfileId)
+      || getPreferredAIProfile(settings.aiProfiles, 'text')
+      || settings.aiProfiles.find((profile) => isAIProfileUsable(profile));
+    if (!isAIProfileUsable(selectedProfile)) {
+      setVoiceAssignmentError(getGenerateNoKeyError(i18n.language));
+      return;
+    }
+    setGeneratingVoiceProfile(true);
+    setVoiceAssignmentError(null);
+    try {
+      const draft = await generateCharacterVoiceProfileDraft(selectedProfile, {
+        name,
+        background,
+        speakingStyle,
+        expertise,
+        group,
+        coreProfile,
+        speechProfile,
+      }, i18n.language.startsWith('zh') ? 'zh' : 'en');
+      setVoiceConfig((prev) => ({
+        ...prev,
+        voiceProfile: draft,
+        style: prev.style || draft.styles?.join(i18n.language.startsWith('zh') ? '、' : ', '),
+        emotion: prev.emotion || draft.emotions?.join(i18n.language.startsWith('zh') ? '、' : ', '),
+      }));
+    } catch (error) {
+      setVoiceAssignmentError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setGeneratingVoiceProfile(false);
     }
   };
 
@@ -1451,30 +1487,36 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
               <Typography variant="body2" sx={{ fontWeight: 600 }}>{i18n.language.startsWith('zh') ? '语音形象' : 'Voice identity'}</Typography>
               <Typography variant="caption" color="text.secondary">{i18n.language.startsWith('zh') ? '为这个角色设置专属音色与说话语气，聊天气泡可按需播放。' : 'Set this character’s voice and delivery for on-demand playback.'}</Typography>
             </Box>
-            <FormControlLabel
-              control={<Switch checked={Boolean(voiceConfig.enabled)} onChange={(e) => setVoiceConfig((prev) => ({ ...prev, enabled: e.target.checked }))} />}
-              label={i18n.language.startsWith('zh') ? '启用' : 'Enabled'}
-            />
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
+              <Button size="small" variant="text" startIcon={generatingVoiceProfile ? <CircularProgress size={14} /> : <AutoAwesomeIcon fontSize="small" />} onClick={() => void handleGenerateVoiceProfile()} disabled={generatingVoiceProfile}>
+                {i18n.language.startsWith('zh') ? '生成语音形象' : 'Generate voice identity'}
+              </Button>
+              <FormControlLabel
+                sx={{ mr: 0 }}
+                control={<Switch checked={Boolean(voiceConfig.enabled)} onChange={(e) => setVoiceConfig((prev) => ({ ...prev, enabled: e.target.checked }))} />}
+                label={i18n.language.startsWith('zh') ? '启用' : 'Enabled'}
+              />
+            </Box>
           </Box>
-          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(4, minmax(0, 1fr))' }, gap: 1 }}>
-            <TextField select size="small" label={i18n.language.startsWith('zh') ? '性别约束' : 'Gender constraint'} value={voiceConfig.voiceProfile?.gender || 'unknown'} onChange={(e) => setVoiceConfig((prev) => ({ ...prev, voiceProfile: { ...(prev.voiceProfile || {}), gender: e.target.value as 'female' | 'male' | 'neutral' | 'unknown' } }))}>
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(4, minmax(0, 1fr))', sm: 'repeat(4, minmax(0, 1fr))' }, gap: 0.75 }}>
+            <TextField select size="small" label={i18n.language.startsWith('zh') ? '性别' : 'Gender'} value={voiceConfig.voiceProfile?.gender || 'unknown'} onChange={(e) => setVoiceConfig((prev) => ({ ...prev, voiceProfile: { ...(prev.voiceProfile || {}), gender: e.target.value as 'female' | 'male' | 'neutral' | 'unknown' } }))} sx={{ minWidth: 0 }}>
               <MenuItem value="unknown">{i18n.language.startsWith('zh') ? '未指定' : 'Unspecified'}</MenuItem>
               <MenuItem value="female">{i18n.language.startsWith('zh') ? '女声' : 'Female'}</MenuItem>
               <MenuItem value="male">{i18n.language.startsWith('zh') ? '男声' : 'Male'}</MenuItem>
               <MenuItem value="neutral">{i18n.language.startsWith('zh') ? '中性' : 'Neutral'}</MenuItem>
             </TextField>
-            <TextField select size="small" label={i18n.language.startsWith('zh') ? '年龄感' : 'Age impression'} value={voiceConfig.voiceProfile?.age || 'unknown'} onChange={(e) => setVoiceConfig((prev) => ({ ...prev, voiceProfile: { ...(prev.voiceProfile || {}), age: e.target.value } }))}>
+            <TextField select size="small" label={i18n.language.startsWith('zh') ? '年龄' : 'Age'} value={voiceConfig.voiceProfile?.age || 'unknown'} onChange={(e) => setVoiceConfig((prev) => ({ ...prev, voiceProfile: { ...(prev.voiceProfile || {}), age: e.target.value } }))} sx={{ minWidth: 0 }}>
               {['unknown', 'child', 'young', 'adult', 'senior'].map((value) => <MenuItem key={value} value={value}>{i18n.language.startsWith('zh') ? ({ unknown: '未指定', child: '儿童', young: '年轻', adult: '成年', senior: '年长' } as Record<string, string>)[value] : value}</MenuItem>)}
             </TextField>
-            <TextField select size="small" label={i18n.language.startsWith('zh') ? '声音能量' : 'Energy'} value={voiceConfig.voiceProfile?.energy || 'medium'} onChange={(e) => setVoiceConfig((prev) => ({ ...prev, voiceProfile: { ...(prev.voiceProfile || {}), energy: e.target.value } }))}>
+            <TextField select size="small" label={i18n.language.startsWith('zh') ? '能量' : 'Energy'} value={voiceConfig.voiceProfile?.energy || 'medium'} onChange={(e) => setVoiceConfig((prev) => ({ ...prev, voiceProfile: { ...(prev.voiceProfile || {}), energy: e.target.value } }))} sx={{ minWidth: 0 }}>
               <MenuItem value="low">{i18n.language.startsWith('zh') ? '低沉克制' : 'Low / calm'}</MenuItem>
               <MenuItem value="medium">{i18n.language.startsWith('zh') ? '自然适中' : 'Medium / natural'}</MenuItem>
               <MenuItem value="high">{i18n.language.startsWith('zh') ? '明亮有活力' : 'High / lively'}</MenuItem>
             </TextField>
-            <TextField size="small" label={i18n.language.startsWith('zh') ? '语言' : 'Language'} value={voiceConfig.voiceProfile?.language || ''} placeholder="zh-CN" onChange={(e) => setVoiceConfig((prev) => ({ ...prev, voiceProfile: { ...(prev.voiceProfile || {}), language: e.target.value } }))} />
+            <TextField size="small" label={i18n.language.startsWith('zh') ? '语言' : 'Language'} value={voiceConfig.voiceProfile?.language || ''} placeholder="zh-CN" onChange={(e) => setVoiceConfig((prev) => ({ ...prev, voiceProfile: { ...(prev.voiceProfile || {}), language: e.target.value } }))} sx={{ minWidth: 0 }} />
           </Box>
           <TextField size="small" label={i18n.language.startsWith('zh') ? '音色特征' : 'Voice traits'} placeholder={i18n.language.startsWith('zh') ? '温柔、清冷、磁性，用逗号分隔' : 'warm, clear, husky, comma separated'} value={(voiceConfig.voiceProfile?.traits || []).join(i18n.language.startsWith('zh') ? '、' : ', ')} onChange={(e) => setVoiceConfig((prev) => ({ ...prev, voiceProfile: { ...(prev.voiceProfile || {}), traits: e.target.value.split(/[,，、]/).map((item) => item.trim()).filter(Boolean).slice(0, 6) } }))} />
-          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' }, gap: 1 }}>
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', md: 'repeat(2, minmax(0, 1fr))' }, gap: 0.75 }}>
             <Autocomplete
               freeSolo
               options={speechVoices}

@@ -35,6 +35,16 @@ export interface CharacterVisualIdentityDraftInput {
   group?: string | null;
 }
 
+export interface CharacterVoiceProfileDraftInput {
+  name: string;
+  background?: string;
+  speakingStyle?: string;
+  expertise?: string[];
+  group?: string | null;
+  coreProfile?: Partial<CharacterCoreProfile>;
+  speechProfile?: Partial<CharacterSpeechProfile>;
+}
+
 export const CHARACTER_GENERATOR_SYSTEM_PROMPT = `You generate structured AI role profiles for a group chat app.
 Return strict JSON only, with this shape:
 {
@@ -465,4 +475,45 @@ export async function generateCharacterVisualIdentityDraft(config: APIConfig, in
     negativePrompt: typeof parsed?.negativePrompt === 'string' ? parsed.negativePrompt.trim() : '',
     seed: parsed?.seed ?? null,
   };
+}
+
+export async function generateCharacterVoiceProfileDraft(config: APIConfig, input: CharacterVoiceProfileDraftInput, language: 'zh' | 'en') {
+  const expertise = (input.expertise || []).filter(Boolean).join(language === 'zh' ? '、' : ', ');
+  const values = (input.coreProfile?.values || input.coreProfile?.valuePriority || []).filter(Boolean).join(language === 'zh' ? '、' : ', ');
+  const habits = (input.coreProfile?.interactionHabits || []).filter(Boolean).join(language === 'zh' ? '、' : ', ');
+  const catchphrases = (input.speechProfile?.catchphrases || []).filter(Boolean).join(language === 'zh' ? '、' : ', ');
+  const prompt = language === 'zh'
+    ? [
+        `请为聊天角色“${input.name.trim() || '未命名角色'}”生成语音形象。`,
+        input.group?.trim() ? `分组/主题：${input.group.trim()}` : '',
+        input.background?.trim() ? `背景：${input.background.trim()}` : '',
+        input.speakingStyle?.trim() ? `说话气质：${input.speakingStyle.trim()}` : '',
+        expertise ? `兴趣/专长：${expertise}` : '',
+        values ? `价值倾向：${values}` : '',
+        habits ? `互动习惯：${habits}` : '',
+        catchphrases ? `口头禅：${catchphrases}` : '',
+        '返回严格 JSON：{"gender":"female|male|neutral|unknown","age":"child|young|adult|senior|unknown","language":"如 zh-CN","traits":["2-6个音色/气质关键词"],"styles":["0-4个表达风格关键词"],"emotions":["0-4个默认情绪"],"energy":"low|medium|high"}。',
+        '性别是严格约束：只有角色设定明确时才填 female 或 male；不明确必须填 unknown，不能从职业、气质或刻板印象猜测。不要写供应商音色 ID，不要输出 markdown 或解释。',
+      ].filter(Boolean).join('\n')
+    : [
+        `Generate a voice identity for the chat character "${input.name.trim() || 'Unnamed character'}".`,
+        input.group?.trim() ? `Group/theme: ${input.group.trim()}` : '',
+        input.background?.trim() ? `Background: ${input.background.trim()}` : '',
+        input.speakingStyle?.trim() ? `Speaking vibe: ${input.speakingStyle.trim()}` : '',
+        expertise ? `Interests/expertise: ${expertise}` : '',
+        values ? `Values: ${values}` : '',
+        habits ? `Interaction habits: ${habits}` : '',
+        catchphrases ? `Catchphrases: ${catchphrases}` : '',
+        'Return strict JSON: {"gender":"female|male|neutral|unknown","age":"child|young|adult|senior|unknown","language":"such as en-US","traits":["2-6 timbre or temperament keywords"],"styles":["0-4 delivery style keywords"],"emotions":["0-4 default emotions"],"energy":"low|medium|high"}.',
+        'Gender is a strict constraint: use female or male only if explicitly established by character context; otherwise use unknown. Never infer it from profession, vibe, or stereotypes. Do not return a provider voice ID, markdown, or explanations.',
+      ].filter(Boolean).join('\n');
+  const response = await generateResponse(
+    config,
+    `${CHARACTER_GENERATOR_SYSTEM_PROMPT}\nOutput exactly one valid JSON object containing only voiceProfile fields.`,
+    [{ role: 'user', content: prompt }],
+    undefined,
+    { maxTokens: 500, aiUsage: { type: 'character_generation', label: '生成角色语音形象', scope: 'character' } },
+  );
+  const parsed = JSON.parse(extractJsonBlock(response)) as GeneratedCharacterProfile['voiceProfile'];
+  return normalizeGeneratedProfile({ voiceProfile: parsed }).voiceProfile;
 }
