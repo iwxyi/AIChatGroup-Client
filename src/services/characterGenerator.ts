@@ -1,10 +1,11 @@
 import { generateResponse } from './aiClient';
 import type { APIConfig } from '../types/settings';
-import type { PersonalityParams, CharacterBehaviorParams, CharacterSpeechProfile, CharacterCoreProfile } from '../types/character';
+import type { PersonalityParams, CharacterBehaviorParams, CharacterSpeechProfile, CharacterCoreProfile, CharacterVoiceConfig } from '../types/character';
 import { DEFAULT_PERSONALITY, DEFAULT_CHARACTER_BEHAVIOR, DEFAULT_SPEECH_PROFILE, DEFAULT_CORE_PROFILE } from '../types/character';
 import type { BubbleStyleDefinition, BubbleBorderStyle, BubbleGradientDirection, BubbleShadowLevel } from '../types/bubbleStyle';
 import { DEFAULT_BUBBLE_STYLE_FORM } from '../types/bubbleStyle';
 import { AVATAR_OPTIONS } from '../constants/presets';
+import { assignGeneratedVoiceProfile, assignGeneratedVoiceProfiles, type GeneratedVoiceProfile } from './speechVoiceAssignment';
 
 export interface GeneratedCharacterProfile {
   avatar?: string;
@@ -14,6 +15,8 @@ export interface GeneratedCharacterProfile {
   speakingStyle?: string;
   background?: string;
   speechProfile?: Partial<CharacterSpeechProfile>;
+  voiceProfile?: Partial<GeneratedVoiceProfile>;
+  voiceConfig?: Partial<CharacterVoiceConfig>;
   coreProfile?: Partial<CharacterCoreProfile>;
   bubbleStyle?: Partial<BubbleStyleDefinition>;
   visualIdentity?: {
@@ -67,6 +70,15 @@ Return strict JSON only, with this shape:
     "questionBias": 0-100,
     "sarcasmBias": 0-100
   },
+  "voiceProfile": {
+    "gender": "female|male|neutral|unknown",
+    "age": "child|young|adult|senior|unknown",
+    "language": "BCP-47 language such as zh-CN",
+    "traits": ["2-6 voice timbre or temperament keywords"],
+    "styles": ["0-4 speaking style keywords"],
+    "emotions": ["0-4 suitable default emotions"],
+    "energy": "low|medium|high"
+  },
   "coreProfile": {
     "coreDesire": "long-term desire or need",
     "coreFear": "long-term fear, avoidance, or vulnerable point",
@@ -108,6 +120,7 @@ Rules:
 - If the name is fictional, meme-like, or ambiguous, still create a vivid but usable role profile.
 - Keep expertise practical for conversation.
 - Make coreProfile psychologically specific to this role, not generic labels. It should describe long-term inner drives, vulnerabilities, relationship style, conflict style, self-image, and likely perception filters.
+- voiceProfile describes the desired voice, not a provider voice ID. Gender is a strict safety constraint: use female or male only when the character context clearly establishes it; otherwise use neutral or unknown. Never infer gender from stereotypes alone.
 - Make bubbleStyle visually distinctive and aligned with the character's vibe, role, and speaking style.
 - Keep bubbleStyle practical for chat readability with strong text/background contrast.
 - Do not wrap in markdown fences.
@@ -207,6 +220,17 @@ export function normalizeGeneratedProfile(raw: GeneratedCharacterProfile) {
     questionBias: clampScore(raw.speechProfile?.questionBias, DEFAULT_SPEECH_PROFILE.questionBias),
     sarcasmBias: clampScore(raw.speechProfile?.sarcasmBias, DEFAULT_SPEECH_PROFILE.sarcasmBias),
   };
+  const rawVoiceProfile = raw.voiceProfile || {};
+  const rawGender = rawVoiceProfile.gender;
+  const voiceProfile: GeneratedVoiceProfile = {
+    gender: rawGender === 'female' || rawGender === 'male' || rawGender === 'neutral' ? rawGender : 'unknown',
+    age: normalizeShortText(rawVoiceProfile.age) || 'unknown',
+    language: normalizeShortText(rawVoiceProfile.language) || 'zh-CN',
+    traits: normalizeStringList(rawVoiceProfile.traits, 6),
+    styles: normalizeStringList(rawVoiceProfile.styles, 4),
+    emotions: normalizeStringList(rawVoiceProfile.emotions, 4),
+    energy: ['low', 'medium', 'high'].includes(String(rawVoiceProfile.energy)) ? String(rawVoiceProfile.energy) : 'medium',
+  };
 
   const rawCoreProfile = raw.coreProfile || {};
   const values = normalizeStringList(rawCoreProfile.values || rawCoreProfile.valuePriority, 6);
@@ -237,6 +261,8 @@ export function normalizeGeneratedProfile(raw: GeneratedCharacterProfile) {
     speakingStyle: typeof raw.speakingStyle === 'string' ? raw.speakingStyle.trim() : '',
     background: typeof raw.background === 'string' ? raw.background.trim() : '',
     speechProfile,
+    voiceProfile,
+    voiceConfig: raw.voiceConfig,
     coreProfile,
     bubbleStyle: normalizeBubbleStyle(raw.bubbleStyle),
     visualIdentity: {
@@ -306,12 +332,12 @@ function buildBatchGeneratePrompt(names: string[], language: 'zh' | 'en', contex
   const { theme, description } = normalizeGenerationContext(context);
   if (language === 'zh') {
     return theme || description
-      ? `请基于以下用户需求为角色批量生成档案。\n主题/分组：${theme || '未指定'}\n描述：${description || '未指定'}\n角色名单：${normalizedNames.join('、')}\n每个角色都必须同时贴合主题和描述，描述里的数量、身份结构、时代、题材和关系约束优先；不要因为角色名或括号内身份而带偏整体设定。如果描述中包含候选角色设定摘要，必须把每个角色与其他角色的关系、秘密、冲突、亲近/敌意/信任/威胁差异写入 background 和 coreProfile，不要抹平成普通朋友或默认中立关系。返回严格 JSON 数组，每项都包含 name、avatar、personality、behavior、expertise、speakingStyle、background、speechProfile、coreProfile、bubbleStyle、visualIdentity。personality 和 behavior 要按角色差异给出有区分度的 0-100 数值，不要全部填 50。每个名字都必须返回一项，name 必须与输入完全一致，只返回合法 JSON。字符串里的换行请写成 \n，不要输出原始换行。`
-      : `请为以下名字批量生成角色档案：${normalizedNames.join('、')}。返回严格 JSON 数组，每项都包含 name、avatar、personality、behavior、expertise、speakingStyle、background、speechProfile、coreProfile、bubbleStyle、visualIdentity。personality 和 behavior 要按角色差异给出有区分度的 0-100 数值，不要全部填 50。每个名字都必须返回一项，name 必须与输入完全一致，只返回合法 JSON。字符串里的换行请写成 \n，不要输出原始换行。`;
+      ? `请基于以下用户需求为角色批量生成档案。\n主题/分组：${theme || '未指定'}\n描述：${description || '未指定'}\n角色名单：${normalizedNames.join('、')}\n每个角色都必须同时贴合主题和描述，描述里的数量、身份结构、时代、题材和关系约束优先；不要因为角色名或括号内身份而带偏整体设定。如果描述中包含候选角色设定摘要，必须把每个角色与其他角色的关系、秘密、冲突、亲近/敌意/信任/威胁差异写入 background 和 coreProfile，不要抹平成普通朋友或默认中立关系。返回严格 JSON 数组，每项都包含 name、avatar、personality、behavior、expertise、speakingStyle、background、speechProfile、voiceProfile、coreProfile、bubbleStyle、visualIdentity。voiceProfile 只描述期望声音，不填写供应商音色 ID；性别不明确时必须用 unknown。personality 和 behavior 要按角色差异给出有区分度的 0-100 数值，不要全部填 50。每个名字都必须返回一项，name 必须与输入完全一致，只返回合法 JSON。字符串里的换行请写成 \n，不要输出原始换行。`
+      : `请为以下名字批量生成角色档案：${normalizedNames.join('、')}。返回严格 JSON 数组，每项都包含 name、avatar、personality、behavior、expertise、speakingStyle、background、speechProfile、voiceProfile、coreProfile、bubbleStyle、visualIdentity。voiceProfile 只描述期望声音，不填写供应商音色 ID；性别不明确时必须用 unknown。personality 和 behavior 要按角色差异给出有区分度的 0-100 数值，不要全部填 50。每个名字都必须返回一项，name 必须与输入完全一致，只返回合法 JSON。字符串里的换行请写成 \n，不要输出原始换行。`;
   }
   return theme || description
-    ? `Generate character profiles from this user request.\nTheme/group: ${theme || 'not specified'}\nDescription: ${description || 'not specified'}\nCharacter list: ${normalizedNames.join(', ')}\nEvery character must fit both the theme and description; counts, role composition, era, genre, and relationship constraints in the description take priority. Do not let names or parenthesized roles drift the overall setting away from the user's request. If the description contains candidate role setup summaries, preserve each character's relationships, secrets, conflicts, warmth/hostility, trust/distrust, respect, and threat dynamics with other characters in background and coreProfile. Do not flatten them into generic friendship or neutral defaults. Return a strict JSON array. Every item must include name, avatar, personality, behavior, expertise, speakingStyle, background, speechProfile, coreProfile, bubbleStyle, and visualIdentity. personality and behavior must use distinctive 0-100 values for each role; do not set every axis to 50. Every provided name must have one item, and each name must exactly match the input. Escape newlines inside strings as \n. Return only valid JSON.`
-    : `Generate character profiles for these names: ${normalizedNames.join(', ')}. Return a strict JSON array. Every item must include name, avatar, personality, behavior, expertise, speakingStyle, background, speechProfile, coreProfile, bubbleStyle, and visualIdentity. personality and behavior must use distinctive 0-100 values for each role; do not set every axis to 50. Every provided name must have one item, and each name must exactly match the input. Escape newlines inside strings as \n. Return only valid JSON.`;
+    ? `Generate character profiles from this user request.\nTheme/group: ${theme || 'not specified'}\nDescription: ${description || 'not specified'}\nCharacter list: ${normalizedNames.join(', ')}\nEvery character must fit both the theme and description; counts, role composition, era, genre, and relationship constraints in the description take priority. Do not let names or parenthesized roles drift the overall setting away from the user's request. If the description contains candidate role setup summaries, preserve each character's relationships, secrets, conflicts, warmth/hostility, trust/distrust, respect, and threat dynamics with other characters in background and coreProfile. Do not flatten them into generic friendship or neutral defaults. Return a strict JSON array. Every item must include name, avatar, personality, behavior, expertise, speakingStyle, background, speechProfile, voiceProfile, coreProfile, bubbleStyle, and visualIdentity. voiceProfile describes the desired voice without a provider voice ID; use unknown when gender is not established. personality and behavior must use distinctive 0-100 values for each role; do not set every axis to 50. Every provided name must have one item, and each name must exactly match the input. Escape newlines inside strings as \n. Return only valid JSON.`
+    : `Generate character profiles for these names: ${normalizedNames.join(', ')}. Return a strict JSON array. Every item must include name, avatar, personality, behavior, expertise, speakingStyle, background, speechProfile, voiceProfile, coreProfile, bubbleStyle, and visualIdentity. voiceProfile describes the desired voice without a provider voice ID; use unknown when gender is not established. personality and behavior must use distinctive 0-100 values for each role; do not set every axis to 50. Every provided name must have one item, and each name must exactly match the input. Escape newlines inside strings as \n. Return only valid JSON.`;
 }
 
 export function parseGeneratedProfileMap(content: string, names: string[]) {
@@ -329,24 +355,32 @@ export function parseGeneratedProfileMap(content: string, names: string[]) {
   });
 }
 
-export async function generateCharacterProfilesIndividually(config: APIConfig, names: string[], language: 'zh' | 'en', context?: CharacterGenerationContext) {
+export async function generateCharacterProfilesIndividually(config: APIConfig, names: string[], language: 'zh' | 'en', context?: CharacterGenerationContext, usedVoiceIds: string[] = []) {
   const normalizedNames = sanitizeBatchNames(names);
   const results = await Promise.allSettled(normalizedNames.map(async (name) => ({
     name,
-    profile: await generateCharacterProfile(config, name, language, context),
+    profile: await generateCharacterProfileBase(config, name, language, context),
   })));
-  return results.map((result, index) => ({ result, name: normalizedNames[index] }));
+  const fulfilled = results.flatMap((result) => result.status === 'fulfilled' ? [result.value] : []);
+  const assignments = await assignGeneratedVoiceProfiles(fulfilled.map((item) => ({ key: item.name, profile: item.profile.voiceProfile })), usedVoiceIds);
+  const assignmentMap = new Map(assignments.assignments.map((item) => [item.key, item.voiceConfig]));
+  return results.map((result, index) => ({
+    result: result.status === 'fulfilled'
+      ? { status: 'fulfilled' as const, value: { ...result.value, profile: { ...result.value.profile, voiceConfig: { ...assignmentMap.get(result.value.name), voiceProfile: result.value.profile.voiceProfile } } } }
+      : result,
+    name: normalizedNames[index],
+  }));
 }
 
-export async function generateCharacterProfilesSafe(config: APIConfig, names: string[], language: 'zh' | 'en', context?: CharacterGenerationContext) {
+export async function generateCharacterProfilesSafe(config: APIConfig, names: string[], language: 'zh' | 'en', context?: CharacterGenerationContext, usedVoiceIds: string[] = []) {
   const normalizedNames = sanitizeBatchNames(names);
   if (!normalizedNames.length) return { success: [] as Array<{ name: string; profile: ReturnType<typeof normalizeGeneratedProfile> }>, failed: [] as Array<{ name: string; reason: string }> };
   try {
-    const success = await generateCharacterProfiles(config, normalizedNames, language, context);
+    const success = await generateCharacterProfiles(config, normalizedNames, language, context, usedVoiceIds);
     return { success, failed: [] as Array<{ name: string; reason: string }> };
   } catch (error) {
     console.warn('[character-generator:batch:fallback]', error);
-    const results = await generateCharacterProfilesIndividually(config, normalizedNames, language, context);
+    const results = await generateCharacterProfilesIndividually(config, normalizedNames, language, context, usedVoiceIds);
     const success: Array<{ name: string; profile: ReturnType<typeof normalizeGeneratedProfile> }> = [];
     const failed: Array<{ name: string; reason: string }> = [];
     results.forEach(({ result, name }) => {
@@ -363,7 +397,7 @@ export async function generateCharacterProfilesSafe(config: APIConfig, names: st
   }
 }
 
-export async function generateCharacterProfiles(config: APIConfig, names: string[], language: 'zh' | 'en', context?: CharacterGenerationContext) {
+export async function generateCharacterProfiles(config: APIConfig, names: string[], language: 'zh' | 'en', context?: CharacterGenerationContext, usedVoiceIds: string[] = []) {
   const normalizedNames = sanitizeBatchNames(names);
   if (!normalizedNames.length) return [];
   const response = await generateResponse(
@@ -373,10 +407,13 @@ export async function generateCharacterProfiles(config: APIConfig, names: string
     undefined,
     { aiUsage: { type: 'character_generation', label: '批量生成角色', scope: 'character' } },
   );
-  return parseGeneratedProfileMap(response, normalizedNames);
+  const profiles = parseGeneratedProfileMap(response, normalizedNames);
+  const assignments = await assignGeneratedVoiceProfiles(profiles.map((item) => ({ key: item.name, profile: item.profile.voiceProfile })), usedVoiceIds);
+  const assignmentMap = new Map(assignments.assignments.map((item) => [item.key, item.voiceConfig]));
+  return profiles.map((item) => ({ ...item, profile: { ...item.profile, voiceConfig: { ...assignmentMap.get(item.name), voiceProfile: item.profile.voiceProfile } } }));
 }
 
-export async function generateCharacterProfile(config: APIConfig, name: string, language: 'zh' | 'en', context?: CharacterGenerationContext) {
+async function generateCharacterProfileBase(config: APIConfig, name: string, language: 'zh' | 'en', context?: CharacterGenerationContext) {
   const response = await generateResponse(
     config,
     `${CHARACTER_GENERATOR_SYSTEM_PROMPT}\nOutput exactly one valid JSON object. Do not include trailing commas. Do not truncate. Do not add explanations before or after the JSON.`,
@@ -385,6 +422,12 @@ export async function generateCharacterProfile(config: APIConfig, name: string, 
     { maxTokens: 2400, aiUsage: { type: 'character_generation', label: '生成角色', scope: 'character' } },
   );
   return parseGeneratedProfile(response);
+}
+
+export async function generateCharacterProfile(config: APIConfig, name: string, language: 'zh' | 'en', context?: CharacterGenerationContext) {
+  const profile = await generateCharacterProfileBase(config, name, language, context);
+  const assignment = await assignGeneratedVoiceProfile(profile.voiceProfile, name.trim());
+  return { ...profile, voiceConfig: { ...assignment.voiceConfig, voiceProfile: profile.voiceProfile } };
 }
 
 export async function generateCharacterVisualIdentityDraft(config: APIConfig, input: CharacterVisualIdentityDraftInput, language: 'zh' | 'en') {

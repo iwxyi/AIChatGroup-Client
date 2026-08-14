@@ -54,6 +54,7 @@ import { canAutoGenerateAvatarDraft, enqueueAvatarGenerationForCharacter } from 
 import { isImageAvatar as isImageAvatarValue } from '../../utils/avatar';
 import { prepareAvatarUploadDataUrl } from '../../utils/avatarUpload';
 import { api } from '../../services/api';
+import { assignGeneratedVoiceProfile } from '../../services/speechVoiceAssignment';
 import PersonalitySliders from './PersonalitySliders';
 import NumericSliders from './NumericSliders';
 import RuntimeInsightsPanel, { CharacterMemoryInspector, CharacterRelationshipInspector } from './RuntimeInsightsPanel';
@@ -330,8 +331,10 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
   }));
   const [speechProfile, setSpeechProfile] = useState<CharacterSpeechProfile | undefined>(initial?.speechProfile);
   const [voiceConfig, setVoiceConfig] = useState<CharacterVoiceConfig>(initial?.voiceConfig || { enabled: false });
-  const [speechVoices, setSpeechVoices] = useState<Array<{ id: string; name: string; language?: string; gender?: string }>>([]);
+  const [speechVoices, setSpeechVoices] = useState<Array<{ id: string; name: string; language?: string; gender?: string; age?: string; traits?: string[]; styles?: string[] }>>([]);
   const [speechVoicesLoading, setSpeechVoicesLoading] = useState(false);
+  const [assigningVoice, setAssigningVoice] = useState(false);
+  const [voiceAssignmentError, setVoiceAssignmentError] = useState<string | null>(null);
   const [group, setGroup] = useState(initial?.group || '');
   const [memory, setMemory] = useState<CharacterMemoryConfig>(initial?.memory || DEFAULT_CHARACTER_MEMORY);
   const [coreProfile, setCoreProfile] = useState<CharacterCoreProfile>(() => ({
@@ -645,6 +648,7 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
       setSpeakingStyle(generated.speakingStyle);
       setBackground(generated.background);
       setSpeechProfile(generated.speechProfile);
+      setVoiceConfig((prev) => ({ ...prev, ...generated.voiceConfig, voiceProfile: generated.voiceProfile }));
       setCoreProfile({
         ...DEFAULT_CORE_PROFILE,
         ...generated.coreProfile,
@@ -672,6 +676,35 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
       setGenerateError(detail && detail !== getGenerateError(i18n.language) ? `${getGenerateError(i18n.language)}：${detail}` : getGenerateError(i18n.language));
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const handleAutoAssignVoice = async () => {
+    if (!selectedAudioProfile?.provider || assigningVoice) return;
+    setAssigningVoice(true);
+    setVoiceAssignmentError(null);
+    const profile = voiceConfig.voiceProfile || {
+      gender: 'unknown' as const,
+      age: 'unknown',
+      language: i18n.language.startsWith('zh') ? 'zh-CN' : 'en-US',
+      traits: [speakingStyle, background].filter(Boolean).slice(0, 2),
+      styles: [],
+      emotions: voiceConfig.emotion ? [voiceConfig.emotion] : [],
+      energy: 'medium',
+    };
+    try {
+      const usedVoiceIds = characters
+        .filter((character) => character.id !== initial?.id)
+        .map((character) => character.voiceConfig?.voiceName)
+        .filter((voice): voice is string => Boolean(voice));
+      const result = await assignGeneratedVoiceProfile(profile, initial?.id || name || 'character', usedVoiceIds, selectedAudioProfile.provider);
+      if (!result.voiceConfig.voiceName) {
+        setVoiceAssignmentError(i18n.language.startsWith('zh') ? '当前语音画像没有匹配到可用音色' : 'No available voice matches this profile');
+        return;
+      }
+      setVoiceConfig((prev) => ({ ...prev, ...result.voiceConfig, enabled: true, voiceProfile: profile }));
+    } finally {
+      setAssigningVoice(false);
     }
   };
 
@@ -1423,17 +1456,47 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
               label={i18n.language.startsWith('zh') ? '启用' : 'Enabled'}
             />
           </Box>
-          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' }, gap: 1 }}>
-            <TextField select size="small" label={i18n.language.startsWith('zh') ? '发音人' : 'Voice'} value={voiceConfig.voiceName || ''} onChange={(e) => setVoiceConfig((prev) => ({ ...prev, voiceName: e.target.value }))} disabled={speechVoicesLoading || !selectedAudioProfile} helperText={!selectedAudioProfile ? (i18n.language.startsWith('zh') ? '请先在 AI模型 中选择 TTS 模型' : 'Select a TTS model in AI Models first') : speechVoicesLoading ? (i18n.language.startsWith('zh') ? '正在读取当前平台音色…' : 'Loading voices…') : undefined}>
-              <MenuItem value="">{i18n.language.startsWith('zh') ? '使用平台默认音色' : 'Provider default'}</MenuItem>
-              {speechVoices.map((voice) => <MenuItem key={voice.id} value={voice.id}>{voice.name}（{voice.id}）</MenuItem>)}
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(4, minmax(0, 1fr))' }, gap: 1 }}>
+            <TextField select size="small" label={i18n.language.startsWith('zh') ? '性别约束' : 'Gender constraint'} value={voiceConfig.voiceProfile?.gender || 'unknown'} onChange={(e) => setVoiceConfig((prev) => ({ ...prev, voiceProfile: { ...(prev.voiceProfile || {}), gender: e.target.value as 'female' | 'male' | 'neutral' | 'unknown' } }))}>
+              <MenuItem value="unknown">{i18n.language.startsWith('zh') ? '未指定' : 'Unspecified'}</MenuItem>
+              <MenuItem value="female">{i18n.language.startsWith('zh') ? '女声' : 'Female'}</MenuItem>
+              <MenuItem value="male">{i18n.language.startsWith('zh') ? '男声' : 'Male'}</MenuItem>
+              <MenuItem value="neutral">{i18n.language.startsWith('zh') ? '中性' : 'Neutral'}</MenuItem>
             </TextField>
+            <TextField select size="small" label={i18n.language.startsWith('zh') ? '年龄感' : 'Age impression'} value={voiceConfig.voiceProfile?.age || 'unknown'} onChange={(e) => setVoiceConfig((prev) => ({ ...prev, voiceProfile: { ...(prev.voiceProfile || {}), age: e.target.value } }))}>
+              {['unknown', 'child', 'young', 'adult', 'senior'].map((value) => <MenuItem key={value} value={value}>{i18n.language.startsWith('zh') ? ({ unknown: '未指定', child: '儿童', young: '年轻', adult: '成年', senior: '年长' } as Record<string, string>)[value] : value}</MenuItem>)}
+            </TextField>
+            <TextField select size="small" label={i18n.language.startsWith('zh') ? '声音能量' : 'Energy'} value={voiceConfig.voiceProfile?.energy || 'medium'} onChange={(e) => setVoiceConfig((prev) => ({ ...prev, voiceProfile: { ...(prev.voiceProfile || {}), energy: e.target.value } }))}>
+              <MenuItem value="low">{i18n.language.startsWith('zh') ? '低沉克制' : 'Low / calm'}</MenuItem>
+              <MenuItem value="medium">{i18n.language.startsWith('zh') ? '自然适中' : 'Medium / natural'}</MenuItem>
+              <MenuItem value="high">{i18n.language.startsWith('zh') ? '明亮有活力' : 'High / lively'}</MenuItem>
+            </TextField>
+            <TextField size="small" label={i18n.language.startsWith('zh') ? '语言' : 'Language'} value={voiceConfig.voiceProfile?.language || ''} placeholder="zh-CN" onChange={(e) => setVoiceConfig((prev) => ({ ...prev, voiceProfile: { ...(prev.voiceProfile || {}), language: e.target.value } }))} />
+          </Box>
+          <TextField size="small" label={i18n.language.startsWith('zh') ? '音色特征' : 'Voice traits'} placeholder={i18n.language.startsWith('zh') ? '温柔、清冷、磁性，用逗号分隔' : 'warm, clear, husky, comma separated'} value={(voiceConfig.voiceProfile?.traits || []).join(i18n.language.startsWith('zh') ? '、' : ', ')} onChange={(e) => setVoiceConfig((prev) => ({ ...prev, voiceProfile: { ...(prev.voiceProfile || {}), traits: e.target.value.split(/[,，、]/).map((item) => item.trim()).filter(Boolean).slice(0, 6) } }))} />
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' }, gap: 1 }}>
+            <Autocomplete
+              freeSolo
+              options={speechVoices}
+              value={speechVoices.find((voice) => voice.id === voiceConfig.voiceName) || (voiceConfig.voiceName ? { id: voiceConfig.voiceName, name: voiceConfig.role || voiceConfig.voiceName } : null)}
+              getOptionLabel={(option) => typeof option === 'string' ? option : `${option.name}（${option.id}）`}
+              isOptionEqualToValue={(option, value) => option.id === (typeof value === 'string' ? value : value.id)}
+              onChange={(_event, value) => setVoiceConfig((prev) => ({ ...prev, voiceName: typeof value === 'string' ? value : value?.id || '', role: typeof value === 'string' ? prev.role : value?.name || '', voiceSource: typeof value === 'string' ? 'manual' : 'auto' }))}
+              onInputChange={(_event, value, reason) => { if (reason === 'input') setVoiceConfig((prev) => ({ ...prev, voiceName: value, voiceSource: 'manual' })); }}
+              loading={speechVoicesLoading}
+              disabled={!selectedAudioProfile}
+              renderInput={(params) => <TextField {...params} size="small" label={i18n.language.startsWith('zh') ? '发音人（可搜索或手动输入）' : 'Voice (search or enter ID)'} helperText={!selectedAudioProfile ? (i18n.language.startsWith('zh') ? '请先在 AI模型 中选择 TTS 模型' : 'Select a TTS model in AI Models first') : speechVoicesLoading ? (i18n.language.startsWith('zh') ? '正在读取当前平台音色…' : 'Loading voices…') : undefined} />}
+            />
+            <Button variant="outlined" startIcon={assigningVoice ? <CircularProgress size={16} /> : <AutoAwesomeIcon />} onClick={() => void handleAutoAssignVoice()} disabled={!selectedAudioProfile || assigningVoice}>
+              {i18n.language.startsWith('zh') ? '自动匹配音色' : 'Match voice'}
+            </Button>
             <TextField size="small" label={i18n.language.startsWith('zh') ? '风格' : 'Style'} placeholder={i18n.language.startsWith('zh') ? '如 cheerful / sad' : 'e.g. cheerful / sad'} value={voiceConfig.style || ''} onChange={(e) => setVoiceConfig((prev) => ({ ...prev, style: e.target.value }))} />
             <TextField size="small" label={i18n.language.startsWith('zh') ? '语速' : 'Rate'} placeholder="+0%" value={voiceConfig.rate || ''} onChange={(e) => setVoiceConfig((prev) => ({ ...prev, rate: e.target.value }))} />
             <TextField size="small" label={i18n.language.startsWith('zh') ? '音调' : 'Pitch'} placeholder="+0Hz" value={voiceConfig.pitch || ''} onChange={(e) => setVoiceConfig((prev) => ({ ...prev, pitch: e.target.value }))} />
             <TextField size="small" label={i18n.language.startsWith('zh') ? '默认情绪' : 'Default emotion'} placeholder={i18n.language.startsWith('zh') ? '如温柔、撒娇、克制' : 'e.g. warm, playful, restrained'} value={voiceConfig.emotion || ''} onChange={(e) => setVoiceConfig((prev) => ({ ...prev, emotion: e.target.value }))} />
             <TextField size="small" label={i18n.language.startsWith('zh') ? '语音指令' : 'Voice instructions'} placeholder={i18n.language.startsWith('zh') ? '传给支持 instructions 的 TTS' : 'Passed to TTS providers that support instructions'} value={voiceConfig.instructions || ''} onChange={(e) => setVoiceConfig((prev) => ({ ...prev, instructions: e.target.value }))} />
           </Box>
+          {voiceAssignmentError ? <Typography variant="caption" color="warning.main">{voiceAssignmentError}</Typography> : null}
         </CardContent>
       </Card>
 

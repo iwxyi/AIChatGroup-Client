@@ -26,6 +26,13 @@ describe('characterGenerator', () => {
       expertise: ['测试'],
       speakingStyle: '简洁直接。',
       background: '测试角色。',
+      voiceProfile: {
+        gender: 'female',
+        age: 'young',
+        language: 'zh-CN',
+        traits: ['温柔', '清冷'],
+        energy: 'low',
+      },
     }));
 
     expect(profile.behavior).toMatchObject({
@@ -36,6 +43,7 @@ describe('characterGenerator', () => {
       summarizing: 74,
       offTopic: 9,
     });
+    expect(profile.voiceProfile).toMatchObject({ gender: 'female', age: 'young', language: 'zh-CN', traits: ['温柔', '清冷'], energy: 'low' });
   });
 
   it('keeps generated behavior axes in batch profiles', () => {

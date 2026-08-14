@@ -60,6 +60,18 @@ export interface CharacterSpeechProfile {
 export interface CharacterVoiceConfig {
   enabled: boolean;
   voiceName?: string;
+  providerCode?: string;
+  voiceSource?: 'auto' | 'manual' | 'pending';
+  assignmentStatus?: 'assigned' | 'pending' | 'unavailable';
+  voiceProfile?: {
+    gender?: 'female' | 'male' | 'neutral' | 'unknown';
+    age?: string;
+    language?: string;
+    traits?: string[];
+    styles?: string[];
+    emotions?: string[];
+    energy?: string;
+  };
   style?: string;
   role?: string;
   rate?: string;

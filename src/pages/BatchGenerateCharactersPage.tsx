@@ -163,6 +163,7 @@ function buildGeneratedCharacterPayload(params: {
     speakingStyle: string;
     background: string;
     speechProfile: NonNullable<AICharacter['speechProfile']>;
+    voiceConfig: NonNullable<AICharacter['voiceConfig']>;
     coreProfile: NonNullable<AICharacter['coreProfile']>;
     bubbleStyle: NonNullable<AICharacter['bubbleStyle']>;
     visualIdentity: NonNullable<AICharacter['visualIdentity']>;
@@ -195,7 +196,7 @@ function buildGeneratedCharacterPayload(params: {
 async function processCharacterBatch(params: {
   selectedCandidates: CandidateCharacter[];
   nameFormat: NameFormat;
-  characters: Array<Pick<AICharacter, 'name' | 'group' | 'bubbleStyleId'>>;
+  characters: Array<Pick<AICharacter, 'name' | 'group' | 'bubbleStyleId' | 'voiceConfig'>>;
   generatedGroup: string | null;
   customStyleIds: string[];
   profile: AIModelProfile;
@@ -232,6 +233,9 @@ async function processCharacterBatch(params: {
     if (params.cancelGenerationRef.current || !creatableNames.length) return;
 
     try {
+      const usedVoiceIds = [...params.characters, ...allCreatedCharacters]
+        .map((character) => character.voiceConfig?.voiceName)
+        .filter((voice): voice is string => Boolean(voice));
       const { success, failed } = await generateCharacterProfilesSafe(params.profile, creatableNames, params.language, {
         theme: params.theme,
         description: [
@@ -240,7 +244,7 @@ async function processCharacterBatch(params: {
             ? `候选角色设定摘要：${creatableItems.map(({ candidate, displayName }) => `${displayName} => 本名：${candidate.name}；主要身份：${candidate.role}；设定摘要：${candidate.summary}`).join('；')}`
             : `Candidate role setup summaries: ${creatableItems.map(({ candidate, displayName }) => `${displayName} => name: ${candidate.name}; primary role: ${candidate.role}; setup summary: ${candidate.summary}`).join('; ')}`,
         ].filter(Boolean).join('\n'),
-      });
+      }, usedVoiceIds);
       failed.forEach(({ name, reason }) => {
         appendProgressItem(params.setProgress, { name, status: 'failed', reason });
       });
@@ -257,6 +261,7 @@ async function processCharacterBatch(params: {
             speakingStyle: profile.speakingStyle,
             background: profile.background,
             speechProfile: profile.speechProfile,
+            voiceConfig: { ...(profile.voiceConfig || {}), enabled: Boolean(profile.voiceConfig && 'enabled' in profile.voiceConfig ? profile.voiceConfig.enabled : false), voiceProfile: profile.voiceProfile },
             coreProfile: profile.coreProfile,
             bubbleStyle: profile.bubbleStyle,
             visualIdentity: profile.visualIdentity,

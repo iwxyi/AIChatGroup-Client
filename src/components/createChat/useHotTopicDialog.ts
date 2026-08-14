@@ -341,6 +341,7 @@ export function useHotTopicDialog(params: {
       background: backgroundHint || generated.background,
       group: HOT_TOPIC_RECOMMENDED_CHARACTER_GROUP,
       speechProfile: generated.speechProfile,
+      voiceConfig: { ...generated.voiceConfig, enabled: generated.voiceConfig?.enabled ?? false, voiceProfile: generated.voiceProfile },
       bubbleStyle: { ...generated.bubbleStyle, id: createCharacterBubbleStyleId() },
       relationships: [],
       memory: DEFAULT_CHARACTER_MEMORY,

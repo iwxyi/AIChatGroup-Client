@@ -1062,7 +1062,27 @@ class ApiClient {
 
   async listSpeechVoices(providerCode?: string) {
     const query = providerCode ? `?providerCode=${encodeURIComponent(providerCode)}` : '';
-    return this.request<{ provider: string; voices: Array<{ id: string; name: string; language?: string; gender?: string; styles?: string[] }> }>('GET', `/speech/voices${query}`);
+    return this.request<{ provider: string; voices: Array<{ id: string; name: string; language?: string; gender?: string; age?: string; resourceId?: string; source?: string; availability?: string; traits?: string[]; styles?: string[] }> }>('GET', `/speech/voices${query}`);
+  }
+
+  async assignSpeechVoices(data: {
+    providerCode?: string;
+    usedVoiceIds?: string[];
+    candidateLimit?: number;
+    profiles: Array<{ key: string; profile: {
+      gender?: string; age?: string; language?: string; traits?: string[]; styles?: string[]; emotions?: string[]; energy?: string;
+    } }>;
+  }) {
+    return this.request<{
+      provider: string;
+      cached: boolean;
+      fetchedAt?: number | null;
+      assignments: Array<{
+        key: string;
+        selected: { id: string; name: string; language?: string; gender?: string; age?: string; resourceId?: string; source?: string; availability?: string; traits?: string[]; styles?: string[]; score: number; matchedReasons: string[]; alreadyUsed: boolean } | null;
+        candidates: Array<{ id: string; name: string; language?: string; gender?: string; age?: string; resourceId?: string; source?: string; availability?: string; traits?: string[]; styles?: string[]; score: number; matchedReasons: string[]; alreadyUsed: boolean }>;
+      }>;
+    }>('POST', '/speech/voices/assign', data);
   }
 
   async transcribeSpeech(data: {
