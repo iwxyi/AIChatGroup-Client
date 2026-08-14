@@ -19,7 +19,7 @@ import { useCharacterStore } from '../stores/useCharacterStore';
 import { useAuthStore } from '../stores/useAuthStore';
 import { isLikelyBrowserCorsError, listAvailableModels, testConnection, type AvailableModelInfo } from '../services/aiClient';
 import { api, type OfficialAiProviderInfo } from '../services/api';
-import type { AIModelImageCapabilities, AIModelInputCapabilities, AIModelType, AIProvider, AudioModelCapability } from '../types/settings';
+import type { AIModelImageCapabilities, AIModelInputCapabilities, AIModelType, AIProvider } from '../types/settings';
 import { normalizeImageCapabilities, normalizeInputCapabilities, inferTextInputCapabilities, buildTextInputCapabilityPatch, getInputCapabilityLockState, getAttachmentUiCapabilitySummary, getInputCapabilityBadge, getInputCapabilityWarning, shouldShowInputCapabilityWarning, getReasoningModeUiMeta, normalizeAIModelAdvancedOptions } from '../types/settings';
 import { normalizeCharacterModelProfileIds } from '../types/character';
 import ConfirmDialog from '../components/common/ConfirmDialog';
@@ -52,6 +52,12 @@ type ModelDropdownOption = {
 type OfficialProvidersState = {
   key: string;
   items: OfficialAiProviderInfo[];
+  error: string | null;
+};
+
+type SpeechPlatformsState = {
+  items: Array<{ capability: 'tts' | 'stt'; name: string; officialName: string; providerCode: string; available: boolean }>;
+  loading: boolean;
   error: string | null;
 };
 
@@ -722,6 +728,7 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
     items: [],
     error: null,
   });
+  const [speechPlatforms, setSpeechPlatforms] = useState<SpeechPlatformsState>({ items: [], loading: true, error: null });
   const officialProviders = useMemo(
     () => (officialProvidersState.key === officialProvidersRequestKey ? officialProvidersState.items : []),
     [officialProvidersRequestKey, officialProvidersState.items, officialProvidersState.key],
@@ -860,6 +867,18 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
       setHeaderActions(null);
     };
   }, [embedded, setHeaderActions, setHeaderBackAction, setHeaderTitle, setHideMobileBottomNav, t]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void api.getSpeechPlatforms()
+      .then((result) => {
+        if (!cancelled) setSpeechPlatforms({ items: result.items, loading: false, error: null });
+      })
+      .catch((error) => {
+        if (!cancelled) setSpeechPlatforms({ items: [], loading: false, error: extractConnectionErrorMessage(error) || '语音平台读取失败' });
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -1204,7 +1223,25 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
           gap: 2,
         }}
       >
-            {aiProfiles.map((profile, index) => (
+            {(['tts', 'stt'] as const).map((capability) => {
+              const platform = speechPlatforms.items.find((item) => item.capability === capability);
+              const name = capability === 'tts'
+                ? (i18n.language.startsWith('zh') ? '文字转语音' : 'Text to speech')
+                : (i18n.language.startsWith('zh') ? '语音转文字' : 'Speech to text');
+              return (
+                <SurfaceCard key={`speech-${capability}`} sx={modelCardSx()} contentSx={{ display: 'grid', gap: 0.75 }}>
+                  <Typography variant="body1" sx={{ fontWeight: 700 }}>{name}</Typography>
+                  <Typography variant="body2" color={platform?.available ? 'text.secondary' : 'warning.main'}>
+                    {speechPlatforms.loading
+                      ? (i18n.language.startsWith('zh') ? '正在读取后台平台…' : 'Loading platform…')
+                      : platform?.available
+                        ? platform.officialName
+                        : (i18n.language.startsWith('zh') ? '后台未配置可用平台' : 'No backend platform configured')}
+                  </Typography>
+                </SurfaceCard>
+              );
+            })}
+            {aiProfiles.filter((profile) => profile.type !== 'audio').map((profile, index) => (
               <SurfaceCard key={profile.id} sx={modelCardSx()} contentSx={{ display: 'flex', flexDirection: 'column', gap: 1.75 }}>
                   {(() => {
                     const activeType = profile.type || 'text';
@@ -1256,29 +1293,6 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
                       sx={fieldSx()}
                     />
                   </Box>
-                  {activeType === 'audio' ? (
-                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1 }}>
-                      <TextField
-                        size="small"
-                        label={i18n.language.startsWith('zh') ? '用户侧模型 ID' : 'User-facing model ID'}
-                        value={profile.model}
-                        onChange={(e) => updateAIProfile(profile.id, { model: e.target.value })}
-                        helperText={i18n.language.startsWith('zh') ? '角色和调用链按此 ID 保存，切换供应商时不必改角色配置。' : 'Characters reference this stable ID when providers change.'}
-                      />
-                      <FormControl size="small" fullWidth>
-                        <InputLabel>{i18n.language.startsWith('zh') ? '语音用途' : 'Audio capability'}</InputLabel>
-                        <Select
-                          value={profile.audioCapability || 'tts'}
-                          label={i18n.language.startsWith('zh') ? '语音用途' : 'Audio capability'}
-                          onChange={(e) => updateAIProfile(profile.id, { audioCapability: e.target.value as AudioModelCapability })}
-                        >
-                          <MenuItem value="tts">文字转语音（TTS）</MenuItem>
-                          <MenuItem value="stt">语音转文字（STT）</MenuItem>
-                          <MenuItem value="both">TTS + STT</MenuItem>
-                        </Select>
-                      </FormControl>
-                    </Box>
-                  ) : null}
                   <Divider />
 
                   <FormControl fullWidth size="small">
@@ -1318,7 +1332,6 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
                         >
                           <MenuItem value="text">{modelTypeLabels.text}</MenuItem>
                           <MenuItem value="image">{modelTypeLabels.image}</MenuItem>
-                          <MenuItem value="audio">{modelTypeLabels.audio}</MenuItem>
                           <MenuItem value="document">{modelTypeLabels.document}</MenuItem>
                         </Select>
                       </FormControl>

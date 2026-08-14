@@ -1060,6 +1060,16 @@ class ApiClient {
     }>('POST', '/speech/tts', data);
   }
 
+  async getSpeechPlatforms() {
+    return this.request<{ items: Array<{
+      capability: 'tts' | 'stt';
+      name: string;
+      officialName: string;
+      providerCode: string;
+      available: boolean;
+    }> }>('GET', '/speech/platforms');
+  }
+
   async listSpeechVoices(providerCode?: string) {
     const query = providerCode ? `?providerCode=${encodeURIComponent(providerCode)}` : '';
     return this.request<{ provider: string; voices: Array<{ id: string; name: string; language?: string; gender?: string; age?: string; resourceId?: string; source?: string; availability?: string; traits?: string[]; styles?: string[] }> }>('GET', `/speech/voices${query}`);

@@ -174,7 +174,7 @@ function dedupeVisualAssets(assets: CharacterVisualReferenceImage[]) {
   });
 }
 
-const MODEL_TYPE_ORDER: AIModelType[] = ['text', 'image', 'audio', 'document'];
+const MODEL_TYPE_ORDER: Array<Exclude<AIModelType, 'audio'>> = ['text', 'image', 'document'];
 
 interface CharacterFormProps {
   initial?: Partial<AICharacter>;
@@ -457,16 +457,13 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
   const profilesByType = useMemo(() => ({
     text: settings.aiProfiles.filter((profile) => (profile.type || 'text') === 'text'),
     image: settings.aiProfiles.filter((profile) => profile.type === 'image'),
-    audio: settings.aiProfiles.filter((profile) => profile.type === 'audio'),
     document: settings.aiProfiles.filter((profile) => profile.type === 'document'),
   }), [settings.aiProfiles]);
-  const selectedAudioProfile = profilesByType.audio.find((profile) => profile.id === modelProfileIds.audio) || getPreferredAIProfile(profilesByType.audio, 'audio');
 
   useEffect(() => {
     let cancelled = false;
-    if (!selectedAudioProfile?.provider) { setSpeechVoices([]); return () => { cancelled = true; }; }
     setSpeechVoicesLoading(true);
-    void api.listSpeechVoices(selectedAudioProfile.provider).then((result) => {
+    void api.listSpeechVoices().then((result) => {
       if (!cancelled) setSpeechVoices(result.voices || []);
     }).catch(() => {
       if (!cancelled) setSpeechVoices([]);
@@ -474,7 +471,7 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
       if (!cancelled) setSpeechVoicesLoading(false);
     });
     return () => { cancelled = true; };
-  }, [selectedAudioProfile?.provider]);
+  }, []);
 
   useEffect(() => {
     onDraftNameChange?.(name);
@@ -491,7 +488,6 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
     setModelProfileIds((current) => {
       const next = { ...current };
       for (const type of MODEL_TYPE_ORDER) {
-        if (type === 'audio') continue;
         if (next[type]) continue;
         next[type] = getPreferredAIProfile(profilesByType[type], type)?.id || null;
       }
@@ -681,7 +677,7 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
   };
 
   const handleAutoAssignVoice = async () => {
-    if (!selectedAudioProfile?.provider || assigningVoice) return;
+    if (assigningVoice) return;
     setAssigningVoice(true);
     setVoiceAssignmentError(null);
     const profile = voiceConfig.voiceProfile || {
@@ -698,7 +694,7 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
         .filter((character) => character.id !== initial?.id)
         .map((character) => character.voiceConfig?.voiceName)
         .filter((voice): voice is string => Boolean(voice));
-      const result = await assignGeneratedVoiceProfile(profile, initial?.id || name || 'character', usedVoiceIds, selectedAudioProfile.provider);
+      const result = await assignGeneratedVoiceProfile(profile, initial?.id || name || 'character', usedVoiceIds);
       if (!result.voiceConfig.voiceName) {
         setVoiceAssignmentError(i18n.language.startsWith('zh') ? '当前语音画像没有匹配到可用音色' : 'No available voice matches this profile');
         return;
@@ -1526,10 +1522,9 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
               onChange={(_event, value) => setVoiceConfig((prev) => ({ ...prev, voiceName: typeof value === 'string' ? value : value?.id || '', role: typeof value === 'string' ? prev.role : value?.name || '', voiceSource: typeof value === 'string' ? 'manual' : 'auto' }))}
               onInputChange={(_event, value, reason) => { if (reason === 'input') setVoiceConfig((prev) => ({ ...prev, voiceName: value, voiceSource: 'manual' })); }}
               loading={speechVoicesLoading}
-              disabled={!selectedAudioProfile}
-              renderInput={(params) => <TextField {...params} size="small" label={i18n.language.startsWith('zh') ? '发音人（可搜索或手动输入）' : 'Voice (search or enter ID)'} helperText={!selectedAudioProfile ? (i18n.language.startsWith('zh') ? '请先在 AI模型 中选择 TTS 模型' : 'Select a TTS model in AI Models first') : speechVoicesLoading ? (i18n.language.startsWith('zh') ? '正在读取当前平台音色…' : 'Loading voices…') : undefined} />}
+              renderInput={(params) => <TextField {...params} size="small" label={i18n.language.startsWith('zh') ? '发音人（可搜索或手动输入）' : 'Voice (search or enter ID)'} helperText={speechVoicesLoading ? (i18n.language.startsWith('zh') ? '正在读取后台默认平台音色…' : 'Loading voices from the default platform…') : undefined} />}
             />
-            <Button variant="outlined" startIcon={assigningVoice ? <CircularProgress size={16} /> : <AutoAwesomeIcon />} onClick={() => void handleAutoAssignVoice()} disabled={!selectedAudioProfile || assigningVoice}>
+            <Button variant="outlined" startIcon={assigningVoice ? <CircularProgress size={16} /> : <AutoAwesomeIcon />} onClick={() => void handleAutoAssignVoice()} disabled={assigningVoice}>
               {i18n.language.startsWith('zh') ? '自动匹配音色' : 'Match voice'}
             </Button>
             <TextField size="small" label={i18n.language.startsWith('zh') ? '风格' : 'Style'} placeholder={i18n.language.startsWith('zh') ? '如 cheerful / sad' : 'e.g. cheerful / sad'} value={voiceConfig.style || ''} onChange={(e) => setVoiceConfig((prev) => ({ ...prev, style: e.target.value }))} />
