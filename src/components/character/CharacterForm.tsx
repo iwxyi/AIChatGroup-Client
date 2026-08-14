@@ -1394,6 +1394,29 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
         </CardContent>
       </Card>
 
+      <Card variant="outlined" sx={buildEditorCardSx()}>
+        <CardContent sx={{ display: 'grid', gap: 1.25 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap' }}>
+            <Box>
+              <Typography variant="body2" sx={{ fontWeight: 600 }}>{i18n.language.startsWith('zh') ? '语音形象' : 'Voice identity'}</Typography>
+              <Typography variant="caption" color="text.secondary">{i18n.language.startsWith('zh') ? '为这个角色设置专属音色与说话语气，聊天气泡可按需播放。' : 'Set this character’s voice and delivery for on-demand playback.'}</Typography>
+            </Box>
+            <FormControlLabel
+              control={<Switch checked={Boolean(voiceConfig.enabled)} onChange={(e) => setVoiceConfig((prev) => ({ ...prev, enabled: e.target.checked }))} />}
+              label={i18n.language.startsWith('zh') ? '启用' : 'Enabled'}
+            />
+          </Box>
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' }, gap: 1 }}>
+            <TextField size="small" label={i18n.language.startsWith('zh') ? '音色' : 'Voice'} placeholder={i18n.language.startsWith('zh') ? '如 zh-CN-XiaoxiaoNeural' : 'e.g. en-US-JennyNeural'} value={voiceConfig.voiceName || ''} onChange={(e) => setVoiceConfig((prev) => ({ ...prev, voiceName: e.target.value }))} />
+            <TextField size="small" label={i18n.language.startsWith('zh') ? '风格' : 'Style'} placeholder={i18n.language.startsWith('zh') ? '如 cheerful / sad' : 'e.g. cheerful / sad'} value={voiceConfig.style || ''} onChange={(e) => setVoiceConfig((prev) => ({ ...prev, style: e.target.value }))} />
+            <TextField size="small" label={i18n.language.startsWith('zh') ? '语速' : 'Rate'} placeholder="+0%" value={voiceConfig.rate || ''} onChange={(e) => setVoiceConfig((prev) => ({ ...prev, rate: e.target.value }))} />
+            <TextField size="small" label={i18n.language.startsWith('zh') ? '音调' : 'Pitch'} placeholder="+0Hz" value={voiceConfig.pitch || ''} onChange={(e) => setVoiceConfig((prev) => ({ ...prev, pitch: e.target.value }))} />
+            <TextField size="small" label={i18n.language.startsWith('zh') ? '默认情绪' : 'Default emotion'} placeholder={i18n.language.startsWith('zh') ? '如温柔、撒娇、克制' : 'e.g. warm, playful, restrained'} value={voiceConfig.emotion || ''} onChange={(e) => setVoiceConfig((prev) => ({ ...prev, emotion: e.target.value }))} />
+            <TextField size="small" label={i18n.language.startsWith('zh') ? '语音指令' : 'Voice instructions'} placeholder={i18n.language.startsWith('zh') ? '传给支持 instructions 的 TTS' : 'Passed to TTS providers that support instructions'} value={voiceConfig.instructions || ''} onChange={(e) => setVoiceConfig((prev) => ({ ...prev, instructions: e.target.value }))} />
+          </Box>
+        </CardContent>
+      </Card>
+
       {showSpeechStyle ? (
         <Card variant="outlined" sx={buildEditorCardSx()}>
           <CardContent sx={{ display: 'grid', gap: 1.25 }}>
@@ -1502,60 +1525,6 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
                     </Select>
                   </FormControl>
                 </Box>
-                <Collapse in={Boolean(modelProfileIds.audio)}>
-                  <Card variant="outlined" sx={buildSoftPanelSx()}>
-                    <CardContent sx={{ display: 'grid', gap: 1.25 }}>
-                      <FormControlLabel
-                        control={<Switch checked={Boolean(voiceConfig.enabled)} onChange={(e) => setVoiceConfig((prev) => ({ ...prev, enabled: e.target.checked }))} />}
-                        label={i18n.language.startsWith('zh') ? '允许按需生成语音' : 'Allow on-demand voice'}
-                      />
-                      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' }, gap: 1 }}>
-                        <TextField
-                          size="small"
-                          label={i18n.language.startsWith('zh') ? '音色' : 'Voice'}
-                          placeholder={i18n.language.startsWith('zh') ? '如 zh-CN-XiaoxiaoNeural' : 'e.g. en-US-JennyNeural'}
-                          value={voiceConfig.voiceName || ''}
-                          onChange={(e) => setVoiceConfig((prev) => ({ ...prev, voiceName: e.target.value }))}
-                        />
-                        <TextField
-                          size="small"
-                          label={i18n.language.startsWith('zh') ? '风格' : 'Style'}
-                          placeholder={i18n.language.startsWith('zh') ? '如 cheerful / sad' : 'e.g. cheerful / sad'}
-                          value={voiceConfig.style || ''}
-                          onChange={(e) => setVoiceConfig((prev) => ({ ...prev, style: e.target.value }))}
-                        />
-                        <TextField
-                          size="small"
-                          label={i18n.language.startsWith('zh') ? '语速' : 'Rate'}
-                          placeholder="+0%"
-                          value={voiceConfig.rate || ''}
-                          onChange={(e) => setVoiceConfig((prev) => ({ ...prev, rate: e.target.value }))}
-                        />
-                        <TextField
-                          size="small"
-                          label={i18n.language.startsWith('zh') ? '音调' : 'Pitch'}
-                          placeholder="+0Hz"
-                          value={voiceConfig.pitch || ''}
-                          onChange={(e) => setVoiceConfig((prev) => ({ ...prev, pitch: e.target.value }))}
-                        />
-                        <TextField
-                          size="small"
-                          label={i18n.language.startsWith('zh') ? '默认情绪' : 'Default emotion'}
-                          placeholder={i18n.language.startsWith('zh') ? '如温柔、撒娇、克制' : 'e.g. warm, playful, restrained'}
-                          value={voiceConfig.emotion || ''}
-                          onChange={(e) => setVoiceConfig((prev) => ({ ...prev, emotion: e.target.value }))}
-                        />
-                        <TextField
-                          size="small"
-                          label={i18n.language.startsWith('zh') ? '语音指令' : 'Voice instructions'}
-                          placeholder={i18n.language.startsWith('zh') ? '传给支持 instructions 的 TTS' : 'Passed to TTS providers that support instructions'}
-                          value={voiceConfig.instructions || ''}
-                          onChange={(e) => setVoiceConfig((prev) => ({ ...prev, instructions: e.target.value }))}
-                        />
-                      </Box>
-                    </CardContent>
-                  </Card>
-                </Collapse>
               </Box>
             </Collapse>
           </CardContent>
