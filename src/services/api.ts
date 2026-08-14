@@ -1060,6 +1060,11 @@ class ApiClient {
     }>('POST', '/speech/tts', data);
   }
 
+  async listSpeechVoices(providerCode?: string) {
+    const query = providerCode ? `?providerCode=${encodeURIComponent(providerCode)}` : '';
+    return this.request<{ provider: string; voices: Array<{ id: string; name: string; language?: string; gender?: string; styles?: string[] }> }>('GET', `/speech/voices${query}`);
+  }
+
   async transcribeSpeech(data: {
     providerCode?: string;
     audioDataUrl: string;

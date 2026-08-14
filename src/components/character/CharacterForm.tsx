@@ -330,6 +330,8 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
   }));
   const [speechProfile, setSpeechProfile] = useState<CharacterSpeechProfile | undefined>(initial?.speechProfile);
   const [voiceConfig, setVoiceConfig] = useState<CharacterVoiceConfig>(initial?.voiceConfig || { enabled: false });
+  const [speechVoices, setSpeechVoices] = useState<Array<{ id: string; name: string; language?: string; gender?: string }>>([]);
+  const [speechVoicesLoading, setSpeechVoicesLoading] = useState(false);
   const [group, setGroup] = useState(initial?.group || '');
   const [memory, setMemory] = useState<CharacterMemoryConfig>(initial?.memory || DEFAULT_CHARACTER_MEMORY);
   const [coreProfile, setCoreProfile] = useState<CharacterCoreProfile>(() => ({
@@ -454,6 +456,21 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
     audio: settings.aiProfiles.filter((profile) => profile.type === 'audio'),
     document: settings.aiProfiles.filter((profile) => profile.type === 'document'),
   }), [settings.aiProfiles]);
+  const selectedAudioProfile = profilesByType.audio.find((profile) => profile.id === modelProfileIds.audio) || getPreferredAIProfile(profilesByType.audio, 'audio');
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!selectedAudioProfile?.provider) { setSpeechVoices([]); return () => { cancelled = true; }; }
+    setSpeechVoicesLoading(true);
+    void api.listSpeechVoices(selectedAudioProfile.provider).then((result) => {
+      if (!cancelled) setSpeechVoices(result.voices || []);
+    }).catch(() => {
+      if (!cancelled) setSpeechVoices([]);
+    }).finally(() => {
+      if (!cancelled) setSpeechVoicesLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [selectedAudioProfile?.provider]);
 
   useEffect(() => {
     onDraftNameChange?.(name);
@@ -1407,7 +1424,10 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
             />
           </Box>
           <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' }, gap: 1 }}>
-            <TextField size="small" label={i18n.language.startsWith('zh') ? '音色' : 'Voice'} placeholder={i18n.language.startsWith('zh') ? '如 zh-CN-XiaoxiaoNeural' : 'e.g. en-US-JennyNeural'} value={voiceConfig.voiceName || ''} onChange={(e) => setVoiceConfig((prev) => ({ ...prev, voiceName: e.target.value }))} />
+            <TextField select size="small" label={i18n.language.startsWith('zh') ? '发音人' : 'Voice'} value={voiceConfig.voiceName || ''} onChange={(e) => setVoiceConfig((prev) => ({ ...prev, voiceName: e.target.value }))} disabled={speechVoicesLoading || !selectedAudioProfile} helperText={!selectedAudioProfile ? (i18n.language.startsWith('zh') ? '请先在 AI模型 中选择 TTS 模型' : 'Select a TTS model in AI Models first') : speechVoicesLoading ? (i18n.language.startsWith('zh') ? '正在读取当前平台音色…' : 'Loading voices…') : undefined}>
+              <MenuItem value="">{i18n.language.startsWith('zh') ? '使用平台默认音色' : 'Provider default'}</MenuItem>
+              {speechVoices.map((voice) => <MenuItem key={voice.id} value={voice.id}>{voice.name}（{voice.id}）</MenuItem>)}
+            </TextField>
             <TextField size="small" label={i18n.language.startsWith('zh') ? '风格' : 'Style'} placeholder={i18n.language.startsWith('zh') ? '如 cheerful / sad' : 'e.g. cheerful / sad'} value={voiceConfig.style || ''} onChange={(e) => setVoiceConfig((prev) => ({ ...prev, style: e.target.value }))} />
             <TextField size="small" label={i18n.language.startsWith('zh') ? '语速' : 'Rate'} placeholder="+0%" value={voiceConfig.rate || ''} onChange={(e) => setVoiceConfig((prev) => ({ ...prev, rate: e.target.value }))} />
             <TextField size="small" label={i18n.language.startsWith('zh') ? '音调' : 'Pitch'} placeholder="+0Hz" value={voiceConfig.pitch || ''} onChange={(e) => setVoiceConfig((prev) => ({ ...prev, pitch: e.target.value }))} />
