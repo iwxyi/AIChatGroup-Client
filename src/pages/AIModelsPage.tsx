@@ -56,7 +56,7 @@ type OfficialProvidersState = {
 };
 
 type SpeechPlatformsState = {
-  items: Array<{ capability: 'tts' | 'stt'; name: string; officialName: string; providerCode: string; available: boolean }>;
+  items: Array<{ capability: 'tts' | 'stt'; name: string; officialName: string; providerCode: string; available: boolean; providers: Array<{ providerCode: string; displayName: string; official: boolean; available: boolean }> }>;
   loading: boolean;
   error: string | null;
 };
@@ -674,25 +674,28 @@ function buildOnlineOfficialProviderOption(provider: OfficialAiProviderInfo): (A
 
 function getProviderDefaultsFromOptions(provider: AIProvider, type: AIModelType, providerOptions: AIProviderOption[]) {
   const entry = providerOptions.find((item) => item.key === provider) || getProviderCatalogEntry(provider);
-  return entry.defaults[type] || { baseUrl: '', model: '' };
+  const catalogType = type === 'tts' || type === 'stt' ? 'audio' : type;
+  return entry.defaults[catalogType] || { baseUrl: '', model: '' };
 }
 
 function providerSupportsType(option: AIProviderOption, type: AIModelType) {
-  const defaults = option.defaults[type];
-  const popularModels = option.popularModels[type] || [];
+  const catalogType = type === 'tts' || type === 'stt' ? 'audio' : type;
+  const defaults = option.defaults[catalogType];
+  const popularModels = option.popularModels[catalogType] || [];
   return Boolean(defaults?.model || popularModels.length);
 }
 
 function resolveSelectableProviderKey(provider: string, type: AIModelType, providerOptions: AIProviderOption[] = getProvidersForType(type)) {
+  const catalogType = type === 'tts' || type === 'stt' ? 'audio' : type;
   const exactProvider = providerOptions.find((item) => item.key === provider);
-  if (exactProvider?.defaults[type]) return exactProvider.key;
+  if (exactProvider?.defaults[catalogType]) return exactProvider.key;
   if (isOfficialProviderKey(provider)) {
     const legacyProvider = resolveLegacyOfficialProviderKey(provider);
     const mappedProvider = providerOptions.find((item) => item.key === legacyProvider);
     if (mappedProvider?.defaults[type]) return mappedProvider.key;
   }
   const catalogProvider = getProviderCatalogEntry(provider as AIProvider);
-  if (catalogProvider.defaults[type]) return catalogProvider.key;
+  if (catalogProvider.defaults[catalogType]) return catalogProvider.key;
   return providerOptions.find((item) => item.key === catalogProvider.key)?.key
     || providerOptions[0]?.key
     || catalogProvider.key;
@@ -746,6 +749,8 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
   const modelTypeLabels: Record<AIModelType, string> = {
     text: i18n.language.startsWith('zh') ? '文本' : 'Text',
     image: i18n.language.startsWith('zh') ? '图片' : 'Image',
+    tts: i18n.language.startsWith('zh') ? '语音（TTS）' : 'Speech (TTS)',
+    stt: i18n.language.startsWith('zh') ? '语音（STT）' : 'Speech (STT)',
     audio: i18n.language.startsWith('zh') ? '语音' : 'Audio',
     document: i18n.language.startsWith('zh') ? '文档' : 'Document',
   };
@@ -791,7 +796,35 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
     isOfficialProviderKey(provider) || isOnlineOfficialProviderKey(provider)
   ), [isOnlineOfficialProviderKey]);
   const getProviderOptionsForType = useCallback((type: AIModelType, selectedProvider?: string): AIProviderOption[] => {
-    const nonOfficialOptions = getProvidersForType(type).filter((item) => !isOfficialProviderKey(item.key) && !onlineOfficialProviderKeySet.has(item.key));
+    const speechPlatform = (type === 'tts' || type === 'stt')
+      ? speechPlatforms.items.find((item) => item.capability === type)
+      : null;
+    const speechOptions: AIProviderOption[] = (speechPlatform?.providers || []).map((item) => {
+      const catalog = getProviderCatalogEntry(item.providerCode as AIProvider);
+      const fallback = catalog.defaults.audio || { baseUrl: '', model: '' };
+      return {
+        ...catalog,
+        key: item.providerCode as AIProvider,
+        label: item.displayName || catalog.label,
+        hidden: false,
+        defaults: { ...catalog.defaults, audio: fallback },
+        popularModels: { ...catalog.popularModels, audio: catalog.popularModels.audio || [] },
+      };
+    });
+    if (speechPlatform?.available && speechPlatform.providerCode) {
+      const officialCatalog = getProviderCatalogEntry('official');
+      speechOptions.unshift({
+        ...officialCatalog,
+        key: 'official' as AIProvider,
+        label: `${speechPlatform.officialName || '官方语音'}（官方）`,
+        hidden: false,
+        defaults: { ...officialCatalog.defaults, audio: { baseUrl: '/api', model: type === 'tts' ? 'speech-tts' : 'speech-stt' } },
+        popularModels: { ...officialCatalog.popularModels, audio: [] },
+      });
+    }
+    const nonOfficialOptions = (type === 'tts' || type === 'stt' ? speechOptions : getProvidersForType(type))
+      .filter((item) => !isOfficialProviderKey(item.key) && !onlineOfficialProviderKeySet.has(item.key));
+    const speechOfficialOptions = speechOptions.filter((item) => item.key === 'official');
     const visibleOfficialOptions = !canUseOfficialProviders
       ? onlineOfficialProviderOptions
         .filter((item) => {
@@ -849,10 +882,11 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
       ];
     }
     return [
+      ...(type === 'tts' || type === 'stt' ? speechOfficialOptions : []),
       ...visibleOfficialOptions,
       ...nonOfficialOptions,
     ];
-  }, [canUseOfficialProviders, i18n.language, officialProvidersError, officialProvidersLoading, onlineOfficialProviderKeySet, onlineOfficialProviderOptions]);
+  }, [canUseOfficialProviders, i18n.language, officialProvidersError, officialProvidersLoading, onlineOfficialProviderKeySet, onlineOfficialProviderOptions, speechPlatforms.items]);
 
   useEffect(() => {
     if (embedded) return undefined;
@@ -1223,25 +1257,7 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
           gap: 2,
         }}
       >
-            {(['tts', 'stt'] as const).map((capability) => {
-              const platform = speechPlatforms.items.find((item) => item.capability === capability);
-              const name = capability === 'tts'
-                ? (i18n.language.startsWith('zh') ? '文字转语音' : 'Text to speech')
-                : (i18n.language.startsWith('zh') ? '语音转文字' : 'Speech to text');
-              return (
-                <SurfaceCard key={`speech-${capability}`} sx={modelCardSx()} contentSx={{ display: 'grid', gap: 0.75 }}>
-                  <Typography variant="body1" sx={{ fontWeight: 700 }}>{name}</Typography>
-                  <Typography variant="body2" color={platform?.available ? 'text.secondary' : 'warning.main'}>
-                    {speechPlatforms.loading
-                      ? (i18n.language.startsWith('zh') ? '正在读取后台平台…' : 'Loading platform…')
-                      : platform?.available
-                        ? platform.officialName
-                        : (i18n.language.startsWith('zh') ? '后台未配置可用平台' : 'No backend platform configured')}
-                  </Typography>
-                </SurfaceCard>
-              );
-            })}
-            {aiProfiles.filter((profile) => profile.type !== 'audio').map((profile, index) => (
+            {aiProfiles.map((profile, index) => (
               <SurfaceCard key={profile.id} sx={modelCardSx()} contentSx={{ display: 'flex', flexDirection: 'column', gap: 1.75 }}>
                   {(() => {
                     const activeType = profile.type || 'text';
@@ -1262,7 +1278,8 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
                     }, []);
                     const usesOfficialProxy = isOfficialProxyProviderKey(selectedProvider.key) || providerDefaults.baseUrl.replace(/\/+$/, '') === '/api/ai';
                     const fetchedModels = remoteModelOptions[profile.id] || [];
-                    const providerPopularModels = selectedProvider.popularModels[activeType] || getPopularModels(selectedProvider.key, activeType);
+                    const catalogType = activeType === 'tts' || activeType === 'stt' ? 'audio' : activeType;
+                    const providerPopularModels = selectedProvider.popularModels[catalogType] || getPopularModels(selectedProvider.key, activeType);
                     const popularModels = usesOfficialProxy && fetchedModels.length > 0 ? [] : providerPopularModels;
                     const popularModelSet = new Set(popularModels);
                     const remoteModels = fetchedModels.filter((item) => !popularModelSet.has(item.value));
@@ -1293,6 +1310,18 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
                       sx={fieldSx()}
                     />
                   </Box>
+                  {activeType === 'tts' || activeType === 'stt' ? (
+                    <Typography variant="caption" color="text.secondary">
+                      {speechPlatforms.loading
+                        ? (i18n.language.startsWith('zh') ? '正在读取后台官方语音平台…' : 'Loading official speech platform…')
+                        : (() => {
+                          const platform = speechPlatforms.items.find((item) => item.capability === activeType);
+                          return platform?.available
+                            ? `${i18n.language.startsWith('zh') ? '官方：' : 'Official: '}${platform.officialName}`
+                            : (i18n.language.startsWith('zh') ? '后台尚未配置官方语音平台，可选择其他 Provider。' : 'No official speech platform is configured; choose another provider.');
+                        })()}
+                    </Typography>
+                  ) : null}
                   <Divider />
 
                   <FormControl fullWidth size="small">
@@ -1332,6 +1361,8 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
                         >
                           <MenuItem value="text">{modelTypeLabels.text}</MenuItem>
                           <MenuItem value="image">{modelTypeLabels.image}</MenuItem>
+                          <MenuItem value="tts">{modelTypeLabels.tts}</MenuItem>
+                          <MenuItem value="stt">{modelTypeLabels.stt}</MenuItem>
                           <MenuItem value="document">{modelTypeLabels.document}</MenuItem>
                         </Select>
                       </FormControl>

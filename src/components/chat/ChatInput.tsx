@@ -13,6 +13,7 @@ import type { MessageAttachment } from '../../types/message';
 import type { AIModelInputCapabilities } from '../../types/settings';
 import { buildImageAttachmentHoverInfo } from '../../services/messageAttachmentHoverInfo';
 import { normalizeInputCapabilities } from '../../types/settings';
+import { useSettingsStore } from '../../stores/useSettingsStore';
 import { transcribeSpeech } from '../../services/speech';
 
 interface ChatInputProps {
@@ -105,6 +106,8 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
   const imageDragDepthRef = useRef(0);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
+  const sttModel = useSettingsStore((state) => state.aiProfiles.find((profile) => profile.type === 'stt' && (profile.isDefault || profile.provider))
+    || state.aiProfiles.find((profile) => profile.type === 'audio' && (profile.audioCapability === 'stt' || profile.audioCapability === 'both')));
 
   useEffect(() => {
     if (!autoFocus) return;
@@ -189,7 +192,8 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
   }), []);
 
   const startRecording = useCallback(async () => {
-    if (disabled || isSending || isTranscribing || !navigator.mediaDevices?.getUserMedia) {
+    if (disabled || isSending || isTranscribing || !sttModel || !navigator.mediaDevices?.getUserMedia) {
+      if (!sttModel) onSendError?.('请先在模型页面配置语音（STT）模型');
       return;
     }
     try {
@@ -203,7 +207,7 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
         if (!blob.size) return;
         setIsTranscribing(true);
         try {
-          const result = await transcribeSpeech({ audioDataUrl: await blobToDataUrl(blob), fileName: 'voice-input.webm', language: 'zh' });
+          const result = await transcribeSpeech({ providerCode: sttModel.provider, audioDataUrl: await blobToDataUrl(blob), fileName: 'voice-input.webm', language: 'zh' });
           if (result.text.trim()) {
             setText((current) => {
               const next = current.trim() ? `${current.trim()} ${result.text.trim()}` : result.text.trim();
@@ -223,7 +227,7 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
     } catch (error) {
       onSendError?.(error instanceof Error ? error.message : '无法访问麦克风');
     }
-  }, [blobToDataUrl, disabled, inputFocused, isSending, isTranscribing, onSendError, publishDraftActivity]);
+  }, [blobToDataUrl, disabled, inputFocused, isSending, isTranscribing, onSendError, publishDraftActivity, sttModel]);
 
   const stopRecording = useCallback(() => {
     const recorder = recorderRef.current;

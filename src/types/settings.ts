@@ -5,7 +5,7 @@ import { DEFAULT_ARTIFACT_APPEARANCE_SETTINGS } from './artifactAppearance';
 export type OfficialAIProvider = 'official' | `official-${string}`;
 export type BuiltInAIProvider = OfficialAIProvider | 'openai' | 'anthropic' | 'google' | 'xai' | 'deepseek' | 'alibaba' | 'zhipu' | 'moonshot' | 'minimax' | 'bytedance' | 'microsoft' | 'custom';
 export type AIProvider = BuiltInAIProvider | (string & {});
-export type AIModelType = 'text' | 'image' | 'audio' | 'document';
+export type AIModelType = 'text' | 'image' | 'tts' | 'stt' | 'audio' | 'document';
 export type AudioModelCapability = 'tts' | 'stt' | 'both';
 export type ThemeMode = 'light' | 'dark' | 'system';
 export type ThemePresetId = 'rednote' | 'jade' | 'reader' | 'imperial' | 'night' | 'mirage' | 'aurora' | 'paper' | 'sakura' | 'ember' | 'graphite' | 'dopamine' | 'morandi';
@@ -503,7 +503,7 @@ export function normalizeAIProfiles(aiProfiles?: AIModelProfile[], api?: APIConf
     normalized.push({ ...DEFAULT_IMAGE_AI_PROFILE });
   }
 
-  for (const type of ['text', 'image', 'audio', 'document'] as AIModelType[]) {
+  for (const type of ['text', 'image', 'tts', 'stt', 'audio', 'document'] as AIModelType[]) {
     const items = normalized.filter((profile) => profile.type === type);
     if (items.length === 1) items[0].isDefault = true;
   }

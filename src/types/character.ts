@@ -442,6 +442,8 @@ export const DEFAULT_VOICE_CONFIG: CharacterVoiceConfig = {
 export const DEFAULT_CHARACTER_MODEL_PROFILE_IDS: Partial<Record<AIModelType, string | null>> = {
   text: null,
   image: null,
+  tts: null,
+  stt: null,
   audio: null,
   document: null,
 };

@@ -344,17 +344,20 @@ export function getProviderCatalogEntry(provider: AIProvider) {
 }
 
 export function getProvidersForType(type: AIModelType, options: { includeHidden?: boolean } = {}) {
-  return AI_PROVIDER_CATALOG.filter((item) => item.defaults[type] && (options.includeHidden || !item.hidden));
+  const catalogType = type === 'tts' || type === 'stt' ? 'audio' : type;
+  return AI_PROVIDER_CATALOG.filter((item) => item.defaults[catalogType] && (options.includeHidden || !item.hidden));
 }
 
 export function getProviderDefaults(provider: AIProvider, type: AIModelType) {
   const entry = getProviderCatalogEntry(provider);
-  return entry.defaults[type] || { baseUrl: '', model: '' };
+  const catalogType = type === 'tts' || type === 'stt' ? 'audio' : type;
+  return entry.defaults[catalogType] || { baseUrl: '', model: '' };
 }
 
 export function getPopularModels(provider: AIProvider, type: AIModelType) {
   const entry = getProviderCatalogEntry(provider);
-  return entry.popularModels[type] || [];
+  const catalogType = type === 'tts' || type === 'stt' ? 'audio' : type;
+  return entry.popularModels[catalogType] || [];
 }
 
 export function inferImageCapabilities(provider: AIProvider, model: string): AIModelImageCapabilities {

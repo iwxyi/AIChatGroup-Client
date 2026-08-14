@@ -137,13 +137,19 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
   const [voiceGenerating, setVoiceGenerating] = useState(false);
   const [voiceProgress, setVoiceProgress] = useState(0);
   const voiceAudioRef = useRef<HTMLAudioElement | null>(null);
-  const canPlayVoice = Boolean(message.type === 'ai' && !pending && message.content.trim() && character?.voiceConfig?.enabled !== false);
+  const ttsProfiles = useSettingsStore((state) => state.aiProfiles.filter((profile) => profile.type === 'tts'));
+  const ttsModel = ttsProfiles.find((profile) => profile.id === (character?.modelProfileIds?.tts || character?.modelProfileIds?.audio))
+    || ttsProfiles.find((profile) => profile.isDefault)
+    || ttsProfiles[0]
+    || useSettingsStore.getState().aiProfiles.find((profile) => profile.type === 'audio' && (profile.audioCapability === 'tts' || profile.audioCapability === 'both'));
+  const canPlayVoice = Boolean(message.type === 'ai' && !pending && message.content.trim() && ttsModel && character?.voiceConfig?.enabled !== false);
   const toggleVoice = async () => {
     if (!canPlayVoice) return;
     if (!voiceUrl) {
       setVoiceGenerating(true);
       try {
         const result = await api.synthesizeSpeech({
+          providerCode: ttsModel?.provider,
           text: message.content,
           voice: character?.voiceConfig?.voiceName,
           style: character?.voiceConfig?.style || character?.voiceConfig?.instructions,

@@ -174,7 +174,7 @@ function dedupeVisualAssets(assets: CharacterVisualReferenceImage[]) {
   });
 }
 
-const MODEL_TYPE_ORDER: Array<Exclude<AIModelType, 'audio'>> = ['text', 'image', 'document'];
+const MODEL_TYPE_ORDER: Array<Exclude<AIModelType, 'audio'>> = ['text', 'image', 'tts', 'stt', 'document'];
 
 interface CharacterFormProps {
   initial?: Partial<AICharacter>;
@@ -397,6 +397,8 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
   const modelTypeLabels: Record<AIModelType, string> = {
     text: i18n.language.startsWith('zh') ? '文本' : 'Text',
     image: i18n.language.startsWith('zh') ? '图片' : 'Image',
+    tts: i18n.language.startsWith('zh') ? '语音（TTS）' : 'Speech (TTS)',
+    stt: i18n.language.startsWith('zh') ? '语音（STT）' : 'Speech (STT)',
     audio: i18n.language.startsWith('zh') ? '语音' : 'Audio',
     document: i18n.language.startsWith('zh') ? '文档' : 'Document',
   };
@@ -457,13 +459,17 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
   const profilesByType = useMemo(() => ({
     text: settings.aiProfiles.filter((profile) => (profile.type || 'text') === 'text'),
     image: settings.aiProfiles.filter((profile) => profile.type === 'image'),
+    tts: settings.aiProfiles.filter((profile) => profile.type === 'tts'),
+    stt: settings.aiProfiles.filter((profile) => profile.type === 'stt'),
     document: settings.aiProfiles.filter((profile) => profile.type === 'document'),
   }), [settings.aiProfiles]);
+  const selectedTtsProfile = profilesByType.tts.find((profile) => profile.id === modelProfileIds.tts) || getPreferredAIProfile(profilesByType.tts, 'tts');
 
   useEffect(() => {
     let cancelled = false;
+    if (!selectedTtsProfile?.provider) { setSpeechVoices([]); return () => { cancelled = true; }; }
     setSpeechVoicesLoading(true);
-    void api.listSpeechVoices().then((result) => {
+    void api.listSpeechVoices(selectedTtsProfile.provider).then((result) => {
       if (!cancelled) setSpeechVoices(result.voices || []);
     }).catch(() => {
       if (!cancelled) setSpeechVoices([]);
@@ -471,7 +477,7 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
       if (!cancelled) setSpeechVoicesLoading(false);
     });
     return () => { cancelled = true; };
-  }, []);
+  }, [selectedTtsProfile?.provider]);
 
   useEffect(() => {
     onDraftNameChange?.(name);
@@ -677,7 +683,7 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
   };
 
   const handleAutoAssignVoice = async () => {
-    if (assigningVoice) return;
+    if (!selectedTtsProfile?.provider || assigningVoice) return;
     setAssigningVoice(true);
     setVoiceAssignmentError(null);
     const profile = voiceConfig.voiceProfile || {
@@ -694,7 +700,7 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
         .filter((character) => character.id !== initial?.id)
         .map((character) => character.voiceConfig?.voiceName)
         .filter((voice): voice is string => Boolean(voice));
-      const result = await assignGeneratedVoiceProfile(profile, initial?.id || name || 'character', usedVoiceIds);
+      const result = await assignGeneratedVoiceProfile(profile, initial?.id || name || 'character', usedVoiceIds, selectedTtsProfile.provider);
       if (!result.voiceConfig.voiceName) {
         setVoiceAssignmentError(i18n.language.startsWith('zh') ? '当前语音画像没有匹配到可用音色' : 'No available voice matches this profile');
         return;
@@ -1522,9 +1528,10 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
               onChange={(_event, value) => setVoiceConfig((prev) => ({ ...prev, voiceName: typeof value === 'string' ? value : value?.id || '', role: typeof value === 'string' ? prev.role : value?.name || '', voiceSource: typeof value === 'string' ? 'manual' : 'auto' }))}
               onInputChange={(_event, value, reason) => { if (reason === 'input') setVoiceConfig((prev) => ({ ...prev, voiceName: value, voiceSource: 'manual' })); }}
               loading={speechVoicesLoading}
-              renderInput={(params) => <TextField {...params} size="small" label={i18n.language.startsWith('zh') ? '发音人（可搜索或手动输入）' : 'Voice (search or enter ID)'} helperText={speechVoicesLoading ? (i18n.language.startsWith('zh') ? '正在读取后台默认平台音色…' : 'Loading voices from the default platform…') : undefined} />}
+              disabled={!selectedTtsProfile}
+              renderInput={(params) => <TextField {...params} size="small" label={i18n.language.startsWith('zh') ? '发音人（可搜索或手动输入）' : 'Voice (search or enter ID)'} helperText={!selectedTtsProfile ? (i18n.language.startsWith('zh') ? '请先在 AI模型 中选择语音（TTS）模型' : 'Select a TTS model in AI Models first') : speechVoicesLoading ? (i18n.language.startsWith('zh') ? '正在读取当前平台音色…' : 'Loading voices…') : undefined} />}
             />
-            <Button variant="outlined" startIcon={assigningVoice ? <CircularProgress size={16} /> : <AutoAwesomeIcon />} onClick={() => void handleAutoAssignVoice()} disabled={assigningVoice}>
+            <Button variant="outlined" startIcon={assigningVoice ? <CircularProgress size={16} /> : <AutoAwesomeIcon />} onClick={() => void handleAutoAssignVoice()} disabled={!selectedTtsProfile || assigningVoice}>
               {i18n.language.startsWith('zh') ? '自动匹配音色' : 'Match voice'}
             </Button>
             <TextField size="small" label={i18n.language.startsWith('zh') ? '风格' : 'Style'} placeholder={i18n.language.startsWith('zh') ? '如 cheerful / sad' : 'e.g. cheerful / sad'} value={voiceConfig.style || ''} onChange={(e) => setVoiceConfig((prev) => ({ ...prev, style: e.target.value }))} />

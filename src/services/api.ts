@@ -1067,6 +1067,7 @@ class ApiClient {
       officialName: string;
       providerCode: string;
       available: boolean;
+      providers: Array<{ providerCode: string; displayName: string; official: boolean; available: boolean }>;
     }> }>('GET', '/speech/platforms');
   }
 
