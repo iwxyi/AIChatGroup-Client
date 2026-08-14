@@ -88,7 +88,7 @@ const FIELD_DEFS: Record<string, FieldDef[]> = {
     { key: 'model', label: '模型 ID', required: true }, { key: 'defaultVoice', label: '默认音色 Voice ID' }, { key: 'language', label: '语言' }, { key: 'outputFormat', label: '输出格式' }, { key: 'sampleRate', label: '采样率', type: 'number' }, { key: 'apiKey', label: 'API Key', secret: true, required: true },
   ],
   'tts:volcengine': [
-    { key: 'endpoint', label: 'Endpoint' }, { key: 'appId', label: 'App ID' }, { key: 'resourceId', label: 'Resource ID' }, { key: 'cluster', label: 'Cluster' }, { key: 'defaultVoice', label: '默认音色' }, { key: 'language', label: '语言' }, { key: 'outputFormat', label: '输出格式' }, { key: 'accessToken', label: 'Access Token', secret: true },
+    { key: 'endpoint', label: 'Endpoint' }, { key: 'appId', label: 'App ID' }, { key: 'resourceId', label: 'Resource ID' }, { key: 'cluster', label: 'Cluster' }, { key: 'defaultVoice', label: '默认音色' }, { key: 'language', label: '语言' }, { key: 'outputFormat', label: '输出格式' }, { key: 'apiKey', label: 'API Key', secret: true },
   ],
   'tts:openai': [
     { key: 'apiBaseUrl', label: 'API Base URL' }, { key: 'model', label: '模型 ID', required: true }, { key: 'defaultVoice', label: '默认音色' }, { key: 'outputFormat', label: '输出格式' }, { key: 'apiKey', label: 'API Key', secret: true, required: true },
@@ -100,7 +100,7 @@ const FIELD_DEFS: Record<string, FieldDef[]> = {
     { key: 'apiBaseUrl', label: 'API Base URL' }, { key: 'model', label: '模型 ID' }, { key: 'defaultVoice', label: '默认 Voice ID', required: true }, { key: 'outputFormat', label: '输出格式' }, { key: 'apiKey', label: 'API Key', secret: true, required: true },
   ],
   'stt:volcengine': [
-    { key: 'endpoint', label: 'WebSocket Endpoint' }, { key: 'appId', label: 'App ID' }, { key: 'resourceId', label: 'Resource ID' }, { key: 'cluster', label: 'Cluster' }, { key: 'language', label: '语言' }, { key: 'timeoutMs', label: '超时毫秒', type: 'number' }, { key: 'accessToken', label: 'Access Token', secret: true },
+    { key: 'endpoint', label: 'WebSocket Endpoint' }, { key: 'appId', label: 'App ID' }, { key: 'resourceId', label: 'Resource ID' }, { key: 'cluster', label: 'Cluster' }, { key: 'language', label: '语言' }, { key: 'timeoutMs', label: '超时毫秒', type: 'number' }, { key: 'apiKey', label: 'API Key', secret: true },
   ],
   'stt:aliyun': [
     { key: 'apiBaseUrl', label: 'API Base URL' }, { key: 'endpoint', label: 'Transcription Endpoint' }, { key: 'model', label: '模型 ID' }, { key: 'language', label: '语言' }, { key: 'timeoutMs', label: '超时毫秒', type: 'number' }, { key: 'apiKey', label: 'API Key', secret: true },
