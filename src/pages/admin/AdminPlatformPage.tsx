@@ -29,6 +29,8 @@ const CATEGORY_TABS = [
   { value: 'sms', label: '短信' },
   { value: 'email', label: '邮箱' },
   { value: 'search', label: '搜索' },
+  { value: 'tts', label: '文字转语音 TTS' },
+  { value: 'stt', label: '语音转文字 STT' },
 ] as const;
 
 type PlatformTab = typeof CATEGORY_TABS[number]['value'];
@@ -66,12 +68,49 @@ const PROVIDER_POPULARITY: Record<string, number> = {
   'email:awsses': 50,
   'email:console': 90,
   'search:bocha': 10,
+  'tts:minimax': 10,
+  'tts:volcengine': 20,
+  'tts:openai': 30,
+  'tts:azure-speech': 40,
+  'tts:elevenlabs': 50,
+  'stt:volcengine': 10,
+  'stt:aliyun': 20,
+  'stt:openai': 30,
+  'stt:whisper-local': 40,
 };
 
 const DEFAULT_ALIPAY_NOTIFY_URL = '${domain}/api/billing/payments/alipay/notify';
 const DEFAULT_ALIPAY_RETURN_URL = '${domain}/membership';
 
 const FIELD_DEFS: Record<string, FieldDef[]> = {
+  'tts:minimax': [
+    { key: 'apiBaseUrl', label: 'API Base URL' }, { key: 'endpoint', label: 'TTS Endpoint' }, { key: 'groupId', label: 'Group ID', required: true },
+    { key: 'model', label: '模型 ID', required: true }, { key: 'defaultVoice', label: '默认音色 Voice ID' }, { key: 'language', label: '语言' }, { key: 'outputFormat', label: '输出格式' }, { key: 'sampleRate', label: '采样率', type: 'number' }, { key: 'apiKey', label: 'API Key', secret: true, required: true },
+  ],
+  'tts:volcengine': [
+    { key: 'endpoint', label: 'Endpoint' }, { key: 'appId', label: 'App ID' }, { key: 'resourceId', label: 'Resource ID' }, { key: 'defaultVoice', label: '默认音色' }, { key: 'language', label: '语言' }, { key: 'outputFormat', label: '输出格式' }, { key: 'accessToken', label: 'Access Token', secret: true },
+  ],
+  'tts:openai': [
+    { key: 'apiBaseUrl', label: 'API Base URL' }, { key: 'model', label: '模型 ID', required: true }, { key: 'defaultVoice', label: '默认音色' }, { key: 'outputFormat', label: '输出格式' }, { key: 'apiKey', label: 'API Key', secret: true, required: true },
+  ],
+  'tts:azure-speech': [
+    { key: 'endpoint', label: 'Speech Endpoint', required: true }, { key: 'region', label: 'Region' }, { key: 'defaultVoice', label: '默认音色' }, { key: 'language', label: '语言' }, { key: 'outputFormat', label: '输出格式' }, { key: 'subscriptionKey', label: 'Subscription Key', secret: true, required: true },
+  ],
+  'tts:elevenlabs': [
+    { key: 'apiBaseUrl', label: 'API Base URL' }, { key: 'model', label: '模型 ID' }, { key: 'defaultVoice', label: '默认 Voice ID', required: true }, { key: 'outputFormat', label: '输出格式' }, { key: 'apiKey', label: 'API Key', secret: true, required: true },
+  ],
+  'stt:volcengine': [
+    { key: 'endpoint', label: 'WebSocket Endpoint' }, { key: 'appId', label: 'App ID' }, { key: 'resourceId', label: 'Resource ID' }, { key: 'language', label: '语言' }, { key: 'accessToken', label: 'Access Token', secret: true },
+  ],
+  'stt:aliyun': [
+    { key: 'apiBaseUrl', label: 'API Base URL' }, { key: 'model', label: '模型 ID' }, { key: 'language', label: '语言' }, { key: 'apiKey', label: 'API Key', secret: true },
+  ],
+  'stt:openai': [
+    { key: 'apiBaseUrl', label: 'API Base URL' }, { key: 'model', label: '模型 ID', required: true }, { key: 'language', label: '语言' }, { key: 'apiKey', label: 'API Key', secret: true, required: true },
+  ],
+  'stt:whisper-local': [
+    { key: 'endpoint', label: 'Transcription Endpoint', required: true }, { key: 'model', label: '模型 ID' }, { key: 'language', label: '语言' }, { key: 'apiKey', label: 'API Key', secret: true },
+  ],
   'payment:alipay': [
     { key: 'appId', label: 'App ID', required: true },
     { key: 'gatewayUrl', label: '网关地址' },
