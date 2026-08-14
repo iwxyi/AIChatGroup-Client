@@ -88,7 +88,7 @@ const FIELD_DEFS: Record<string, FieldDef[]> = {
     { key: 'model', label: '模型 ID', required: true }, { key: 'defaultVoice', label: '默认音色 Voice ID' }, { key: 'language', label: '语言' }, { key: 'outputFormat', label: '输出格式' }, { key: 'sampleRate', label: '采样率', type: 'number' }, { key: 'apiKey', label: 'API Key', secret: true, required: true },
   ],
   'tts:volcengine': [
-    { key: 'endpoint', label: 'V3 WebSocket Endpoint' }, { key: 'resourceId', label: 'Resource ID' }, { key: 'defaultVoice', label: '默认音色' }, { key: 'language', label: '语言' }, { key: 'outputFormat', label: '输出格式' }, { key: 'apiKey', label: 'API Key', secret: true, required: true },
+    { key: 'endpoint', label: 'V3 WebSocket Endpoint' }, { key: 'resourceId', label: 'Resource ID' }, { key: 'defaultVoice', label: '默认音色' }, { key: 'language', label: '语言' }, { key: 'outputFormat', label: '输出格式' }, { key: 'listSpeakersEndpoint', label: '音色目录 OpenAPI Endpoint' }, { key: 'openApiRegion', label: 'OpenAPI Region' }, { key: 'apiKey', label: 'TTS API Key', secret: true, required: true }, { key: 'accessKeyId', label: 'IAM Access Key ID（同步音色）', secret: true }, { key: 'secretAccessKey', label: 'IAM Secret Access Key（同步音色）', secret: true },
   ],
   'tts:openai': [
     { key: 'apiBaseUrl', label: 'API Base URL' }, { key: 'model', label: '模型 ID', required: true }, { key: 'defaultVoice', label: '默认音色' }, { key: 'outputFormat', label: '输出格式' }, { key: 'apiKey', label: 'API Key', secret: true, required: true },
