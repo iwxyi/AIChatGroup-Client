@@ -100,7 +100,7 @@ const FIELD_DEFS: Record<string, FieldDef[]> = {
     { key: 'apiBaseUrl', label: 'API Base URL' }, { key: 'model', label: '模型 ID' }, { key: 'defaultVoice', label: '默认 Voice ID', required: true }, { key: 'outputFormat', label: '输出格式' }, { key: 'apiKey', label: 'API Key', secret: true, required: true },
   ],
   'stt:volcengine': [
-    { key: 'endpoint', label: 'V3 WebSocket Endpoint' }, { key: 'resourceId', label: 'Resource ID' }, { key: 'language', label: '语言' }, { key: 'timeoutMs', label: '超时毫秒', type: 'number' }, { key: 'apiKey', label: 'API Key', secret: true, required: true },
+    { key: 'endpoint', label: 'V3 WebSocket Endpoint' }, { key: 'appId', label: '语音应用 App ID', required: true, placeholder: '实时语音识别应用的 App ID' }, { key: 'resourceId', label: 'Resource ID' }, { key: 'language', label: '语言' }, { key: 'timeoutMs', label: '超时毫秒', type: 'number' }, { key: 'apiKey', label: 'Access Token / API Key', secret: true, required: true },
   ],
   'stt:aliyun': [
     { key: 'apiBaseUrl', label: 'API Base URL' }, { key: 'endpoint', label: 'Transcription Endpoint' }, { key: 'model', label: '模型 ID' }, { key: 'language', label: '语言' }, { key: 'timeoutMs', label: '超时毫秒', type: 'number' }, { key: 'apiKey', label: 'API Key', secret: true },
