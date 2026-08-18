@@ -29,6 +29,11 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import PauseIcon from '@mui/icons-material/Pause';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import { api } from '../../services/api';
+import { synthesizeSpeechWithAdapter } from '../../services/aiGenerationAdapter';
+
+function usesManagedSpeechProfile(provider: string) {
+  return provider === 'official' || provider.startsWith('managed:');
+}
 
 interface MessageBubbleProps {
   message: Message;
@@ -148,20 +153,25 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
     if (!voiceUrl) {
       setVoiceGenerating(true);
       try {
-        const result = await api.synthesizeSpeech({
-          providerCode: ttsModel?.provider,
-          modelId: ttsModel?.model,
-          text: message.content,
-          voice: character?.voiceConfig?.voiceName,
-          style: character?.voiceConfig?.style || character?.voiceConfig?.instructions,
-          emotion: character?.voiceConfig?.emotion,
-          speed: character?.voiceConfig?.rate ? Number.parseFloat(character.voiceConfig.rate) || undefined : undefined,
-          pitch: character?.voiceConfig?.pitch ? Number.parseFloat(character.voiceConfig.pitch) || undefined : undefined,
-          chatId: message.chatId,
-          messageId: message.serverId || message.id,
-          attachmentId: `voice-${message.id}`,
-        });
-        setVoiceUrl(result.asset?.url || result.audioDataUrl);
+        if (ttsModel && usesManagedSpeechProfile(ttsModel.provider)) {
+          const result = await api.synthesizeSpeech({
+            providerCode: ttsModel.provider.startsWith('managed:') ? ttsModel.provider.slice('managed:'.length) : undefined,
+            modelId: ttsModel.model,
+            text: message.content,
+            voice: character?.voiceConfig?.voiceName,
+            style: character?.voiceConfig?.style || character?.voiceConfig?.instructions,
+            emotion: character?.voiceConfig?.emotion,
+            speed: character?.voiceConfig?.rate ? Number.parseFloat(character.voiceConfig.rate) || undefined : undefined,
+            pitch: character?.voiceConfig?.pitch ? Number.parseFloat(character.voiceConfig.pitch) || undefined : undefined,
+            chatId: message.chatId,
+            messageId: message.serverId || message.id,
+            attachmentId: `voice-${message.id}`,
+          });
+          setVoiceUrl(result.asset?.url || result.audioDataUrl);
+        } else if (ttsModel) {
+          const result = await synthesizeSpeechWithAdapter({ profile: ttsModel, input: message.content, voice: character?.voiceConfig?.voiceName, format: 'mp3', intent: 'chat-audio' });
+          setVoiceUrl(result.objectUrl);
+        }
       } finally {
         setVoiceGenerating(false);
       }

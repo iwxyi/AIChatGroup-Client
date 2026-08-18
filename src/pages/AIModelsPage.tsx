@@ -18,6 +18,7 @@ import { useSettingsStore } from '../stores/useSettingsStore';
 import { useCharacterStore } from '../stores/useCharacterStore';
 import { useAuthStore } from '../stores/useAuthStore';
 import { isLikelyBrowserCorsError, listAvailableModels, testConnection, type AIConnectionTestResult, type AvailableModelInfo } from '../services/aiClient';
+import { synthesizeSpeechWithAdapter, transcribeAudioWithAdapter } from '../services/aiGenerationAdapter';
 import { api, type OfficialAiProviderInfo } from '../services/api';
 import type { AIModelImageCapabilities, AIModelInputCapabilities, AIModelType, AIProvider } from '../types/settings';
 import { normalizeImageCapabilities, normalizeInputCapabilities, inferTextInputCapabilities, buildTextInputCapabilityPatch, getInputCapabilityLockState, getAttachmentUiCapabilitySummary, getInputCapabilityBadge, getInputCapabilityWarning, shouldShowInputCapabilityWarning, getReasoningModeUiMeta, normalizeAIModelAdvancedOptions } from '../types/settings';
@@ -626,6 +627,12 @@ function isOfficialProviderKey(provider: string) {
   return provider === 'official' || provider.startsWith('official-');
 }
 
+const MANAGED_SPEECH_PROVIDER_PREFIX = 'managed:';
+
+function isManagedSpeechProvider(provider: string) {
+  return provider === 'official' || provider.startsWith(MANAGED_SPEECH_PROVIDER_PREFIX);
+}
+
 function resolveOfficialBackendProvider(provider: string) {
   return provider === 'official' ? 'official-2' : provider;
 }
@@ -832,34 +839,27 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
     // The default speech integration is represented by the gateway entry below.
     // Do not render it again by its provider name (for example, both “豆包语音”
     // and “火山引擎豆包语音” would otherwise select the exact same integration).
-    const speechOptions: AIProviderOption[] = (speechPlatform?.providers || []).filter((item) => item.available && !item.official).map((item) => {
+    const managedSpeechOptions: AIProviderOption[] = (speechPlatform?.providers || []).filter((item) => item.available).map((item) => {
       const catalog = getProviderCatalogEntry(item.providerCode as AIProvider);
       const fallback = { ...(catalog.defaults.audio || { baseUrl: '', model: '' }), model: item.modelId || catalog.defaults.audio?.model || '' };
       return {
         ...catalog,
-        key: item.providerCode as AIProvider,
-        label: item.displayName || catalog.label,
+        key: (item.official ? 'official' : `${MANAGED_SPEECH_PROVIDER_PREFIX}${item.providerCode}`) as AIProvider,
+        label: item.modelName || item.displayName || catalog.label,
+        family: i18n.language.startsWith('zh') ? '后台语音平台' : 'Managed speech platforms',
         hidden: false,
-        defaults: { ...catalog.defaults, audio: fallback },
+        defaults: { ...catalog.defaults, audio: { ...fallback, baseUrl: '/api' } },
         popularModels: { ...catalog.popularModels, audio: catalog.popularModels.audio || [] },
       };
     });
-    if ((type === 'tts' || type === 'stt') && speechPlatform?.available) {
-      const officialCatalog = getProviderCatalogEntry('official');
-      speechOptions.unshift({
-        ...officialCatalog,
-        key: 'official' as AIProvider,
-        label: speechPlatform.modelName || speechPlatform.officialName || '语音模型',
-        hidden: false,
-        defaults: { ...officialCatalog.defaults, audio: { baseUrl: '/api', model: speechPlatform.modelId || (type === 'tts' ? 'speech-tts' : 'speech-stt') } },
-        popularModels: { ...officialCatalog.popularModels, audio: [] },
-      });
-    }
     // Speech is served by the speech gateway, not the text/image AI proxy.
     // Keep its selectable providers isolated so text-model official entries can
     // never leak into a TTS/STT model dropdown.
     if (type === 'tts' || type === 'stt') {
-      return speechOptions;
+      const directOptions = getProvidersForType(type)
+        .filter((item) => !isOfficialProviderKey(item.key))
+        .map((item) => ({ ...item, family: i18n.language.startsWith('zh') ? '用户直连接口' : 'User direct APIs' }));
+      return [...managedSpeechOptions, ...directOptions];
     }
     const nonOfficialOptions = getProvidersForType(type)
       .filter((item) => !isOfficialProviderKey(item.key) && !onlineOfficialProviderKeySet.has(item.key));
@@ -1025,7 +1025,8 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
   const handleTestConnection = async (profileId: string) => {
     const profile = aiProfiles.find((item) => item.id === profileId);
     if (!profile) return;
-    const profileUsesOfficialProxy = isOfficialProxyProviderKey(profile.provider) || profile.baseUrl.replace(/\/+$/, '') === '/api/ai';
+    const profileUsesManagedSpeech = (profile.type === 'tts' || profile.type === 'stt') && isManagedSpeechProvider(profile.provider);
+    const profileUsesOfficialProxy = profileUsesManagedSpeech || isOfficialProxyProviderKey(profile.provider) || profile.baseUrl.replace(/\/+$/, '') === '/api/ai';
     if (profileUsesOfficialProxy && !canUseOfficialProviders) {
       setSnackbar({
         open: true,
@@ -1036,20 +1037,28 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
     }
     setTestingId(profileId);
     try {
-      const result: AIConnectionTestResult = profile.type === 'tts'
-        ? await api.synthesizeSpeech({
-          text: i18n.language.startsWith('zh') ? '这是一条语音模型连接测试。' : 'This is a speech model connection test.',
-          providerCode: profile.provider === 'official' ? undefined : profile.provider,
-          modelId: profile.model,
-        }).then(() => ({ success: true as const }))
-        : profile.type === 'stt'
-          ? await api.transcribeSpeech({
-            audioDataUrl: createSpeechTestWavDataUrl(),
-            providerCode: profile.provider === 'official' ? undefined : profile.provider,
+      const result: AIConnectionTestResult = await (profile.type === 'tts'
+        ? (profileUsesManagedSpeech
+          ? api.synthesizeSpeech({
+            text: i18n.language.startsWith('zh') ? '这是一条语音模型连接测试。' : 'This is a speech model connection test.',
+            providerCode: profile.provider.startsWith(MANAGED_SPEECH_PROVIDER_PREFIX) ? profile.provider.slice(MANAGED_SPEECH_PROVIDER_PREFIX.length) : undefined,
             modelId: profile.model,
-            fileName: 'speech-connection-test.wav',
-          }).then(() => ({ success: true as const }))
-          : await testConnection(profile);
+          })
+          : synthesizeSpeechWithAdapter({ profile, input: i18n.language.startsWith('zh') ? '这是一条语音模型连接测试。' : 'This is a speech model connection test.', format: 'mp3', intent: 'chat-audio' })
+        ).then(() => ({ success: true as const }))
+        : profile.type === 'stt'
+          ? (profileUsesManagedSpeech
+            ? api.transcribeSpeech({
+              audioDataUrl: createSpeechTestWavDataUrl(),
+              providerCode: profile.provider.startsWith(MANAGED_SPEECH_PROVIDER_PREFIX) ? profile.provider.slice(MANAGED_SPEECH_PROVIDER_PREFIX.length) : undefined,
+              modelId: profile.model,
+              fileName: 'speech-connection-test.wav',
+            })
+            : fetch(createSpeechTestWavDataUrl())
+              .then((response) => response.blob())
+              .then((file) => transcribeAudioWithAdapter({ profile, file, fileName: 'speech-connection-test.wav', intent: 'audio-transcription' }))
+          ).then(() => ({ success: true as const }))
+          : testConnection(profile));
       const corsBlocked = isLikelyBrowserCorsError(result.error);
       const shouldSave = result.success || corsBlocked;
       if (shouldSave) {
@@ -1339,7 +1348,8 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
                       }
                       return groups;
                     }, []);
-                    const usesOfficialProxy = isOfficialProxyProviderKey(selectedProvider.key) || providerDefaults.baseUrl.replace(/\/+$/, '') === '/api/ai';
+                    const usesManagedSpeech = (activeType === 'tts' || activeType === 'stt') && isManagedSpeechProvider(selectedProvider.key);
+                    const usesOfficialProxy = usesManagedSpeech || isOfficialProxyProviderKey(selectedProvider.key) || providerDefaults.baseUrl.replace(/\/+$/, '') === '/api/ai';
                     const fetchedModels = remoteModelOptions[profile.id] || [];
                     const catalogType = activeType === 'tts' || activeType === 'stt' ? 'audio' : activeType;
                     const speechModelOptions: ModelDropdownOption[] = (activeType === 'tts' || activeType === 'stt')
@@ -1561,7 +1571,7 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
                     sx={fieldSx()}
                   />
 
-                  {activeType === 'tts' || activeType === 'stt' ? (
+                  {(activeType === 'tts' || activeType === 'stt') && usesManagedSpeech ? (
                     <TextField
                       label={i18n.language.startsWith('zh') ? '语音模型' : 'Speech model'}
                       value={speechModelOptions.find((item) => item.value === profile.model)?.label || profile.model}

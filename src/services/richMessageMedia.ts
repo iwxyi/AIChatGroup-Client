@@ -409,9 +409,10 @@ async function runRichMediaQueueEntry(entry: RichMediaQueueEntry) {
     const localOnly = isLocalOnlyMediaMode();
     const voiceStyle = entry.character?.voiceConfig?.style || entry.character?.voiceConfig?.instructions;
     const voiceEmotion = entry.character?.voiceConfig?.emotion;
-    const speechResult = !localOnly
+    const usesManagedSpeech = profile.provider === 'official' || profile.provider.startsWith('managed:');
+    const speechResult = !localOnly && usesManagedSpeech
       ? await synthesizeSpeech({
-          providerCode: profile.provider,
+          providerCode: profile.provider.startsWith('managed:') ? profile.provider.slice('managed:'.length) : undefined,
           modelId: profile.model,
           text: speechText,
           voice,

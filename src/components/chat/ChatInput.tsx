@@ -15,6 +15,11 @@ import { buildImageAttachmentHoverInfo } from '../../services/messageAttachmentH
 import { normalizeInputCapabilities } from '../../types/settings';
 import { useSettingsStore } from '../../stores/useSettingsStore';
 import { transcribeSpeech } from '../../services/speech';
+import { transcribeAudioWithAdapter } from '../../services/aiGenerationAdapter';
+
+function usesManagedSpeechProfile(provider: string) {
+  return provider === 'official' || provider.startsWith('managed:');
+}
 
 interface ChatInputProps {
   mode: 'guide' | 'speakAs' | 'memberSpeak';
@@ -207,7 +212,9 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
         if (!blob.size) return;
         setIsTranscribing(true);
         try {
-          const result = await transcribeSpeech({ providerCode: sttModel.provider, modelId: sttModel.model, audioDataUrl: await blobToDataUrl(blob), fileName: 'voice-input.webm', language: 'zh' });
+          const result = usesManagedSpeechProfile(sttModel.provider)
+            ? await transcribeSpeech({ providerCode: sttModel.provider.startsWith('managed:') ? sttModel.provider.slice('managed:'.length) : undefined, modelId: sttModel.model, audioDataUrl: await blobToDataUrl(blob), fileName: 'voice-input.webm', language: 'zh' })
+            : await transcribeAudioWithAdapter({ profile: sttModel, file: blob, fileName: 'voice-input.webm', language: 'zh', intent: 'audio-transcription' });
           if (result.text.trim()) {
             setText((current) => {
               const next = current.trim() ? `${current.trim()} ${result.text.trim()}` : result.text.trim();
