@@ -846,7 +846,7 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
         ...catalog,
         key: (item.official ? 'official' : `${MANAGED_SPEECH_PROVIDER_PREFIX}${item.providerCode}`) as AIProvider,
         label: item.modelName || item.displayName || catalog.label,
-        family: i18n.language.startsWith('zh') ? '后台语音平台' : 'Managed speech platforms',
+        family: i18n.language.startsWith('zh') ? '官方' : 'Official',
         hidden: false,
         defaults: { ...catalog.defaults, audio: { ...fallback, baseUrl: '/api' } },
         popularModels: { ...catalog.popularModels, audio: catalog.popularModels.audio || [] },
@@ -858,7 +858,7 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
     if (type === 'tts' || type === 'stt') {
       const directOptions = getProvidersForType(type)
         .filter((item) => !isOfficialProviderKey(item.key))
-        .map((item) => ({ ...item, family: i18n.language.startsWith('zh') ? '用户直连接口' : 'User direct APIs' }));
+        .map((item) => ({ ...item, family: i18n.language.startsWith('zh') ? '自定义' : 'Custom' }));
       return [...managedSpeechOptions, ...directOptions];
     }
     const nonOfficialOptions = getProvidersForType(type)
