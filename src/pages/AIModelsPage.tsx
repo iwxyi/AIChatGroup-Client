@@ -17,7 +17,7 @@ import { useLayoutHeaderActions } from '../components/layout/AppLayoutContext';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { useCharacterStore } from '../stores/useCharacterStore';
 import { useAuthStore } from '../stores/useAuthStore';
-import { isLikelyBrowserCorsError, listAvailableModels, testConnection, type AvailableModelInfo } from '../services/aiClient';
+import { isLikelyBrowserCorsError, listAvailableModels, testConnection, type AIConnectionTestResult, type AvailableModelInfo } from '../services/aiClient';
 import { api, type OfficialAiProviderInfo } from '../services/api';
 import type { AIModelImageCapabilities, AIModelInputCapabilities, AIModelType, AIProvider } from '../types/settings';
 import { normalizeImageCapabilities, normalizeInputCapabilities, inferTextInputCapabilities, buildTextInputCapabilityPatch, getInputCapabilityLockState, getAttachmentUiCapabilitySummary, getInputCapabilityBadge, getInputCapabilityWarning, shouldShowInputCapabilityWarning, getReasoningModeUiMeta, normalizeAIModelAdvancedOptions } from '../types/settings';
@@ -56,7 +56,7 @@ type OfficialProvidersState = {
 };
 
 type SpeechPlatformsState = {
-  items: Array<{ capability: 'tts' | 'stt'; name: string; officialName: string; providerCode: string; available: boolean; providers: Array<{ providerCode: string; displayName: string; official: boolean; available: boolean }> }>;
+  items: Array<{ capability: 'tts' | 'stt'; name: string; officialName: string; providerCode: string; available: boolean; providers: Array<{ providerCode: string; displayName: string; official: boolean; available: boolean }>; pricing?: { billingUnit: 'character' | 'second'; pricePerUnit: number; currency: 'CNY' | 'point'; billingMultiplier: number; pointValueCny: number; minimumCharge: number } | null }>;
   loading: boolean;
   error: string | null;
 };
@@ -98,6 +98,29 @@ function blockSecretDrag(event: DragEvent<HTMLInputElement | HTMLTextAreaElement
 
 function blockSecretContextMenu(event: MouseEvent<HTMLInputElement | HTMLTextAreaElement>) {
   event.preventDefault();
+}
+
+function createSpeechTestWavDataUrl() {
+  const sampleRate = 16_000;
+  const dataSize = sampleRate / 4 * 2;
+  const bytes = new Uint8Array(44 + dataSize);
+  const view = new DataView(bytes.buffer);
+  const writeText = (offset: number, value: string) => value.split('').forEach((char, index) => bytes[offset + index] = char.charCodeAt(0));
+  writeText(0, 'RIFF');
+  view.setUint32(4, 36 + dataSize, true);
+  writeText(8, 'WAVEfmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeText(36, 'data');
+  view.setUint32(40, dataSize, true);
+  let binary = '';
+  bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
+  return `data:audio/wav;base64,${btoa(binary)}`;
 }
 
 function SettingsSyncErrorAlert() {
@@ -811,20 +834,28 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
         popularModels: { ...catalog.popularModels, audio: catalog.popularModels.audio || [] },
       };
     });
-    if (speechPlatform?.available && speechPlatform.providerCode) {
+    if (type === 'tts' || type === 'stt') {
       const officialCatalog = getProviderCatalogEntry('official');
       speechOptions.unshift({
         ...officialCatalog,
         key: 'official' as AIProvider,
-        label: `${speechPlatform.officialName || '官方语音'}（官方）`,
+        label: `${speechPlatform?.officialName || '官方语音'}（官方）`,
         hidden: false,
         defaults: { ...officialCatalog.defaults, audio: { baseUrl: '/api', model: type === 'tts' ? 'speech-tts' : 'speech-stt' } },
         popularModels: { ...officialCatalog.popularModels, audio: [] },
+        unavailableReason: speechPlatform?.available
+          ? undefined
+          : (i18n.language.startsWith('zh') ? '后台尚未启用默认语音平台' : 'No default speech platform is enabled'),
       });
     }
-    const nonOfficialOptions = (type === 'tts' || type === 'stt' ? speechOptions : getProvidersForType(type))
+    // Speech is served by the speech gateway, not the text/image AI proxy.
+    // Keep its selectable providers isolated so text-model official entries can
+    // never leak into a TTS/STT model dropdown.
+    if (type === 'tts' || type === 'stt') {
+      return speechOptions;
+    }
+    const nonOfficialOptions = getProvidersForType(type)
       .filter((item) => !isOfficialProviderKey(item.key) && !onlineOfficialProviderKeySet.has(item.key));
-    const speechOfficialOptions = speechOptions.filter((item) => item.key === 'official');
     const visibleOfficialOptions = !canUseOfficialProviders
       ? onlineOfficialProviderOptions
         .filter((item) => {
@@ -882,7 +913,6 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
       ];
     }
     return [
-      ...(type === 'tts' || type === 'stt' ? speechOfficialOptions : []),
       ...visibleOfficialOptions,
       ...nonOfficialOptions,
     ];
@@ -999,7 +1029,18 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
     }
     setTestingId(profileId);
     try {
-      const result = await testConnection(profile);
+      const result: AIConnectionTestResult = profile.type === 'tts'
+        ? await api.synthesizeSpeech({
+          text: i18n.language.startsWith('zh') ? '这是一条语音模型连接测试。' : 'This is a speech model connection test.',
+          providerCode: profile.provider === 'official' ? undefined : profile.provider,
+        }).then(() => ({ success: true as const }))
+        : profile.type === 'stt'
+          ? await api.transcribeSpeech({
+            audioDataUrl: createSpeechTestWavDataUrl(),
+            providerCode: profile.provider === 'official' ? undefined : profile.provider,
+            fileName: 'speech-connection-test.wav',
+          }).then(() => ({ success: true as const }))
+          : await testConnection(profile);
       const corsBlocked = isLikelyBrowserCorsError(result.error);
       const shouldSave = result.success || corsBlocked;
       if (shouldSave) {
@@ -1140,6 +1181,19 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
       baseUrl: providerDefaults.baseUrl || profile.baseUrl,
       model: profile.model || providerDefaults.model,
     };
+    if (activeType === 'tts' || activeType === 'stt') {
+      const fetchKey = `${effectiveProfile.provider}__${activeType}__speech`;
+      setRemoteModelOptions((prev) => ({ ...prev, [profileId]: [] }));
+      setFetchedModelKeys((prev) => ({ ...prev, [profileId]: fetchKey }));
+      if (!silent) {
+        setSnackbar({
+          open: true,
+          message: i18n.language.startsWith('zh') ? '语音模型由后台语音平台配置提供，无需拉取文本模型列表' : 'Speech models come from the configured speech platform; text model discovery is not used.',
+          severity: 'success',
+        });
+      }
+      return true;
+    }
     const profileUsesOfficialProxy = isOfficialProxyProviderKey(effectiveProfile.provider) || effectiveProfile.baseUrl.replace(/\/+$/, '') === '/api/ai';
     if (profileUsesOfficialProxy && !canUseOfficialProviders) {
       setRemoteModelOptions((prev) => ({ ...prev, [profileId]: [] }));
@@ -1311,16 +1365,39 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
                     />
                   </Box>
                   {activeType === 'tts' || activeType === 'stt' ? (
-                    <Typography variant="caption" color="text.secondary">
-                      {speechPlatforms.loading
-                        ? (i18n.language.startsWith('zh') ? '正在读取后台官方语音平台…' : 'Loading official speech platform…')
-                        : (() => {
-                          const platform = speechPlatforms.items.find((item) => item.capability === activeType);
-                          return platform?.available
-                            ? `${i18n.language.startsWith('zh') ? '官方：' : 'Official: '}${platform.officialName}`
-                            : (i18n.language.startsWith('zh') ? '后台尚未配置官方语音平台，可选择其他 Provider。' : 'No official speech platform is configured; choose another provider.');
-                        })()}
-                    </Typography>
+                    (() => {
+                      const platform = speechPlatforms.items.find((item) => item.capability === activeType);
+                      const pricing = platform?.pricing;
+                      const unitLabel = pricing?.billingUnit === 'character'
+                        ? (i18n.language.startsWith('zh') ? '字符' : 'character')
+                        : (i18n.language.startsWith('zh') ? '秒音频' : 'audio second');
+                      const pointRate = pricing
+                        ? pricing.currency === 'point'
+                          ? pricing.pricePerUnit * pricing.billingMultiplier
+                          : pricing.pricePerUnit * pricing.billingMultiplier / pricing.pointValueCny
+                        : 0;
+                      return (
+                        <Box sx={{ display: 'grid', gap: 0.6, p: 1, borderRadius: 1, bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(99,102,241,0.06)' : 'rgba(129,140,248,0.10)' }}>
+                          <Typography variant="caption" color="text.secondary">
+                            {speechPlatforms.loading
+                              ? (i18n.language.startsWith('zh') ? '正在读取后台官方语音平台…' : 'Loading official speech platform…')
+                              : platform?.available
+                                ? `${i18n.language.startsWith('zh') ? '官方：' : 'Official: '}${platform.officialName}`
+                                : (i18n.language.startsWith('zh') ? '后台尚未启用官方语音平台；可保留配置或选择其他 Provider。' : 'No official speech platform is enabled; keep the profile or choose another provider.')}
+                          </Typography>
+                          {pricing ? <Typography variant="caption" sx={{ fontWeight: 700 }}>
+                            {i18n.language.startsWith('zh')
+                              ? `计费：${pointRate.toFixed(4)}P/${unitLabel} · 倍率 ×${pricing.billingMultiplier} · 最低 ${pricing.minimumCharge}P`
+                              : `Billing: ${pointRate.toFixed(4)}P/${unitLabel} · ×${pricing.billingMultiplier} · min ${pricing.minimumCharge}P`}
+                          </Typography> : null}
+                          <Typography variant="caption" color="text.secondary">
+                            {activeType === 'tts'
+                              ? (i18n.language.startsWith('zh') ? '首次合成会扣点；同一角色、文本和参数命中缓存时不会重复扣点。明细可在账户的 AI 用量中查看。' : 'The first synthesis consumes points; identical cached speech is not charged again. See AI usage in Account for details.')
+                              : (i18n.language.startsWith('zh') ? '识别按提交音频时长扣点；测试会提交短音频以验证链路。明细可在账户的 AI 用量中查看。' : 'Transcription is charged by submitted audio duration; the test sends a short clip. See AI usage in Account for details.')}
+                          </Typography>
+                        </Box>
+                      );
+                    })()
                   ) : null}
                   <Divider />
 

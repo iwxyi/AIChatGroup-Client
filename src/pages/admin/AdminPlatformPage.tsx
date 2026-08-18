@@ -82,6 +82,13 @@ const PROVIDER_POPULARITY: Record<string, number> = {
 const DEFAULT_ALIPAY_NOTIFY_URL = '${domain}/api/billing/payments/alipay/notify';
 const DEFAULT_ALIPAY_RETURN_URL = '${domain}/membership';
 
+const SPEECH_PRICING_FIELDS: FieldDef[] = [
+  { key: 'pricePerUnit', label: '上游价格（元 / 计费单位）', type: 'number' },
+  { key: 'billingMultiplier', label: '点数扣费倍率', type: 'number' },
+  { key: 'pointValueCny', label: '每点价值（元）', type: 'number' },
+  { key: 'minimumCharge', label: '单次最低扣点（P）', type: 'number' },
+];
+
 const FIELD_DEFS: Record<string, FieldDef[]> = {
   'tts:minimax': [
     { key: 'apiBaseUrl', label: 'API Base URL' }, { key: 'endpoint', label: 'TTS Endpoint' }, { key: 'groupId', label: 'Group ID', required: true },
@@ -385,9 +392,17 @@ function resolveDomainTemplate(value: unknown, requestOrigin: string) {
 
 function toEditorState(item: Record<string, unknown>) {
   const state: Record<string, unknown> = {};
-  const fields = FIELD_DEFS[integrationKey(item)] || [];
+  const category = String(item.category || '');
+  const fields = [
+    ...(FIELD_DEFS[integrationKey(item)] || []),
+    ...((category === 'tts' || category === 'stt') ? SPEECH_PRICING_FIELDS : []),
+  ];
   for (const field of fields) {
-    const value = valueFrom(item, field);
+    const config = item.config && typeof item.config === 'object' && !Array.isArray(item.config) ? item.config as Record<string, unknown> : {};
+    const nestedPricing = config.pricing && typeof config.pricing === 'object' && !Array.isArray(config.pricing) ? config.pricing as Record<string, unknown> : {};
+    const value = SPEECH_PRICING_FIELDS.some((pricingField) => pricingField.key === field.key)
+      ? (config[field.key] ?? nestedPricing[field.key])
+      : valueFrom(item, field);
     state[field.key] = String(value ?? '').trim() || field.defaultTemplate || '';
   }
   return state;
@@ -398,7 +413,7 @@ function statusLabel(value: unknown) {
 }
 
 function sortGroup(item: Record<string, unknown>) {
-  if (Boolean(item.isDefault)) return 0;
+  if (item.isDefault) return 0;
   if (integrationKey(item) === 'payment:manual') return 2;
   if (String(item.status || '') === 'active') return 1;
   return 3;
@@ -482,7 +497,12 @@ export default function AdminPlatformPage() {
   }, [visibleItems]);
   const selected = useMemo(() => items.find((item) => integrationKey(item) === selectedKey) || null, [items, selectedKey]);
   const selectedCapabilities = useMemo(() => integrationCapabilities(selected), [selected]);
-  const fields = selected ? FIELD_DEFS[integrationKey(selected)] || [] : [];
+  const fields = selected
+    ? [
+      ...(FIELD_DEFS[integrationKey(selected)] || []),
+      ...((selected.category === 'tts' || selected.category === 'stt') ? SPEECH_PRICING_FIELDS : []),
+    ]
+    : [];
 
   const load = async () => {
     setLoading(true);
@@ -815,6 +835,19 @@ export default function AdminPlatformPage() {
                   sx={{ minWidth: 120 }}
                 />
               </Stack>
+              {selected.category === 'tts' || selected.category === 'stt' ? (() => {
+                const unit = selected.category === 'tts' ? '字符' : '秒音频';
+                const price = Number(editor.pricePerUnit || 0);
+                const multiplier = Number(editor.billingMultiplier || 0);
+                const pointValue = Number(editor.pointValueCny || 0);
+                const estimatedPoints = price > 0 && multiplier > 0 && pointValue > 0 ? price * multiplier / pointValue : 0;
+                return (
+                  <Alert severity="info">
+                    <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>语音计费</Typography>
+                    <Typography variant="body2">按{unit}计费；当前估算 {estimatedPoints.toFixed(4)}P / {unit}。实际扣点 = 上游价格 × 倍率 ÷ 每点价值，并受最低扣点约束。</Typography>
+                  </Alert>
+                );
+              })() : null}
               {fields.length ? fields.map((field) => (
                 field.key === 'defaultVoice' && String(selected.category || '') === 'tts' ? (
                   <Stack key={field.key} direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ alignItems: { sm: 'flex-start' } }}>

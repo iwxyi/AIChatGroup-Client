@@ -1068,6 +1068,7 @@ class ApiClient {
       providerCode: string;
       available: boolean;
       providers: Array<{ providerCode: string; displayName: string; official: boolean; available: boolean }>;
+      pricing?: { billingUnit: 'character' | 'second'; pricePerUnit: number; currency: 'CNY' | 'point'; billingMultiplier: number; pointValueCny: number; minimumCharge: number } | null;
     }> }>('GET', '/speech/platforms');
   }
 

@@ -502,6 +502,12 @@ export function normalizeAIProfiles(aiProfiles?: AIModelProfile[], api?: APIConf
   if (!normalized.some((profile) => profile.type === 'image')) {
     normalized.push({ ...DEFAULT_IMAGE_AI_PROFILE });
   }
+  if (!normalized.some((profile) => profile.type === 'tts')) {
+    normalized.push({ ...DEFAULT_TTS_AI_PROFILE });
+  }
+  if (!normalized.some((profile) => profile.type === 'stt')) {
+    normalized.push({ ...DEFAULT_STT_AI_PROFILE });
+  }
 
   for (const type of ['text', 'image', 'tts', 'stt', 'audio', 'document'] as AIModelType[]) {
     const items = normalized.filter((profile) => profile.type === type);
@@ -1065,6 +1071,28 @@ export const DEFAULT_IMAGE_AI_PROFILE: AIModelProfile = {
   baseUrl: '/api/ai',
   model: 'gemini-3-pro-image-preview',
   imageCapabilities: DEFAULT_IMAGE_CAPABILITIES,
+};
+
+export const DEFAULT_TTS_AI_PROFILE: AIModelProfile = {
+  id: 'default-tts',
+  name: '官方语音（TTS）',
+  type: 'tts',
+  isDefault: true,
+  provider: 'official',
+  apiKey: '',
+  baseUrl: '/api',
+  model: 'speech-tts',
+};
+
+export const DEFAULT_STT_AI_PROFILE: AIModelProfile = {
+  id: 'default-stt',
+  name: '官方语音（STT）',
+  type: 'stt',
+  isDefault: true,
+  provider: 'official',
+  apiKey: '',
+  baseUrl: '/api',
+  model: 'speech-stt',
 };
 
 export function normalizeImageCapabilities(input?: Partial<AIModelImageCapabilities> | null): AIModelImageCapabilities {
