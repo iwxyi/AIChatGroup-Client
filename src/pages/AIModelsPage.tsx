@@ -822,7 +822,7 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
     const speechPlatform = (type === 'tts' || type === 'stt')
       ? speechPlatforms.items.find((item) => item.capability === type)
       : null;
-    const speechOptions: AIProviderOption[] = (speechPlatform?.providers || []).map((item) => {
+    const speechOptions: AIProviderOption[] = (speechPlatform?.providers || []).filter((item) => item.available).map((item) => {
       const catalog = getProviderCatalogEntry(item.providerCode as AIProvider);
       const fallback = catalog.defaults.audio || { baseUrl: '', model: '' };
       return {
@@ -834,18 +834,15 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
         popularModels: { ...catalog.popularModels, audio: catalog.popularModels.audio || [] },
       };
     });
-    if (type === 'tts' || type === 'stt') {
+    if ((type === 'tts' || type === 'stt') && speechPlatform?.available) {
       const officialCatalog = getProviderCatalogEntry('official');
       speechOptions.unshift({
         ...officialCatalog,
         key: 'official' as AIProvider,
-        label: `${speechPlatform?.officialName || '官方语音'}（官方）`,
+        label: `${speechPlatform.officialName || '官方语音'}（官方）`,
         hidden: false,
         defaults: { ...officialCatalog.defaults, audio: { baseUrl: '/api', model: type === 'tts' ? 'speech-tts' : 'speech-stt' } },
         popularModels: { ...officialCatalog.popularModels, audio: [] },
-        unavailableReason: speechPlatform?.available
-          ? undefined
-          : (i18n.language.startsWith('zh') ? '后台尚未启用默认语音平台' : 'No default speech platform is enabled'),
       });
     }
     // Speech is served by the speech gateway, not the text/image AI proxy.
@@ -1365,39 +1362,16 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
                     />
                   </Box>
                   {activeType === 'tts' || activeType === 'stt' ? (
-                    (() => {
-                      const platform = speechPlatforms.items.find((item) => item.capability === activeType);
-                      const pricing = platform?.pricing;
-                      const unitLabel = pricing?.billingUnit === 'character'
-                        ? (i18n.language.startsWith('zh') ? '字符' : 'character')
-                        : (i18n.language.startsWith('zh') ? '秒音频' : 'audio second');
-                      const pointRate = pricing
-                        ? pricing.currency === 'point'
-                          ? pricing.pricePerUnit * pricing.billingMultiplier
-                          : pricing.pricePerUnit * pricing.billingMultiplier / pricing.pointValueCny
-                        : 0;
-                      return (
-                        <Box sx={{ display: 'grid', gap: 0.6, p: 1, borderRadius: 1, bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(99,102,241,0.06)' : 'rgba(129,140,248,0.10)' }}>
-                          <Typography variant="caption" color="text.secondary">
-                            {speechPlatforms.loading
-                              ? (i18n.language.startsWith('zh') ? '正在读取后台官方语音平台…' : 'Loading official speech platform…')
-                              : platform?.available
-                                ? `${i18n.language.startsWith('zh') ? '官方：' : 'Official: '}${platform.officialName}`
-                                : (i18n.language.startsWith('zh') ? '后台尚未启用官方语音平台；可保留配置或选择其他 Provider。' : 'No official speech platform is enabled; keep the profile or choose another provider.')}
-                          </Typography>
-                          {pricing ? <Typography variant="caption" sx={{ fontWeight: 700 }}>
-                            {i18n.language.startsWith('zh')
-                              ? `计费：${pointRate.toFixed(4)}P/${unitLabel} · 倍率 ×${pricing.billingMultiplier} · 最低 ${pricing.minimumCharge}P`
-                              : `Billing: ${pointRate.toFixed(4)}P/${unitLabel} · ×${pricing.billingMultiplier} · min ${pricing.minimumCharge}P`}
-                          </Typography> : null}
-                          <Typography variant="caption" color="text.secondary">
-                            {activeType === 'tts'
-                              ? (i18n.language.startsWith('zh') ? '首次合成会扣点；同一角色、文本和参数命中缓存时不会重复扣点。明细可在账户的 AI 用量中查看。' : 'The first synthesis consumes points; identical cached speech is not charged again. See AI usage in Account for details.')
-                              : (i18n.language.startsWith('zh') ? '识别按提交音频时长扣点；测试会提交短音频以验证链路。明细可在账户的 AI 用量中查看。' : 'Transcription is charged by submitted audio duration; the test sends a short clip. See AI usage in Account for details.')}
-                          </Typography>
-                        </Box>
-                      );
-                    })()
+                    <Typography variant="caption" color="text.secondary">
+                      {speechPlatforms.loading
+                        ? (i18n.language.startsWith('zh') ? '正在读取后台官方语音平台…' : 'Loading official speech platform…')
+                        : (() => {
+                          const platform = speechPlatforms.items.find((item) => item.capability === activeType);
+                          return platform?.available
+                            ? `${i18n.language.startsWith('zh') ? '官方：' : 'Official: '}${platform.officialName}`
+                            : (i18n.language.startsWith('zh') ? '后台暂无已启用的语音平台。' : 'No speech platform is enabled in the backend.');
+                        })()}
+                    </Typography>
                   ) : null}
                   <Divider />
 
