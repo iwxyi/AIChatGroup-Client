@@ -1561,41 +1561,43 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
                     sx={fieldSx()}
                   />
 
-                  <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
-                    <ModelAutocomplete
-                      profileId={profile.id}
-                      model={profile.model}
-                      activeType={activeType}
-                      options={modelOptions}
-                      open={Boolean(openModelDropdownIds[profile.id])}
-                      onOpen={() => {
-                        setOpenModelDropdownIds((prev) => ({ ...prev, [profile.id]: true }));
-                      }}
-                      onClose={() => setOpenModelDropdownIds((prev) => {
-                        const next = { ...prev };
-                        delete next[profile.id];
-                        return next;
-                      })}
-                      onCommitModel={(nextModel) => commitModelValue(profile.id, nextModel)}
-                      setInputRef={(node) => {
-                        modelInputRefs.current[profile.id] = node;
-                      }}
-                      modelLabel={t('settings.model')}
-                      placeholder={modelOptions[0]?.value || (i18n.language.startsWith('zh') ? '可手动输入模型名' : 'Enter any model name')}
-                    />
-                    <Button
-                      variant="outlined"
-                      onClick={() => handleFetchModels(profile.id)}
-                      disabled={fetchingModels || selectedProviderUnavailable || (!usesOfficialProxy && !profile.apiKey)}
-                      sx={{ minWidth: 64, height: 40, px: 1.5, flexShrink: 0 }}
-                    >
-                      {fetchingModels
-                        ? (i18n.language.startsWith('zh') ? '获取中' : 'Loading')
-                        : fetchModelFailedIds[profile.id]
-                          ? (i18n.language.startsWith('zh') ? '失败' : 'Failed')
-                          : (i18n.language.startsWith('zh') ? '获取' : 'Fetch')}
-                    </Button>
-                  </Box>
+                  {activeType !== 'tts' && activeType !== 'stt' ? (
+                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
+                      <ModelAutocomplete
+                        profileId={profile.id}
+                        model={profile.model}
+                        activeType={activeType}
+                        options={modelOptions}
+                        open={Boolean(openModelDropdownIds[profile.id])}
+                        onOpen={() => {
+                          setOpenModelDropdownIds((prev) => ({ ...prev, [profile.id]: true }));
+                        }}
+                        onClose={() => setOpenModelDropdownIds((prev) => {
+                          const next = { ...prev };
+                          delete next[profile.id];
+                          return next;
+                        })}
+                        onCommitModel={(nextModel) => commitModelValue(profile.id, nextModel)}
+                        setInputRef={(node) => {
+                          modelInputRefs.current[profile.id] = node;
+                        }}
+                        modelLabel={t('settings.model')}
+                        placeholder={modelOptions[0]?.value || (i18n.language.startsWith('zh') ? '可手动输入模型名' : 'Enter any model name')}
+                      />
+                      <Button
+                        variant="outlined"
+                        onClick={() => handleFetchModels(profile.id)}
+                        disabled={fetchingModels || selectedProviderUnavailable || (!usesOfficialProxy && !profile.apiKey)}
+                        sx={{ minWidth: 64, height: 40, px: 1.5, flexShrink: 0 }}
+                      >
+                        {fetchingModels
+                          ? (i18n.language.startsWith('zh') ? '获取中' : 'Loading')
+                          : fetchModelFailedIds[profile.id]
+                            ? (i18n.language.startsWith('zh') ? '失败' : 'Failed')
+                            : (i18n.language.startsWith('zh') ? '获取' : 'Fetch')}
+                      </Button>
+                    </Box>
+                  ) : null}
 
                   {activeType === 'text' ? (
                     <Box sx={{
