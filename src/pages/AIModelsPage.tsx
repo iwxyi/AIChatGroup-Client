@@ -1561,7 +1561,17 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
                     sx={fieldSx()}
                   />
 
-                  {activeType !== 'tts' && activeType !== 'stt' ? (
+                  {activeType === 'tts' || activeType === 'stt' ? (
+                    <TextField
+                      label={i18n.language.startsWith('zh') ? '语音模型' : 'Speech model'}
+                      value={speechModelOptions.find((item) => item.value === profile.model)?.label || profile.model}
+                      size="small"
+                      fullWidth
+                      disabled
+                      helperText={i18n.language.startsWith('zh') ? '由后台语音平台配置管理，切换服务商时自动更新。' : 'Managed by the backend speech platform and updated when the provider changes.'}
+                      sx={fieldSx()}
+                    />
+                  ) : (
                     <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
                       <ModelAutocomplete
                         profileId={profile.id}
@@ -1597,7 +1607,7 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
                             : (i18n.language.startsWith('zh') ? '获取' : 'Fetch')}
                       </Button>
                     </Box>
-                  ) : null}
+                  )}
 
                   {activeType === 'text' ? (
                     <Box sx={{
