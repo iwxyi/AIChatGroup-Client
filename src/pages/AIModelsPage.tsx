@@ -829,7 +829,10 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
     const speechPlatform = (type === 'tts' || type === 'stt')
       ? speechPlatforms.items.find((item) => item.capability === type)
       : null;
-    const speechOptions: AIProviderOption[] = (speechPlatform?.providers || []).filter((item) => item.available).map((item) => {
+    // The default speech integration is represented by the gateway entry below.
+    // Do not render it again by its provider name (for example, both “豆包语音”
+    // and “火山引擎豆包语音” would otherwise select the exact same integration).
+    const speechOptions: AIProviderOption[] = (speechPlatform?.providers || []).filter((item) => item.available && !item.official).map((item) => {
       const catalog = getProviderCatalogEntry(item.providerCode as AIProvider);
       const fallback = { ...(catalog.defaults.audio || { baseUrl: '', model: '' }), model: item.modelId || catalog.defaults.audio?.model || '' };
       return {
@@ -1340,8 +1343,10 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
                     const fetchedModels = remoteModelOptions[profile.id] || [];
                     const catalogType = activeType === 'tts' || activeType === 'stt' ? 'audio' : activeType;
                     const speechModelOptions: ModelDropdownOption[] = (activeType === 'tts' || activeType === 'stt')
-                      ? (speechPlatforms.items.find((item) => item.capability === activeType)?.providers || [])
+                      ? [...(speechPlatforms.items.find((item) => item.capability === activeType)?.providers || [])]
                         .filter((item) => item.available)
+                        .sort((left, right) => Number(right.official) - Number(left.official))
+                        .filter((item, index, items) => items.findIndex((candidate) => candidate.modelId === item.modelId) === index)
                         .map((item) => ({
                           value: item.modelId,
                           label: item.modelName || item.modelId,
