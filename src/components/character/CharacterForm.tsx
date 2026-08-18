@@ -81,15 +81,6 @@ function buildEditorCardSx() {
   };
 }
 
-function buildSoftPanelSx() {
-  return {
-    borderRadius: 1,
-    border: '1px solid',
-    borderColor: (theme: Theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.07)' : 'rgba(226,232,240,0.10)',
-    bgcolor: (theme: Theme) => theme.palette.mode === 'light' ? 'rgba(248,250,252,0.58)' : 'rgba(255,255,255,0.045)',
-  };
-}
-
 function buildAvatarOptionSx(selected: boolean) {
   return {
     width: '100%',
@@ -469,7 +460,7 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
     let cancelled = false;
     if (!selectedTtsProfile?.provider) { setSpeechVoices([]); return () => { cancelled = true; }; }
     setSpeechVoicesLoading(true);
-    void api.listSpeechVoices(selectedTtsProfile.provider).then((result) => {
+    void api.listSpeechVoices(selectedTtsProfile.provider, selectedTtsProfile.model).then((result) => {
       if (!cancelled) setSpeechVoices(result.voices || []);
     }).catch(() => {
       if (!cancelled) setSpeechVoices([]);
@@ -477,7 +468,7 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
       if (!cancelled) setSpeechVoicesLoading(false);
     });
     return () => { cancelled = true; };
-  }, [selectedTtsProfile?.provider]);
+  }, [selectedTtsProfile?.provider, selectedTtsProfile?.model]);
 
   useEffect(() => {
     onDraftNameChange?.(name);

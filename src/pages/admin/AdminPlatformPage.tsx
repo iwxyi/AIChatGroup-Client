@@ -89,6 +89,11 @@ const SPEECH_PRICING_FIELDS: FieldDef[] = [
   { key: 'minimumCharge', label: '单次最低扣点（P）', type: 'number' },
 ];
 
+const SPEECH_CLIENT_MODEL_FIELDS: FieldDef[] = [
+  { key: 'clientModelId', label: '用户侧模型 ID', required: true, placeholder: '例如：companion-tts' },
+  { key: 'clientModelName', label: '用户侧模型名称', required: true, placeholder: '例如：陪伴语音' },
+];
+
 const FIELD_DEFS: Record<string, FieldDef[]> = {
   'tts:minimax': [
     { key: 'apiBaseUrl', label: 'API Base URL' }, { key: 'endpoint', label: 'TTS Endpoint' }, { key: 'groupId', label: 'Group ID', required: true },
@@ -395,6 +400,7 @@ function toEditorState(item: Record<string, unknown>) {
   const category = String(item.category || '');
   const fields = [
     ...(FIELD_DEFS[integrationKey(item)] || []),
+    ...((category === 'tts' || category === 'stt') ? SPEECH_CLIENT_MODEL_FIELDS : []),
     ...((category === 'tts' || category === 'stt') ? SPEECH_PRICING_FIELDS : []),
   ];
   for (const field of fields) {
@@ -500,6 +506,7 @@ export default function AdminPlatformPage() {
   const fields = selected
     ? [
       ...(FIELD_DEFS[integrationKey(selected)] || []),
+      ...((selected.category === 'tts' || selected.category === 'stt') ? SPEECH_CLIENT_MODEL_FIELDS : []),
       ...((selected.category === 'tts' || selected.category === 'stt') ? SPEECH_PRICING_FIELDS : []),
     ]
     : [];

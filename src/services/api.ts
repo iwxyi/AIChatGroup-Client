@@ -1040,6 +1040,7 @@ class ApiClient {
 
   async synthesizeSpeech(data: {
     providerCode?: string;
+    modelId?: string;
     text: string;
     voice?: string;
     language?: string;
@@ -1067,18 +1068,24 @@ class ApiClient {
       officialName: string;
       providerCode: string;
       available: boolean;
-      providers: Array<{ providerCode: string; displayName: string; official: boolean; available: boolean }>;
+      modelId: string;
+      modelName: string;
+      providers: Array<{ providerCode: string; displayName: string; official: boolean; available: boolean; modelId: string; modelName: string }>;
       pricing?: { billingUnit: 'character' | 'second'; pricePerUnit: number; currency: 'CNY' | 'point'; billingMultiplier: number; pointValueCny: number; minimumCharge: number } | null;
     }> }>('GET', '/speech/platforms');
   }
 
-  async listSpeechVoices(providerCode?: string) {
-    const query = providerCode ? `?providerCode=${encodeURIComponent(providerCode)}` : '';
-    return this.request<{ provider: string; voices: Array<{ id: string; name: string; language?: string; gender?: string; age?: string; resourceId?: string; source?: string; availability?: string; traits?: string[]; styles?: string[] }> }>('GET', `/speech/voices${query}`);
+  async listSpeechVoices(providerCode?: string, modelId?: string) {
+    const query = new URLSearchParams();
+    if (providerCode) query.set('providerCode', providerCode);
+    if (modelId) query.set('modelId', modelId);
+    const suffix = query.size ? `?${query.toString()}` : '';
+    return this.request<{ provider: string; voices: Array<{ id: string; name: string; language?: string; gender?: string; age?: string; resourceId?: string; source?: string; availability?: string; traits?: string[]; styles?: string[] }> }>('GET', `/speech/voices${suffix}`);
   }
 
   async assignSpeechVoices(data: {
     providerCode?: string;
+    modelId?: string;
     usedVoiceIds?: string[];
     candidateLimit?: number;
     profiles: Array<{ key: string; profile: {
@@ -1099,6 +1106,7 @@ class ApiClient {
 
   async transcribeSpeech(data: {
     providerCode?: string;
+    modelId?: string;
     audioDataUrl: string;
     fileName?: string;
     language?: string;

@@ -207,7 +207,7 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
         if (!blob.size) return;
         setIsTranscribing(true);
         try {
-          const result = await transcribeSpeech({ providerCode: sttModel.provider, audioDataUrl: await blobToDataUrl(blob), fileName: 'voice-input.webm', language: 'zh' });
+          const result = await transcribeSpeech({ providerCode: sttModel.provider, modelId: sttModel.model, audioDataUrl: await blobToDataUrl(blob), fileName: 'voice-input.webm', language: 'zh' });
           if (result.text.trim()) {
             setText((current) => {
               const next = current.trim() ? `${current.trim()} ${result.text.trim()}` : result.text.trim();

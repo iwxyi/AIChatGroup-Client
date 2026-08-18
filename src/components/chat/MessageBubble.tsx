@@ -150,6 +150,7 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
       try {
         const result = await api.synthesizeSpeech({
           providerCode: ttsModel?.provider,
+          modelId: ttsModel?.model,
           text: message.content,
           voice: character?.voiceConfig?.voiceName,
           style: character?.voiceConfig?.style || character?.voiceConfig?.instructions,
@@ -224,7 +225,7 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
       .replace(/\n{3,}/g, '\n\n')
       .trim();
     return content === message.content ? message : { ...message, content: content || `已创建「${htmlArtifactRefs[0]?.title || '交互内容'}」。` };
-  }, [message]);
+  }, [htmlArtifactRefs, message]);
 
   const clearPressTimer = () => {
     if (pressTimerRef.current) {

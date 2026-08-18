@@ -412,6 +412,7 @@ async function runRichMediaQueueEntry(entry: RichMediaQueueEntry) {
     const speechResult = !localOnly
       ? await synthesizeSpeech({
           providerCode: profile.provider,
+          modelId: profile.model,
           text: speechText,
           voice,
           style: voiceStyle,

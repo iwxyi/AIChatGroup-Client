@@ -56,7 +56,7 @@ type OfficialProvidersState = {
 };
 
 type SpeechPlatformsState = {
-  items: Array<{ capability: 'tts' | 'stt'; name: string; officialName: string; providerCode: string; available: boolean; providers: Array<{ providerCode: string; displayName: string; official: boolean; available: boolean }>; pricing?: { billingUnit: 'character' | 'second'; pricePerUnit: number; currency: 'CNY' | 'point'; billingMultiplier: number; pointValueCny: number; minimumCharge: number } | null }>;
+  items: Array<{ capability: 'tts' | 'stt'; name: string; officialName: string; providerCode: string; available: boolean; modelId: string; modelName: string; providers: Array<{ providerCode: string; displayName: string; official: boolean; available: boolean; modelId: string; modelName: string }>; pricing?: { billingUnit: 'character' | 'second'; pricePerUnit: number; currency: 'CNY' | 'point'; billingMultiplier: number; pointValueCny: number; minimumCharge: number } | null }>;
   loading: boolean;
   error: string | null;
 };
@@ -240,6 +240,7 @@ const ModelAutocomplete = memo(function ModelAutocomplete({
   const centeredForCurrentOpenRef = useRef(false);
   const selectedModelOption = options.find((item) => item.value === model) || null;
   const selectedModelLabel = selectedModelOption?.label || model;
+  const [inputValue, setInputValue] = useState(selectedModelLabel);
   const firstModelGroup = options[0]?.group || '';
   const showModelPriceColumn = options.some((item) => Boolean(item.priceLabel));
   const priceTextSx = {
@@ -260,6 +261,10 @@ const ModelAutocomplete = memo(function ModelAutocomplete({
   useEffect(() => {
     if (!open) centeredForCurrentOpenRef.current = false;
   }, [open]);
+
+  useEffect(() => {
+    setInputValue(selectedModelLabel);
+  }, [selectedModelLabel]);
 
   return (
     <Autocomplete<ModelDropdownOption, false, false, true>
@@ -350,7 +355,7 @@ const ModelAutocomplete = memo(function ModelAutocomplete({
         </Box>
       )}
       getOptionLabel={(option) => {
-        if (typeof option !== 'string') return option.value;
+        if (typeof option !== 'string') return option.label || option.value;
         return option;
       }}
       isOptionEqualToValue={(option, value) => {
@@ -359,13 +364,15 @@ const ModelAutocomplete = memo(function ModelAutocomplete({
         return optionValue === selectedValue;
       }}
       value={selectedModelOption}
-      inputValue={model}
+      inputValue={inputValue}
       onChange={(_event, value) => {
         const nextModel = typeof value === 'string' ? value : (value?.value || '');
+        setInputValue(typeof value === 'string' ? value : (value?.label || value?.value || ''));
         onCommitModel(nextModel);
       }}
       onInputChange={(_event, value, reason) => {
         if (reason === 'input' || reason === 'clear') {
+          setInputValue(value);
           onCommitModel(value);
         }
       }}
@@ -378,7 +385,7 @@ const ModelAutocomplete = memo(function ModelAutocomplete({
           sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}
         >
           <Typography component="span" variant="body2" sx={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {option.value}
+            {option.label || option.value}
           </Typography>
           {option.priceLabel ? (
             activeType === 'image' ? (
@@ -824,7 +831,7 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
       : null;
     const speechOptions: AIProviderOption[] = (speechPlatform?.providers || []).filter((item) => item.available).map((item) => {
       const catalog = getProviderCatalogEntry(item.providerCode as AIProvider);
-      const fallback = catalog.defaults.audio || { baseUrl: '', model: '' };
+      const fallback = { ...(catalog.defaults.audio || { baseUrl: '', model: '' }), model: item.modelId || catalog.defaults.audio?.model || '' };
       return {
         ...catalog,
         key: item.providerCode as AIProvider,
@@ -839,9 +846,9 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
       speechOptions.unshift({
         ...officialCatalog,
         key: 'official' as AIProvider,
-        label: `${speechPlatform.officialName || '官方语音'}（官方）`,
+        label: speechPlatform.modelName || speechPlatform.officialName || '语音模型',
         hidden: false,
-        defaults: { ...officialCatalog.defaults, audio: { baseUrl: '/api', model: type === 'tts' ? 'speech-tts' : 'speech-stt' } },
+        defaults: { ...officialCatalog.defaults, audio: { baseUrl: '/api', model: speechPlatform.modelId || (type === 'tts' ? 'speech-tts' : 'speech-stt') } },
         popularModels: { ...officialCatalog.popularModels, audio: [] },
       });
     }
@@ -1030,11 +1037,13 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
         ? await api.synthesizeSpeech({
           text: i18n.language.startsWith('zh') ? '这是一条语音模型连接测试。' : 'This is a speech model connection test.',
           providerCode: profile.provider === 'official' ? undefined : profile.provider,
+          modelId: profile.model,
         }).then(() => ({ success: true as const }))
         : profile.type === 'stt'
           ? await api.transcribeSpeech({
             audioDataUrl: createSpeechTestWavDataUrl(),
             providerCode: profile.provider === 'official' ? undefined : profile.provider,
+            modelId: profile.model,
             fileName: 'speech-connection-test.wav',
           }).then(() => ({ success: true as const }))
           : await testConnection(profile);
@@ -1330,6 +1339,15 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
                     const usesOfficialProxy = isOfficialProxyProviderKey(selectedProvider.key) || providerDefaults.baseUrl.replace(/\/+$/, '') === '/api/ai';
                     const fetchedModels = remoteModelOptions[profile.id] || [];
                     const catalogType = activeType === 'tts' || activeType === 'stt' ? 'audio' : activeType;
+                    const speechModelOptions: ModelDropdownOption[] = (activeType === 'tts' || activeType === 'stt')
+                      ? (speechPlatforms.items.find((item) => item.capability === activeType)?.providers || [])
+                        .filter((item) => item.available)
+                        .map((item) => ({
+                          value: item.modelId,
+                          label: item.modelName || item.modelId,
+                          group: i18n.language.startsWith('zh') ? '可用语音模型' : 'Available speech models',
+                        }))
+                      : [];
                     const providerPopularModels = selectedProvider.popularModels[catalogType] || getPopularModels(selectedProvider.key, activeType);
                     const popularModels = usesOfficialProxy && fetchedModels.length > 0 ? [] : providerPopularModels;
                     const popularModelSet = new Set(popularModels);
@@ -1342,7 +1360,7 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
                       : null;
                     const requiresApi2dKeyApplication = selectedProvider.key === 'official-gpt' && balanceView?.status === 'unassigned';
                     const checkingApi2dKey = selectedProvider.key === 'official-gpt' && (balanceView?.status === 'idle' || balanceView?.status === 'loading');
-                    const modelOptions: ModelDropdownOption[] = [
+                    const modelOptions: ModelDropdownOption[] = speechModelOptions.length ? speechModelOptions : [
                       ...popularModels.map((value) => ({
                         value,
                         group: usesOfficialProxy ? getOfficialModelGroupLabel(value, i18n.language.startsWith('zh')) : groupedModelLabels.popular,
@@ -1361,18 +1379,6 @@ export function AIModelsPanel({ embedded = false }: { embedded?: boolean } = {})
                       sx={fieldSx()}
                     />
                   </Box>
-                  {activeType === 'tts' || activeType === 'stt' ? (
-                    <Typography variant="caption" color="text.secondary">
-                      {speechPlatforms.loading
-                        ? (i18n.language.startsWith('zh') ? '正在读取后台官方语音平台…' : 'Loading official speech platform…')
-                        : (() => {
-                          const platform = speechPlatforms.items.find((item) => item.capability === activeType);
-                          return platform?.available
-                            ? `${i18n.language.startsWith('zh') ? '官方：' : 'Official: '}${platform.officialName}`
-                            : (i18n.language.startsWith('zh') ? '后台暂无已启用的语音平台。' : 'No speech platform is enabled in the backend.');
-                        })()}
-                    </Typography>
-                  ) : null}
                   <Divider />
 
                   <FormControl fullWidth size="small">
