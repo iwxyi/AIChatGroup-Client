@@ -5,6 +5,11 @@ import { backendUrl } from './backendUrl';
 const ADMIN_BASE = '/api/admin';
 const ADMIN_TOKEN_KEY = 'pneumata-admin-token';
 const ADMIN_LOGIN_EVENT = 'pneumata-admin-auth-required';
+const READ_RETRY_DELAYS_MS = [250, 500, 1_000, 2_000] as const;
+
+function waitForRetry(delayMs: number) {
+  return new Promise<void>((resolve) => window.setTimeout(resolve, delayMs));
+}
 
 export type AdminUser = {
   id: string;
@@ -178,15 +183,27 @@ class AdminApiClient {
 
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
     let response: Response;
-    try {
-      response = await fetch(backendUrl(`${ADMIN_BASE}${path}`), {
-        method,
-        headers: this.getHeaders(),
-        body: body === undefined ? undefined : JSON.stringify(body),
-      });
-    } catch (requestError) {
-      console.error('Admin API network error', { method, path, error: requestError });
-      throw new ApiError('无法连接后台接口，请检查后端服务或开发代理配置', { code: 'ADMIN_API_NETWORK_ERROR' });
+    const canRetry = method.toUpperCase() === 'GET';
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        response = await fetch(backendUrl(`${ADMIN_BASE}${path}`), {
+          method,
+          headers: this.getHeaders(),
+          body: body === undefined ? undefined : JSON.stringify(body),
+        });
+      } catch (requestError) {
+        if (canRetry && attempt < READ_RETRY_DELAYS_MS.length) {
+          await waitForRetry(READ_RETRY_DELAYS_MS[attempt]);
+          continue;
+        }
+        console.error('Admin API network error', { method, path, error: requestError });
+        throw new ApiError('无法连接后台接口，请检查后端服务或开发代理配置', { code: 'ADMIN_API_NETWORK_ERROR' });
+      }
+      if (canRetry && response.status === 503 && attempt < READ_RETRY_DELAYS_MS.length) {
+        await waitForRetry(READ_RETRY_DELAYS_MS[attempt]);
+        continue;
+      }
+      break;
     }
     if (!response.ok) {
       const error = await this.parseErrorResponse(response);
