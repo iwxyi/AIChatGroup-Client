@@ -446,7 +446,10 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
   const useNarrativeParagraph = !isFinalWithdrawn && (!pending || isNarrativeParagraphMessage(message));
   const narrativeParagraphBlocks = useNarrativeParagraph ? getNarrativeDisplayBlocks(message) : [];
   const contentMaxWidth = chatAppearance.maxContentWidthUnlimited ? '100%' : chatAppearance.maxContentWidth;
-  const bubbleContentMaxWidth = hidePrivateChatIdentity ? '100%' : contentMaxWidth;
+  const bubbleContentMaxWidth = contentMaxWidth;
+  const hiddenIdentityMessageWidth = hidePrivateChatIdentity
+    ? { xs: 'calc(100% - 16px)', sm: 'calc(100% - 24px)' }
+    : undefined;
   const compactMediaBubble = !isFinalWithdrawn && shouldUseCompactMediaBubble(message);
   const shouldRenderNarrativeReader = hasNarrativeReaderBlocks(narrativeParagraphBlocks);
   if (shouldRenderNarrativeReader || (pending && useNarrativeParagraph)) {
@@ -492,7 +495,7 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
 
   return (
     <Box sx={{ width: '100%' }}>
-      <Box data-message-id={message.id} data-message-type={message.type} sx={{ display: 'flex', justifyContent: wrapperJustify, px: hidePrivateChatIdentity ? { xs: 1, sm: 1.5 } : 2, py: 0.75, gap: hidePrivateChatIdentity ? 0 : 1.25, alignItems: 'flex-start' }}>
+      <Box data-message-id={message.id} data-message-type={message.type} sx={{ display: 'flex', justifyContent: wrapperJustify, px: hidePrivateChatIdentity ? { xs: 2, sm: 3 } : 2, py: 0.75, gap: hidePrivateChatIdentity ? 0 : 1.25, alignItems: 'flex-start' }}>
         {!isUser && !hidePrivateChatIdentity ? (
           <Box onClick={handleAvatarClick} sx={{ cursor: message.type === 'ai' && !pending ? 'pointer' : 'default', flexShrink: 0 }}>
             {avatar && isImageAvatar(avatar) ? (
@@ -503,7 +506,7 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
           </Box>
         ) : null}
 
-        <Box sx={{ width: hidePrivateChatIdentity ? '100%' : undefined, maxWidth: bubbleContentMaxWidth, minWidth: 0, display: 'grid', gap: 0.35, justifyItems: isUser ? 'end' : 'start' }}>
+        <Box sx={{ width: hiddenIdentityMessageWidth, maxWidth: bubbleContentMaxWidth, minWidth: 0, display: 'grid', gap: 0.35, justifyItems: isUser ? 'end' : 'start' }}>
           {!hidePrivateChatIdentity || (branchVersionInfo && branchVersionInfo.total > 1 && onSwitchRevision) ? (
           <Stack
             direction="row"

@@ -3523,7 +3523,7 @@ export default function ChatDetailPage() {
             topInset={isSplitDetailPane ? { xs: '76px', sm: '76px' } : { xs: 'calc(88px + env(safe-area-inset-top, 0px))', sm: '80px' }}
             bottomInset={messageListBottomInset}
             emptyContent={isStoryRoom && storyRoomOpeningPreview ? <StoryRoomOpeningEmptyState preview={storyRoomOpeningPreview} /> : undefined}
-            privateConversation={chat.type === 'direct' || chat.type === 'ai_direct'}
+            privateConversation={chat.type !== 'group'}
             tailContent={undefined}
             storyChoiceMessageId={displayedStoryChoiceMessageId}
             storyChoiceOptions={displayedStoryChoiceOptions}
