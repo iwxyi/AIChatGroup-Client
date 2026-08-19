@@ -913,6 +913,9 @@ export default function AdminAIProviderPage() {
       const updatedAdminToken = typeof updated.adminToken === 'string' ? updated.adminToken : nextAdminToken;
       const updatedForwardKey = typeof updated.forwardKey === 'string' ? updated.forwardKey : nextForwardKey;
       setProviderConfig(updated);
+      setPublicModels([]);
+      setPublicModelTotal(0);
+      if (hasPublicModelPricing) void loadPublicModels();
       setLoadedSecrets({ adminToken: updatedAdminToken, forwardKey: updatedForwardKey });
       const updatedNanoBananaDefaults = toNanoBananaDefaultsForm(updated.metadata);
       setForm((prev) => ({
