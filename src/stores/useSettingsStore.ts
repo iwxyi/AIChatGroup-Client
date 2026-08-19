@@ -51,6 +51,9 @@ interface SettingsStore extends AppSettings {
   setDefaultSpeed: (speed: number) => void;
   setCompactBubbleMode: (enabled: boolean) => void;
   setCompactPrivateBubbleMode: (enabled: boolean) => void;
+  setHidePrivateChatIdentity: (enabled: boolean) => void;
+  setEnableStreamingDisplayAnimation: (enabled: boolean) => void;
+  setShowVoiceTranscript: (enabled: boolean) => void;
   setChatDraftDefaults: (defaults: Partial<ChatDraftDefaults>) => void;
   setCustomBubbleStyles: (styles: BubbleStyleDefinition[]) => void;
   setUserBubbleStyle: (styleId: string | null, style?: BubbleStyleDefinition | null) => void;
@@ -255,6 +258,9 @@ export function buildSettingsPayload(state: AppSettings) {
     defaultSpeed: state.defaultSpeed,
     compactBubbleMode: state.compactBubbleMode,
     compactPrivateBubbleMode: state.compactPrivateBubbleMode,
+    hidePrivateChatIdentity: state.hidePrivateChatIdentity,
+    enableStreamingDisplayAnimation: state.enableStreamingDisplayAnimation,
+    showVoiceTranscript: state.showVoiceTranscript,
     chatDraftDefaults: state.chatDraftDefaults,
     customBubbleStyles: state.customBubbleStyles,
     userBubbleStyleId: state.userBubbleStyleId,
@@ -293,6 +299,7 @@ function syncState(state: Partial<AppSettings> & { api?: APIConfig; aiProfiles?:
     aiProfiles,
     api: buildApiFromProfiles(aiProfiles),
     developerMode: developerModeAllowed && Boolean(state.developerMode),
+    enableStreamingDisplayAnimation: state.enableStreamingDisplayAnimation !== false,
     avatarGeneration: {
       ...DEFAULT_AVATAR_GENERATION_SETTINGS,
       ...(state.avatarGeneration || {}),
@@ -831,6 +838,30 @@ export const useSettingsStore = create<SettingsStore>()(
         });
       },
 
+      setHidePrivateChatIdentity: (hidePrivateChatIdentity) => {
+        set((state) => {
+          const next = { ...state, hidePrivateChatIdentity, lastSyncedAt: Date.now() };
+          syncToServer(buildSettingsPayload(next), set);
+          return next;
+        });
+      },
+
+      setEnableStreamingDisplayAnimation: (enableStreamingDisplayAnimation) => {
+        set((state) => {
+          const next = { ...state, enableStreamingDisplayAnimation, lastSyncedAt: Date.now() };
+          syncToServer(buildSettingsPayload(next), set);
+          return next;
+        });
+      },
+
+      setShowVoiceTranscript: (showVoiceTranscript) => {
+        set((state) => {
+          const next = { ...state, showVoiceTranscript, lastSyncedAt: Date.now() };
+          syncToServer(buildSettingsPayload(next), set);
+          return next;
+        });
+      },
+
       setChatDraftDefaults: (defaults) => {
         set((state) => {
           const next = {
@@ -940,6 +971,9 @@ export const useSettingsStore = create<SettingsStore>()(
         defaultSpeed: state.defaultSpeed,
         compactBubbleMode: state.compactBubbleMode,
         compactPrivateBubbleMode: state.compactPrivateBubbleMode,
+        hidePrivateChatIdentity: state.hidePrivateChatIdentity,
+        enableStreamingDisplayAnimation: state.enableStreamingDisplayAnimation,
+        showVoiceTranscript: state.showVoiceTranscript,
         developerMode: state.developerMode,
         avatarGeneration: state.avatarGeneration,
         aiGeneration: state.aiGeneration,

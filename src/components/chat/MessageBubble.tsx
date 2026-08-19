@@ -128,6 +128,7 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
   const userBubbleStyle = useSettingsStore((state) => state.userBubbleStyle);
   const compactBubbleMode = useSettingsStore((state) => state.compactBubbleMode);
   const compactPrivateBubbleMode = useSettingsStore((state) => state.compactPrivateBubbleMode);
+  const hidePrivateChatIdentitySetting = useSettingsStore((state) => state.hidePrivateChatIdentity);
   const chatAppearance = useSettingsStore((state) => state.chatAppearance);
   const developerMode = useSettingsStore((state) => state.developerMode);
   const showWithdrawnMessageContent = useSettingsStore((state) => state.developerUI.showWithdrawnMessageContent);
@@ -142,7 +143,8 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
   const [voiceGenerating, setVoiceGenerating] = useState(false);
   const [voiceProgress, setVoiceProgress] = useState(0);
   const voiceAudioRef = useRef<HTMLAudioElement | null>(null);
-  const ttsProfiles = useSettingsStore((state) => state.aiProfiles.filter((profile) => profile.type === 'tts'));
+  const aiProfiles = useSettingsStore((state) => state.aiProfiles);
+  const ttsProfiles = useMemo(() => aiProfiles.filter((profile) => profile.type === 'tts'), [aiProfiles]);
   const ttsModel = ttsProfiles.find((profile) => profile.id === (character?.modelProfileIds?.tts || character?.modelProfileIds?.audio))
     || ttsProfiles.find((profile) => profile.isDefault)
     || ttsProfiles[0]
@@ -408,6 +410,7 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
     ? resolveCharacterBubbleStyle({ bubbleStyle: userBubbleStyle, bubbleStyleId: userBubbleStyleId, customStyles: customBubbleStyles })
     : null;
   const isGuidanceBubble = message.type === 'god';
+  const hidePrivateChatIdentity = privateConversation && hidePrivateChatIdentitySetting && !isGuidanceBubble;
   const useCompactBubble = shouldUseCompactMessageBubble({
     compactBubbleMode,
     compactPrivateBubbleMode,
@@ -443,6 +446,7 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
   const useNarrativeParagraph = !isFinalWithdrawn && (!pending || isNarrativeParagraphMessage(message));
   const narrativeParagraphBlocks = useNarrativeParagraph ? getNarrativeDisplayBlocks(message) : [];
   const contentMaxWidth = chatAppearance.maxContentWidthUnlimited ? '100%' : chatAppearance.maxContentWidth;
+  const bubbleContentMaxWidth = hidePrivateChatIdentity ? '100%' : contentMaxWidth;
   const compactMediaBubble = !isFinalWithdrawn && shouldUseCompactMediaBubble(message);
   const shouldRenderNarrativeReader = hasNarrativeReaderBlocks(narrativeParagraphBlocks);
   if (shouldRenderNarrativeReader || (pending && useNarrativeParagraph)) {
@@ -488,8 +492,8 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
 
   return (
     <Box sx={{ width: '100%' }}>
-      <Box data-message-id={message.id} data-message-type={message.type} sx={{ display: 'flex', justifyContent: wrapperJustify, px: 2, py: 0.75, gap: 1.25, alignItems: 'flex-start' }}>
-        {!isUser ? (
+      <Box data-message-id={message.id} data-message-type={message.type} sx={{ display: 'flex', justifyContent: wrapperJustify, px: hidePrivateChatIdentity ? { xs: 1, sm: 1.5 } : 2, py: 0.75, gap: hidePrivateChatIdentity ? 0 : 1.25, alignItems: 'flex-start' }}>
+        {!isUser && !hidePrivateChatIdentity ? (
           <Box onClick={handleAvatarClick} sx={{ cursor: message.type === 'ai' && !pending ? 'pointer' : 'default', flexShrink: 0 }}>
             {avatar && isImageAvatar(avatar) ? (
               <Avatar src={resolveSafeAvatarSrc(avatar)} alt={message.senderName} slotProps={{ img: { loading: 'lazy', decoding: 'async', onError: () => rememberFailedAvatarUrl(avatar) } }} sx={{ width: 38, height: 38 }} />
@@ -499,16 +503,19 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
           </Box>
         ) : null}
 
-        <Box sx={{ maxWidth: contentMaxWidth, minWidth: 0, display: 'grid', gap: 0.35, justifyItems: isUser ? 'end' : 'start' }}>
+        <Box sx={{ width: hidePrivateChatIdentity ? '100%' : undefined, maxWidth: bubbleContentMaxWidth, minWidth: 0, display: 'grid', gap: 0.35, justifyItems: isUser ? 'end' : 'start' }}>
+          {!hidePrivateChatIdentity || (branchVersionInfo && branchVersionInfo.total > 1 && onSwitchRevision) ? (
           <Stack
             direction="row"
             spacing={0.5}
             title={formatTimestamp(message.timestamp)}
             sx={{ color: 'text.secondary', px: 0.5, width: 'fit-content', maxWidth: '100%', alignItems: 'center' }}
           >
-            <Typography variant="caption" sx={{ fontWeight: 500, textAlign: isUser ? 'right' : 'left', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {message.senderName}
-            </Typography>
+            {!hidePrivateChatIdentity ? (
+              <Typography variant="caption" sx={{ fontWeight: 500, textAlign: isUser ? 'right' : 'left', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {message.senderName}
+              </Typography>
+            ) : null}
             {branchVersionInfo && branchVersionInfo.total > 1 && onSwitchRevision ? (
               <Stack direction="row" spacing={0.25} sx={{ flexShrink: 0, alignItems: 'center' }}>
                 <Tooltip title="上一版" arrow>
@@ -531,6 +538,7 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
               </Stack>
             ) : null}
           </Stack>
+          ) : null}
           <Box
             {...bubbleHandlers}
             sx={{
@@ -599,7 +607,7 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
           ))}
         </Box>
 
-        {isUser ? (
+        {isUser && !hidePrivateChatIdentity ? (
           <Box sx={{ flexShrink: 0 }}>
             {selfAvatarValue && isImageAvatar(selfAvatarValue) ? (
               <Avatar src={resolveSafeAvatarSrc(selfAvatarValue)} alt={selfAvatarAlt} slotProps={{ img: { loading: 'lazy', decoding: 'async', onError: () => rememberFailedAvatarUrl(selfAvatarValue) } }} sx={{ width: 38, height: 38 }} />

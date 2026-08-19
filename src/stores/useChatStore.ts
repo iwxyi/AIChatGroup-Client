@@ -500,7 +500,7 @@ interface ChatStore extends PersistedChatState {
   remoteDeletedChats: GroupChat[];
   fieldConflicts: FieldConflictRecord[];
   chatSummaryLoadedAt: number;
-  loadChats: () => Promise<void>;
+  loadChats: (options?: { waitForCloud?: boolean }) => Promise<void>;
   loadChat: (id: string) => Promise<GroupChat | null>;
   loadWorldRuntime: () => Promise<void>;
   prefetchChats: () => Promise<void>;
@@ -1236,7 +1236,7 @@ export const useChatStore = create<ChatStore>()(
         chatSummaryLoadedAt: 0,
         isLoading: false,
 
-        loadChats: async () => {
+        loadChats: async (options) => {
           await ensureChatStoreHydrated();
           set(buildWarmChatStoreState);
           logDeveloperDiagnostic('chat-store:loadChats:start', {
@@ -1261,7 +1261,7 @@ export const useChatStore = create<ChatStore>()(
             set(markChatsLoadingIdle);
             return;
           }
-          return chatSyncScopes.run(CHAT_SUMMARY_SCOPE, async () => {
+          const refresh = chatSyncScopes.run(CHAT_SUMMARY_SCOPE, async () => {
             try {
               await maybeUploadGuestChats(get);
               const changeProbe = await probeChatScopeChanges(CHAT_SUMMARY_SCOPE, { forceFull: get().chats.length === 0 || get().chatSummaryLoadedAt === 0 });
@@ -1370,6 +1370,11 @@ export const useChatStore = create<ChatStore>()(
               set({ isLoading: false, pendingEditSyncError: classifySyncError(error) });
             }
           }, { markCheckedOnSuccess: false });
+          if (get().chats.length > 0 && !options?.waitForCloud) {
+            void refresh;
+            return;
+          }
+          return refresh;
         },
 
         loadChat: async (id): Promise<GroupChat | null> => {
@@ -1400,7 +1405,7 @@ export const useChatStore = create<ChatStore>()(
             }, 'debug', 'chat-sync');
             return cached ?? null;
           }
-          const loaded = await chatSyncScopes.run<GroupChat | null>(scope, async (): Promise<GroupChat | null> => {
+          const refresh = chatSyncScopes.run<GroupChat | null>(scope, async (): Promise<GroupChat | null> => {
             try {
               const cachedHasDetailCursor = cached?.runtimeDetailLoaded === true;
               const cachedHasUsableDetail = isChatRuntimeDetailLoaded(cached);
@@ -1520,6 +1525,11 @@ export const useChatStore = create<ChatStore>()(
               return null;
             }
           }, { markCheckedOnSuccess: false });
+          if (isChatRuntimeDetailLoaded(cached) || cached?.id.startsWith('local-chat-')) {
+            void refresh;
+            return cached ?? null;
+          }
+          const loaded = await refresh;
           return loaded ?? null;
         },
 
@@ -1639,7 +1649,7 @@ export const useChatStore = create<ChatStore>()(
 
         refreshChatSummaryFromCloud: async () => {
           chatSyncScopes.clear(CHAT_SUMMARY_SCOPE);
-          await get().loadChats();
+          await get().loadChats({ waitForCloud: true });
         },
 
         prefetchWorldRuntime: async () => {

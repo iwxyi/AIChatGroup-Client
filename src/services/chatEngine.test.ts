@@ -390,11 +390,9 @@ describe('chatEngine streaming preview', () => {
     });
 
     expect(contract).toContain('"mediaDecision"');
-    expect(contract).toContain('this turn has an explicit media request');
-    expect(contract).toContain('image.shouldGenerate=true only when the visible reply is sending/showing/generating an image');
-    expect(contract).toContain('infer the user\'s actual image goal from the latest message plus recent conversation');
-    expect(contract).toContain('image.prompt must be the final prompt for the image model');
-    expect(contract).toContain('Do not pretend an image exists unless image.shouldGenerate=true');
+    expect(contract).toContain('Media is optional');
+    expect(contract).toContain('images is an array of 1-9 distinct image tasks');
+    expect(contract).toContain('Text, audio, and images may be combined in one turn');
     expect(contract).toContain('visible first bubble');
     expect(contract).toContain('deliberate repeated tone, keyword, rhythm, format');
     expect(contract).toContain('accidental template drift');
@@ -2025,6 +2023,29 @@ describe('chatEngine streaming preview', () => {
       now: 1777000000000,
     });
     expect(first?.attachments?.[0]?.id).toBe(second?.attachments?.[0]?.id);
+  });
+
+  it('keeps up to nine distinct images with an optional audio attachment in one turn', () => {
+    const images = Array.from({ length: 10 }, (_, index) => ({
+      shouldGenerate: true,
+      prompt: `food photo ${index + 1}`,
+      altText: `第 ${index + 1} 张红烧肉照片`,
+    }));
+    const metadata = __chatEngineTestUtils.buildMessageMetadata({
+      decision: {
+        images,
+        audio: { shouldGenerate: true, text: '今天的红烧肉外焦里嫩，酱汁也收得刚好。' },
+      },
+      capabilities: { image: true, audio: true },
+      content: '我先用语音说，照片也给你发过来。',
+      now: 1777000000000,
+    });
+
+    expect(metadata?.attachments?.filter((attachment) => attachment.kind === 'image')).toHaveLength(9);
+    expect(metadata?.attachments?.find((attachment) => attachment.kind === 'audio')).toMatchObject({
+      status: 'queued',
+      promptText: '今天的红烧肉外焦里嫩，酱汁也收得刚好。',
+    });
   });
 
   it('forces a queued image attachment for explicit media guidance when the text model omits mediaDecision', async () => {

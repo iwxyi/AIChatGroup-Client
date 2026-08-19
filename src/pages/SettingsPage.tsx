@@ -1594,7 +1594,7 @@ export default function SettingsPage() {
 
       await Promise.all([
         characterStore.loadCharacters(),
-        chatStore.loadChats(),
+        chatStore.loadChats({ waitForCloud: true }),
       ]);
 
       const refreshedChatStore = useChatStore.getState();
@@ -2195,32 +2195,6 @@ export default function SettingsPage() {
                 ))}
               </ToggleButtonGroup>
             </Box>
-            <Box sx={{ display: 'grid', gap: 0.75 }}>
-              <FormControlLabel
-                sx={{ m: 0 }}
-                control={<Switch checked={compactBubbleMode} onChange={(e) => settings.setCompactBubbleMode(e.target.checked)} />}
-                label={
-                  <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
-                    <span>{i18n.language.startsWith('zh') ? '简洁模式' : 'Compact bubble mode'}</span>
-                    <Tooltip title={i18n.language.startsWith('zh') ? '除自己发送和话题引导外，其余消息统一显示为默认白底黑字。以角色身份发送仍按角色气泡显示。' : 'All bubbles except your own messages and topic guidance use the default white bubble. Speaking as a character still keeps the character bubble.'}>
-                      <HelpOutlineIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
-                    </Tooltip>
-                  </Box>
-                }
-              />
-              <FormControlLabel
-                sx={{ m: 0 }}
-                control={<Switch checked={compactPrivateBubbleMode} onChange={(e) => settings.setCompactPrivateBubbleMode(e.target.checked)} />}
-                label={
-                  <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
-                    <span>{i18n.language.startsWith('zh') ? '私聊简洁模式' : 'Compact private bubbles'}</span>
-                    <Tooltip title={i18n.language.startsWith('zh') ? '在单聊和 AI 私聊里不显示彩色角色气泡，统一使用默认白底黑字。' : 'Direct and AI-private chats use default white bubbles instead of colored character bubbles.'}>
-                      <HelpOutlineIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
-                    </Tooltip>
-                  </Box>
-                }
-              />
-            </Box>
           </Box>
         </SurfaceCard>
 
@@ -2268,9 +2242,36 @@ export default function SettingsPage() {
     chat: (): ReactNode => (
           <>
 
+        <SurfaceCard id="settings-card-compact-chat" contentSx={buildCardBodySx()}>
+          <Box sx={buildSectionBodySx()}>
+            <SectionHeader title={i18n.language.startsWith('zh') ? '简洁模式' : 'Compact mode'} />
+            <Box sx={{ display: 'grid', gap: 1 }}>
+              <FormControlLabel control={<Switch checked={compactBubbleMode} onChange={(e) => settings.setCompactBubbleMode(e.target.checked)} />} label={i18n.language.startsWith('zh') ? '简洁模式' : 'Compact bubble mode'} />
+              <FormControlLabel control={<Switch checked={compactPrivateBubbleMode} onChange={(e) => settings.setCompactPrivateBubbleMode(e.target.checked)} />} label={i18n.language.startsWith('zh') ? '私聊简洁模式' : 'Compact private bubbles'} />
+              <FormControlLabel control={<Switch checked={settings.hidePrivateChatIdentity} onChange={(e) => settings.setHidePrivateChatIdentity(e.target.checked)} />} label={i18n.language.startsWith('zh') ? '私聊隐藏头像和昵称' : 'Hide avatars and names in private chats'} />
+            </Box>
+          </Box>
+        </SurfaceCard>
+
+        <SurfaceCard id="settings-card-chat-display" contentSx={buildCardBodySx()}>
+          <Box sx={buildSectionBodySx()}>
+            <SectionHeader title={i18n.language.startsWith('zh') ? '聊天显示' : 'Chat display'} />
+            <Box sx={{ display: 'grid', gap: 1 }}>
+              <FormControlLabel
+                control={<Switch checked={settings.enableStreamingDisplayAnimation} onChange={(e) => settings.setEnableStreamingDisplayAnimation(e.target.checked)} />}
+                label={i18n.language.startsWith('zh') ? '消息流式输出' : 'Streaming message output'}
+              />
+              <FormControlLabel
+                control={<Switch checked={settings.showVoiceTranscript} onChange={(e) => settings.setShowVoiceTranscript(e.target.checked)} />}
+                label={i18n.language.startsWith('zh') ? '默认显示语音文字' : 'Show voice transcript by default'}
+              />
+            </Box>
+          </Box>
+        </SurfaceCard>
+
         <SurfaceCard id="settings-card-ai-generation" contentSx={buildCardBodySx()}>
           <Box sx={buildSectionBodySx()}>
-            <SectionHeader title={i18n.language.startsWith('zh') ? 'AI生成' : 'AI Generation'} subtitle={i18n.language.startsWith('zh') ? '控制头像、朋友圈与日记等自动生成能力' : 'Control avatar, moments, and diary generation behaviors'} />
+            <SectionHeader title={i18n.language.startsWith('zh') ? 'AI生成' : 'AI Generation'} />
             <Box sx={{ display: 'grid', gap: 1 }}>
               <FormControlLabel control={<Switch checked={settings.avatarGeneration.autoGenerateCharacterAvatar} onChange={(e) => settings.setAutoGenerateCharacterAvatar(e.target.checked)} />} label={i18n.language.startsWith('zh') ? '自动生成角色头像' : 'Auto-generate character avatars'} />
               <FormControlLabel control={<Switch checked={settings.avatarGeneration.preferNonPhotorealAvatar} onChange={(e) => settings.setAvatarGeneration({ preferNonPhotorealAvatar: e.target.checked })} />} label={i18n.language.startsWith('zh') ? '非写实头像' : 'Non-photoreal avatars'} />
@@ -2282,7 +2283,7 @@ export default function SettingsPage() {
 
         <SurfaceCard id="settings-card-companionship" contentSx={buildCardBodySx()}>
           <Box sx={buildSectionBodySx()}>
-            <SectionHeader title={i18n.language.startsWith('zh') ? '陪伴' : 'Companionship'} subtitle={i18n.language.startsWith('zh') ? '控制主动陪伴、关系仪式、互动适配和免打扰' : 'Control proactive care, rituals, adaptation, and quiet hours'} />
+            <SectionHeader title={i18n.language.startsWith('zh') ? '陪伴' : 'Companionship'} />
             <Box sx={{ display: 'grid', gap: 1 }}>
               <FormControlLabel control={<Switch checked={settings.companionship.enableProactiveCare} onChange={(e) => settings.setCompanionship({ enableProactiveCare: e.target.checked })} />} label={i18n.language.startsWith('zh') ? '启用主动陪伴' : 'Enable proactive companionship'} />
               <FormControlLabel control={<Switch checked={settings.companionship.showStatusHints} onChange={(e) => settings.setCompanionship({ showStatusHints: e.target.checked })} />} label={i18n.language.startsWith('zh') ? '显示陪伴状态提示' : 'Show companionship status hints'} />

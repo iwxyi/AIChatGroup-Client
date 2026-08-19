@@ -2309,12 +2309,20 @@ function mergeGuidanceMediaDecision(params: {
 }): MediaGenerationDecision | null | undefined {
   const supportedDecision: MediaGenerationDecision | null | undefined = params.decision ? {
     ...params.decision,
+    images: params.mediaCapabilities?.image === false ? undefined : params.decision.images,
     image: params.mediaCapabilities?.image === false ? undefined : params.decision.image,
     audio: params.mediaCapabilities?.audio === false ? undefined : params.decision.audio,
   } : params.decision;
-  const hasSupportedDecision = Boolean(supportedDecision?.image?.shouldGenerate || supportedDecision?.audio?.shouldGenerate);
+  const hasSupportedDecision = Boolean(
+    supportedDecision?.images?.some((image) => image.shouldGenerate)
+    || supportedDecision?.image?.shouldGenerate
+    || supportedDecision?.audio?.shouldGenerate,
+  );
   if (!shouldForceGuidanceMedia(params.guidance, params.speaker) || !params.guidance || params.mediaCapabilities?.image === false) {
     return hasSupportedDecision ? supportedDecision : undefined;
+  }
+  if (supportedDecision?.images?.some((image) => image.shouldGenerate && image.prompt && image.altText)) {
+    return supportedDecision;
   }
   const forced = buildForcedImagePrompt({
     guidance: params.guidance,
@@ -2336,6 +2344,7 @@ function mergeGuidanceMediaDecision(params: {
   }
   return {
     ...(supportedDecision || {}),
+    images: undefined,
     image: {
       shouldGenerate: true,
       reason: '用户明确要求这个角色发送或创作图片。',
@@ -2403,19 +2412,25 @@ function createAttachmentId(kind: string, now: number, seedParts: Array<string |
 
 function normalizeMediaDecision(decision: MediaGenerationDecision | null | undefined, capabilities: { image: boolean; audio: boolean }, content: string) {
   const normalized: MediaGenerationDecision = {};
-  if (capabilities.image && decision?.image?.shouldGenerate && decision.image.prompt && decision.image.altText) {
-    normalized.image = {
+  const requestedImages = Array.isArray(decision?.images) ? decision.images : decision?.image ? [decision.image] : [];
+  const images = capabilities.image ? requestedImages
+    .filter((image) => image?.shouldGenerate && image.prompt && image.altText)
+    .slice(0, 9)
+    .map((image) => ({
       shouldGenerate: true,
-      reason: decision.image.reason || '',
-      prompt: decision.image.prompt,
-      altText: decision.image.altText,
-      aspectRatio: decision.image.aspectRatio,
-      imageSize: decision.image.imageSize,
-      referenceCharacterIds: decision.image.referenceCharacterIds?.filter(Boolean),
-      targetImageIds: decision.image.targetImageIds?.filter(Boolean),
-      referenceImageIds: decision.image.referenceImageIds?.filter(Boolean),
-      styleImageIds: decision.image.styleImageIds?.filter(Boolean),
-    };
+      reason: image.reason || '',
+      prompt: image.prompt,
+      altText: image.altText,
+      aspectRatio: image.aspectRatio,
+      imageSize: image.imageSize,
+      referenceCharacterIds: image.referenceCharacterIds?.filter(Boolean),
+      targetImageIds: image.targetImageIds?.filter(Boolean),
+      referenceImageIds: image.referenceImageIds?.filter(Boolean),
+      styleImageIds: image.styleImageIds?.filter(Boolean),
+    })) : [];
+  if (images.length) {
+    normalized.images = images;
+    normalized.image = images[0];
   }
   if (capabilities.audio && decision?.audio?.shouldGenerate) {
     normalized.audio = {
@@ -2425,7 +2440,7 @@ function normalizeMediaDecision(decision: MediaGenerationDecision | null | undef
       voiceProfileId: decision.audio.voiceProfileId || undefined,
     };
   }
-  return normalized.image || normalized.audio ? normalized : null;
+  return normalized.images?.length || normalized.audio ? normalized : null;
 }
 
 function latestUserReferenceImages(messages: Message[]) {
@@ -2502,13 +2517,15 @@ function buildMessageMetadata(params: {
   const now = typeof params.now === 'number' && Number.isFinite(params.now) ? Math.round(params.now) : Date.now();
   const contextText = params.narrativeTurn?.blocks.map((block) => block.text).filter(Boolean).join('\n\n') || params.content;
   const attachments: MessageAttachment[] = [];
-  if (decision?.image?.shouldGenerate && decision.image.prompt && decision.image.altText) {
-    const selectedReferenceImages = selectedDecisionReferenceImages(decision.image, params.activeMessages || []);
+  const imageDecisions = decision?.images?.length ? decision.images : decision?.image ? [decision.image] : [];
+  for (const imageDecision of imageDecisions) {
+    if (!imageDecision?.shouldGenerate || !imageDecision.prompt || !imageDecision.altText) continue;
+    const selectedReferenceImages = selectedDecisionReferenceImages(imageDecision, params.activeMessages || []);
     const referenceImages = selectedReferenceImages.length ? selectedReferenceImages : latestUserReferenceImages(params.activeMessages || []);
     const imageSeedParts = [
-      decision.image.prompt,
-      decision.image.altText,
-      (decision.image.referenceCharacterIds || []).join(','),
+      imageDecision.prompt,
+      imageDecision.altText,
+      (imageDecision.referenceCharacterIds || []).join(','),
       referenceImages.map((image) => image.url).join(','),
       params.content,
     ];
@@ -2516,14 +2533,14 @@ function buildMessageMetadata(params: {
       id: createAttachmentId('image', now, imageSeedParts),
       kind: 'image',
       status: 'queued',
-      altText: decision.image.altText,
-      promptText: enhanceImagePrompt(decision.image.prompt, { subject: decision.image.altText, caption: decision.image.altText }),
-      aspectRatio: decision.image.aspectRatio,
-      imageSize: decision.image.imageSize,
-      targetImageIds: decision.image.targetImageIds?.filter(Boolean),
-      referenceImageIds: decision.image.referenceImageIds?.filter(Boolean),
-      styleImageIds: decision.image.styleImageIds?.filter(Boolean),
-      referenceCharacterIds: decision.image.referenceCharacterIds?.filter(Boolean),
+      altText: imageDecision.altText,
+      promptText: enhanceImagePrompt(imageDecision.prompt, { subject: imageDecision.altText, caption: imageDecision.altText }),
+      aspectRatio: imageDecision.aspectRatio,
+      imageSize: imageDecision.imageSize,
+      targetImageIds: imageDecision.targetImageIds?.filter(Boolean),
+      referenceImageIds: imageDecision.referenceImageIds?.filter(Boolean),
+      styleImageIds: imageDecision.styleImageIds?.filter(Boolean),
+      referenceCharacterIds: imageDecision.referenceCharacterIds?.filter(Boolean),
       referenceImages: referenceImages.length ? referenceImages : undefined,
       createdAt: now,
       updatedAt: now,
@@ -3007,8 +3024,8 @@ function isDeepSeekLikeConfig(config: Pick<APIConfig, 'provider' | 'model'>) {
 
 function shouldUseJsonResponseFormat(chat: Pick<GroupChat, 'mode' | 'sessionKind'>, config: Pick<APIConfig, 'provider' | 'model'>) {
   if (isDeepSeekLikeConfig(config)) return false;
-  return chat.sessionKind?.scenarioId === 'story-reader'
-    || resolveSessionFamilyKey(chat) === 'analysis';
+  void chat;
+  return true;
 }
 
 function shouldAddJsonProtocolReminder(chat: Pick<GroupChat, 'mode' | 'sessionKind'>, config: Pick<APIConfig, 'provider' | 'model'>) {

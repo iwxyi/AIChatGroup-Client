@@ -42,6 +42,18 @@ export interface MessageAttachment {
 }
 
 export interface MediaGenerationDecision {
+  images?: Array<{
+    shouldGenerate: boolean;
+    reason?: string;
+    prompt?: string;
+    altText?: string;
+    aspectRatio?: string;
+    imageSize?: string;
+    referenceCharacterIds?: string[];
+    targetImageIds?: string[];
+    referenceImageIds?: string[];
+    styleImageIds?: string[];
+  }> | null;
   image?: {
     shouldGenerate: boolean;
     reason?: string;

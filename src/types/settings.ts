@@ -907,6 +907,9 @@ export interface AppSettings {
   defaultSpeed: number;
   compactBubbleMode: boolean;
   compactPrivateBubbleMode: boolean;
+  hidePrivateChatIdentity: boolean;
+  enableStreamingDisplayAnimation: boolean;
+  showVoiceTranscript: boolean;
   developerMode: boolean;
   avatarGeneration: AvatarGenerationSettings;
   aiGeneration: AIGenerationSettings;
@@ -1155,6 +1158,9 @@ export const DEFAULT_SETTINGS: AppSettingsWithMemory = {
   defaultSpeed: 1.0,
   compactBubbleMode: false,
   compactPrivateBubbleMode: true,
+  hidePrivateChatIdentity: false,
+  enableStreamingDisplayAnimation: true,
+  showVoiceTranscript: false,
   developerMode: false,
   avatarGeneration: DEFAULT_AVATAR_GENERATION_SETTINGS,
   aiGeneration: DEFAULT_AI_GENERATION_SETTINGS,

@@ -1011,8 +1011,12 @@ export const useMessageStore = create<MessageStore>()(
           shouldPrimePartialCloudWindow,
           shouldRefreshCompactedNarrative,
         });
-        if (!hydratedWindow?.messages?.length || shouldRevalidate || shouldPrimePartialCloudWindow || shouldRefreshCompactedNarrative) {
-          await get().loadMessages(chatId, { limit, resetWindow: shouldRefreshCompactedNarrative });
+        if (!hydratedWindow?.messages?.length) {
+          await get().loadMessages(chatId, { limit });
+          return;
+        }
+        if (shouldRevalidate || shouldPrimePartialCloudWindow || shouldRefreshCompactedNarrative) {
+          void get().loadMessages(chatId, { limit, resetWindow: shouldRefreshCompactedNarrative });
         }
       },
 

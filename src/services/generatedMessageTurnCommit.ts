@@ -6,6 +6,7 @@ import type { GeneratedRoundMessage } from './chatEngine';
 import { persistStreamingMessage } from './chatCommitMessage';
 import { buildGeneratedTurnContent, splitGeneratedRoundMessage } from './generatedMessageSegmenter';
 import { runPersistedSessionCommitRuntime, runSessionCommitPipeline, type SessionCommitPipelineResult } from './sessionCommitPipeline';
+import { useSettingsStore } from '../stores/useSettingsStore';
 
 function resolveTurnBaseTimestamp(message: GeneratedRoundMessage) {
   const metadata = message.metadata as Record<string, unknown> | undefined;
@@ -59,7 +60,12 @@ export async function commitGeneratedMessageTurn(params: {
           ? { ...params.streamingMessage, content: segments[index].content }
           : null,
         timestamp: index === 0 ? undefined : baseTimestamp + index,
-        localReveal: index > 0,
+        localReveal: index > 0 || (
+          index === 0
+          && Boolean(params.streamingMessage)
+          && !params.streamingMessage?.content.trim()
+          && useSettingsStore.getState().enableStreamingDisplayAnimation
+        ),
       });
       persistedSegments.push(persisted);
     }

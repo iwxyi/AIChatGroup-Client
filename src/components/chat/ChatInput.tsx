@@ -643,7 +643,16 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
               onPointerUp={(event) => { event.preventDefault(); stopRecording(); }}
               onPointerCancel={stopRecording}
               onPointerLeave={() => { if (isRecording) stopRecording(); }}
-              sx={{ flexShrink: 0, width: 42, height: 42, bgcolor: isRecording ? 'error.main' : 'action.hover', color: isRecording ? 'error.contrastText' : 'text.secondary' }}
+              sx={{
+                flexShrink: 0,
+                width: 42,
+                height: 42,
+                ...(isRecording ? {
+                  bgcolor: 'error.main',
+                  color: 'error.contrastText',
+                  '&:hover': { bgcolor: 'error.dark' },
+                } : {}),
+              }}
             >
               {isTranscribing ? <CircularProgress size={20} /> : <MicIcon />}
             </IconButton>

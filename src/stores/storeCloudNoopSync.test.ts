@@ -407,7 +407,7 @@ describe('cloud no-op sync', () => {
       writes += 1;
     });
 
-    await useChatStore.getState().loadChats();
+    await useChatStore.getState().loadChats({ waitForCloud: true });
 
     unsubscribe();
     expect(writes).toBe(0);
@@ -556,7 +556,7 @@ describe('cloud no-op sync', () => {
       isLoading: false,
     });
 
-    await useChatStore.getState().loadChats();
+    await useChatStore.getState().loadChats({ waitForCloud: true });
 
     const merged = useChatStore.getState().chats[0];
     expect(merged.name).toBe('测试群聊新版');
@@ -645,7 +645,7 @@ describe('cloud no-op sync', () => {
       isLoading: false,
     });
 
-    await useChatStore.getState().loadChats();
+    await useChatStore.getState().loadChats({ waitForCloud: true });
 
     const merged = useChatStore.getState().chats[0];
     expect(merged.name).toBe('缺标记摘要新版');
@@ -704,7 +704,7 @@ describe('cloud no-op sync', () => {
       isLoading: false,
     });
 
-    await useChatStore.getState().loadChats();
+    await useChatStore.getState().loadChats({ waitForCloud: true });
 
     const merged = useChatStore.getState().chats[0];
     expect(merged.name).toBe('本地待同步群聊名');

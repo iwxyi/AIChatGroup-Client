@@ -2048,7 +2048,6 @@ export default function ChatDetailPage() {
         limit: CHAT_MESSAGE_WINDOW_SIZE,
         revalidate: true,
         aroundTimestamp,
-        resetWindow: !isStoryRoom && aroundTimestamp === undefined,
       });
     }
   }, [authMode, chat, chats.length, chatsLoading, detailBootstrapComplete, entryStoryReadingPosition, id, isLoggedIn, isStoryRoom, openChatWindow, storyReadingRestoreKey, uiHydrated]);

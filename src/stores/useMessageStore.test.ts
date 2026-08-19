@@ -419,6 +419,7 @@ describe('useMessageStore', () => {
     await useMessageStore.getState().openChatWindow(chatId, { limit: 40, revalidate: false });
 
     expect(getSyncChangesMock).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(getMessagesMock).toHaveBeenCalledWith(chatId, { limit: 40, before: undefined }));
     expect(getMessagesMock).toHaveBeenCalledWith(chatId, { limit: 40, before: undefined });
     expect(useMessageStore.getState().messages[0]?.metadata?.narrativeTurn?.blocks).toHaveLength(2);
     expect(useMessageStore.getState().messageWindowsByChatId[chatId]?.messages[0]?.metadata?.narrativeTurn?.blocks).toHaveLength(2);

@@ -11,6 +11,7 @@ import { isLocalOnlyMediaMode, processRichMessageMedia } from './richMessageMedi
 import { parseRuntimeEvent } from './runtimeEventFactory';
 import { attachMessageToActiveBranch } from './messageBranching';
 import { applyPresenceUpdateToTransition } from './characterPresence';
+import { useSettingsStore } from '../stores/useSettingsStore';
 
 export interface ChatCommitPipelineResult {
   persistedMessage: Message;
@@ -78,6 +79,11 @@ export async function runChatCommitPipeline(params: {
       upsertMessage: params.upsertMessage,
       existingLocalMessage: params.streamingMessage,
       deferLocalUpsert: false,
+      localReveal: Boolean(
+        params.streamingMessage
+        && !params.streamingMessage.content.trim()
+        && useSettingsStore.getState().enableStreamingDisplayAnimation,
+      ),
       onPersisted: (message) => {
         if (!isLocalOnlyMediaMode()) startMediaProcessing(message);
       },

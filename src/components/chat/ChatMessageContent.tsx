@@ -306,6 +306,7 @@ export function MessageContent({ message, onRetryMedia, onOpenImage, onOpenDiagr
   onOpenDiagram?: (message: Message, diagram: { source: string; svg: string; dataUrl: string }) => void;
   compactMediaLayout?: boolean;
 }) {
+  const showVoiceTranscript = useSettingsStore((state) => state.showVoiceTranscript);
   const richMediaQueueSnapshot = useSyncExternalStore(
     subscribeRichMediaQueue,
     getRichMediaQueueSnapshot,
@@ -391,8 +392,13 @@ export function MessageContent({ message, onRetryMedia, onOpenImage, onOpenDiagr
     if (attachment.kind === 'audio') {
       if (attachment.status === 'ready' && attachment.url) {
         return (
-          <Box key={attachment.id} sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 220 }}>
+          <Box key={attachment.id} sx={{ display: 'grid', gap: 0.6, minWidth: 220 }}>
             <Box component="audio" controls src={attachment.url} sx={{ width: '100%', maxWidth: 280 }} />
+            {showVoiceTranscript && attachment.promptText ? (
+              <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: 'text.secondary' }}>
+                {attachment.promptText}
+              </Typography>
+            ) : null}
           </Box>
         );
       }

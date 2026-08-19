@@ -1115,10 +1115,7 @@ export const useCharacterStore = create<CharacterStore>()(
           if (cached?.isPreset) return cached;
           if (shouldSkipCloudSync()) return cached || null;
           const scope = characterDetailScope(id);
-          if (isCharacterDetailLoaded(cached) && characterSyncScopes.isFresh(scope, CHARACTER_DETAIL_REFRESH_TTL_MS)) {
-            return cached ?? null;
-          }
-          const loaded = await characterSyncScopes.run<AICharacter | null>(scope, async (): Promise<AICharacter | null> => {
+          const refreshCharacterDetail = () => characterSyncScopes.run<AICharacter | null>(scope, async (): Promise<AICharacter | null> => {
             try {
               const changeProbe = isCharacterDetailLoaded(cached) ? await probeCharacterDetailChanges(scope) : null;
               if (changeProbe?.status === 'not_modified') {
@@ -1215,6 +1212,13 @@ export const useCharacterStore = create<CharacterStore>()(
               return null;
             }
           }, { markCheckedOnSuccess: false });
+          if (isCharacterDetailLoaded(cached)) {
+            if (!characterSyncScopes.isFresh(scope, CHARACTER_DETAIL_REFRESH_TTL_MS)) {
+              void refreshCharacterDetail();
+            }
+            return cached;
+          }
+          const loaded = await refreshCharacterDetail();
           return loaded ?? null;
         },
 
