@@ -168,7 +168,7 @@ export function migrateSettingsStoreState<T extends Record<string, unknown>>(per
   if (!persisted) return persisted;
   const developerUI = (persisted.developerUI as { showMemoryDebug?: boolean; showRelationshipEvents?: boolean; showAffectEvents?: boolean; showConflictEvents?: boolean; showStateEvents?: boolean; showMemoryDistillationEvents?: boolean; showCalendarEvents?: boolean; showLocalInterceptionHints?: boolean; showSpeechStyle?: boolean; showAdvancedRuntimePanels?: boolean; showDeliberationDebug?: boolean; showPresenceDebug?: boolean; showCompanionshipDebug?: boolean; showMomentDebug?: boolean; showWithdrawnMessageContent?: boolean; enableHumanAppraisal?: boolean; dramaBoost?: boolean } | undefined) || {};
   const artifactAppearance = (persisted.artifactAppearance as { paperVariant?: string } | undefined) || {};
-  const chatAppearance = (persisted.chatAppearance as { maxContentWidth?: number; storyReader?: { fontFamily?: string; fontSize?: number; lineHeight?: number } } | undefined) || {};
+  const chatAppearance = (persisted.chatAppearance as { maxContentWidth?: number; voiceWaveformStyle?: string; storyReader?: { fontFamily?: string; fontSize?: number; lineHeight?: number } } | undefined) || {};
   return {
     ...persisted,
     themePreset: typeof persisted.themePreset === 'string' ? persisted.themePreset : DEFAULT_SETTINGS.themePreset,

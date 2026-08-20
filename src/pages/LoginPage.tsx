@@ -8,6 +8,7 @@ import {
   Alert,
   InputAdornment,
   CircularProgress,
+  Tabs, Tab,
 } from '@mui/material';
 import PhoneIcon from '@mui/icons-material/Phone';
 import LockIcon from '@mui/icons-material/Lock';
@@ -34,7 +35,9 @@ export default function LoginPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
-  const { login, sendCode, enterLocalMode, isLoggedIn, isLoading, token, authMode } = useAuthStore();
+  const { login, loginWithPassword, sendCode, enterLocalMode, isLoggedIn, isLoading, token, authMode } = useAuthStore();
+  const [loginMethod, setLoginMethod] = useState<'code' | 'password'>(() => (localStorage.getItem('pneumata-login-method') as 'code' | 'password') || 'code');
+  const [password, setPassword] = useState('');
 
   const [phone, setPhone] = useState(() => getLastCloudPhone());
   const [code, setCode] = useState('');
@@ -81,19 +84,20 @@ export default function LoginPage() {
   }, [phone, sendCode]);
 
   const handleLogin = useCallback(async () => {
-    if (!phone || !code) {
-      setError('请输入手机号和验证码');
+    if (!phone || (loginMethod === 'code' ? !code : !password)) {
+      setError(loginMethod === 'code' ? '请输入手机号和验证码' : '请输入手机号和密码');
       return;
     }
 
     setError('');
     try {
-      await login(phone, code);
+      localStorage.setItem('pneumata-login-method', loginMethod);
+      if (loginMethod === 'code') await login(phone, code); else await loginWithPassword(phone, password);
       navigate(redirectTarget, { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : '登录失败');
     }
-  }, [phone, code, login, navigate, redirectTarget]);
+  }, [phone, code, password, loginMethod, login, loginWithPassword, navigate, redirectTarget]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -163,6 +167,11 @@ export default function LoginPage() {
           </Alert>
         )}
 
+        <Tabs value={loginMethod} onChange={(_, value) => { setLoginMethod(value); setError(''); localStorage.setItem('pneumata-login-method', value); }} variant="fullWidth" sx={{ mb: 2 }}>
+          <Tab value="code" label="验证码登录" />
+          <Tab value="password" label="密码登录" />
+        </Tabs>
+
         <TextField
           fullWidth
           label="手机号"
@@ -182,7 +191,7 @@ export default function LoginPage() {
           }}
         />
 
-        {codeSent && (
+        {loginMethod === 'code' && codeSent && (
           <TextField
             fullWidth
             label="验证码"
@@ -203,7 +212,13 @@ export default function LoginPage() {
           />
         )}
 
-        {!codeSent ? (
+        {loginMethod === 'password' ? (
+          <TextField fullWidth label="密码" type="password" value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={handleKeyDown} sx={{ mb: 2 }} />
+        ) : null}
+
+        {loginMethod === 'password' ? (
+          <Button fullWidth variant="contained" size="large" onClick={handleLogin} disabled={isLoading || !phone || !password} sx={{ py: 1.5, borderRadius: 2 }}>{isLoading ? <CircularProgress size={24} /> : '登录'}</Button>
+        ) : !codeSent ? (
           <>
             <Button
               fullWidth

@@ -889,6 +889,7 @@ export interface UsageStats {
 export interface ChatAppearanceSettings {
   maxContentWidth: number;
   maxContentWidthUnlimited: boolean;
+  voiceWaveformStyle: 'wave' | 'blocks' | 'neon' | 'spectrum';
   storyReader: {
     fontFamily: 'default' | 'serif' | 'sans';
     fontSize: number;
@@ -1018,6 +1019,7 @@ export const DEFAULT_USAGE_STATS: UsageStats = {
 export const DEFAULT_CHAT_APPEARANCE_SETTINGS: ChatAppearanceSettings = {
   maxContentWidth: 760,
   maxContentWidthUnlimited: false,
+  voiceWaveformStyle: 'wave',
   storyReader: {
     fontFamily: 'default',
     fontSize: 16,

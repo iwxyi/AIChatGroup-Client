@@ -1,4 +1,4 @@
-import { memo, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Typography, Avatar, Dialog, DialogContent, DialogTitle, DialogActions, Menu, MenuItem, Tooltip, Divider, Button, TextField, Stack, IconButton, ListItemIcon, CircularProgress } from '@mui/material';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
@@ -29,11 +29,9 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import PauseIcon from '@mui/icons-material/Pause';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import { api } from '../../services/api';
+import { speechTextFromMessage, usesManagedSpeechProfile } from '../../services/speech';
 import { synthesizeSpeechWithAdapter } from '../../services/aiGenerationAdapter';
-
-function usesManagedSpeechProfile(provider: string) {
-  return provider === 'official' || provider.startsWith('managed:');
-}
+import { cacheSpeechPlayback, clearCachedSpeechPlayback, getCachedSpeechPlayback } from '../../services/speechPlaybackCache';
 
 interface MessageBubbleProps {
   message: Message;
@@ -77,6 +75,49 @@ const LONG_PRESS_TAP_SLOP = 8;
 const LONG_PRESS_SCROLL_INTENT_Y = 6;
 const LONG_PRESS_SCROLL_RATIO = 1.15;
 const LONG_PRESS_SCROLL_SLOP = 2;
+let hasShownAutoplayBlockedNotice = false;
+
+function smoothWaveform(values: number[], radius: number) {
+  if (values.length < 2 || radius < 1) return values;
+  const sigma = Math.max(1, radius / 2);
+  const weights = Array.from({ length: radius * 2 + 1 }, (_, index) => {
+    const distance = index - radius;
+    return Math.exp(-(distance * distance) / (2 * sigma * sigma));
+  });
+  return values.map((_, index) => {
+    let total = 0;
+    let weightTotal = 0;
+    weights.forEach((weight, weightIndex) => {
+      const sourceIndex = Math.max(0, Math.min(values.length - 1, index + weightIndex - radius));
+      total += values[sourceIndex] * weight;
+      weightTotal += weight;
+    });
+    return total / weightTotal;
+  });
+}
+
+function waveformPath(amplitudes: number[], width: number, height: number) {
+  if (!amplitudes.length) return '';
+  const step = width / Math.max(amplitudes.length - 1, 1);
+  const points = amplitudes.map((amplitude, index) => [
+    index * step,
+    height - (Math.max(0, Math.min(1, amplitude)) * height * 0.86 + height * 0.07),
+  ] as const);
+  if (points.length === 1) return `M ${points[0][0]} ${points[0][1]}`;
+  let path = `M ${points[0][0]} ${points[0][1]}`;
+  for (let index = 0; index < points.length - 1; index += 1) {
+    const previous = points[Math.max(0, index - 1)];
+    const current = points[index];
+    const next = points[index + 1];
+    const following = points[Math.min(points.length - 1, index + 2)];
+    const controlOneX = current[0] + (next[0] - previous[0]) / 9;
+    const controlOneY = current[1] + (next[1] - previous[1]) / 9;
+    const controlTwoX = next[0] - (following[0] - current[0]) / 9;
+    const controlTwoY = next[1] - (following[1] - current[1]) / 9;
+    path += ` C ${controlOneX} ${controlOneY} ${controlTwoX} ${controlTwoY} ${next[0]} ${next[1]}`;
+  }
+  return path;
+}
 
 function getScrollableAncestor(target: EventTarget | null): HTMLElement | Window {
   if (!(target instanceof HTMLElement)) return window;
@@ -138,11 +179,83 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
   const [menuPosition, setMenuPosition] = useState<MenuPosition | null>(null);
   const [feedbackDialogOpen, setFeedbackDialogOpen] = useState(false);
   const [copyStatus, setCopyStatus] = useState<'success' | 'error' | null>(null);
-  const [voiceUrl, setVoiceUrl] = useState<string | null>(null);
+  const voiceCacheKey = `message:${message.serverId || message.id}`;
+  const [voiceUrl, setVoiceUrl] = useState<string | null>(() => getCachedSpeechPlayback(voiceCacheKey));
   const [voicePlaying, setVoicePlaying] = useState(false);
   const [voiceGenerating, setVoiceGenerating] = useState(false);
-  const [voiceProgress, setVoiceProgress] = useState(0);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
   const voiceAudioRef = useRef<HTMLAudioElement | null>(null);
+  const voiceProgressLineRef = useRef<HTMLDivElement | null>(null);
+  const autoPlayVoiceRef = useRef(false);
+  const [voiceBars, setVoiceBars] = useState<number[]>([]);
+  const voiceWaveformPath = useMemo(() => waveformPath(voiceBars, 260, 38), [voiceBars]);
+  useEffect(() => {
+    if (!voiceUrl) return;
+    let cancelled = false;
+    const loadWaveform = async () => {
+      try {
+        const audioData = await fetch(voiceUrl).then((response) => response.arrayBuffer());
+        const AudioContextConstructor = window.AudioContext;
+        if (!AudioContextConstructor) return;
+        const context = new AudioContextConstructor();
+        const decoded = await context.decodeAudioData(audioData.slice(0));
+        await context.close();
+        const samples = decoded.getChannelData(0);
+        const bars = 96;
+        const samplesPerBar = Math.max(1, Math.floor(samples.length / bars));
+        const rawEnergy = Array.from({ length: bars }, (_, index) => {
+          const start = index * samplesPerBar;
+          const end = Math.min(samples.length, start + samplesPerBar);
+          let energy = 0;
+          for (let position = start; position < end; position += 1) {
+            const sample = samples[position] || 0;
+            energy += sample * sample;
+          }
+          return Math.sqrt(energy / Math.max(1, end - start));
+        });
+        const smoothedEnergy = smoothWaveform(rawEnergy, 7);
+        const sortedEnergy = [...smoothedEnergy].sort((left, right) => left - right);
+        const quietEnergy = sortedEnergy[Math.floor(sortedEnergy.length * 0.08)] || 0;
+        const loudEnergy = sortedEnergy[Math.max(0, Math.ceil(sortedEnergy.length * 0.92) - 1)] || quietEnergy;
+        const dynamicRange = loudEnergy - quietEnergy;
+        const curve = dynamicRange > 0.000001
+          ? smoothWaveform(smoothedEnergy.map((energy) => {
+            const relativeEnergy = Math.max(0, Math.min(1, (energy - quietEnergy) / dynamicRange));
+            return Math.max(0, Math.min(1, 0.5 + (relativeEnergy - 0.5) * 1.22));
+          }), 2)
+          : Array.from({ length: bars }, () => 0.5);
+        if (!cancelled) setVoiceBars(curve);
+      } catch {
+        if (!cancelled) setVoiceBars([]);
+      }
+    };
+    void loadWaveform();
+    if (autoPlayVoiceRef.current) {
+      autoPlayVoiceRef.current = false;
+      window.setTimeout(() => {
+        void voiceAudioRef.current?.play().catch(() => {
+          if (!hasShownAutoplayBlockedNotice) {
+            hasShownAutoplayBlockedNotice = true;
+            setVoiceError('浏览器阻止了自动播放，请再次点击播放');
+          }
+        });
+      }, 0);
+    }
+    return () => { cancelled = true; };
+  }, [message.timestamp, voiceUrl]);
+  useEffect(() => {
+    if (!voicePlaying) return undefined;
+    let frameId = 0;
+    const updateProgress = () => {
+      const audio = voiceAudioRef.current;
+      if (audio?.duration && voiceProgressLineRef.current) {
+        voiceProgressLineRef.current.style.left = `${Math.max(0, Math.min(1, audio.currentTime / audio.duration)) * 100}%`;
+      }
+      frameId = window.requestAnimationFrame(updateProgress);
+    };
+    frameId = window.requestAnimationFrame(updateProgress);
+    return () => window.cancelAnimationFrame(frameId);
+  }, [voicePlaying]);
   const aiProfiles = useSettingsStore((state) => state.aiProfiles);
   const ttsProfiles = useMemo(() => aiProfiles.filter((profile) => profile.type === 'tts'), [aiProfiles]);
   const ttsModel = ttsProfiles.find((profile) => profile.id === (character?.modelProfileIds?.tts || character?.modelProfileIds?.audio))
@@ -153,27 +266,34 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
   const toggleVoice = async () => {
     if (!canPlayVoice) return;
     if (!voiceUrl) {
+      autoPlayVoiceRef.current = true;
       setVoiceGenerating(true);
       try {
-        if (ttsModel && usesManagedSpeechProfile(ttsModel.provider)) {
+        setVoiceError(null);
+        const speechText = speechTextFromMessage(message.content);
+        if (!speechText) throw new Error('消息中没有可朗读的文字');
+        if (ttsModel && usesManagedSpeechProfile(ttsModel)) {
           const result = await api.synthesizeSpeech({
             providerCode: ttsModel.provider.startsWith('managed:') ? ttsModel.provider.slice('managed:'.length) : undefined,
             modelId: ttsModel.model,
-            text: message.content,
+            text: speechText,
             voice: character?.voiceConfig?.voiceName,
             style: character?.voiceConfig?.style || character?.voiceConfig?.instructions,
             emotion: character?.voiceConfig?.emotion,
             speed: character?.voiceConfig?.rate ? Number.parseFloat(character.voiceConfig.rate) || undefined : undefined,
             pitch: character?.voiceConfig?.pitch ? Number.parseFloat(character.voiceConfig.pitch) || undefined : undefined,
-            chatId: message.chatId,
-            messageId: message.serverId || message.id,
-            attachmentId: `voice-${message.id}`,
           });
-          setVoiceUrl(result.asset?.url || result.audioDataUrl);
+          const audioResponse = await fetch(result.audioDataUrl);
+          if (!audioResponse.ok) throw new Error('语音缓存创建失败');
+          const url = cacheSpeechPlayback(voiceCacheKey, URL.createObjectURL(await audioResponse.blob()));
+          setVoiceUrl(url);
         } else if (ttsModel) {
-          const result = await synthesizeSpeechWithAdapter({ profile: ttsModel, input: message.content, voice: character?.voiceConfig?.voiceName, format: 'mp3', intent: 'chat-audio' });
-          setVoiceUrl(result.objectUrl);
+          const result = await synthesizeSpeechWithAdapter({ profile: ttsModel, input: speechText, voice: character?.voiceConfig?.voiceName, format: 'mp3', intent: 'chat-audio' });
+          const url = cacheSpeechPlayback(voiceCacheKey, result.objectUrl);
+          setVoiceUrl(url);
         }
+      } catch (error) {
+        setVoiceError(error instanceof Error ? error.message : '语音播放失败');
       } finally {
         setVoiceGenerating(false);
       }
@@ -183,34 +303,68 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
     if (!audio) return;
     if (audio.paused) await audio.play(); else audio.pause();
   };
+  const clearVoiceCache = () => {
+    voiceAudioRef.current?.pause();
+    clearCachedSpeechPlayback(voiceCacheKey);
+    setVoiceUrl(null);
+    setVoicePlaying(false);
+    if (voiceProgressLineRef.current) voiceProgressLineRef.current.style.left = '0%';
+    setVoiceBars([]);
+  };
+  const voiceWaveformStyle = chatAppearance.voiceWaveformStyle || 'wave';
+  const visibleVoiceBars = voiceBars.length ? voiceBars.map((sample) => 20 + sample * 80) : Array.from({ length: 36 }, () => 28);
   const voiceBar = voiceUrl ? (
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.65, width: 'min(280px, 100%)', px: 0.7, py: 0.35, borderRadius: 999, bgcolor: 'action.hover' }}>
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.65, width: 'min(320px, 100%)', px: 0.9, py: 0.55, borderRadius: 2.5, bgcolor: 'action.hover', border: '1px solid', borderColor: 'divider' }}>
       <audio
         ref={voiceAudioRef}
         src={voiceUrl}
         preload="metadata"
         onPlay={() => setVoicePlaying(true)}
         onPause={() => setVoicePlaying(false)}
-        onEnded={() => { setVoicePlaying(false); setVoiceProgress(0); }}
-        onTimeUpdate={(event) => {
-          const audio = event.currentTarget;
-          setVoiceProgress(audio.duration ? audio.currentTime / audio.duration : 0);
+        onEnded={() => {
+          setVoicePlaying(false);
+          if (voiceProgressLineRef.current) voiceProgressLineRef.current.style.left = '0%';
+        }}
+        onError={() => {
+          clearVoiceCache();
+          setVoiceError('语音缓存已失效，请重新播放');
         }}
         style={{ display: 'none' }}
       />
       <IconButton size="small" onClick={() => void toggleVoice()} aria-label={voicePlaying ? '暂停语音' : '播放语音'}>
         {voicePlaying ? <PauseIcon fontSize="small" /> : <PlayArrowIcon fontSize="small" />}
       </IconButton>
-      <Box sx={{ flex: 1, height: 5, borderRadius: 999, bgcolor: 'divider', overflow: 'hidden', cursor: 'pointer' }} onClick={(event) => {
+      <Box sx={{ position: 'relative', flex: 1, height: 30, cursor: 'pointer' }} onClick={(event) => {
         const audio = voiceAudioRef.current;
         if (!audio || !audio.duration) return;
         const rect = event.currentTarget.getBoundingClientRect();
-        audio.currentTime = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)) * audio.duration;
+        const progress = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+        audio.currentTime = progress * audio.duration;
+        if (voiceProgressLineRef.current) voiceProgressLineRef.current.style.left = `${progress * 100}%`;
       }}>
-        <Box sx={{ height: '100%', width: `${voiceProgress * 100}%`, bgcolor: 'primary.main', transition: 'width 120ms linear' }} />
+        {voiceWaveformStyle === 'blocks' ? (
+          <Box aria-hidden="true" sx={{ height: '100%', display: 'flex', alignItems: 'center', gap: '3px', overflow: 'hidden' }}>
+            {visibleVoiceBars.map((peak, index) => <Box key={index} sx={{ flex: 1, minWidth: 2, height: `${Math.max(26, peak)}%`, borderRadius: 1, bgcolor: 'rgba(255,112,67,.82)' }} />)}
+          </Box>
+        ) : voiceWaveformStyle === 'spectrum' ? (
+          <Box aria-hidden="true" sx={{ height: '100%', display: 'flex', alignItems: 'center', gap: '2px', overflow: 'hidden' }}>
+            {visibleVoiceBars.map((peak, index) => <Box key={index} sx={{ flex: 1, minWidth: 2, height: `${Math.max(24, peak)}%`, borderRadius: 1, background: `linear-gradient(180deg, hsl(${(index * 13 + 300) % 360} 92% 68%), hsl(${(index * 13 + 340) % 360} 86% 54%))`, boxShadow: '0 0 6px rgba(236,72,153,.34)' }} />)}
+          </Box>
+        ) : (
+          <svg viewBox="0 0 260 38" preserveAspectRatio="none" aria-hidden="true" style={{ width: '100%', height: '100%', display: 'block', overflow: 'visible' }}>
+            {voiceWaveformPath ? <path d={voiceWaveformPath} fill="none" stroke={voiceWaveformStyle === 'neon' ? '#b794f4' : 'rgba(255,112,67,.9)'} strokeWidth={voiceWaveformStyle === 'neon' ? '2.1' : '2'} strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" style={voiceWaveformStyle === 'neon' ? { filter: 'drop-shadow(0 0 4px rgba(183,148,244,.95)) drop-shadow(0 0 9px rgba(99,102,241,.55))' } : undefined} /> : null}
+          </svg>
+        )}
+        <Box ref={voiceProgressLineRef} sx={{ position: 'absolute', top: -3, bottom: -3, left: '0%', width: 2, borderRadius: 2, bgcolor: 'primary.main', boxShadow: '0 0 8px rgba(255,112,67,.62)', transform: 'translateX(-1px)', pointerEvents: 'none', willChange: 'left' }} />
       </Box>
       <VolumeUpIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
     </Box>
+  ) : null;
+  const voiceGeneratingIndicator = voiceGenerating ? (
+    <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', width: 'fit-content', px: 1, py: 0.55, borderRadius: 2, bgcolor: 'action.hover' }}>
+      <CircularProgress size={14} />
+      <Typography variant="caption" color="text.secondary">正在合成语音…</Typography>
+    </Stack>
   ) : null;
   const [revisionEditorOpen, setRevisionEditorOpen] = useState(false);
   const [revisionDraft, setRevisionDraft] = useState(message.content);
@@ -568,7 +722,7 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
               ) : withdrawalNoticeNode
             ) : <MessageContent message={visibleMessage} onRetryMedia={onRetryMedia} onOpenImage={onOpenImage} onOpenDiagram={onOpenDiagram} compactMediaLayout={compactMediaBubble} />}
           </Box>
-          {voiceBar}
+          {voiceGeneratingIndicator || voiceBar}
           {nonHtmlArtifactRefs.length ? (
             <Box
               component="button"
@@ -671,6 +825,19 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
             重新编辑
           </MenuItem>
         ) : null}
+        {canPlayVoice ? (
+          <MenuItem onClick={() => { closeMenus(); void toggleVoice(); }} disabled={voiceGenerating}>
+            <ListItemIcon sx={{ minWidth: 32 }}>{voiceGenerating ? <CircularProgress size={18} /> : <VolumeUpIcon fontSize="small" />}</ListItemIcon>
+            {voiceGenerating ? '生成语音中…' : '播放语音'}
+          </MenuItem>
+        ) : null}
+        {voiceUrl ? (
+          <MenuItem onClick={() => { closeMenus(); clearVoiceCache(); }}>
+            <ListItemIcon sx={{ minWidth: 32 }}><VolumeUpIcon fontSize="small" /></ListItemIcon>
+            清除语音缓存
+          </MenuItem>
+        ) : null}
+        {(canPlayVoice || voiceUrl) && (onAnalyze || canAddImagesToReference || canFeedback || canDelete) ? <Divider /> : null}
         {onAnalyze ? (
           <MenuItem onClick={handleAnalyze}>
             <ListItemIcon sx={{ minWidth: 32 }}><InsightsIcon fontSize="small" /></ListItemIcon>
@@ -687,12 +854,6 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
           <MenuItem onClick={openFeedbackDialog}>
             <ListItemIcon sx={{ minWidth: 32 }}><RateReviewIcon fontSize="small" /></ListItemIcon>
             表达反馈
-          </MenuItem>
-        ) : null}
-        {canPlayVoice ? (
-          <MenuItem onClick={() => { closeMenus(); void toggleVoice(); }} disabled={voiceGenerating}>
-            <ListItemIcon sx={{ minWidth: 32 }}>{voiceGenerating ? <CircularProgress size={18} /> : <VolumeUpIcon fontSize="small" />}</ListItemIcon>
-            {voiceGenerating ? '生成语音中…' : '播放语音'}
           </MenuItem>
         ) : null}
         {canDelete ? (
@@ -733,6 +894,13 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
         onClose={() => setCopyStatus(null)}
         offset="composer"
         alertVariant="filled"
+      />
+      <AppSnackbar
+        open={Boolean(voiceError)}
+        autoHideDuration={3000}
+        onClose={() => setVoiceError(null)}
+        severity="error"
+        message={voiceError || ''}
       />
 
       <Dialog open={revisionEditorOpen} onClose={closeRevisionEditor} maxWidth="sm" fullWidth>

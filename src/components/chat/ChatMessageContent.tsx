@@ -1,5 +1,5 @@
-import { useEffect, useState, useSyncExternalStore } from 'react';
-import { Box, Button, Chip, LinearProgress, Tooltip, Typography, keyframes } from '@mui/material';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { Box, Button, Chip, IconButton, LinearProgress, Tooltip, Typography, keyframes } from '@mui/material';
 import type { Message, MessageAttachment, NarrativeBlock } from '../../types/message';
 import type { AICharacter } from '../../types/character';
 import { getAttachmentStatusDetail, getAttachmentStatusLabel } from '../../services/messageAttachmentDisplay';
@@ -118,6 +118,61 @@ function getAttachmentKnownSize(attachment: Pick<MessageAttachment, 'width' | 'h
   const height = Number(attachment.height || 0);
   if (width > 0 && height > 0) return { width, height };
   return null;
+}
+
+function formatAudioDuration(durationMs?: number) {
+  const seconds = Math.max(1, Math.round((durationMs || 0) / 1000));
+  return `${seconds}"`;
+}
+
+function estimateAudioDurationMs(attachment: MessageAttachment) {
+  if (attachment.durationMs && attachment.durationMs > 0) return attachment.durationMs;
+  const textLength = (attachment.promptText || attachment.altText || '').replace(/\s/g, '').length;
+  return Math.max(1_500, Math.min(60_000, Math.round((textLength / 4.5) * 1_000)));
+}
+
+function MessageAudioAttachment({ attachment, showTranscript }: { attachment: MessageAttachment; showTranscript: boolean }) {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const [durationMs, setDurationMs] = useState(attachment.durationMs || 0);
+  const effectiveDurationMs = durationMs || estimateAudioDurationMs(attachment);
+  const bubbleWidth = Math.round(Math.min(320, Math.max(142, 118 + (effectiveDurationMs / 1000) * 9)));
+  const toggle = async () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (audio.paused) await audio.play(); else audio.pause();
+  };
+  return (
+    <Box sx={{ display: 'grid', gap: 0.55, width: bubbleWidth, maxWidth: '100%' }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.45, minHeight: 42, px: 0.55, pr: 1.15, borderRadius: 999, bgcolor: 'rgba(255, 112, 67, 0.11)', border: '1px solid rgba(255, 112, 67, 0.22)' }}>
+        <audio
+          ref={audioRef}
+          src={attachment.url}
+          preload="metadata"
+          onPlay={() => setPlaying(true)}
+          onPause={() => setPlaying(false)}
+          onEnded={() => setPlaying(false)}
+          onLoadedMetadata={(event) => {
+            const seconds = event.currentTarget.duration;
+            if (Number.isFinite(seconds) && seconds > 0) setDurationMs(Math.round(seconds * 1000));
+          }}
+          style={{ display: 'none' }}
+        />
+        <IconButton size="small" aria-label={playing ? '暂停语音' : '播放语音'} onClick={() => void toggle()} sx={{ color: 'primary.main' }}>
+          <span style={{ fontSize: 17, lineHeight: 1 }}>{playing ? 'Ⅱ' : '▶'}</span>
+        </IconButton>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.3, flex: 1, minWidth: 0 }} aria-hidden="true">
+          {[0, 1, 2, 3].map((index) => <Box key={index} sx={{ width: 2, height: `${9 + index * 3}px`, borderRadius: 2, bgcolor: 'primary.main', opacity: playing ? 0.95 : 0.48, animation: playing ? `${typingBounce} 0.75s ease-in-out infinite` : undefined, animationDelay: `${index * 0.1}s` }} />)}
+        </Box>
+        <Typography variant="caption" sx={{ flexShrink: 0, fontWeight: 700, color: 'text.secondary' }}>{formatAudioDuration(effectiveDurationMs)}</Typography>
+      </Box>
+      {showTranscript && attachment.promptText ? (
+        <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: 'text.secondary' }}>
+          {attachment.promptText}
+        </Typography>
+      ) : null}
+    </Box>
+  );
 }
 
 function MessageImageAttachment({
@@ -391,19 +446,12 @@ export function MessageContent({ message, onRetryMedia, onOpenImage, onOpenDiagr
     }
     if (attachment.kind === 'audio') {
       if (attachment.status === 'ready' && attachment.url) {
-        return (
-          <Box key={attachment.id} sx={{ display: 'grid', gap: 0.6, minWidth: 220 }}>
-            <Box component="audio" controls src={attachment.url} sx={{ width: '100%', maxWidth: 280 }} />
-            {showVoiceTranscript && attachment.promptText ? (
-              <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: 'text.secondary' }}>
-                {attachment.promptText}
-              </Typography>
-            ) : null}
-          </Box>
-        );
+        return <MessageAudioAttachment key={attachment.id} attachment={attachment} showTranscript={showVoiceTranscript} />;
       }
+      const estimatedDurationMs = estimateAudioDurationMs(attachment);
+      const loadingWidth = Math.round(Math.min(300, Math.max(142, 118 + (estimatedDurationMs / 1000) * 9)));
       return (
-        <Box key={attachment.id} sx={{ minWidth: 200, borderRadius: 999, border: '1px solid', borderColor: 'divider', px: 1.25, py: 0.75, bgcolor: 'action.hover' }}>
+        <Box key={attachment.id} sx={{ width: loadingWidth, maxWidth: '100%', borderRadius: 999, border: '1px solid', borderColor: 'divider', px: 1.25, py: 0.75, bgcolor: 'action.hover' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
             <Typography variant="caption" color="text.secondary">{getAttachmentStatusLabel(attachment)}</Typography>
             <Chip size="small" label={attachment.status === 'failed' ? '失败' : '处理中'} color={statusChipColor(attachment.status)} variant="outlined" sx={{ height: 20 }} />

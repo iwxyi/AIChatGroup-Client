@@ -1,4 +1,32 @@
 import { api } from './api';
+import type { APIConfig, AIModelProfile } from '../types/settings';
+
+export function usesManagedSpeechProfile(profile: Pick<APIConfig, 'provider' | 'baseUrl'> & Partial<Pick<AIModelProfile, 'type'>>) {
+  const provider = String(profile.provider || '');
+  const baseUrl = String(profile.baseUrl || '').replace(/\/+$/, '');
+  const model = String((profile as Partial<APIConfig>).model || '').trim().toLowerCase();
+  const legacyManagedModel = new Set(['tts-volcengine', 'stt-volcengine', 'speech-tts', 'speech-stt']);
+  return provider === 'official'
+    || provider.startsWith('managed:')
+    || provider.startsWith('official-')
+    || legacyManagedModel.has(model)
+    || ((profile.type === 'tts' || profile.type === 'stt' || profile.type === 'audio') && (baseUrl === '/api' || baseUrl.endsWith('/api')));
+}
+
+export function speechTextFromMessage(content: string) {
+  return String(content || '')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/```[\s\S]*?```/g, (block) => block.replace(/```[^\n]*\n?/g, '').replace(/```/g, ''))
+    .replace(/<[^>]+>/g, '')
+    .replace(/^\s{0,3}#{1,6}\s+/gm, '')
+    .replace(/^\s*[-*+]\s+/gm, '')
+    .replace(/^\s*>\s?/gm, '')
+    .replace(/[*_~`]+/g, '')
+    .replace(/\s+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
 
 export type SpeechSynthesisRequest = Parameters<typeof api.synthesizeSpeech>[0];
 export type SpeechTranscriptionRequest = Parameters<typeof api.transcribeSpeech>[0];

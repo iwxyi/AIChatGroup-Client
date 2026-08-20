@@ -99,7 +99,7 @@ export default function AccountPage() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const { setHeaderTitle, setHeaderBackAction, setHeaderActions } = useLayoutHeaderActions();
-  const { user, authMode, updateProfile, sendChangePhoneCode, changePhone, logout } = useAuthStore();
+  const { user, authMode, updateProfile, sendChangePhoneCode, changePhone, sendPasswordCode, changePassword, logout } = useAuthStore();
   const retryChatFailedOperations = useChatStore((state) => state.retryFailedOperations);
   const refreshChatSummaryFromCloud = useChatStore((state) => state.refreshChatSummaryFromCloud);
   const markChatsWarm = useChatStore((state) => state.markChatsWarm);
@@ -135,6 +135,14 @@ export default function AccountPage() {
   const [changingPhone, setChangingPhone] = useState(false);
   const [phoneCountdown, setPhoneCountdown] = useState(0);
   const [mockPhoneCode, setMockPhoneCode] = useState('');
+  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
+  const [passwordMode, setPasswordMode] = useState<'old_password' | 'phone_code'>('old_password');
+  const [oldPassword, setOldPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [passwordCode, setPasswordCode] = useState('');
+  const [passwordCountdown, setPasswordCountdown] = useState(0);
+  const [sendingPasswordCode, setSendingPasswordCode] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
     open: false,
     message: '',
@@ -213,6 +221,12 @@ export default function AccountPage() {
     }, 1000);
     return () => window.clearInterval(timer);
   }, [phoneCountdown]);
+
+  useEffect(() => {
+    if (passwordCountdown <= 0) return;
+    const timer = window.setInterval(() => setPasswordCountdown((value) => value - 1), 1000);
+    return () => window.clearInterval(timer);
+  }, [passwordCountdown]);
 
   useEffect(() => {
     setHeaderTitle(t('nav.account'));
@@ -369,6 +383,31 @@ export default function AccountPage() {
   const openNicknameDialog = () => {
     setDraftNickname(user?.nickname || '');
     setNicknameDialogOpen(true);
+  };
+
+  const openPasswordDialog = () => {
+    setPasswordMode('old_password'); setOldPassword(''); setNewPassword(''); setPasswordCode(''); setPasswordCountdown(0); setPasswordDialogOpen(true);
+  };
+
+  const handleSendPasswordCode = async () => {
+    setSendingPasswordCode(true);
+    try {
+      const result = await sendPasswordCode(await getSmsCaptchaToken({ phone: user?.phone || '', purpose: 'forgot-password' }));
+      setPasswordCountdown(60);
+      if (result.mock && result.code) setPasswordCode(result.code);
+      setSnackbar({ open: true, message: zh ? '验证码已发送' : 'Verification code sent', severity: 'success' });
+    } catch (error) { setSnackbar({ open: true, message: error instanceof Error ? error.message : t('common.error'), severity: 'error' }); }
+    finally { setSendingPasswordCode(false); }
+  };
+
+  const handleChangePassword = async () => {
+    if (newPassword.length < 8) { setSnackbar({ open: true, message: zh ? '新密码至少需要8位' : 'Password must be at least 8 characters', severity: 'error' }); return; }
+    setChangingPassword(true);
+    try {
+      await changePassword({ mode: passwordMode, oldPassword: passwordMode === 'old_password' ? oldPassword : undefined, code: passwordMode === 'phone_code' ? passwordCode : undefined, newPassword });
+      setPasswordDialogOpen(false); setSnackbar({ open: true, message: zh ? '密码修改成功' : 'Password updated', severity: 'success' });
+    } catch (error) { setSnackbar({ open: true, message: error instanceof Error ? error.message : t('common.error'), severity: 'error' }); }
+    finally { setChangingPassword(false); }
   };
 
   const openAvatarDialog = () => {
@@ -587,6 +626,7 @@ export default function AccountPage() {
                     {authMode === 'local' ? (i18n.language.startsWith('zh') ? '未登录' : 'Not signed in') : (user?.phone || '-')}
                   </Typography>
                 </Box>
+                {phoneEditable ? <Button size="small" variant="text" onClick={(event) => { event.stopPropagation(); openPhoneDialog(); }}>{zh ? '修改' : 'Change'}</Button> : null}
               </Box>
             </Box>
 
@@ -597,15 +637,14 @@ export default function AccountPage() {
                 {i18n.language.startsWith('zh') ? '登录并同步' : 'Sign in & sync'}
               </Button>
             ) : (
-              <Button
-                variant="outlined"
-                color="error"
-                startIcon={<LogoutIcon />}
-                onClick={handleLogout}
-                sx={{ alignSelf: 'flex-start' }}
-              >
-                {i18n.language.startsWith('zh') ? '退出登录' : 'Log out'}
-              </Button>
+              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                <Button variant="outlined" onClick={openPasswordDialog}>
+                  {zh ? '修改密码' : 'Change password'}
+                </Button>
+                <Button variant="outlined" color="error" startIcon={<LogoutIcon />} onClick={handleLogout}>
+                  {i18n.language.startsWith('zh') ? '退出登录' : 'Log out'}
+                </Button>
+              </Box>
             )}
           </CardContent>
         </Card>
@@ -817,6 +856,31 @@ export default function AccountPage() {
           <Button variant="contained" onClick={handleChangePhone} disabled={changingPhone || !newPhone || !phoneCode}>
             {changingPhone ? t('common.loading') : t('common.confirm')}
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={passwordDialogOpen} onClose={() => setPasswordDialogOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>{zh ? '修改密码' : 'Change password'}</DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <Button variant={passwordMode === 'old_password' ? 'contained' : 'outlined'} onClick={() => setPasswordMode('old_password')} fullWidth>{zh ? '旧密码' : 'Old password'}</Button>
+              <Button variant={passwordMode === 'phone_code' ? 'contained' : 'outlined'} onClick={() => setPasswordMode('phone_code')} fullWidth>{zh ? '手机号验证' : 'Phone code'}</Button>
+            </Box>
+            {passwordMode === 'old_password' ? (
+              <TextField label={zh ? '旧密码' : 'Old password'} type="password" value={oldPassword} onChange={(event) => setOldPassword(event.target.value)} fullWidth />
+            ) : (
+              <Box sx={{ display: 'flex', gap: 1 }}>
+                <TextField label={zh ? '验证码' : 'Verification code'} value={passwordCode} onChange={(event) => setPasswordCode(event.target.value)} fullWidth />
+                <Button variant="outlined" onClick={handleSendPasswordCode} disabled={sendingPasswordCode || passwordCountdown > 0} sx={{ minWidth: 120 }}>{passwordCountdown > 0 ? `${passwordCountdown}s` : (sendingPasswordCode ? t('common.loading') : (zh ? '发送验证码' : 'Send code'))}</Button>
+              </Box>
+            )}
+            <TextField label={zh ? '新密码' : 'New password'} type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} helperText={zh ? '至少 8 位' : 'At least 8 characters'} fullWidth />
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setPasswordDialogOpen(false)}>{t('common.cancel')}</Button>
+          <Button variant="contained" onClick={handleChangePassword} disabled={changingPassword || !newPassword || (passwordMode === 'old_password' ? !oldPassword : !passwordCode)}>{changingPassword ? t('common.loading') : t('common.confirm')}</Button>
         </DialogActions>
       </Dialog>
 

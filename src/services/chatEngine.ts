@@ -2373,10 +2373,14 @@ function resolveApiConfigForCharacter(character: AICharacter, apiConfig: APIConf
 
 function resolveProfileForCharacter(character: AICharacter, profiles: AIModelProfile[] | undefined, type: 'image' | 'audio') {
   if (!profiles?.length) return null;
-  const profileId = getCharacterModelProfileId(character, type);
+  const profileId = type === 'audio'
+    ? character.modelProfileIds?.tts || getCharacterModelProfileId(character, type)
+    : getCharacterModelProfileId(character, type);
   const matched = profileId
-    ? profiles.find((profile) => profile.id === profileId && profile.type === type)
-    : profiles.find((profile) => profile.type === type && profile.isDefault)
+    ? profiles.find((profile) => profile.id === profileId && (profile.type === type || (type === 'audio' && profile.type === 'tts')))
+    : (type === 'audio' ? profiles.find((profile) => profile.type === 'tts' && profile.isDefault) : null)
+      || profiles.find((profile) => profile.type === type && profile.isDefault)
+      || (type === 'audio' ? profiles.find((profile) => profile.type === 'tts') : null)
       || profiles.find((profile) => profile.type === type)
       || null;
   return isAIProfileUsable(matched) ? matched : null;

@@ -165,6 +165,13 @@ export interface NarrativeTurnMetadata {
 }
 
 export interface MessageMetadata {
+  voice?: {
+    url: string;
+    mimeType?: string;
+    text?: string;
+    provider?: string;
+    createdAt: number;
+  };
   format?: 'plain' | 'markdown';
   contextText?: string;
   renderText?: string;

@@ -608,6 +608,18 @@ class ApiClient {
     return this.request<{ token: string; user: AuthUserResponse }>('POST', '/auth/login', { phone, code });
   }
 
+  async passwordLogin(phone: string, password: string) {
+    return this.request<{ token: string; user: AuthUserResponse }>('POST', '/auth/password-login', { phone, password });
+  }
+
+  async sendPasswordCode(captchaToken?: string) {
+    return this.request<{ success: boolean; mock?: boolean; code?: string }>('POST', '/auth/password/send-code', { captchaToken });
+  }
+
+  async changePassword(data: { mode: 'old_password' | 'phone_code'; oldPassword?: string; code?: string; newPassword: string }) {
+    return this.request<{ success: boolean }>('PUT', '/auth/password', data);
+  }
+
   async getMe() {
     return this.request<AuthUserResponse>('GET', '/auth/me');
   }

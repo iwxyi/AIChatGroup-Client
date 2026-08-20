@@ -39,6 +39,7 @@ interface AuthStore {
   // Actions
   sendCode: (phone: string, purpose?: 'login' | 'register' | 'forgot-password' | 'change-phone', captchaToken?: string) => Promise<{ success: boolean; mock?: boolean; code?: string }>;
   login: (phone: string, code: string) => Promise<void>;
+  loginWithPassword: (phone: string, password: string) => Promise<void>;
   enterLocalMode: () => Promise<void>;
   logout: () => Promise<void>;
   expireCloudSession: () => void;
@@ -47,6 +48,8 @@ interface AuthStore {
   updateProfile: (updates: Partial<User>) => Promise<void>;
   sendChangePhoneCode: (phone: string, captchaToken?: string) => Promise<{ success: boolean; mock?: boolean; code?: string }>;
   changePhone: (phone: string, code: string) => Promise<void>;
+  sendPasswordCode: (captchaToken?: string) => Promise<{ success: boolean; mock?: boolean; code?: string }>;
+  changePassword: (data: { mode: 'old_password' | 'phone_code'; oldPassword?: string; code?: string; newPassword: string }) => Promise<void>;
 }
 
 async function loadWorkspaceStores() {
@@ -284,6 +287,17 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     }
   },
 
+  loginWithPassword: async (phone, password) => {
+    set({ isLoading: true });
+    try {
+      const result = await api.passwordLogin(phone, password);
+      setAuthToken(result.token); setAuthUser(result.user); enableCloudSyncForLogin(result.user); setAuthMode('cloud');
+      set({ token: result.token, user: result.user, isLoggedIn: true, isLoading: false, authMode: 'cloud' });
+      await resetLocalWorkspaceStoresForAccountBoundary();
+      await refreshStoresAfterCloudAuth(result.user);
+    } catch (error) { set({ isLoading: false }); throw error; }
+  },
+
   enterLocalMode: async () => {
     await resetLocalWorkspaceStoresForAccountBoundary();
     clearAuthTokenAndUser();
@@ -384,4 +398,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       throw error;
     }
   },
+
+  sendPasswordCode: async (captchaToken) => api.sendPasswordCode(captchaToken),
+  changePassword: async (data) => { await api.changePassword(data); },
 }));

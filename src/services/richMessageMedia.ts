@@ -15,7 +15,9 @@ function findProfile(profiles: AIModelProfile[], id?: string | null) {
 
 function findGenerationProfile(profiles: AIModelProfile[], type: 'image' | 'audio', id?: string | null) {
   const profile = findProfile(profiles, id)
+    || (type === 'audio' ? profiles.find((item) => item.type === 'tts' && item.isDefault && isAIProfileUsable(item)) : null)
     || profiles.find((item) => item.type === type && item.isDefault && isAIProfileUsable(item))
+    || (type === 'audio' ? profiles.find((item) => item.type === 'tts' && isAIProfileUsable(item)) : null)
     || profiles.find((item) => item.type === type && isAIProfileUsable(item));
   return isAIProfileUsable(profile) ? profile : null;
 }
@@ -34,6 +36,30 @@ async function ensureDataUrl(value: string) {
   const response = await fetch(value);
   const blob = await response.blob();
   return blobToDataUrl(blob);
+}
+
+async function getAudioDurationMs(dataUrl: string) {
+  if (typeof Audio === 'undefined') return undefined;
+  return await new Promise<number | undefined>((resolve) => {
+    const audio = new Audio();
+    const cleanup = () => {
+      audio.onloadedmetadata = null;
+      audio.onerror = null;
+      audio.removeAttribute('src');
+      audio.load();
+    };
+    audio.preload = 'metadata';
+    audio.onloadedmetadata = () => {
+      const durationMs = Number.isFinite(audio.duration) && audio.duration > 0 ? Math.round(audio.duration * 1000) : undefined;
+      cleanup();
+      resolve(durationMs);
+    };
+    audio.onerror = () => {
+      cleanup();
+      resolve(undefined);
+    };
+    audio.src = dataUrl;
+  });
 }
 
 function createGenerationJobId() {
@@ -402,7 +428,7 @@ async function runRichMediaQueueEntry(entry: RichMediaQueueEntry) {
       return;
     }
 
-    const profile = findGenerationProfile(entry.aiProfiles, 'audio', entry.character?.modelProfileIds?.audio);
+    const profile = findGenerationProfile(entry.aiProfiles, 'audio', entry.character?.modelProfileIds?.tts || entry.character?.modelProfileIds?.audio);
     if (!profile) throw new Error('语音模型未配置');
     const voice = entry.character?.voiceConfig?.voiceName || profile.model;
     const speechText = attachment.promptText || workingMessage.content;
@@ -426,6 +452,7 @@ async function runRichMediaQueueEntry(entry: RichMediaQueueEntry) {
     const latestAttachment = getLatestRichMediaMessage(messageId, workingMessage).metadata?.attachments?.find((item) => item.id === attachment.id);
     if (latestAttachment?.generationJobId !== generationJobId) return;
     const dataUrl = speechResult?.audioDataUrl || await blobToDataUrl((await synthesizeSpeechWithAdapter({ profile, intent: 'chat-audio', input: speechText, voice, format: 'mp3' })).blob);
+    const durationMs = await getAudioDurationMs(dataUrl);
     const asset = speechResult?.asset || { id: undefined, url: dataUrl, mimeType: speechResult?.mimeType || 'audio/mpeg', sizeBytes: dataUrl.length, checksum: undefined };
     workingMessage = updateRichMediaMessage({
       message: workingMessage,
@@ -433,9 +460,10 @@ async function runRichMediaQueueEntry(entry: RichMediaQueueEntry) {
       patch: {
         status: 'ready',
         assetId: asset.id,
-          url: asset.url || dataUrl,
-          mimeType: asset.mimeType,
+        url: asset.url || dataUrl,
+        mimeType: asset.mimeType,
         sizeBytes: asset.sizeBytes,
+        durationMs,
         generationJobId,
       },
       upsertMessage: entry.upsertMessage,
