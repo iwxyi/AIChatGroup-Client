@@ -132,11 +132,13 @@ function estimateAudioDurationMs(attachment: MessageAttachment) {
 }
 
 function MessageAudioAttachment({ attachment, showTranscript }: { attachment: MessageAttachment; showTranscript: boolean }) {
+  const voiceWaveformStyle = useSettingsStore((state) => state.chatAppearance.voiceWaveformStyle || 'wave');
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [playing, setPlaying] = useState(false);
   const [durationMs, setDurationMs] = useState(attachment.durationMs || 0);
   const effectiveDurationMs = durationMs || estimateAudioDurationMs(attachment);
   const bubbleWidth = Math.round(Math.min(320, Math.max(142, 118 + (effectiveDurationMs / 1000) * 9)));
+  const previewBars = Array.from({ length: 18 }, (_, index) => 26 + ((index * 17 + attachment.id.length * 7) % 68));
   const toggle = async () => {
     const audio = audioRef.current;
     if (!audio) return;
@@ -161,8 +163,17 @@ function MessageAudioAttachment({ attachment, showTranscript }: { attachment: Me
         <IconButton size="small" aria-label={playing ? '暂停语音' : '播放语音'} onClick={() => void toggle()} sx={{ color: 'primary.main' }}>
           <span style={{ fontSize: 17, lineHeight: 1 }}>{playing ? 'Ⅱ' : '▶'}</span>
         </IconButton>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.3, flex: 1, minWidth: 0 }} aria-hidden="true">
-          {[0, 1, 2, 3].map((index) => <Box key={index} sx={{ width: 2, height: `${9 + index * 3}px`, borderRadius: 2, bgcolor: 'primary.main', opacity: playing ? 0.95 : 0.48, animation: playing ? `${typingBounce} 0.75s ease-in-out infinite` : undefined, animationDelay: `${index * 0.1}s` }} />)}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.3, flex: 1, minWidth: 0, height: 28, color: 'primary.main' }} aria-hidden="true">
+          {voiceWaveformStyle === 'blocks' || voiceWaveformStyle === 'pulse' || voiceWaveformStyle === 'spectrum' ? previewBars.map((height, index) => (
+            <Box key={index} sx={{ flex: 1, minWidth: 2, height: `${Math.max(22, height)}%`, borderRadius: 99, bgcolor: voiceWaveformStyle === 'spectrum' ? 'secondary.main' : 'currentColor', opacity: voiceWaveformStyle === 'spectrum' ? 0.42 + (index % 4) * 0.13 : 0.55, animation: voiceWaveformStyle === 'pulse' && playing ? `${typingBounce} 0.75s ease-in-out infinite` : undefined, animationDelay: `${index * 0.06}s` }} />
+          )) : voiceWaveformStyle === 'orbit' ? previewBars.filter((_, index) => index % 2 === 0).map((height, index) => (
+            <Box key={index} sx={{ width: 5, height: 5, borderRadius: '50%', bgcolor: index % 2 ? 'secondary.main' : 'currentColor', opacity: 0.62, transform: `translateY(${(height - 50) / 9}px)`, animation: playing ? `${typingBounce} 0.9s ease-in-out infinite` : undefined, animationDelay: `${index * 0.08}s` }} />
+          )) : (
+            <svg viewBox="0 0 180 28" preserveAspectRatio="none" style={{ width: '100%', height: '100%', overflow: 'visible' }}>
+              <defs><linearGradient id={`formal-voice-${attachment.id}`} x1="0" y1="0" x2="1" y2="0"><stop stopColor="currentColor" /><stop offset="1" stopColor="var(--mui-palette-secondary-main)" /></linearGradient></defs>
+              <path d="M1 18 C14 18 16 7 28 10 S44 22 58 15 S76 5 90 11 S110 22 124 14 S146 7 179 12" fill="none" stroke={voiceWaveformStyle === 'ribbon' ? `url(#formal-voice-${attachment.id})` : 'currentColor'} strokeWidth={voiceWaveformStyle === 'ribbon' ? 3 : voiceWaveformStyle === 'neon' ? 2.4 : 2} strokeLinecap="round" style={voiceWaveformStyle === 'neon' ? { filter: 'drop-shadow(0 0 4px currentColor)' } : undefined} />
+            </svg>
+          )}
         </Box>
         <Typography variant="caption" sx={{ flexShrink: 0, fontWeight: 700, color: 'text.secondary' }}>{formatAudioDuration(effectiveDurationMs)}</Typography>
       </Box>

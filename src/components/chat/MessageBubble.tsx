@@ -31,7 +31,7 @@ import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import { api } from '../../services/api';
 import { speechTextFromMessage, usesManagedSpeechProfile } from '../../services/speech';
 import { synthesizeSpeechWithAdapter } from '../../services/aiGenerationAdapter';
-import { cacheSpeechPlayback, clearCachedSpeechPlayback, getCachedSpeechPlayback } from '../../services/speechPlaybackCache';
+import { cacheSpeechPlayback, clearCachedSpeechPlayback, getCachedSpeechPlayback, hydrateCachedSpeechPlayback } from '../../services/speechPlaybackCache';
 
 interface MessageBubbleProps {
   message: Message;
@@ -119,6 +119,13 @@ function waveformPath(amplitudes: number[], width: number, height: number) {
   return path;
 }
 
+function formatRemainingVoiceTime(seconds: number) {
+  const rounded = Math.max(0, Math.ceil(seconds));
+  const minutes = Math.floor(rounded / 60);
+  const remainingSeconds = rounded % 60;
+  return minutes > 0 ? `${minutes}′${String(remainingSeconds).padStart(2, '0')}″` : `${remainingSeconds}″`;
+}
+
 function getScrollableAncestor(target: EventTarget | null): HTMLElement | Window {
   if (!(target instanceof HTMLElement)) return window;
   let element: HTMLElement | null = target;
@@ -182,13 +189,24 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
   const voiceCacheKey = `message:${message.serverId || message.id}`;
   const [voiceUrl, setVoiceUrl] = useState<string | null>(() => getCachedSpeechPlayback(voiceCacheKey));
   const [voicePlaying, setVoicePlaying] = useState(false);
-  const [voiceGenerating, setVoiceGenerating] = useState(false);
+  const [voiceGenerationStage, setVoiceGenerationStage] = useState<'synthesizing' | 'preparing' | null>(null);
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const voiceAudioRef = useRef<HTMLAudioElement | null>(null);
   const voiceProgressLineRef = useRef<HTMLDivElement | null>(null);
+  const voiceRemainingTimeRef = useRef<HTMLSpanElement | null>(null);
+  const voiceTrackRef = useRef<HTMLDivElement | null>(null);
+  const voiceSeekingRef = useRef(false);
   const autoPlayVoiceRef = useRef(false);
   const [voiceBars, setVoiceBars] = useState<number[]>([]);
   const voiceWaveformPath = useMemo(() => waveformPath(voiceBars, 260, 38), [voiceBars]);
+  useEffect(() => {
+    if (voiceUrl) return;
+    let cancelled = false;
+    void hydrateCachedSpeechPlayback(voiceCacheKey).then((url) => {
+      if (!cancelled && url) setVoiceUrl(url);
+    });
+    return () => { cancelled = true; };
+  }, [voiceCacheKey, voiceUrl]);
   useEffect(() => {
     if (!voiceUrl) return;
     let cancelled = false;
@@ -249,7 +267,10 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
     const updateProgress = () => {
       const audio = voiceAudioRef.current;
       if (audio?.duration && voiceProgressLineRef.current) {
-        voiceProgressLineRef.current.style.left = `${Math.max(0, Math.min(1, audio.currentTime / audio.duration)) * 100}%`;
+        const progress = Math.max(0, Math.min(1, audio.currentTime / audio.duration));
+        voiceProgressLineRef.current.style.left = `${progress * 100}%`;
+        voiceTrackRef.current?.setAttribute('aria-valuenow', String(Math.round(progress * 100)));
+        if (voiceRemainingTimeRef.current) voiceRemainingTimeRef.current.textContent = formatRemainingVoiceTime(audio.duration - audio.currentTime);
       }
       frameId = window.requestAnimationFrame(updateProgress);
     };
@@ -267,7 +288,7 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
     if (!canPlayVoice) return;
     if (!voiceUrl) {
       autoPlayVoiceRef.current = true;
-      setVoiceGenerating(true);
+      setVoiceGenerationStage('synthesizing');
       try {
         setVoiceError(null);
         const speechText = speechTextFromMessage(message.content);
@@ -283,19 +304,22 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
             speed: character?.voiceConfig?.rate ? Number.parseFloat(character.voiceConfig.rate) || undefined : undefined,
             pitch: character?.voiceConfig?.pitch ? Number.parseFloat(character.voiceConfig.pitch) || undefined : undefined,
           });
+          setVoiceGenerationStage('preparing');
           const audioResponse = await fetch(result.audioDataUrl);
           if (!audioResponse.ok) throw new Error('语音缓存创建失败');
-          const url = cacheSpeechPlayback(voiceCacheKey, URL.createObjectURL(await audioResponse.blob()));
+          const audioBlob = await audioResponse.blob();
+          const url = cacheSpeechPlayback(voiceCacheKey, URL.createObjectURL(audioBlob), audioBlob.size, audioBlob);
           setVoiceUrl(url);
         } else if (ttsModel) {
           const result = await synthesizeSpeechWithAdapter({ profile: ttsModel, input: speechText, voice: character?.voiceConfig?.voiceName, format: 'mp3', intent: 'chat-audio' });
-          const url = cacheSpeechPlayback(voiceCacheKey, result.objectUrl);
+          setVoiceGenerationStage('preparing');
+          const url = cacheSpeechPlayback(voiceCacheKey, result.objectUrl, result.blob.size, result.blob);
           setVoiceUrl(url);
         }
       } catch (error) {
         setVoiceError(error instanceof Error ? error.message : '语音播放失败');
       } finally {
-        setVoiceGenerating(false);
+        setVoiceGenerationStage(null);
       }
       return;
     }
@@ -313,17 +337,38 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
   };
   const voiceWaveformStyle = chatAppearance.voiceWaveformStyle || 'wave';
   const visibleVoiceBars = voiceBars.length ? voiceBars.map((sample) => 20 + sample * 80) : Array.from({ length: 36 }, () => 28);
+  const seekVoice = (clientX: number) => {
+    const audio = voiceAudioRef.current;
+    const track = voiceTrackRef.current;
+    if (!audio || !audio.duration || !track) return;
+    const rect = track.getBoundingClientRect();
+    const progress = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    audio.currentTime = progress * audio.duration;
+    if (voiceProgressLineRef.current) voiceProgressLineRef.current.style.left = `${progress * 100}%`;
+    voiceTrackRef.current?.setAttribute('aria-valuenow', String(Math.round(progress * 100)));
+    if (voiceRemainingTimeRef.current) voiceRemainingTimeRef.current.textContent = formatRemainingVoiceTime(audio.duration - audio.currentTime);
+  };
   const voiceBar = voiceUrl ? (
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.65, width: 'min(320px, 100%)', px: 0.9, py: 0.55, borderRadius: 2.5, bgcolor: 'action.hover', border: '1px solid', borderColor: 'divider' }}>
+    <Box sx={(theme) => ({
+      '--voice-accent': theme.palette.primary.main,
+      '--voice-secondary': theme.palette.secondary.main,
+      '--voice-muted': theme.palette.mode === 'dark' ? 'rgba(255,255,255,.24)' : 'rgba(15,23,42,.18)',
+      display: 'flex', alignItems: 'center', gap: 0.65, width: 'min(320px, 100%)', px: 0.9, py: 0.55, borderRadius: 2.5, bgcolor: 'action.hover', border: '1px solid', borderColor: 'divider',
+    })}>
       <audio
         ref={voiceAudioRef}
         src={voiceUrl}
         preload="metadata"
         onPlay={() => setVoicePlaying(true)}
         onPause={() => setVoicePlaying(false)}
+        onLoadedMetadata={(event) => {
+          if (voiceRemainingTimeRef.current) voiceRemainingTimeRef.current.textContent = formatRemainingVoiceTime(event.currentTarget.duration || 0);
+        }}
         onEnded={() => {
           setVoicePlaying(false);
           if (voiceProgressLineRef.current) voiceProgressLineRef.current.style.left = '0%';
+          voiceTrackRef.current?.setAttribute('aria-valuenow', '0');
+          if (voiceRemainingTimeRef.current) voiceRemainingTimeRef.current.textContent = formatRemainingVoiceTime(event.currentTarget.duration || 0);
         }}
         onError={() => {
           clearVoiceCache();
@@ -334,36 +379,70 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
       <IconButton size="small" onClick={() => void toggleVoice()} aria-label={voicePlaying ? '暂停语音' : '播放语音'}>
         {voicePlaying ? <PauseIcon fontSize="small" /> : <PlayArrowIcon fontSize="small" />}
       </IconButton>
-      <Box sx={{ position: 'relative', flex: 1, height: 30, cursor: 'pointer' }} onClick={(event) => {
-        const audio = voiceAudioRef.current;
-        if (!audio || !audio.duration) return;
-        const rect = event.currentTarget.getBoundingClientRect();
-        const progress = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
-        audio.currentTime = progress * audio.duration;
-        if (voiceProgressLineRef.current) voiceProgressLineRef.current.style.left = `${progress * 100}%`;
-      }}>
-        {voiceWaveformStyle === 'blocks' ? (
+      <Box
+        ref={voiceTrackRef}
+        role="slider"
+        tabIndex={0}
+        aria-label="语音播放进度"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={0}
+        sx={{ position: 'relative', flex: 1, height: 30, cursor: 'pointer', touchAction: 'none', outline: 'none', '&:focus-visible': { borderRadius: 1, boxShadow: '0 0 0 2px rgba(255,112,67,.48)' } }}
+        onPointerDown={(event) => {
+          voiceSeekingRef.current = true;
+          event.currentTarget.setPointerCapture(event.pointerId);
+          seekVoice(event.clientX);
+        }}
+        onPointerMove={(event) => { if (voiceSeekingRef.current) seekVoice(event.clientX); }}
+        onPointerUp={(event) => {
+          voiceSeekingRef.current = false;
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+          seekVoice(event.clientX);
+        }}
+        onPointerCancel={() => { voiceSeekingRef.current = false; }}
+        onKeyDown={(event) => {
+          const audio = voiceAudioRef.current;
+          if (!audio?.duration) return;
+          const stepSeconds = event.shiftKey ? 10 : 5;
+          if (event.key === 'ArrowLeft') { event.preventDefault(); audio.currentTime = Math.max(0, audio.currentTime - stepSeconds); }
+          else if (event.key === 'ArrowRight') { event.preventDefault(); audio.currentTime = Math.min(audio.duration, audio.currentTime + stepSeconds); }
+          else if (event.key === 'Home') { event.preventDefault(); audio.currentTime = 0; }
+          else if (event.key === 'End') { event.preventDefault(); audio.currentTime = audio.duration; }
+          else return;
+          if (voiceProgressLineRef.current) voiceProgressLineRef.current.style.left = `${(audio.currentTime / audio.duration) * 100}%`;
+          if (voiceRemainingTimeRef.current) voiceRemainingTimeRef.current.textContent = formatRemainingVoiceTime(audio.duration - audio.currentTime);
+        }}
+      >
+        {voiceWaveformStyle === 'blocks' || voiceWaveformStyle === 'pulse' ? (
           <Box aria-hidden="true" sx={{ height: '100%', display: 'flex', alignItems: 'center', gap: '3px', overflow: 'hidden' }}>
-            {visibleVoiceBars.map((peak, index) => <Box key={index} sx={{ flex: 1, minWidth: 2, height: `${Math.max(26, peak)}%`, borderRadius: 1, bgcolor: 'rgba(255,112,67,.82)' }} />)}
+            {visibleVoiceBars.map((peak, index) => <Box key={index} sx={{ flex: 1, minWidth: 2, height: `${Math.max(voiceWaveformStyle === 'pulse' ? 18 : 26, peak)}%`, borderRadius: 99, bgcolor: 'var(--voice-accent)', opacity: voiceWaveformStyle === 'pulse' ? 0.42 + (peak / 100) * 0.58 : 0.82, transformOrigin: 'center', animation: voiceWaveformStyle === 'pulse' && voicePlaying ? `voicePulse ${0.78 + (index % 5) * 0.11}s ease-in-out ${-(index % 4) * 0.12}s infinite alternate` : 'none', '@keyframes voicePulse': { from: { transform: 'scaleY(.72)' }, to: { transform: 'scaleY(1.08)' } }, '@media (prefers-reduced-motion: reduce)': { animation: 'none' } }} />)}
           </Box>
         ) : voiceWaveformStyle === 'spectrum' ? (
           <Box aria-hidden="true" sx={{ height: '100%', display: 'flex', alignItems: 'center', gap: '2px', overflow: 'hidden' }}>
-            {visibleVoiceBars.map((peak, index) => <Box key={index} sx={{ flex: 1, minWidth: 2, height: `${Math.max(24, peak)}%`, borderRadius: 1, background: `linear-gradient(180deg, hsl(${(index * 13 + 300) % 360} 92% 68%), hsl(${(index * 13 + 340) % 360} 86% 54%))`, boxShadow: '0 0 6px rgba(236,72,153,.34)' }} />)}
+            {visibleVoiceBars.map((peak, index) => <Box key={index} sx={{ flex: 1, minWidth: 2, height: `${Math.max(24, peak)}%`, borderRadius: 1, background: 'linear-gradient(180deg, var(--voice-secondary), var(--voice-accent))', opacity: 0.44 + (index % 5) * 0.11, boxShadow: '0 0 6px color-mix(in srgb, var(--voice-secondary) 55%, transparent)' }} />)}
+          </Box>
+        ) : voiceWaveformStyle === 'orbit' ? (
+          <Box aria-hidden="true" sx={{ height: '100%', position: 'relative', overflow: 'hidden' }}>
+            {visibleVoiceBars.filter((_, index) => index % 5 === 0).map((peak, index) => <Box key={index} sx={{ position: 'absolute', left: `${index * 7.15}%`, top: `${50 - peak * 0.25}%`, width: 4 + peak * 0.03, height: 4 + peak * 0.03, borderRadius: '50%', bgcolor: index % 2 ? 'var(--voice-secondary)' : 'var(--voice-accent)', opacity: 0.46 + peak / 190, boxShadow: '0 0 8px color-mix(in srgb, var(--voice-accent) 65%, transparent)', animation: voicePlaying ? `voiceOrbit ${1.1 + (index % 4) * 0.2}s ease-in-out ${-index * 0.13}s infinite alternate` : 'none', '@keyframes voiceOrbit': { from: { transform: 'translateY(-4px) scale(.84)' }, to: { transform: 'translateY(4px) scale(1.12)' } }, '@media (prefers-reduced-motion: reduce)': { animation: 'none' } }} />)}
+            <Box sx={{ position: 'absolute', left: 0, right: 0, top: '50%', borderTop: '1px dashed var(--voice-muted)', opacity: 0.5 }} />
           </Box>
         ) : (
           <svg viewBox="0 0 260 38" preserveAspectRatio="none" aria-hidden="true" style={{ width: '100%', height: '100%', display: 'block', overflow: 'visible' }}>
-            {voiceWaveformPath ? <path d={voiceWaveformPath} fill="none" stroke={voiceWaveformStyle === 'neon' ? '#b794f4' : 'rgba(255,112,67,.9)'} strokeWidth={voiceWaveformStyle === 'neon' ? '2.1' : '2'} strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" style={voiceWaveformStyle === 'neon' ? { filter: 'drop-shadow(0 0 4px rgba(183,148,244,.95)) drop-shadow(0 0 9px rgba(99,102,241,.55))' } : undefined} /> : null}
+            <defs><linearGradient id={`voice-ribbon-${message.id}`} x1="0" y1="0" x2="1" y2="0"><stop stopColor="var(--voice-accent)" /><stop offset="1" stopColor="var(--voice-secondary)" /></linearGradient></defs>
+            {voiceWaveformPath ? <path d={voiceWaveformPath} fill="none" stroke={voiceWaveformStyle === 'ribbon' ? `url(#voice-ribbon-${message.id})` : voiceWaveformStyle === 'neon' ? 'var(--voice-secondary)' : 'var(--voice-accent)'} strokeWidth={voiceWaveformStyle === 'ribbon' ? '3.2' : voiceWaveformStyle === 'neon' ? '2.1' : '2'} strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" style={voiceWaveformStyle === 'neon' ? { filter: 'drop-shadow(0 0 4px color-mix(in srgb, var(--voice-secondary) 90%, transparent)) drop-shadow(0 0 9px color-mix(in srgb, var(--voice-accent) 62%, transparent))' } : undefined} /> : null}
           </svg>
         )}
-        <Box ref={voiceProgressLineRef} sx={{ position: 'absolute', top: -3, bottom: -3, left: '0%', width: 2, borderRadius: 2, bgcolor: 'primary.main', boxShadow: '0 0 8px rgba(255,112,67,.62)', transform: 'translateX(-1px)', pointerEvents: 'none', willChange: 'left' }} />
+        <Box ref={voiceProgressLineRef} sx={{ position: 'absolute', top: -3, bottom: -3, left: '0%', width: 2, borderRadius: 2, bgcolor: 'var(--voice-accent)', boxShadow: '0 0 8px color-mix(in srgb, var(--voice-accent) 66%, transparent)', transform: 'translateX(-1px)', pointerEvents: 'none', willChange: 'left' }} />
       </Box>
-      <VolumeUpIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+      <Typography ref={voiceRemainingTimeRef} component="span" variant="caption" aria-label="剩余播放时长" sx={{ minWidth: 30, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'text.secondary', fontWeight: 650 }}>
+        --″
+      </Typography>
     </Box>
   ) : null;
-  const voiceGeneratingIndicator = voiceGenerating ? (
+  const voiceGeneratingIndicator = voiceGenerationStage ? (
     <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', width: 'fit-content', px: 1, py: 0.55, borderRadius: 2, bgcolor: 'action.hover' }}>
       <CircularProgress size={14} />
-      <Typography variant="caption" color="text.secondary">正在合成语音…</Typography>
+      <Typography variant="caption" color="text.secondary">{voiceGenerationStage === 'synthesizing' ? '正在请求语音合成…' : '正在准备播放…'}</Typography>
     </Stack>
   ) : null;
   const [revisionEditorOpen, setRevisionEditorOpen] = useState(false);
@@ -826,9 +905,9 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
           </MenuItem>
         ) : null}
         {canPlayVoice ? (
-          <MenuItem onClick={() => { closeMenus(); void toggleVoice(); }} disabled={voiceGenerating}>
-            <ListItemIcon sx={{ minWidth: 32 }}>{voiceGenerating ? <CircularProgress size={18} /> : <VolumeUpIcon fontSize="small" />}</ListItemIcon>
-            {voiceGenerating ? '生成语音中…' : '播放语音'}
+          <MenuItem onClick={() => { closeMenus(); void toggleVoice(); }} disabled={Boolean(voiceGenerationStage)}>
+            <ListItemIcon sx={{ minWidth: 32 }}>{voiceGenerationStage ? <CircularProgress size={18} /> : <VolumeUpIcon fontSize="small" />}</ListItemIcon>
+            {voiceGenerationStage ? '生成语音中…' : '播放语音'}
           </MenuItem>
         ) : null}
         {voiceUrl ? (

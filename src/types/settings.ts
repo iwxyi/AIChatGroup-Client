@@ -889,7 +889,7 @@ export interface UsageStats {
 export interface ChatAppearanceSettings {
   maxContentWidth: number;
   maxContentWidthUnlimited: boolean;
-  voiceWaveformStyle: 'wave' | 'blocks' | 'neon' | 'spectrum';
+  voiceWaveformStyle: 'wave' | 'blocks' | 'neon' | 'spectrum' | 'pulse' | 'orbit' | 'ribbon';
   storyReader: {
     fontFamily: 'default' | 'serif' | 'sans';
     fontSize: number;

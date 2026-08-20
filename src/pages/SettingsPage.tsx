@@ -53,8 +53,7 @@ import { buildFloatingTabContainerSx } from '../components/common/FloatingSegmen
 import AnimatedTabContent from '../components/common/AnimatedTabContent';
 import { resolveTabTransitionDirection } from '../components/common/tabTransition';
 import { PAPER_SURFACE_VARIANTS, type PaperSurfaceVariant } from '../types/artifactAppearance';
-import type { AppSettingsWithMemory } from '../types/settings';
-import type { CompanionshipRitualKind } from '../types/settings';
+import type { AppSettingsWithMemory, ChatAppearanceSettings, CompanionshipRitualKind } from '../types/settings';
 import { migrateLegacyBrandStorageKeys } from '../constants/brand';
 import BubbleStylePickerDialog from '../components/bubble/BubbleStylePickerDialog';
 import { DefaultUserAvatarIcon } from '../components/common/IdentityIcons';
@@ -226,8 +225,8 @@ function buildThemeMiniPreviewSx(preset: AppThemePreset) {
 function buildPaperPickerSx() {
   return {
     display: 'grid',
-    gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', md: 'repeat(4, minmax(0, 1fr))' },
-    gap: 1,
+    gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', sm: 'repeat(4, minmax(0, 1fr))' },
+    gap: 0.6,
     alignItems: 'stretch',
   };
 }
@@ -235,19 +234,66 @@ function buildPaperPickerSx() {
 function buildPaperToggleSx() {
   return {
     display: 'grid',
-    gap: 0.75,
+    gap: 0.45,
     justifyItems: 'stretch',
     alignContent: 'start',
-    minHeight: 128,
-    px: 1,
-    py: 1,
-    borderRadius: 2,
+    minHeight: 94,
+    px: 0.7,
+    py: 0.65,
+    borderRadius: '10px !important',
     textTransform: 'none',
     whiteSpace: 'normal',
+    '&:first-of-type, &:last-of-type': {
+      borderRadius: '10px !important',
+    },
     '&.Mui-selected': {
       boxShadow: '0 0 0 1px rgba(103, 80, 164, 0.45)',
     },
   };
+}
+
+type VoiceWaveformStyle = ChatAppearanceSettings['voiceWaveformStyle'];
+
+const VOICE_STYLE_OPTIONS: Array<{ value: VoiceWaveformStyle; zh: string; en: string }> = [
+  { value: 'wave', zh: '流畅波形', en: 'Wave' },
+  { value: 'blocks', zh: '方块节拍', en: 'Blocks' },
+  { value: 'neon', zh: '主题霓虹', en: 'Neon' },
+  { value: 'spectrum', zh: '渐变频谱', en: 'Spectrum' },
+  { value: 'pulse', zh: '呼吸脉冲', en: 'Pulse' },
+  { value: 'orbit', zh: '轨道粒子', en: 'Orbit' },
+  { value: 'ribbon', zh: '丝带曲线', en: 'Ribbon' },
+];
+
+function VoiceStylePreview({ style }: { style: VoiceWaveformStyle }) {
+  const bars = Array.from({ length: 12 }, (_, index) => 7 + ((index * 11 + 5) % 13));
+  return (
+    <Box className="voice-style-preview" aria-hidden="true" sx={(theme) => ({
+      '--voice-preview-primary': theme.palette.primary.main,
+      '--voice-preview-secondary': theme.palette.secondary.main,
+      height: 20,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 0.35,
+      overflow: 'hidden',
+      '@keyframes voicePreviewPulse': { from: { transform: 'scaleY(.58)' }, to: { transform: 'scaleY(1.05)' } },
+      '@keyframes voicePreviewFloat': { from: { transform: 'translateY(-3px) scale(.82)' }, to: { transform: 'translateY(3px) scale(1.08)' } },
+      '@keyframes voicePreviewSweep': { from: { strokeDashoffset: 28 }, to: { strokeDashoffset: 0 } },
+      '.MuiToggleButton-root:hover &, .Mui-selected &': { '& .voice-preview-motion': { animationPlayState: 'running' } },
+      '@media (prefers-reduced-motion: reduce)': { '& .voice-preview-motion': { animation: 'none !important' } },
+    })}>
+      {style === 'wave' || style === 'neon' || style === 'ribbon' ? (
+        <svg viewBox="0 0 72 18" style={{ width: 72, height: 18, overflow: 'visible' }}>
+          <defs><linearGradient id={`preview-${style}`} x1="0" y1="0" x2="1" y2="0"><stop stopColor="var(--voice-preview-primary)" /><stop offset="1" stopColor="var(--voice-preview-secondary)" /></linearGradient></defs>
+          <path className="voice-preview-motion" d="M1 12 C8 12 9 3 16 5 S26 15 33 9 S43 2 50 6 S61 14 71 7" fill="none" stroke={style === 'ribbon' ? `url(#preview-${style})` : style === 'neon' ? 'var(--voice-preview-secondary)' : 'var(--voice-preview-primary)'} strokeWidth={style === 'ribbon' ? '3' : '2'} strokeLinecap="round" strokeDasharray={style === 'neon' ? '5 2' : undefined} style={{ filter: style === 'neon' ? 'drop-shadow(0 0 3px var(--voice-preview-secondary))' : undefined, animation: style === 'neon' ? 'voicePreviewSweep 1.1s linear infinite paused' : undefined }} />
+        </svg>
+      ) : style === 'orbit' ? (
+        <Box sx={{ width: 72, height: 18, position: 'relative', borderTop: '1px dashed', borderColor: 'divider' }}>
+          {bars.filter((_, index) => index % 2 === 0).map((height, index) => <Box key={index} className="voice-preview-motion" sx={{ position: 'absolute', left: `${index * 18}%`, top: 7, width: 4, height: 4, borderRadius: '50%', bgcolor: index % 2 ? 'var(--voice-preview-secondary)' : 'var(--voice-preview-primary)', animation: `voicePreviewFloat ${0.75 + index * 0.1}s ease-in-out ${-index * 0.12}s infinite alternate paused` }} />)}
+        </Box>
+      ) : bars.map((height, index) => <Box key={index} className="voice-preview-motion" sx={{ width: 3.5, height, borderRadius: 99, background: style === 'spectrum' ? 'linear-gradient(180deg, var(--voice-preview-secondary), var(--voice-preview-primary))' : 'var(--voice-preview-primary)', opacity: style === 'spectrum' ? 0.45 + (index % 4) * 0.14 : 0.82, transformOrigin: 'center', animation: style === 'pulse' ? `voicePreviewPulse ${0.7 + (index % 4) * 0.12}s ease-in-out ${-index * 0.08}s infinite alternate paused` : undefined }} />)}
+    </Box>
+  );
 }
 
 function buildActionGridSx() {
@@ -1270,10 +1316,10 @@ function getPaperVariantLabel(variant: PaperSurfaceVariant, language: string) {
 function buildPaperPreviewSx(variant: PaperSurfaceVariant) {
   const shared = {
     width: '100%',
-    aspectRatio: '1.45 / 1',
-    minHeight: 74,
-    maxHeight: 112,
-    borderRadius: 1.25,
+    aspectRatio: '0.72 / 1',
+    minHeight: 82,
+    maxHeight: 118,
+    borderRadius: 1,
     overflow: 'hidden',
     position: 'relative',
     border: '1px solid',
@@ -2179,10 +2225,14 @@ export default function SettingsPage() {
               ) : null}
             </Box>
             <Box>
-              <Typography variant="body2" sx={{ fontWeight: 500 }} gutterBottom>{t('settings.language')}</Typography>
-              <ToggleButtonGroup value={settings.language} exclusive onChange={(_, v) => v && handleLanguageChange(v)} size="small" sx={buildToggleGroupSx()}>
-                <ToggleButton value="zh">中文</ToggleButton>
-                <ToggleButton value="en">English</ToggleButton>
+              <Typography variant="body2" sx={{ fontWeight: 500 }} gutterBottom>{i18n.language.startsWith('zh') ? '语音条样式' : 'Voice bar style'}</Typography>
+              <ToggleButtonGroup value={settings.chatAppearance.voiceWaveformStyle} exclusive onChange={(_, value) => value && settings.setChatAppearance({ voiceWaveformStyle: value as VoiceWaveformStyle })} size="small" sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', sm: 'repeat(4, minmax(0, 1fr))' }, gap: 0.55, width: '100%' }}>
+                {VOICE_STYLE_OPTIONS.map((option) => (
+                  <ToggleButton key={option.value} value={option.value} sx={{ display: 'grid', gap: 0.25, px: 0.65, py: 0.5, minWidth: 0, minHeight: 50, borderRadius: 1.5, textTransform: 'none', whiteSpace: 'normal', '&.Mui-selected': { boxShadow: '0 0 0 1px color-mix(in srgb, var(--mui-palette-primary-main) 45%, transparent)' } }}>
+                    <VoiceStylePreview style={option.value} />
+                    <Typography variant="caption" sx={{ fontWeight: 650, lineHeight: 1.1 }}>{i18n.language.startsWith('zh') ? option.zh : option.en}</Typography>
+                  </ToggleButton>
+                ))}
               </ToggleButtonGroup>
             </Box>
             <Box>
@@ -2197,23 +2247,10 @@ export default function SettingsPage() {
               </ToggleButtonGroup>
             </Box>
             <Box>
-              <Typography variant="body2" sx={{ fontWeight: 500 }} gutterBottom>{i18n.language.startsWith('zh') ? '语音条样式' : 'Voice bar style'}</Typography>
-              <ToggleButtonGroup value={settings.chatAppearance.voiceWaveformStyle} exclusive onChange={(_, value) => value && settings.setChatAppearance({ voiceWaveformStyle: value })} size="small" sx={buildToggleGroupSx()}>
-                {[
-                  { value: 'wave', label: i18n.language.startsWith('zh') ? '流畅波形' : 'Wave' },
-                  { value: 'blocks', label: i18n.language.startsWith('zh') ? '方块节拍' : 'Blocks' },
-                  { value: 'neon', label: i18n.language.startsWith('zh') ? '霓虹光线' : 'Neon' },
-                  { value: 'spectrum', label: i18n.language.startsWith('zh') ? '彩色频谱' : 'Spectrum' },
-                ].map((option) => (
-                  <ToggleButton key={option.value} value={option.value} sx={{ display: 'grid', gap: 0.45, px: 1.1, py: 0.7, minWidth: 88 }}>
-                    <Box aria-hidden="true" sx={{ height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.25, overflow: 'hidden' }}>
-                      {option.value === 'wave' || option.value === 'neon' ? (
-                        <svg viewBox="0 0 72 18" style={{ width: 68, height: 18, overflow: 'visible' }}><path d="M1 12 C8 12 9 3 16 5 S26 15 33 9 S43 2 50 6 S61 14 71 7" fill="none" stroke={option.value === 'neon' ? '#9c6ade' : '#ff7043'} strokeWidth="2" strokeLinecap="round" style={option.value === 'neon' ? { filter: 'drop-shadow(0 0 3px rgba(156,106,222,.9))' } : undefined} /></svg>
-                      ) : Array.from({ length: 12 }, (_, index) => <Box key={index} sx={{ width: 3, height: `${6 + ((index * 7) % 12)}px`, borderRadius: 1, background: option.value === 'spectrum' ? `hsl(${300 + index * 14} 88% 62%)` : '#ff7043' }} />)}
-                    </Box>
-                    <Typography variant="caption" sx={{ fontWeight: 650, lineHeight: 1.1 }}>{option.label}</Typography>
-                  </ToggleButton>
-                ))}
+              <Typography variant="body2" sx={{ fontWeight: 500 }} gutterBottom>{t('settings.language')}</Typography>
+              <ToggleButtonGroup value={settings.language} exclusive onChange={(_, v) => v && handleLanguageChange(v)} size="small" sx={buildToggleGroupSx()}>
+                <ToggleButton value="zh">中文</ToggleButton>
+                <ToggleButton value="en">English</ToggleButton>
               </ToggleButtonGroup>
             </Box>
           </Box>
@@ -2227,8 +2264,14 @@ export default function SettingsPage() {
               <Button startIcon={<BackupIcon />} variant="outlined" onClick={handleBackup}>{t('settings.backup')}</Button>
               <Button startIcon={<RestoreIcon />} variant="outlined" onClick={handleRestore}>{t('settings.restore')}</Button>
               <Button variant="outlined" onClick={() => navigate('/settings/recycle-bin')}>{i18n.language.startsWith('zh') ? '回收站' : 'Recycle Bin'}</Button>
+              <Button variant="outlined" startIcon={<DeleteOutlineOutlinedIcon />} onClick={clearAllCachedSpeechPlayback}>
+                {i18n.language.startsWith('zh') ? '清除语音缓存' : 'Clear speech cache'}
+              </Button>
               <Button startIcon={<ClearIcon />} variant="outlined" color="error" onClick={() => setClearConfirm(true)}>{t('settings.clearAll')}</Button>
             </Box>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+              {i18n.language.startsWith('zh') ? '语音缓存仅是手动播放生成的临时文件，最长保留 7 天、最多占用 160MB；不会影响聊天中的正式语音和图片附件。' : 'Speech playback cache is temporary, kept for up to 7 days and 160 MB; formal chat audio and image attachments are not affected.'}
+            </Typography>
           </Box>
         </SurfaceCard>
 
@@ -2287,18 +2330,6 @@ export default function SettingsPage() {
                 label={i18n.language.startsWith('zh') ? '默认显示语音文字' : 'Show voice transcript by default'}
               />
             </Box>
-          </Box>
-        </SurfaceCard>
-
-        <SurfaceCard id="settings-card-voice-cache" contentSx={buildCardBodySx()}>
-          <Box sx={buildSectionBodySx()}>
-            <SectionHeader title={i18n.language.startsWith('zh') ? '语音播放缓存' : 'Speech playback cache'} />
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-              {i18n.language.startsWith('zh') ? '手动播放 AI 文本时生成的临时语音仅保留在本设备内存中，7 天后自动清理。不会影响聊天中的正式图片或语音附件。' : 'Temporary speech generated by manual playback stays in this device memory for 7 days. It never affects formal chat media attachments.'}
-            </Typography>
-            <Button variant="outlined" startIcon={<DeleteOutlineOutlinedIcon />} onClick={clearAllCachedSpeechPlayback}>
-              {i18n.language.startsWith('zh') ? '清除全部语音缓存' : 'Clear speech cache'}
-            </Button>
           </Box>
         </SurfaceCard>
 
