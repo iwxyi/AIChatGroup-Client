@@ -22,6 +22,27 @@ function findGenerationProfile(profiles: AIModelProfile[], type: 'image' | 'audi
   return isAIProfileUsable(profile) ? profile : null;
 }
 
+/**
+ * Derive a per-message delivery mood for formal AI audio attachments.
+ * The character's voice id never changes; this is only a transient expression
+ * overlay. Manual playback intentionally does not call this helper.
+ */
+function deriveActiveVoiceEmotion(character: AICharacter | null | undefined, text: string) {
+  const state = character?.emotionalState;
+  if (!state) return undefined;
+  const scores: Array<{ score: number; label: string }> = [
+    { score: state.irritation, label: '紧绷、略带不耐烦' },
+    { score: state.excitement, label: '兴奋、明亮、有活力' },
+    { score: state.affection, label: '温柔、亲近、带关怀' },
+    { score: state.embarrassment, label: '害羞、轻微犹豫' },
+    { score: state.insecurity, label: '谨慎、略带不安' },
+  ].sort((a, b) => b.score - a.score);
+  const strongest = scores[0];
+  if (!strongest || strongest.score < 35) return undefined;
+  const punctuation = /[!?！？]/.test(text) ? '语气随标点自然加强，不要夸张表演。' : '保持自然口语停连。';
+  return `${strongest.label}；${punctuation}`;
+}
+
 async function blobToDataUrl(blob: Blob) {
   return await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -434,7 +455,9 @@ async function runRichMediaQueueEntry(entry: RichMediaQueueEntry) {
     const speechText = attachment.promptText || workingMessage.content;
     const localOnly = isLocalOnlyMediaMode();
     const voiceStyle = [entry.character?.voiceConfig?.style, entry.character?.voiceConfig?.instructions].filter(Boolean).join('；') || undefined;
-    const voiceEmotion = entry.character?.voiceConfig?.emotion;
+    const baseVoiceEmotion = entry.character?.voiceConfig?.emotion;
+    const activeVoiceEmotion = deriveActiveVoiceEmotion(entry.character, speechText);
+    const voiceEmotion = [baseVoiceEmotion, activeVoiceEmotion].filter(Boolean).join('；') || undefined;
     const usesManagedSpeech = profile.provider === 'official' || profile.provider.startsWith('managed:');
     const speechResult = !localOnly && usesManagedSpeech
       ? await synthesizeSpeech({
