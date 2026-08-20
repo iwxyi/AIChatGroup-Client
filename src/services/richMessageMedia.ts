@@ -6,7 +6,7 @@ import { generateImageWithAdapter, synthesizeSpeechWithAdapter } from './aiGener
 import { storageKey } from '../constants/brand';
 import { reportRecoverableError } from './diagnostics';
 import { isCloudSyncEnabled } from './cloudSyncPreference';
-import { synthesizeSpeech } from './speech';
+import { synthesizeSpeech, usesManagedSpeechProfile } from './speech';
 
 function findProfile(profiles: AIModelProfile[], id?: string | null) {
   const profile = id ? profiles.find((item) => item.id === id) : null;
@@ -468,7 +468,7 @@ async function runRichMediaQueueEntry(entry: RichMediaQueueEntry) {
     const localOnly = isLocalOnlyMediaMode();
     const voiceStyle = [entry.character?.voiceConfig?.style, entry.character?.voiceConfig?.instructions].filter(Boolean).join('；') || undefined;
     const voiceEmotion = deriveActiveVoiceEmotion(entry.character, speechText, entry.messages || [], workingMessage.id);
-    const usesManagedSpeech = profile.provider === 'official' || profile.provider.startsWith('managed:');
+    const usesManagedSpeech = usesManagedSpeechProfile(profile);
     const speechResult = !localOnly && usesManagedSpeech
       ? await synthesizeSpeech({
           providerCode: profile.provider.startsWith('managed:') ? profile.provider.slice('managed:'.length) : undefined,

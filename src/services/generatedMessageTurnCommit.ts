@@ -3,17 +3,8 @@ import type { DriverMessageCommitResult, GroupChat } from '../types/chat';
 import type { Message } from '../types/message';
 import type { APIConfig, AIModelProfile } from '../types/settings';
 import type { GeneratedRoundMessage } from './chatEngine';
-import { persistStreamingMessage } from './chatCommitMessage';
-import { buildGeneratedTurnContent, splitGeneratedRoundMessage } from './generatedMessageSegmenter';
-import { runPersistedSessionCommitRuntime, runSessionCommitPipeline, type SessionCommitPipelineResult } from './sessionCommitPipeline';
-import { useSettingsStore } from '../stores/useSettingsStore';
-
-function resolveTurnBaseTimestamp(message: GeneratedRoundMessage) {
-  const metadata = message.metadata as Record<string, unknown> | undefined;
-  const candidate = metadata?.generatedAt;
-  if (typeof candidate === 'number' && Number.isFinite(candidate)) return Math.round(candidate);
-  return Date.now();
-}
+import { splitGeneratedRoundMessage } from './generatedMessageSegmenter';
+import { runSessionCommitPipeline, type SessionCommitPipelineResult } from './sessionCommitPipeline';
 
 export async function commitGeneratedMessageTurn(params: {
   api: APIConfig;
@@ -48,58 +39,6 @@ export async function commitGeneratedMessageTurn(params: {
   let workingCharacters = params.characters;
   let workingMessages = [...params.currentMessages];
   const results: SessionCommitPipelineResult[] = [];
-
-  if (segments.length > 1) {
-    const baseTimestamp = resolveTurnBaseTimestamp(params.message);
-    const persistedSegments: Message[] = [];
-    for (let index = 0; index < segments.length; index += 1) {
-      const persisted = await persistStreamingMessage({
-        message: segments[index],
-        upsertMessage: params.upsertMessage,
-        existingLocalMessage: index === 0 && params.streamingMessage
-          ? { ...params.streamingMessage, content: segments[index].content }
-          : null,
-        timestamp: index === 0 ? undefined : baseTimestamp + index,
-        localReveal: index > 0 || (
-          index === 0
-          && Boolean(params.streamingMessage)
-          && !params.streamingMessage?.content.trim()
-          && useSettingsStore.getState().enableStreamingDisplayAnimation
-        ),
-      });
-      persistedSegments.push(persisted);
-    }
-    const runtimeMessage: Message = {
-      ...persistedSegments[0],
-      content: buildGeneratedTurnContent(params.message),
-      metadata: params.message.metadata,
-      emotion: params.message.emotion,
-      isDeleted: false,
-      isStreaming: false,
-    };
-    const result = await runPersistedSessionCommitRuntime({
-      api: params.api,
-      chatId: params.chatId,
-      chat: params.chat,
-      characters: params.characters,
-      message: runtimeMessage,
-      currentMessages: params.currentMessages,
-      onCommit: params.onCommit,
-      updateCharacter: params.updateCharacter,
-      updateCharacters: params.updateCharacters,
-      appendEventMessage: params.appendEventMessage,
-      appendEventMessages: params.appendEventMessages,
-      updateChat: params.updateChat,
-      applyChatRuntimeDelta: params.applyChatRuntimeDelta,
-      recordSpeak: params.recordSpeak,
-      getCurrentChat: params.getCurrentChat,
-      getCurrentCharacters: params.getCurrentCharacters,
-    });
-    return {
-      segments,
-      results: [result],
-    };
-  }
 
   for (let index = 0; index < segments.length; index += 1) {
     const result = await runSessionCommitPipeline({

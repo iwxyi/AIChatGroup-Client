@@ -2,23 +2,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Message } from '../types/message';
 import { commitGeneratedMessageTurn } from './generatedMessageTurnCommit';
 
-const persistStreamingMessageMock = vi.fn();
 const runSessionCommitPipelineMock = vi.fn();
-const runPersistedSessionCommitRuntimeMock = vi.fn();
-
-vi.mock('./chatCommitMessage', () => ({
-  persistStreamingMessage: (...args: unknown[]) => persistStreamingMessageMock(...args),
-}));
 
 vi.mock('./sessionCommitPipeline', () => ({
   runSessionCommitPipeline: (...args: unknown[]) => runSessionCommitPipelineMock(...args),
-  runPersistedSessionCommitRuntime: (...args: unknown[]) => runPersistedSessionCommitRuntimeMock(...args),
 }));
 
 beforeEach(() => {
-  persistStreamingMessageMock.mockReset();
   runSessionCommitPipelineMock.mockReset();
-  runPersistedSessionCommitRuntimeMock.mockReset();
 });
 
 function buildPersistedMessage(content: string, index: number): Message {
@@ -57,15 +48,9 @@ function baseParams() {
 }
 
 describe('commitGeneratedMessageTurn', () => {
-  it('persists model-provided extra messages but runs runtime commit once with the full turn', async () => {
-    let persistIndex = 0;
-    persistStreamingMessageMock.mockImplementation(async (args: { message: { content: string } }) => {
-      const message = buildPersistedMessage(args.message.content, persistIndex);
-      persistIndex += 1;
-      return message;
-    });
-    runPersistedSessionCommitRuntimeMock.mockImplementation(async (args: { message: Message }) => ({
-      persistedMessage: args.message,
+  it('commits each explicit message part through the normal session pipeline', async () => {
+    runSessionCommitPipelineMock.mockImplementation(async (args: { message: Message }) => ({
+      persistedMessage: buildPersistedMessage(args.message.content, runSessionCommitPipelineMock.mock.calls.length),
       transition: { chatPatch: {}, characterPatches: [], runtimeEvents: [] },
       nextChat: { id: 'chat-1' },
       nextCharacters: [],
@@ -84,28 +69,17 @@ describe('commitGeneratedMessageTurn', () => {
       },
     } as never);
 
-    expect(persistStreamingMessageMock).toHaveBeenCalledTimes(2);
-    expect(persistStreamingMessageMock.mock.calls.map((call) => call[0].message.content)).toEqual(['等下', '你刚说谁来着？']);
-    expect(persistStreamingMessageMock.mock.calls[0]?.[0]?.localReveal).toBeFalsy();
-    expect(persistStreamingMessageMock.mock.calls[1]?.[0]?.localReveal).toBe(true);
-    expect(runSessionCommitPipelineMock).not.toHaveBeenCalled();
-    expect(runPersistedSessionCommitRuntimeMock).toHaveBeenCalledTimes(1);
-    expect(runPersistedSessionCommitRuntimeMock.mock.calls[0]?.[0].message.content).toBe('等下\n你刚说谁来着？');
+    expect(runSessionCommitPipelineMock).toHaveBeenCalledTimes(2);
+    expect(runSessionCommitPipelineMock.mock.calls.map((call) => call[0].message.content)).toEqual(['等下', '你刚说谁来着？']);
   });
 
-  it('uses message.metadata.generatedAt as deterministic segment timestamp base', async () => {
-    let persistIndex = 0;
-    persistStreamingMessageMock.mockImplementation(async (args: { message: { content: string } }) => {
-      const message = buildPersistedMessage(args.message.content, persistIndex);
-      persistIndex += 1;
-      return message;
-    });
-    runPersistedSessionCommitRuntimeMock.mockResolvedValue({
-      persistedMessage: buildPersistedMessage('等下\n你刚说谁来着？', 0),
+  it('passes each segment metadata independently to the normal commit pipeline', async () => {
+    runSessionCommitPipelineMock.mockImplementation(async (args: { message: Message }) => ({
+      persistedMessage: buildPersistedMessage(args.message.content, runSessionCommitPipelineMock.mock.calls.length),
       transition: { chatPatch: {}, characterPatches: [], runtimeEvents: [] },
       nextChat: { id: 'chat-1' },
       nextCharacters: [],
-    });
+    }));
 
     await commitGeneratedMessageTurn({
       ...baseParams(),
@@ -121,9 +95,8 @@ describe('commitGeneratedMessageTurn', () => {
       },
     } as never);
 
-    expect(persistStreamingMessageMock).toHaveBeenCalledTimes(2);
-    expect(persistStreamingMessageMock.mock.calls[0]?.[0]?.timestamp).toBeUndefined();
-    expect(persistStreamingMessageMock.mock.calls[1]?.[0]?.timestamp).toBe(777001);
+    expect(runSessionCommitPipelineMock).toHaveBeenCalledTimes(2);
+    expect(runSessionCommitPipelineMock.mock.calls[1]?.[0]?.message.content).toBe('你刚说谁来着？');
   });
 
   it('keeps the existing single-message commit path when no explicit parts are provided', async () => {
@@ -147,7 +120,5 @@ describe('commitGeneratedMessageTurn', () => {
     } as never);
 
     expect(runSessionCommitPipelineMock).toHaveBeenCalledTimes(1);
-    expect(persistStreamingMessageMock).not.toHaveBeenCalled();
-    expect(runPersistedSessionCommitRuntimeMock).not.toHaveBeenCalled();
   });
 });
