@@ -35,6 +35,17 @@ export type AdminLoginRecord = {
   createdAt: number;
 };
 
+export type AdminUserLoginRecord = {
+  id: string;
+  phone: string;
+  userId: string | null;
+  method: string;
+  result: string;
+  requestIp: string | null;
+  resetAt: number | null;
+  createdAt: number;
+};
+
 export type AdminRole = {
   id: string;
   code: string;
@@ -266,6 +277,14 @@ class AdminApiClient {
 
   getManagedAdminUser(adminUserId: string) {
     return this.request<{ admin: AdminManagedUser; loginRecords: AdminLoginRecord[]; roles: AdminRole[] }>('GET', `/admins/${encodeURIComponent(adminUserId)}`);
+  }
+
+  getUserLoginRecords(userId: string, params?: { result?: 'success' | 'failure'; method?: string; limit?: number }) {
+    return this.request<{ items: AdminUserLoginRecord[]; limit: number }>('GET', `/users/${encodeURIComponent(userId)}/login-records${this.buildQuery(params)}`);
+  }
+
+  resetUserLoginFailures(userId: string) {
+    return this.request<{ ok: boolean; resetCount: number }>('POST', `/users/${encodeURIComponent(userId)}/login-failures/reset`);
   }
 
   createManagedAdminUser(payload: { email: string; username?: string; displayName: string; password: string; status: string; roleCodes: string[] }) {

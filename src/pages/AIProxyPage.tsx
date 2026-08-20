@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Autocomplete,
@@ -220,6 +220,8 @@ export default function AIProxyPage() {
   const [quickSetupRawKey, setQuickSetupRawKey] = useState('');
   const [quickSetupRawKeyId, setQuickSetupRawKeyId] = useState('');
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'info' }>({ open: false, message: '', severity: 'success' });
+  const [copyFallback, setCopyFallback] = useState<{ label: string; value: string } | null>(null);
+  const copyFallbackRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
 
   const selectedKeyName = useMemo(() => keys.find((item) => item.id === selectedKeyId)?.name || '全部 Key', [keys, selectedKeyId]);
   const proxyBaseUrl = useMemo(() => getAiProxyBaseUrl(), []);
@@ -243,6 +245,15 @@ export default function AIProxyPage() {
     `${proxyBaseUrl}/v1/images/generations`,
     `${proxyBaseUrl}/web_search`,
   ], [proxyBaseUrl]);
+
+  useEffect(() => {
+    if (!copyFallback) return;
+    const timer = window.setTimeout(() => {
+      copyFallbackRef.current?.focus();
+      copyFallbackRef.current?.select();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [copyFallback]);
   const allowedModelOptions = useMemo(() => {
     const values = [
       ...modelOptions,
@@ -345,10 +356,10 @@ export default function AIProxyPage() {
     }
   };
 
-  const copyText = async (value: string, options: { maskedKey?: boolean } = {}) => {
+  const copyText = async (value: string, options: { maskedKey?: boolean; label?: string } = {}) => {
     const copied = await copyTextToClipboard(value);
     if (!copied) {
-      setSnackbar({ open: true, message: '复制失败，请手动复制', severity: 'error' });
+      setCopyFallback({ label: options.label || '复制内容', value });
       return;
     }
     setSnackbar({
@@ -372,7 +383,7 @@ export default function AIProxyPage() {
       });
       const copied = await copyTextToClipboard(result.script);
       if (!copied) {
-        setSnackbar({ open: true, message: '复制失败，请手动复制', severity: 'error' });
+        setCopyFallback({ label: '安装脚本', value: result.script });
         return;
       }
       setSnackbar({
@@ -916,6 +927,26 @@ export default function AIProxyPage() {
           <Button onClick={() => setEditDialog(initialEditDialog)}>取消</Button>
           <Button variant="contained" disabled={!canSaveKey} onClick={() => void saveEditKey()}>保存</Button>
         </DialogActions>
+      </Dialog>
+
+      <Dialog open={Boolean(copyFallback)} onClose={() => setCopyFallback(null)} fullWidth maxWidth="sm">
+        <DialogTitle>手动复制</DialogTitle>
+        <DialogContent>
+          <Alert severity="warning" sx={{ mb: 1.5 }}>
+            当前 HTTP 页面无法直接写入系统剪贴板。内容已自动选中，请按 <strong>Ctrl/Cmd + C</strong>，完成后关闭。
+          </Alert>
+          <TextField
+            inputRef={copyFallbackRef}
+            label={copyFallback?.label || '复制内容'}
+            value={copyFallback?.value || ''}
+            onFocus={(event) => event.target.select()}
+            multiline
+            minRows={3}
+            fullWidth
+            autoFocus
+          />
+        </DialogContent>
+        <DialogActions><Button onClick={() => setCopyFallback(null)}>关闭</Button></DialogActions>
       </Dialog>
 
       <AppSnackbar

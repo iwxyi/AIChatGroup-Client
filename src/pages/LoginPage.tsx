@@ -65,7 +65,7 @@ export default function LoginPage() {
     setSendingCode(true);
     setError('');
     try {
-      const captchaToken = await getSmsCaptchaToken();
+      const captchaToken = await getSmsCaptchaToken({ phone, purpose: 'login' });
       const result = await sendCode(phone, 'login', captchaToken);
       setCodeSent(true);
       setCountdown(60);

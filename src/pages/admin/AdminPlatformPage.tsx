@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import SaveIcon from '@mui/icons-material/Save';
-import { Alert, Autocomplete, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, MenuItem, Stack, Tab, Table, TableBody, TableCell, TableHead, TableRow, Tabs, TextField, Switch, Tooltip, Typography } from '@mui/material';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import { Alert, Autocomplete, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, IconButton, MenuItem, Stack, Tab, Table, TableBody, TableCell, TableHead, TableRow, Tabs, TextField, Switch, Tooltip, Typography } from '@mui/material';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import AdminRequestState, { getAdminErrorMessage } from '../../components/admin/AdminRequestState';
 import { AdminMetricGrid, AdminSection, AdminTableFrame, type AdminMetricItem } from '../../components/admin/AdminSurface';
@@ -9,6 +10,7 @@ import { ADMIN_PERMISSION_CODES, adminHasPermission } from '../../constants/admi
 import { adminApi } from '../../services/adminApi';
 import { useAdminAuthStore } from '../../stores/useAdminAuthStore';
 import { readPersistentUiValue, writePersistentUiValue } from '../../utils/persistentUiState';
+import { copyTextToClipboard } from '../../utils/clipboard';
 import AdminAIPage from './AdminAIPage';
 
 type FieldDef = {
@@ -476,6 +478,9 @@ export default function AdminPlatformPage() {
   const [ttsVoices, setTtsVoices] = useState<Array<{ id: string; name: string; language?: string; gender?: string }>>([]);
   const [ttsVoicesLoading, setTtsVoicesLoading] = useState(false);
   const [ttsVoicesError, setTtsVoicesError] = useState<string | null>(null);
+  const [copiedSecretField, setCopiedSecretField] = useState<string | null>(null);
+  const [secretCopyFallback, setSecretCopyFallback] = useState<{ label: string; value: string } | null>(null);
+  const secretCopyFallbackRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
   const [error, setError] = useState<string | null>(null);
   const visibleTabs = useMemo(
     () => CATEGORY_TABS.filter((item) => (item.value === 'ai' ? canReadAi : canReadPlatform)),
@@ -529,6 +534,33 @@ export default function AdminPlatformPage() {
     if (canReadPlatform) void load();
     else setItems([]);
   }, [canReadPlatform]);
+
+  useEffect(() => {
+    if (!secretCopyFallback) return;
+    const timer = window.setTimeout(() => {
+      secretCopyFallbackRef.current?.focus();
+      secretCopyFallbackRef.current?.select();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [secretCopyFallback]);
+
+  const copySecretField = async (key: string, label: string, value: unknown) => {
+    const text = String(value ?? '');
+    if (!text) return;
+
+    try {
+      const copied = await copyTextToClipboard(text);
+      if (copied) {
+        setCopiedSecretField(key);
+        return;
+      }
+    } catch {
+      setSecretCopyFallback({ label, value: text });
+      return;
+    }
+
+    setSecretCopyFallback({ label, value: text });
+  };
 
   const refreshSearchBalance = async (item: Record<string, unknown>) => {
     const key = integrationKey(item);
@@ -613,6 +645,7 @@ export default function AdminPlatformPage() {
     setEditor(toEditorState(item));
     setTestResult(null);
     setBalanceResult(null);
+    setCopiedSecretField(null);
     setEditorOpen(true);
     setTtsVoices([]);
     setTtsVoicesError(null);
@@ -908,6 +941,28 @@ export default function AdminPlatformPage() {
                       type={field.type === 'number' ? 'number' : field.secret && !field.multiline ? 'password' : 'text'}
                       multiline={field.multiline}
                       minRows={field.multiline ? 4 : undefined}
+                      slotProps={field.secret ? {
+                        input: {
+                          endAdornment: (
+                            <Tooltip title={copiedSecretField === field.key ? '已复制' : '复制'}>
+                              <span>
+                                <IconButton
+                                  size="small"
+                                  aria-label={`复制${field.label}`}
+                                  disabled={!String(fieldValue ?? '')}
+                                  onClick={() => void copySecretField(field.key, field.label, fieldValue)}
+                                  edge="end"
+                                >
+                                  <ContentCopyIcon fontSize="small" />
+                                </IconButton>
+                              </span>
+                            </Tooltip>
+                          ),
+                        },
+                      } : undefined}
+                      sx={field.secret && field.multiline ? {
+                        '& textarea': { WebkitTextSecurity: 'disc' },
+                      } : undefined}
                       helperText={isUsingDefaultTemplate ? '留空时后端会使用默认地址，悬浮查看实际 URL' : usesDomainTemplate ? '悬浮查看后端实际解析后的 URL' : undefined}
                       fullWidth
                     />
@@ -989,6 +1044,27 @@ export default function AdminPlatformPage() {
           <Button onClick={() => void runTest()} disabled={saving || testing || !selected || !selectedCapabilities.testSupported}>{testing ? '测试中' : '保存并测试'}</Button>
           <Button onClick={() => setEditorOpen(false)} disabled={saving}>取消</Button>
           <Button variant="contained" startIcon={<SaveIcon />} disabled={saving || !selected} onClick={() => void save()}>保存配置</Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog open={Boolean(secretCopyFallback)} onClose={() => setSecretCopyFallback(null)} maxWidth="sm" fullWidth>
+        <DialogTitle>手动复制敏感内容</DialogTitle>
+        <DialogContent>
+          <Alert severity="warning" sx={{ mb: 1.5 }}>
+            当前访问方式不允许网页直接写入系统剪贴板。内容仅在此窗口中临时显示，请按 <strong>Ctrl/Cmd + C</strong> 复制后立即关闭。
+          </Alert>
+          <TextField
+            inputRef={secretCopyFallbackRef}
+            label={secretCopyFallback?.label || '敏感内容'}
+            value={secretCopyFallback?.value || ''}
+            onFocus={(event) => event.target.select()}
+            multiline
+            minRows={3}
+            fullWidth
+            autoFocus
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setSecretCopyFallback(null)}>关闭</Button>
         </DialogActions>
       </Dialog>
     </Stack>

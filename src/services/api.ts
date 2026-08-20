@@ -334,6 +334,7 @@ export interface CaptchaPublicConfig {
   enabled: boolean;
   provider: 'turnstile' | string;
   siteKey: string;
+  smsMock?: boolean;
 }
 
 export interface BillingOrderItem {
@@ -621,6 +622,10 @@ class ApiClient {
 
   async getPlatformPublicConfig() {
     return this.request<{ site: SitePublicConfig; captcha?: CaptchaPublicConfig }>('GET', '/platform/public-config');
+  }
+
+  async getLoginCaptchaRequirement(phone: string) {
+    return this.request<{ required: boolean }>('GET', `/auth/login-captcha-required?phone=${encodeURIComponent(phone)}`);
   }
 
   async getSystemAnnouncements() {

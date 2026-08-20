@@ -373,9 +373,14 @@ async function executeLocalCaptcha() {
   });
 }
 
-export async function getSmsCaptchaToken() {
+export async function getSmsCaptchaToken(options: { phone?: string; purpose?: string } = {}) {
   if (typeof window === 'undefined' || typeof document === 'undefined') return undefined;
   const config = await getCaptchaConfig();
+  if (config.smsMock) return undefined;
+  if (options.purpose === 'login' && options.phone) {
+    const requirement = await api.getLoginCaptchaRequirement(options.phone);
+    if (!requirement.required) return undefined;
+  }
   if (!config.enabled) return undefined;
   if (config.provider === 'local') return executeLocalCaptcha();
   if (!config.siteKey) throw new Error('人机校验配置不可用，请联系管理员');

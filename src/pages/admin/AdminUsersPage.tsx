@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Box, Button, Chip, Dialog, DialogContent, DialogTitle, Divider, FormControlLabel, Grid, Paper, Stack, Switch, Tab, Table, TableBody, TableCell, TableHead, TableRow, Tabs, TextField, Typography, useMediaQuery, useTheme } from '@mui/material';
+import { Alert, Box, Button, Chip, Dialog, DialogContent, DialogTitle, Divider, FormControlLabel, Grid, MenuItem, Paper, Stack, Switch, Tab, Table, TableBody, TableCell, TableHead, TableRow, Tabs, TextField, Typography, useMediaQuery, useTheme } from '@mui/material';
 import AdminAiUserUsageDialog from '../../components/admin/AdminAiUserUsageDialog';
 import AdminRequestState, { getAdminErrorMessage } from '../../components/admin/AdminRequestState';
 import { AdminMetricGrid, AdminSection, AdminTableFrame, type AdminMetricItem } from '../../components/admin/AdminSurface';
-import { adminApi } from '../../services/adminApi';
+import { adminApi, type AdminUserLoginRecord } from '../../services/adminApi';
 import { DEFAULT_BASIC_RETENTION_LIMITS } from '../../services/retentionLimits';
 import { formatAiAmount, formatAiBalanceAmount } from '../../utils/aiPoints';
 
@@ -34,7 +34,7 @@ type OfficialProviderOption = {
   label: string;
 };
 
-type UserDetailTab = 'overview' | 'ai' | 'entitlements';
+type UserDetailTab = 'overview' | 'ai' | 'entitlements' | 'logins';
 
 type UserUsageSessionItem = {
   id: string;
@@ -436,6 +436,9 @@ export default function AdminUsersPage() {
   const [aiPointReasonDraft, setAiPointReasonDraft] = useState('');
   const [accountEntitlementDraft, setAccountEntitlementDraft] = useState<AccountEntitlementDraft>(EMPTY_ACCOUNT_ENTITLEMENT_DRAFT);
   const [selectedRestrictions, setSelectedRestrictions] = useState<Array<Record<string, unknown>>>([]);
+  const [loginRecords, setLoginRecords] = useState<AdminUserLoginRecord[]>([]);
+  const [loginResultFilter, setLoginResultFilter] = useState('all');
+  const [loginMethodFilter, setLoginMethodFilter] = useState('all');
   const [restrictionReason, setRestrictionReason] = useState('');
   const [keyDrafts, setKeyDrafts] = useState<Record<string, KeyDraft>>({});
   const [expandedLimits, setExpandedLimits] = useState<Record<string, boolean>>({});
@@ -535,6 +538,32 @@ export default function AdminUsersPage() {
       setKeyBalance(null);
     } finally {
       setKeyBalanceLoading(false);
+    }
+  };
+
+  const loadLoginRecords = async (userId: string, result = loginResultFilter, method = loginMethodFilter) => {
+    try {
+      const response = await adminApi.getUserLoginRecords(userId, {
+        result: result === 'all' ? undefined : result as 'success' | 'failure',
+        method: method === 'all' ? undefined : method,
+      });
+      setLoginRecords(response.items || []);
+    } catch (loadError) {
+      setDetailError(getAdminErrorMessage(loadError));
+    }
+  };
+
+  const resetLoginFailures = async () => {
+    if (!selectedUserId) return;
+    setActionLoading(true);
+    setDetailError(null);
+    try {
+      await adminApi.resetUserLoginFailures(selectedUserId);
+      await loadLoginRecords(selectedUserId);
+    } catch (resetError) {
+      setDetailError(getAdminErrorMessage(resetError));
+    } finally {
+      setActionLoading(false);
     }
   };
 
@@ -810,6 +839,9 @@ export default function AdminUsersPage() {
     if (!selectedUserId) return;
     setSelectedUser(null);
     setSelectedRestrictions([]);
+    setLoginRecords([]);
+    setLoginResultFilter('all');
+    setLoginMethodFilter('all');
     setKeyDrafts({});
     setExpandedLimits({});
     setExpandedUsage({});
@@ -821,6 +853,11 @@ export default function AdminUsersPage() {
     setUserDetailTab('overview');
     void loadSelectedUser(selectedUserId);
   }, [selectedUserId]);
+
+  useEffect(() => {
+    if (userDetailTab !== 'logins' || !selectedUserId) return;
+    void loadLoginRecords(selectedUserId);
+  }, [userDetailTab, selectedUserId]);
 
   const workspace = selectedUser?.workspace as { recentOrders?: Array<Record<string, unknown>>; recentChats?: Array<Record<string, unknown>>; recentCharacters?: Array<Record<string, unknown>> } | undefined;
   const recentUsageSessions = Array.isArray(selectedUser?.recentUsageSessions) ? selectedUser.recentUsageSessions as UserUsageSessionItem[] : [];
@@ -908,6 +945,7 @@ export default function AdminUsersPage() {
                   <Tab value="overview" label="概览" />
                   <Tab value="ai" label="AI" />
                   <Tab value="entitlements" label="权益与限制" />
+                  <Tab value="logins" label="登录记录" />
                 </Tabs>
               </Box>
             ) : null}
@@ -1060,6 +1098,54 @@ export default function AdminUsersPage() {
                   </Stack>
                 </AdminSection>
                   </>
+                ) : null}
+
+                {userDetailTab === 'logins' ? (
+                  <AdminSection title="登录记录" subtitle="记录当前已接入及后续登录方式的成功与失败。管理员重置只清除失败锁定，不删除审计记录。">
+                    <Stack spacing={1.25}>
+                      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                        <TextField select size="small" label="结果" value={loginResultFilter} onChange={(event) => {
+                          const next = event.target.value;
+                          setLoginResultFilter(next);
+                          if (selectedUserId) void loadLoginRecords(selectedUserId, next, loginMethodFilter);
+                        }} sx={{ minWidth: 130 }}>
+                          <MenuItem value="all">全部</MenuItem>
+                          <MenuItem value="success">成功</MenuItem>
+                          <MenuItem value="failure">失败</MenuItem>
+                        </TextField>
+                        <TextField select size="small" label="登录类型" value={loginMethodFilter} onChange={(event) => {
+                          const next = event.target.value;
+                          setLoginMethodFilter(next);
+                          if (selectedUserId) void loadLoginRecords(selectedUserId, loginResultFilter, next);
+                        }} sx={{ minWidth: 160 }}>
+                          <MenuItem value="all">全部</MenuItem>
+                          <MenuItem value="sms_code">手机号验证码</MenuItem>
+                          <MenuItem value="password">密码</MenuItem>
+                          <MenuItem value="email">邮箱</MenuItem>
+                          <MenuItem value="qq">QQ</MenuItem>
+                          <MenuItem value="wechat">微信</MenuItem>
+                          <MenuItem value="other">其他</MenuItem>
+                        </TextField>
+                        <Button variant="outlined" disabled={actionLoading} onClick={() => void resetLoginFailures()}>重置失败等待</Button>
+                        <Button variant="text" onClick={() => selectedUserId && void loadLoginRecords(selectedUserId)}>刷新</Button>
+                      </Stack>
+                      <AdminTableFrame minWidth={640}>
+                        <Table size="small">
+                          <TableHead><TableRow><TableCell>时间</TableCell><TableCell>方式</TableCell><TableCell>结果</TableCell><TableCell>IP</TableCell><TableCell>状态</TableCell></TableRow></TableHead>
+                          <TableBody>
+                            {!loginRecords.length ? <TableRow><TableCell colSpan={5}><Alert severity="info">暂无符合筛选条件的登录记录</Alert></TableCell></TableRow> : null}
+                            {loginRecords.map((record) => <TableRow key={record.id}>
+                              <TableCell>{new Date(record.createdAt).toLocaleString()}</TableCell>
+                              <TableCell>{({ sms_code: '手机号验证码', password: '密码', email: '邮箱', qq: 'QQ', wechat: '微信' } as Record<string, string>)[record.method] || record.method}</TableCell>
+                              <TableCell><Chip size="small" color={record.result === 'success' ? 'success' : 'error'} label={record.result === 'success' ? '成功' : '失败'} /></TableCell>
+                              <TableCell>{record.requestIp || '-'}</TableCell>
+                              <TableCell>{record.resetAt ? '已由管理员重置' : '有效'}</TableCell>
+                            </TableRow>)}
+                          </TableBody>
+                        </Table>
+                      </AdminTableFrame>
+                    </Stack>
+                  </AdminSection>
                 ) : null}
 
                 {userDetailTab === 'ai' ? (

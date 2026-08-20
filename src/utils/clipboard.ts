@@ -22,33 +22,17 @@ export async function copyTextToClipboard(text: string) {
     }
   }
 
-  if (navigator.clipboard?.writeText) {
+  // Do not treat document.execCommand('copy') as a success signal. Recent
+  // Chromium can report true without updating the system clipboard when the
+  // page is served over HTTP or blocked by a Permissions-Policy.
+  if (typeof window !== 'undefined' && window.isSecureContext && navigator.clipboard?.writeText) {
     try {
       await navigator.clipboard.writeText(value);
       return true;
     } catch {
-      // Continue to the legacy fallback below.
+      return false;
     }
   }
 
-  if (typeof document === 'undefined') return false;
-  const textarea = document.createElement('textarea');
-  textarea.value = value;
-  textarea.setAttribute('readonly', 'true');
-  textarea.style.position = 'fixed';
-  textarea.style.left = '-9999px';
-  textarea.style.top = '0';
-  textarea.style.opacity = '0';
-  document.body.appendChild(textarea);
-  textarea.focus();
-  textarea.select();
-  try {
-    return document.execCommand('copy');
-  } catch {
-    return false;
-  } finally {
-    if (textarea.parentNode) {
-      textarea.parentNode.removeChild(textarea);
-    }
-  }
+  return false;
 }

@@ -7,13 +7,14 @@ describe('copyTextToClipboard', () => {
     Reflect.deleteProperty(globalThis, 'window');
   });
 
-  it('uses the Clipboard API when available', async () => {
+  it('uses the Clipboard API in a secure context', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
       value: { writeText },
     });
 
+    vi.stubGlobal('window', { isSecureContext: true });
     await expect(copyTextToClipboard('hello')).resolves.toBe(true);
     expect(writeText).toHaveBeenCalledWith('hello');
   });
@@ -37,34 +38,15 @@ describe('copyTextToClipboard', () => {
     expect(writeText).not.toHaveBeenCalled();
   });
 
-  it('falls back to execCommand when Clipboard API fails', async () => {
-    const writeText = vi.fn().mockRejectedValue(new Error('denied'));
+  it('does not report a legacy copy as successful in an insecure context', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
       value: { writeText },
     });
-    const removeChild = vi.fn();
-    const textarea = {
-      value: '',
-      style: {},
-      setAttribute: vi.fn(),
-      focus: vi.fn(),
-      select: vi.fn(),
-      parentNode: { removeChild },
-    };
-    const appendChild = vi.fn();
-    const execCommand = vi.fn().mockReturnValue(true);
-    vi.stubGlobal('document', {
-      createElement: vi.fn().mockReturnValue(textarea),
-      body: { appendChild, removeChild },
-      execCommand,
-    });
-
-    await expect(copyTextToClipboard('fallback')).resolves.toBe(true);
-    expect(writeText).toHaveBeenCalledWith('fallback');
-    expect(execCommand).toHaveBeenCalledWith('copy');
-    expect(appendChild).toHaveBeenCalledWith(textarea);
-    expect(removeChild).toHaveBeenCalledWith(textarea);
+    vi.stubGlobal('window', { isSecureContext: false });
+    await expect(copyTextToClipboard('insecure')).resolves.toBe(false);
+    expect(writeText).not.toHaveBeenCalled();
   });
 
   it('returns false for empty text', async () => {

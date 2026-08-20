@@ -420,7 +420,7 @@ export default function AccountPage() {
 
     setSendingPhoneCode(true);
     try {
-      const captchaToken = await getSmsCaptchaToken();
+      const captchaToken = await getSmsCaptchaToken({ phone: newPhone, purpose: 'change-phone' });
       const result = await sendChangePhoneCode(newPhone, captchaToken);
       setPhoneCountdown(60);
       if (result.mock && result.code) {
