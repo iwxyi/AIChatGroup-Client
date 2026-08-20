@@ -28,6 +28,7 @@ interface SettingsStore extends AppSettings {
   lastSyncedAt: number;
   syncStatus: 'idle' | 'saving' | 'saved' | 'error';
   syncError: string | null;
+  settingsDirty: boolean;
   memoryUI: { showDeveloperMemory?: boolean };
   setDeveloperMode: (enabled: boolean) => void;
   setAvatarGeneration: (prefs: Partial<AvatarGenerationSettings>) => void;
@@ -126,6 +127,7 @@ function syncToServer(data: Record<string, unknown>, set: SettingsSet) {
   if (syncTimer) clearTimeout(syncTimer);
   pendingSettingsSyncData = data;
   clearSavedStateTimer();
+  set((state) => ({ ...state, settingsDirty: true }));
   if (useAuthStore.getState().authMode === 'local' || !isCloudSyncEnabled()) {
     pendingSettingsSyncData = null;
     set((state) => ({ ...state, syncStatus: 'idle', syncError: null }));
@@ -137,7 +139,7 @@ function syncToServer(data: Record<string, unknown>, set: SettingsSet) {
     pendingSettingsSyncData = null;
     api.updateSettings(payload)
       .then(() => {
-        set((state) => ({ ...state, syncStatus: 'saved', syncError: null, lastSyncedAt: Date.now() }));
+        set((state) => ({ ...state, settingsDirty: false, syncStatus: 'saved', syncError: null, lastSyncedAt: Date.now() }));
         savedStateTimer = setTimeout(() => {
           set((state) => state.syncStatus === 'saved' ? { ...state, syncStatus: 'idle' } : state);
           savedStateTimer = null;
@@ -175,7 +177,7 @@ function syncToServerNow(data: Record<string, unknown>, set: SettingsSet) {
   set((state) => ({ ...state, syncStatus: 'saving', syncError: null }));
   api.updateSettings(payload)
     .then(() => {
-      set((state) => ({ ...state, syncStatus: 'saved', syncError: null, lastSyncedAt: Date.now() }));
+      set((state) => ({ ...state, settingsDirty: false, syncStatus: 'saved', syncError: null, lastSyncedAt: Date.now() }));
       savedStateTimer = setTimeout(() => {
         set((state) => state.syncStatus === 'saved' ? { ...state, syncStatus: 'idle' } : state);
         savedStateTimer = null;
@@ -415,12 +417,14 @@ export const useSettingsStore = create<SettingsStore>()(
       lastSyncedAt: 0,
       syncStatus: 'idle',
       syncError: null,
+      settingsDirty: false,
 
       loadSettings: async () => {
         settingsScopeRequested = true;
         ensureSettingsScopeLifecycle();
+        // 本地持久化状态先行：调用方无需等待云端请求即可渲染。
+        set(markSettingsLoadedIdle);
         if (useAuthStore.getState().authMode === 'local' || !isCloudSyncEnabled()) {
-          set(markSettingsLoadedIdle);
           return;
         }
         try {
@@ -447,6 +451,10 @@ export const useSettingsStore = create<SettingsStore>()(
                   fresh: !changeProbe?.hasMore,
             applied: true,
           });
+          if (get().settingsDirty) {
+            void get().syncCurrentSettingsToServer();
+            return;
+          }
           set({
             ...syncState({
               api: settings.api as APIConfig,
@@ -492,7 +500,8 @@ export const useSettingsStore = create<SettingsStore>()(
               userBubbleStyle: (settings.userBubbleStyle as BubbleStyleDefinition | null | undefined) || null,
               artifactAppearance: (settings as { artifactAppearance?: ArtifactAppearanceSettings }).artifactAppearance,
               chatAppearance: (settings as { chatAppearance?: ChatAppearanceSettings }).chatAppearance,
-              usageStats: (settings as { usageStats?: UsageStats }).usageStats,
+            usageStats: (settings as { usageStats?: UsageStats }).usageStats,
+            settingsDirty: false,
             }),
             _loaded: true,
             lastSyncedAt: Date.now(),
@@ -946,7 +955,7 @@ export const useSettingsStore = create<SettingsStore>()(
         }
         const current = useSettingsStore.getState();
         await api.updateSettings(buildSettingsPayload(current));
-        set((state) => ({ ...state, syncStatus: 'saved', syncError: null, lastSyncedAt: Date.now() }));
+        set((state) => ({ ...state, settingsDirty: false, syncStatus: 'saved', syncError: null, lastSyncedAt: Date.now() }));
       },
       refreshSettingsFromCloud: async () => {
         settingsSyncScopes.clear(SETTINGS_ACCOUNT_SCOPE);
@@ -990,6 +999,7 @@ export const useSettingsStore = create<SettingsStore>()(
         userBubbleStyle: state.userBubbleStyle,
         artifactAppearance: state.artifactAppearance,
         chatAppearance: state.chatAppearance,
+        settingsDirty: state.settingsDirty,
         usageStats: state.usageStats,
       }),
       merge: (persistedState, currentState) => {
