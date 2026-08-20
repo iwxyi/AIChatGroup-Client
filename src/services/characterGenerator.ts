@@ -285,9 +285,7 @@ export function normalizeGeneratedProfile(raw: GeneratedCharacterProfile) {
 }
 
 export function parseGeneratedProfile(content: string) {
-  const trimmed = content.trim();
-  const json = trimmed.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/, '');
-  const parsed = JSON.parse(json) as GeneratedCharacterProfile;
+  const parsed = parseGeneratedJsonPayload<GeneratedCharacterProfile>(content);
   return normalizeGeneratedProfile(parsed);
 }
 
@@ -337,6 +335,26 @@ function extractJsonBlock(content: string) {
   return trimmed;
 }
 
+function parseGeneratedJsonPayload<T>(content: string): T {
+  const candidates = [content.trim(), extractJsonBlock(content)];
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate) as unknown;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        const envelope = parsed as { choices?: Array<{ message?: { content?: unknown } }> };
+        const nestedContent = envelope.choices?.[0]?.message?.content;
+        if (typeof nestedContent === 'string' && nestedContent.trim()) {
+          return JSON.parse(extractJsonBlock(nestedContent)) as T;
+        }
+      }
+      return parsed as T;
+    } catch {
+      // Try the next candidate so wrapped and direct JSON responses are both supported.
+    }
+  }
+  throw new Error(`模型返回的 JSON 无法解析：${content.slice(0, 500)}`);
+}
+
 function buildBatchGeneratePrompt(names: string[], language: 'zh' | 'en', context?: CharacterGenerationContext) {
   const normalizedNames = sanitizeBatchNames(names);
   const { theme, description } = normalizeGenerationContext(context);
@@ -351,8 +369,7 @@ function buildBatchGeneratePrompt(names: string[], language: 'zh' | 'en', contex
 }
 
 export function parseGeneratedProfileMap(content: string, names: string[]) {
-  const json = extractJsonBlock(content);
-  const parsed = JSON.parse(json) as Array<GeneratedCharacterProfile & { name?: string }>;
+  const parsed = parseGeneratedJsonPayload<Array<GeneratedCharacterProfile & { name?: string }>>(content);
   const items = Array.isArray(parsed) ? parsed : [];
   const nameMap = new Map(items.map((item) => [typeof item.name === 'string' ? item.name.trim() : '', item]));
   return names.map((name) => {
@@ -468,7 +485,7 @@ export async function generateCharacterVisualIdentityDraft(config: APIConfig, in
     undefined,
     { maxTokens: 700, aiUsage: { type: 'character_visual_identity', label: '生成角色视觉锚点', scope: 'character' } },
   );
-  const parsed = JSON.parse(extractJsonBlock(response)) as GeneratedCharacterProfile['visualIdentity'];
+  const parsed = parseGeneratedJsonPayload<GeneratedCharacterProfile['visualIdentity']>(response);
   return {
     description: typeof parsed?.description === 'string' ? parsed.description.trim() : '',
     styleHint: typeof parsed?.styleHint === 'string' ? parsed.styleHint.trim() : '',
@@ -514,6 +531,6 @@ export async function generateCharacterVoiceProfileDraft(config: APIConfig, inpu
     undefined,
     { maxTokens: 500, aiUsage: { type: 'character_generation', label: '生成角色语音形象', scope: 'character' } },
   );
-  const parsed = JSON.parse(extractJsonBlock(response)) as GeneratedCharacterProfile['voiceProfile'];
+  const parsed = parseGeneratedJsonPayload<GeneratedCharacterProfile['voiceProfile']>(response);
   return normalizeGeneratedProfile({ voiceProfile: parsed }).voiceProfile;
 }

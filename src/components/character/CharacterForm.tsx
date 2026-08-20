@@ -108,6 +108,24 @@ function buildAvatarOptionSx(selected: boolean) {
   };
 }
 
+function buildGeneratedVoiceInstructions(profile: NonNullable<CharacterVoiceConfig['voiceProfile']>, language: string) {
+  const zh = language.startsWith('zh');
+  const parts = [
+    profile.traits?.length ? `${zh ? '音色特征' : 'Timbre'}：${profile.traits.join(zh ? '、' : ', ')}` : '',
+    profile.styles?.length ? `${zh ? '表达风格' : 'Delivery'}：${profile.styles.join(zh ? '、' : ', ')}` : '',
+    profile.emotions?.length ? `${zh ? '情绪倾向' : 'Emotional tone'}：${profile.emotions.join(zh ? '、' : ', ')}` : '',
+    profile.energy ? `${zh ? '整体能量' : 'Energy'}：${profile.energy}` : '',
+    zh ? '保持自然口语感，避免播音腔。' : 'Keep it conversational and natural; avoid a broadcast-announcer voice.',
+  ];
+  return parts.filter(Boolean).join('；');
+}
+
+function buildGeneratedVoicePitch(profile: NonNullable<CharacterVoiceConfig['voiceProfile']>) {
+  if (profile.gender === 'male' || profile.age === 'senior') return '-1';
+  if (profile.gender === 'female' && (profile.age === 'child' || profile.age === 'young')) return '+1';
+  return '0';
+}
+
 import type { CharacterVisualIdentity, CharacterVisualReferenceImage } from '../../types/character';
 import FloatingSegmentedTabs from '../common/FloatingSegmentedTabs';
 import { buildFloatingTabContainerSx } from '../common/FloatingSegmentedTabs.styles';
@@ -642,7 +660,14 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
       setSpeakingStyle(generated.speakingStyle);
       setBackground(generated.background);
       setSpeechProfile(generated.speechProfile);
-      setVoiceConfig((prev) => ({ ...prev, ...generated.voiceConfig, voiceProfile: generated.voiceProfile }));
+      const generatedVoiceProfile = generated.voiceProfile || {};
+      setVoiceConfig((prev) => ({
+        ...prev,
+        ...generated.voiceConfig,
+        voiceProfile: generatedVoiceProfile,
+        pitch: prev.pitch || buildGeneratedVoicePitch(generatedVoiceProfile),
+        instructions: prev.instructions || buildGeneratedVoiceInstructions(generatedVoiceProfile, i18n.language),
+      }));
       setCoreProfile({
         ...DEFAULT_CORE_PROFILE,
         ...generated.coreProfile,
@@ -673,10 +698,29 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
     }
   };
 
-  const handleAutoAssignVoice = async () => {
-    if (!selectedTtsProfile?.provider || assigningVoice) return;
+  const matchVoiceForProfile = async (profile: NonNullable<CharacterVoiceConfig['voiceProfile']>) => {
+    if (!selectedTtsProfile?.provider) return false;
     setAssigningVoice(true);
     setVoiceAssignmentError(null);
+    try {
+      const usedVoiceIds = characters
+        .filter((character) => character.id !== initial?.id)
+        .map((character) => character.voiceConfig?.voiceName)
+        .filter((voice): voice is string => Boolean(voice));
+      const result = await assignGeneratedVoiceProfile(profile, initial?.id || name || 'character', usedVoiceIds, selectedTtsProfile.provider);
+      if (!result.voiceConfig.voiceName) {
+        setVoiceAssignmentError(i18n.language.startsWith('zh') ? '当前语音画像没有匹配到可用音色' : 'No available voice matches this profile');
+        return false;
+      }
+      setVoiceConfig((prev) => ({ ...prev, ...result.voiceConfig, enabled: true, voiceProfile: profile }));
+      return true;
+    } finally {
+      setAssigningVoice(false);
+    }
+  };
+
+  const handleAutoAssignVoice = async () => {
+    if (!selectedTtsProfile?.provider || assigningVoice) return;
     const profile = voiceConfig.voiceProfile || {
       gender: 'unknown' as const,
       age: 'unknown',
@@ -686,20 +730,7 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
       emotions: voiceConfig.emotion ? [voiceConfig.emotion] : [],
       energy: 'medium',
     };
-    try {
-      const usedVoiceIds = characters
-        .filter((character) => character.id !== initial?.id)
-        .map((character) => character.voiceConfig?.voiceName)
-        .filter((voice): voice is string => Boolean(voice));
-      const result = await assignGeneratedVoiceProfile(profile, initial?.id || name || 'character', usedVoiceIds, selectedTtsProfile.provider);
-      if (!result.voiceConfig.voiceName) {
-        setVoiceAssignmentError(i18n.language.startsWith('zh') ? '当前语音画像没有匹配到可用音色' : 'No available voice matches this profile');
-        return;
-      }
-      setVoiceConfig((prev) => ({ ...prev, ...result.voiceConfig, enabled: true, voiceProfile: profile }));
-    } finally {
-      setAssigningVoice(false);
-    }
+    await matchVoiceForProfile(profile);
   };
 
   const handleGenerateVoiceProfile = async () => {
@@ -724,12 +755,19 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
         coreProfile,
         speechProfile,
       }, i18n.language.startsWith('zh') ? 'zh' : 'en');
+      const generatedInstructions = buildGeneratedVoiceInstructions(draft, i18n.language);
+      const generatedPitch = buildGeneratedVoicePitch(draft);
       setVoiceConfig((prev) => ({
         ...prev,
         voiceProfile: draft,
         style: prev.style || draft.styles?.join(i18n.language.startsWith('zh') ? '、' : ', '),
         emotion: prev.emotion || draft.emotions?.join(i18n.language.startsWith('zh') ? '、' : ', '),
+        pitch: prev.pitch || generatedPitch,
+        instructions: prev.instructions || generatedInstructions,
       }));
+      if (selectedTtsProfile?.provider) {
+        await matchVoiceForProfile(draft);
+      }
     } catch (error) {
       setVoiceAssignmentError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -1484,11 +1522,6 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
               <Button size="small" variant="text" startIcon={generatingVoiceProfile ? <CircularProgress size={14} /> : <AutoAwesomeIcon fontSize="small" />} onClick={() => void handleGenerateVoiceProfile()} disabled={generatingVoiceProfile}>
                 {i18n.language.startsWith('zh') ? '生成语音形象' : 'Generate voice identity'}
               </Button>
-              <FormControlLabel
-                sx={{ mr: 0 }}
-                control={<Switch checked={Boolean(voiceConfig.enabled)} onChange={(e) => setVoiceConfig((prev) => ({ ...prev, enabled: e.target.checked }))} />}
-                label={i18n.language.startsWith('zh') ? '启用' : 'Enabled'}
-              />
             </Box>
           </Box>
           <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(4, minmax(0, 1fr))', sm: 'repeat(4, minmax(0, 1fr))' }, gap: 0.75 }}>
@@ -1522,14 +1555,14 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
               disabled={!selectedTtsProfile}
               renderInput={(params) => <TextField {...params} size="small" label={i18n.language.startsWith('zh') ? '发音人（可搜索或手动输入）' : 'Voice (search or enter ID)'} helperText={!selectedTtsProfile ? (i18n.language.startsWith('zh') ? '请先在 AI模型 中选择语音（TTS）模型' : 'Select a TTS model in AI Models first') : speechVoicesLoading ? (i18n.language.startsWith('zh') ? '正在读取当前平台音色…' : 'Loading voices…') : undefined} />}
             />
-            <Button variant="outlined" startIcon={assigningVoice ? <CircularProgress size={16} /> : <AutoAwesomeIcon />} onClick={() => void handleAutoAssignVoice()} disabled={!selectedTtsProfile || assigningVoice}>
+            <Button variant="outlined" sx={{ width: 'fit-content', minWidth: 0, whiteSpace: 'nowrap', alignSelf: 'start' }} startIcon={assigningVoice ? <CircularProgress size={16} /> : <AutoAwesomeIcon />} onClick={() => void handleAutoAssignVoice()} disabled={!selectedTtsProfile || assigningVoice}>
               {i18n.language.startsWith('zh') ? '自动匹配音色' : 'Match voice'}
             </Button>
             <TextField size="small" label={i18n.language.startsWith('zh') ? '风格' : 'Style'} placeholder={i18n.language.startsWith('zh') ? '如 cheerful / sad' : 'e.g. cheerful / sad'} value={voiceConfig.style || ''} onChange={(e) => setVoiceConfig((prev) => ({ ...prev, style: e.target.value }))} />
             <TextField size="small" label={i18n.language.startsWith('zh') ? '语速' : 'Rate'} placeholder="+0%" value={voiceConfig.rate || ''} onChange={(e) => setVoiceConfig((prev) => ({ ...prev, rate: e.target.value }))} />
-            <TextField size="small" label={i18n.language.startsWith('zh') ? '音调' : 'Pitch'} placeholder="+0Hz" value={voiceConfig.pitch || ''} onChange={(e) => setVoiceConfig((prev) => ({ ...prev, pitch: e.target.value }))} />
+            <TextField size="small" label={i18n.language.startsWith('zh') ? '音调' : 'Pitch'} placeholder="0" helperText={i18n.language.startsWith('zh') ? '声音高低，0 为默认（常用 -2～+2）' : 'Voice height; 0 is default (usually -2 to +2)'} value={voiceConfig.pitch || ''} onChange={(e) => setVoiceConfig((prev) => ({ ...prev, pitch: e.target.value }))} />
             <TextField size="small" label={i18n.language.startsWith('zh') ? '默认情绪' : 'Default emotion'} placeholder={i18n.language.startsWith('zh') ? '如温柔、撒娇、克制' : 'e.g. warm, playful, restrained'} value={voiceConfig.emotion || ''} onChange={(e) => setVoiceConfig((prev) => ({ ...prev, emotion: e.target.value }))} />
-            <TextField size="small" label={i18n.language.startsWith('zh') ? '语音指令' : 'Voice instructions'} placeholder={i18n.language.startsWith('zh') ? '传给支持 instructions 的 TTS' : 'Passed to TTS providers that support instructions'} value={voiceConfig.instructions || ''} onChange={(e) => setVoiceConfig((prev) => ({ ...prev, instructions: e.target.value }))} />
+            <TextField size="small" label={i18n.language.startsWith('zh') ? '语音指令' : 'Voice instructions'} placeholder={i18n.language.startsWith('zh') ? '如：自然、亲切，避免播音腔' : 'e.g. natural and warm, avoid announcer voice'} helperText={i18n.language.startsWith('zh') ? '传给支持语音指令的 TTS，不支持的平台会忽略' : 'Used by TTS providers that support instructions'} value={voiceConfig.instructions || ''} onChange={(e) => setVoiceConfig((prev) => ({ ...prev, instructions: e.target.value }))} />
           </Box>
           {voiceAssignmentError ? <Typography variant="caption" color="warning.main">{voiceAssignmentError}</Typography> : null}
         </CardContent>

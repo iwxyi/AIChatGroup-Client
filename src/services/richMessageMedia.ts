@@ -433,7 +433,7 @@ async function runRichMediaQueueEntry(entry: RichMediaQueueEntry) {
     const voice = entry.character?.voiceConfig?.voiceName || profile.model;
     const speechText = attachment.promptText || workingMessage.content;
     const localOnly = isLocalOnlyMediaMode();
-    const voiceStyle = entry.character?.voiceConfig?.style || entry.character?.voiceConfig?.instructions;
+    const voiceStyle = [entry.character?.voiceConfig?.style, entry.character?.voiceConfig?.instructions].filter(Boolean).join('；') || undefined;
     const voiceEmotion = entry.character?.voiceConfig?.emotion;
     const usesManagedSpeech = profile.provider === 'official' || profile.provider.startsWith('managed:');
     const speechResult = !localOnly && usesManagedSpeech

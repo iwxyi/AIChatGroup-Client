@@ -283,7 +283,7 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
     || ttsProfiles.find((profile) => profile.isDefault)
     || ttsProfiles[0]
     || useSettingsStore.getState().aiProfiles.find((profile) => profile.type === 'audio' && (profile.audioCapability === 'tts' || profile.audioCapability === 'both'));
-  const canPlayVoice = Boolean(message.type === 'ai' && !pending && message.content.trim() && ttsModel && character?.voiceConfig?.enabled !== false);
+  const canPlayVoice = Boolean(message.type === 'ai' && !pending && message.content.trim() && ttsModel && character?.voiceConfig?.voiceName);
   const toggleVoice = async () => {
     if (!canPlayVoice) return;
     if (!voiceUrl) {
@@ -299,7 +299,7 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
             modelId: ttsModel.model,
             text: speechText,
             voice: character?.voiceConfig?.voiceName,
-            style: character?.voiceConfig?.style || character?.voiceConfig?.instructions,
+            style: [character?.voiceConfig?.style, character?.voiceConfig?.instructions].filter(Boolean).join('；') || undefined,
             emotion: character?.voiceConfig?.emotion,
             speed: character?.voiceConfig?.rate ? Number.parseFloat(character.voiceConfig.rate) || undefined : undefined,
             pitch: character?.voiceConfig?.pitch ? Number.parseFloat(character.voiceConfig.pitch) || undefined : undefined,

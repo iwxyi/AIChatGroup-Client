@@ -2391,7 +2391,7 @@ function buildMediaCapabilities(character: AICharacter, profiles?: AIModelProfil
   const audioProfile = resolveProfileForCharacter(character, profiles, 'audio');
   return {
     image: Boolean(imageProfile),
-    audio: Boolean(audioProfile && character.voiceConfig?.enabled),
+    audio: Boolean(audioProfile && character.voiceConfig?.voiceName),
   };
 }
 
