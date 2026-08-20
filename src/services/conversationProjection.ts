@@ -54,8 +54,18 @@ function buildImageAttachmentText(message: Message) {
   return `[图片附件：${labels.join('、')}${suffix}]`;
 }
 
+function buildAudioAttachmentText(message: Message) {
+  const attachments = (message.metadata?.attachments || [])
+    .filter((attachment) => attachment.kind === 'audio' && attachment.status !== 'deleted' && attachment.status !== 'failed');
+  if (!attachments.length) return '';
+  // The spoken text remains in the normal message content. Add only a compact
+  // semantic marker so models know this turn also carried audio, without
+  // duplicating the transcript or exposing URLs/audio bytes.
+  return `[附带语音${attachments.length > 1 ? ` ${attachments.length} 条` : ''}，朗读内容与本条文字一致]`;
+}
+
 function buildTranscriptLine(message: Message, characters: Map<string, AICharacter>, currentSpeakerId?: string) {
-  return `${buildTranscriptHeader(message, characters, currentSpeakerId)}: ${[compactTranscriptContent(message.content), buildImageAttachmentText(message)].filter(Boolean).join('\n')}`;
+  return `${buildTranscriptHeader(message, characters, currentSpeakerId)}: ${[compactTranscriptContent(message.content), buildImageAttachmentText(message), buildAudioAttachmentText(message)].filter(Boolean).join('\n')}`;
 }
 
 function buildTranscriptInstruction(chatType: GroupChat['type']) {
@@ -118,7 +128,7 @@ export function projectConversationForModel(input: ConversationProjectionInput):
     if (message.type === 'ai' && currentSpeakerId && message.senderId === currentSpeakerId) {
       projected.push({
         role: 'assistant',
-        content: buildAssistantHistoryPrompt(compactTranscriptContent(message.content)),
+        content: buildAssistantHistoryPrompt([compactTranscriptContent(message.content), buildAudioAttachmentText(message)].filter(Boolean).join('\n')),
         ...(attachments ? { attachments } : {}),
       });
       continue;

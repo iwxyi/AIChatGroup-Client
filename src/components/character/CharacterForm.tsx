@@ -761,7 +761,6 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
         ...prev,
         voiceProfile: draft,
         style: prev.style || draft.styles?.join(i18n.language.startsWith('zh') ? '、' : ', '),
-        emotion: prev.emotion || draft.emotions?.join(i18n.language.startsWith('zh') ? '、' : ', '),
         pitch: prev.pitch || generatedPitch,
         instructions: prev.instructions || generatedInstructions,
       }));
@@ -1561,7 +1560,6 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
             <TextField size="small" label={i18n.language.startsWith('zh') ? '风格' : 'Style'} placeholder={i18n.language.startsWith('zh') ? '如 cheerful / sad' : 'e.g. cheerful / sad'} value={voiceConfig.style || ''} onChange={(e) => setVoiceConfig((prev) => ({ ...prev, style: e.target.value }))} />
             <TextField size="small" label={i18n.language.startsWith('zh') ? '语速' : 'Rate'} placeholder="+0%" value={voiceConfig.rate || ''} onChange={(e) => setVoiceConfig((prev) => ({ ...prev, rate: e.target.value }))} />
             <TextField size="small" label={i18n.language.startsWith('zh') ? '音调' : 'Pitch'} placeholder="0" helperText={i18n.language.startsWith('zh') ? '声音高低，0 为默认（常用 -2～+2）' : 'Voice height; 0 is default (usually -2 to +2)'} value={voiceConfig.pitch || ''} onChange={(e) => setVoiceConfig((prev) => ({ ...prev, pitch: e.target.value }))} />
-            <TextField size="small" label={i18n.language.startsWith('zh') ? '默认情绪' : 'Default emotion'} placeholder={i18n.language.startsWith('zh') ? '如温柔、撒娇、克制' : 'e.g. warm, playful, restrained'} value={voiceConfig.emotion || ''} onChange={(e) => setVoiceConfig((prev) => ({ ...prev, emotion: e.target.value }))} />
             <TextField size="small" label={i18n.language.startsWith('zh') ? '语音指令' : 'Voice instructions'} placeholder={i18n.language.startsWith('zh') ? '如：自然、亲切，避免播音腔' : 'e.g. natural and warm, avoid announcer voice'} helperText={i18n.language.startsWith('zh') ? '传给支持语音指令的 TTS，不支持的平台会忽略' : 'Used by TTS providers that support instructions'} value={voiceConfig.instructions || ''} onChange={(e) => setVoiceConfig((prev) => ({ ...prev, instructions: e.target.value }))} />
           </Box>
           {voiceAssignmentError ? <Typography variant="caption" color="warning.main">{voiceAssignmentError}</Typography> : null}

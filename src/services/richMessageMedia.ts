@@ -27,20 +27,32 @@ function findGenerationProfile(profiles: AIModelProfile[], type: 'image' | 'audi
  * The character's voice id never changes; this is only a transient expression
  * overlay. Manual playback intentionally does not call this helper.
  */
-function deriveActiveVoiceEmotion(character: AICharacter | null | undefined, text: string) {
+function deriveActiveVoiceEmotion(character: AICharacter | null | undefined, text: string, messages: Message[] = [], currentMessageId?: string) {
   const state = character?.emotionalState;
-  if (!state) return undefined;
+  const latestOtherMessage = [...messages].reverse().find((message) => (
+    message.id !== currentMessageId && !message.isDeleted && (message.type === 'user' || message.type === 'ai') && message.senderId !== character?.id
+  ));
+  const relation = latestOtherMessage && character
+    ? character.relationships.find((item) => item.characterId === latestOtherMessage.senderId)
+    : undefined;
   const scores: Array<{ score: number; label: string }> = [
-    { score: state.irritation, label: '紧绷、略带不耐烦' },
-    { score: state.excitement, label: '兴奋、明亮、有活力' },
-    { score: state.affection, label: '温柔、亲近、带关怀' },
-    { score: state.embarrassment, label: '害羞、轻微犹豫' },
-    { score: state.insecurity, label: '谨慎、略带不安' },
+    { score: state?.irritation || 0, label: '紧绷、略带不耐烦' },
+    { score: state?.excitement || 0, label: '兴奋、明亮、有活力' },
+    { score: (state?.affection || 0) + Math.max(0, relation?.warmth || 0) * 0.35, label: '温柔、亲近、带关怀' },
+    { score: state?.embarrassment || 0, label: '害羞、轻微犹豫' },
+    { score: (state?.insecurity || 0) + Math.max(0, relation?.threat || 0) * 0.3, label: '谨慎、略带不安' },
   ].sort((a, b) => b.score - a.score);
   const strongest = scores[0];
-  if (!strongest || strongest.score < 35) return undefined;
+  const relationCue = relation
+    ? relation.warmth >= 45 && relation.trust >= 35
+      ? '对对方更放松、更愿意亲近'
+      : relation.threat >= 35 || relation.trust <= -25
+        ? '对对方保持克制和防备'
+        : ''
+    : '';
+  if ((!strongest || strongest.score < 35) && !relationCue) return undefined;
   const punctuation = /[!?！？]/.test(text) ? '语气随标点自然加强，不要夸张表演。' : '保持自然口语停连。';
-  return `${strongest.label}；${punctuation}`;
+  return [strongest && strongest.score >= 35 ? strongest.label : '', relationCue, punctuation].filter(Boolean).join('；');
 }
 
 async function blobToDataUrl(blob: Blob) {
@@ -455,9 +467,7 @@ async function runRichMediaQueueEntry(entry: RichMediaQueueEntry) {
     const speechText = attachment.promptText || workingMessage.content;
     const localOnly = isLocalOnlyMediaMode();
     const voiceStyle = [entry.character?.voiceConfig?.style, entry.character?.voiceConfig?.instructions].filter(Boolean).join('；') || undefined;
-    const baseVoiceEmotion = entry.character?.voiceConfig?.emotion;
-    const activeVoiceEmotion = deriveActiveVoiceEmotion(entry.character, speechText);
-    const voiceEmotion = [baseVoiceEmotion, activeVoiceEmotion].filter(Boolean).join('；') || undefined;
+    const voiceEmotion = deriveActiveVoiceEmotion(entry.character, speechText, entry.messages || [], workingMessage.id);
     const usesManagedSpeech = profile.provider === 'official' || profile.provider.startsWith('managed:');
     const speechResult = !localOnly && usesManagedSpeech
       ? await synthesizeSpeech({
