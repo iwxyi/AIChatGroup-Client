@@ -112,9 +112,9 @@ describe('MessageBubble event rendering', () => {
   });
 
   it('formats attachment status labels and details for queued and failed media', () => {
-    expect(getAttachmentStatusLabel({ kind: 'image', status: 'queued' })).toBe('图片排队中');
-    expect(getAttachmentStatusDetail({ kind: 'image', status: 'queued' })).toBe('图片已加入生成队列，等待开始。');
-    expect(getAttachmentStatusLabel({ kind: 'audio', status: 'generating' })).toBe('语音生成中');
+    expect(getAttachmentStatusLabel({ kind: 'image', status: 'queued' })).toBe('对方正在发送图片…');
+    expect(getAttachmentStatusDetail({ kind: 'image', status: 'queued' })).toBe('对方正在发送图片，稍等一下。');
+    expect(getAttachmentStatusLabel({ kind: 'audio', status: 'generating' })).toBe('对方正在讲话…');
     expect(getAttachmentStatusDetail({ kind: 'audio', status: 'failed', error: '语音模型未配置' })).toBe('语音模型未配置');
   });
 

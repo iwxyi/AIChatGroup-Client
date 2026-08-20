@@ -728,7 +728,7 @@ export function buildAgentArtifactReplyContent(patchSet: AssistantAgentPatchSet)
     .filter((patch) => (patch.content || patch.files?.length) && !hasInlineArtifactContent(intro, patch))
     .slice(0, 3);
   const hasImageTasks = Boolean(patchSet.mediaTasks?.length);
-  const imageTaskNotice = hasImageTasks ? '正在生成图片，完成后会自动显示。' : '';
+  const imageTaskNotice = hasImageTasks ? '对方正在发送图片，稍等一下。' : '';
   if (!visiblePatches.length && hasImageTasks) return intro || imageTaskNotice;
   if (!visiblePatches.length) return intro;
   return `${intro}${visiblePatches.map(formatPatchForBubble).join('')}${imageTaskNotice ? `\n\n${imageTaskNotice}` : ''}`;

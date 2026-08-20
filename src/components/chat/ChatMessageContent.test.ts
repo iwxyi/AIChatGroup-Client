@@ -133,6 +133,6 @@ describe('ChatMessageContent media layout', () => {
       status: 'queued',
       position: 1,
       total: 3,
-    }])).toBe('聊天图片队列 1/3');
+    }])).toBe('对方正在发送图片（队列 1/3）');
   });
 });

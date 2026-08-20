@@ -613,7 +613,7 @@ describe('assistantChatFlow media artifacts', () => {
       type: 'ai',
       senderId: 'assistant',
       senderName: '助手',
-      content: '正在生成图片，完成后会自动显示。',
+      content: '对方正在发送图片，稍等一下。',
       emotion: 0,
       timestamp: 1000,
       isDeleted: false,

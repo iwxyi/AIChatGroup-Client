@@ -91,8 +91,9 @@ export function buildAttachmentQueueProgress(
 ) {
   const entry = queueSnapshot.find((item) => item.messageId === message.id && item.attachmentId === attachment.id);
   if (!entry) return '';
-  if (entry.status === 'queued') return `聊天图片队列 ${entry.position}/${entry.total}`;
-  if (entry.status === 'generating') return `聊天图片生成中 ${entry.position}/${entry.total}`;
+  const action = attachment.kind === 'audio' ? '对方正在讲话' : attachment.kind === 'sticker' ? '对方正在发送表情' : '对方正在发送图片';
+  if (entry.status === 'queued') return `${action}（队列 ${entry.position}/${entry.total}）`;
+  if (entry.status === 'generating') return `${action}（${entry.position}/${entry.total}）`;
   return '';
 }
 
@@ -522,5 +523,6 @@ export function shouldHideGeneratedMediaPlaceholderText(message: Pick<Message, '
   return [
     '正在生成图片，完成后会自动显示。',
     '正在生成图片，完成后会自动显示',
+    '对方正在发送图片，稍等一下。',
   ].includes(message.content.trim());
 }
