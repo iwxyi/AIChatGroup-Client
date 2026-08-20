@@ -368,6 +368,9 @@ export function buildInlineInteractionContract(params: {
   const mediaRules = (shouldIncludeMediaDecision
     ? `\n\nRules for mediaDecision:\n1. Media is optional. Keep every available media field false/null unless the user asks for it or it materially improves this exact reply; never pretend media was sent when no task is queued.\n${mediaCapabilities.image ? `2. Use images for requested or genuinely useful visual content. images is an array of 1-9 distinct image tasks; use one entry per image, never repeat the same prompt. Each image prompt must be final model-ready text and altText must be concise and specific.\n3. imageReferenceRegistry below lists recent chat images. Use IDs only when the request clearly identifies a reference; never output URLs, base64, or markdown image links.\nImage reference registry:\n${JSON.stringify(imageReferenceRegistry)}\n` : ''}${mediaCapabilities.audio ? '4. Use audio only when the user asks for a voice reply or speaking is clearly the natural requested form. The voice identity is fixed, but delivery may reflect the character\'s current emotion and relationship context. audio.text is the exact spoken content and must not add facts beyond the visible reply. When audio is selected, keep visible text concise and semantically aligned with the spoken content; do not send a long essay followed by a short unrelated audio clip. Do not generate audio repeatedly for consecutive ordinary turns unless the user is still explicitly asking for voice or the scene clearly requires it.\n' : ''}5. Text, audio, and images may be combined in one turn. A text bubble may carry images or audio inline; use extraMessages only when later text bubbles are separately meaningful.`
     : '') + intentionalRepeatRules;
+  const expressiveAudioOverride = mediaCapabilities.audio
+    ? '\n\nAudio policy clarification: voice messages are not restricted to user requests. Character identity, habitual voice-message preference, affection, urgency, teasing, singing, crying, anger, or an emotionally important scene may justify proactive audio. Consecutive audio turns are allowed when natural for the scene; do not suppress them merely because the previous turn also used audio. Keep each spoken text aligned with its visible message.\n'
+    : '';
 
   const turnPlanRules = params.turnPlan
     ? params.turnPlan.allowExtraMessages
@@ -430,7 +433,7 @@ JSON validity rules:
 3. Use null for absent optional fields. Never use undefined.
 4. Escape ASCII double quote characters inside string values with a backslash. Prefer Chinese quotes inside Chinese text.
 5. intensity must be an integer from 1 to 5 if emitted inside optional diagnostic fields. confidence must be a decimal from 0 to 1, not 0 to 100.
-6. The example values above are structural placeholders, not dialogue content, conflict content, or memory.${storyNarrativeRules}${storyChoiceRules}${mediaRules}
+6. The example values above are structural placeholders, not dialogue content, conflict content, or memory.${storyNarrativeRules}${storyChoiceRules}${mediaRules}${expressiveAudioOverride}
 
 Story-reader visible body rule:
 1. storyEvents is the only visible story body.
@@ -477,7 +480,7 @@ interactionHints: null unless the turn has a clear directed social effect. Shape
 ${buildMemberReference({ chat: params.chat, characters: params.characters, speakerId: params.speaker.id })}
 No duplicate targetId+kind in secondary. Omit uncertain items.${aiDirectInteractionRules}
 
-conflictFocus: null unless this turn meaningfully sharpens/reframes/exposes/escalates/redirects/cools a real contradiction. If present, use type one of identity_ownership/authority_challenge/status_competition/alliance_boundary/care_jealousy/value_conflict/goal_conflict/resource_conflict/fairness_conflict/contradiction_exposure/tone_escalation/misrecognition; nextPressure one of escalate/spread/stabilize/divert/cool; developmentHooks from invite_target_response/force_side_taking/expose_contradiction/raise_stakes/shift_public_private/cool_down_with_residue/redirect_topic/trigger_memory_recall. Write fresh summary and why from this turn; never copy placeholder wording.${mediaRules}
+conflictFocus: null unless this turn meaningfully sharpens/reframes/exposes/escalates/redirects/cools a real contradiction. If present, use type one of identity_ownership/authority_challenge/status_competition/alliance_boundary/care_jealousy/value_conflict/goal_conflict/resource_conflict/fairness_conflict/contradiction_exposure/tone_escalation/misrecognition; nextPressure one of escalate/spread/stabilize/divert/cool; developmentHooks from invite_target_response/force_side_taking/expose_contradiction/raise_stakes/shift_public_private/cool_down_with_residue/redirect_topic/trigger_memory_recall. Write fresh summary and why from this turn; never copy placeholder wording.${mediaRules}${expressiveAudioOverride}
 
 socialEventHints: this is the only model-authored per-turn semantic source for world/social events. The runtime will not invent or patch a social_outing from local keyword matching. Include one when your visible full turn strongly suggests an event beyond the message itself; otherwise null or []. eventKind can be pair_private_thread/social_outing/post_moment/status_update/gift_exchange/conflict_expression/check_in/react_to_moment/custom; urgency immediate/soon/defer; visibilityPlan public/conversation_private/user_private/mixed. Include reasonType/seedIntent/confidence when useful, and do not duplicate recent events.
 
