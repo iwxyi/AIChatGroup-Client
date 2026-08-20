@@ -2436,13 +2436,13 @@ function normalizeMediaDecision(decision: MediaGenerationDecision | null | undef
   const normalized: MediaGenerationDecision = {};
   const requestedImages = Array.isArray(decision?.images) ? decision.images : decision?.image ? [decision.image] : [];
   const images = capabilities.image ? requestedImages
-    .filter((image) => image?.shouldGenerate && image.prompt && image.altText)
+    .filter((image) => image?.shouldGenerate)
     .slice(0, 9)
     .map((image) => ({
       shouldGenerate: true,
       reason: image.reason || '',
-      prompt: image.prompt,
-      altText: image.altText,
+      prompt: image.prompt || content,
+      altText: image.altText || content.slice(0, 80) || 'AI 生成图片',
       aspectRatio: image.aspectRatio,
       imageSize: image.imageSize,
       referenceCharacterIds: image.referenceCharacterIds?.filter(Boolean),
