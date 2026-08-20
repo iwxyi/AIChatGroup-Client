@@ -135,7 +135,7 @@ describe('projectConversationForModel', () => {
       options: { currentSpeakerId: 'char-a', chatType: 'group', imageAttachmentMode: 'none' },
     });
 
-    expect(projected[1]?.content).toContain('图片附件：旧参考图');
+    expect(projected[1]?.content).toContain('[图片] 旧参考图');
     expect(projected[1]?.attachments).toBeUndefined();
   });
 
@@ -185,5 +185,27 @@ describe('projectConversationForModel', () => {
 
     expect(projected[1]?.attachments).toBeUndefined();
     expect(projected[2]?.attachments).toEqual([{ url: 'data:image/png;base64,BBB', mimeType: undefined }]);
+  });
+
+  it('formats audio and other resources as compact semantic transcript markers', () => {
+    const projected = projectConversationForModel({
+      messages: [message({
+        type: 'ai',
+        senderId: 'char-a',
+        content: '晚安。',
+        metadata: {
+          attachments: [
+            { id: 'audio-1', kind: 'audio', status: 'ready', altText: '语音：晚安。', promptText: '晚安。', createdAt: 1, updatedAt: 1 },
+            { id: 'sticker-1', kind: 'sticker', status: 'ready', altText: '挥手', createdAt: 1, updatedAt: 1 },
+          ],
+        },
+      })],
+      characters: new Map<string, AICharacter>(),
+      options: { currentSpeakerId: 'char-b', chatType: 'group' },
+    });
+
+    expect(projected[1]?.content).toContain('[语音] 晚安。');
+    expect(projected[1]?.content).toContain('[表情] 挥手');
+    expect(projected[1]?.content).not.toContain('附带语音');
   });
 });

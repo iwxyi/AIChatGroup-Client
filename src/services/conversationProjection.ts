@@ -47,25 +47,33 @@ function buildImageAttachmentText(message: Message) {
   const attachments = (message.metadata?.attachments || [])
     .filter((attachment) => attachment.kind === 'image' && attachment.status !== 'deleted' && attachment.status !== 'failed');
   if (!attachments.length) return '';
-  const labels = attachments
+  return attachments
     .slice(0, 4)
-    .map((attachment, index) => attachment.caption || attachment.altText || `图片 ${index + 1}`);
-  const suffix = attachments.length > labels.length ? ` 等 ${attachments.length} 张图片` : '';
-  return `[图片附件：${labels.join('、')}${suffix}]`;
+    .map((attachment, index) => `[图片] ${attachment.caption || attachment.altText || `图片 ${index + 1}`}`)
+    .join('\n');
 }
 
 function buildAudioAttachmentText(message: Message) {
   const attachments = (message.metadata?.attachments || [])
     .filter((attachment) => attachment.kind === 'audio' && attachment.status !== 'deleted' && attachment.status !== 'failed');
   if (!attachments.length) return '';
-  // The spoken text remains in the normal message content. Add only a compact
-  // semantic marker so models know this turn also carried audio, without
-  // duplicating the transcript or exposing URLs/audio bytes.
-  return `[附带语音${attachments.length > 1 ? ` ${attachments.length} 条` : ''}，朗读内容与本条文字一致]`;
+  return attachments
+    .slice(0, 4)
+    .map((attachment) => `[语音] ${attachment.promptText || attachment.caption || attachment.altText || '语音内容'}`)
+    .join('\n');
+}
+
+function buildOtherAttachmentText(message: Message) {
+  const attachments = (message.metadata?.attachments || [])
+    .filter((attachment) => attachment.kind === 'sticker' && attachment.status !== 'deleted' && attachment.status !== 'failed');
+  return attachments
+    .slice(0, 4)
+    .map((attachment) => `[表情] ${attachment.caption || attachment.altText || '表情'}`)
+    .join('\n');
 }
 
 function buildTranscriptLine(message: Message, characters: Map<string, AICharacter>, currentSpeakerId?: string) {
-  return `${buildTranscriptHeader(message, characters, currentSpeakerId)}: ${[compactTranscriptContent(message.content), buildImageAttachmentText(message), buildAudioAttachmentText(message)].filter(Boolean).join('\n')}`;
+  return `${buildTranscriptHeader(message, characters, currentSpeakerId)}: ${[compactTranscriptContent(message.content), buildImageAttachmentText(message), buildAudioAttachmentText(message), buildOtherAttachmentText(message)].filter(Boolean).join('\n')}`;
 }
 
 function buildTranscriptInstruction(chatType: GroupChat['type']) {
@@ -128,7 +136,7 @@ export function projectConversationForModel(input: ConversationProjectionInput):
     if (message.type === 'ai' && currentSpeakerId && message.senderId === currentSpeakerId) {
       projected.push({
         role: 'assistant',
-        content: buildAssistantHistoryPrompt([compactTranscriptContent(message.content), buildAudioAttachmentText(message)].filter(Boolean).join('\n')),
+        content: buildAssistantHistoryPrompt([compactTranscriptContent(message.content), buildImageAttachmentText(message), buildAudioAttachmentText(message), buildOtherAttachmentText(message)].filter(Boolean).join('\n')),
         ...(attachments ? { attachments } : {}),
       });
       continue;
