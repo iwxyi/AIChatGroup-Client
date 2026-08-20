@@ -3051,8 +3051,8 @@ function shouldUseJsonResponseFormat(chat: Pick<GroupChat, 'mode' | 'sessionKind
 }
 
 function shouldAddJsonProtocolReminder(chat: Pick<GroupChat, 'mode' | 'sessionKind'>, config: Pick<APIConfig, 'provider' | 'model'>) {
-  return isDeepSeekLikeConfig(config)
-    && (chat.sessionKind?.scenarioId === 'story-reader' || resolveSessionFamilyKey(chat) === 'analysis');
+  void chat;
+  return isDeepSeekLikeConfig(config);
 }
 
 function buildJsonProtocolReminder(chat: Pick<GroupChat, 'mode' | 'sessionKind'>): ReturnType<typeof buildChatMessages>[number] {
@@ -3061,7 +3061,7 @@ function buildJsonProtocolReminder(chat: Pick<GroupChat, 'mode' | 'sessionKind'>
     role: 'user',
     content: isAnalysisRoom
       ? '格式校验：只返回一个可解析 JSON 对象，不要直接输出聊天正文。JSON 必须包含 content 字符串；如果本轮提出了观点、证据、问题、裁决或小结，必须在 deliberationArtifacts 中写入对应数组。'
-      : '格式校验：只返回一个可解析 JSON 对象，不要直接输出正文。JSON 必须遵守本轮输出协议。',
+      : '格式校验：只返回一个可解析 JSON 对象，不要直接输出正文。JSON 必须遵守本轮输出协议；如果需要连续发送多条文字、图片或语音消息，使用 messages 数组，每项包含 content 和自己的 mediaDecision，语音项必须独立成条。角色具备的图片/语音能力应通过结构化字段提交，不要声称无法发送，也不要把协议说明写进可见正文。',
   };
 }
 

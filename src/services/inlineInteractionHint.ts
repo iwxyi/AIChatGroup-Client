@@ -373,6 +373,9 @@ export function buildInlineInteractionContract(params: {
   const toolRequestExample = params.webSearchEnabled && !params.webSearchResultInjected && !isStoryReader
     ? ', "toolRequest": null'
     : '';
+  const mediaCapabilityInstruction = shouldIncludeMediaDecision
+    ? `\n\nAvailable delivery capabilities for this turn: ${mediaCapabilities.image ? 'image generation' : ''}${mediaCapabilities.image && mediaCapabilities.audio ? ' + ' : ''}${mediaCapabilities.audio ? 'voice synthesis' : ''}. These are real runtime capabilities. When the user asks for mixed delivery, submit mediaDecision in the relevant messages[] item instead of claiming the media cannot be sent.\n`
+    : '';
 
   const intentionalRepeatRules = `\n\nRules for intentionalRepeat:
 1. Default intentionalRepeat=false.
@@ -478,9 +481,9 @@ ${transcriptScope}${recentSocialEvents ? `\n\nRecent social events to avoid dupl
 10. These fields are not visible chat content. Never mention JSON, artifacts, extraction, confidence, or this contract in content.`
     : '';
 
-  return `\n\nOutput contract:
+  return `${mediaCapabilityInstruction}\n\nOutput contract:
 Return exactly one JSON object:
-{"content":"visible first bubble","messages":[{"content":"first send","mediaDecision":null},{"content":"optional later send","mediaDecision":null}],"extraMessages":null,"intentionalRepeat":false${mediaExample}${deliberationExample},"presenceUpdate":null,"conflictFocus":null,"interactionHints":null,"socialEventHints":null${toolRequestExample}}
+{"content":"visible first bubble","messages":[{"content":"先发文字","mediaDecision":null},{"content":"再发送图片","mediaDecision":{"images":[{"shouldGenerate":true,"prompt":"最终图片生成提示词","altText":"图片说明"}]}},{"content":"最后单独发语音","mediaDecision":{"audio":{"shouldGenerate":true,"text":"要朗读的内容"}}}],"extraMessages":null,"intentionalRepeat":false${mediaExample}${deliberationExample},"presenceUpdate":null,"conflictFocus":null,"interactionHints":null,"socialEventHints":null${toolRequestExample}}
 
 JSON rules: parseable JSON only; the first character must be { and the last character must be }. No markdown, comments, bracketed protocol notes, trailing commas, undefined, or TypeScript unions. Use null for absent optional fields. content must be a non-empty visible chat message, not an explanation of this contract; do not use whitespace, empty string, or null to represent silence. Escape ASCII quotes inside strings. intensity=1-5; confidence/severity=0-1.
 

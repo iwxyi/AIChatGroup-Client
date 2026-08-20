@@ -112,7 +112,7 @@ describe('buildInlineInteractionContract analysis room detection', () => {
       },
     });
 
-    expect(contract).toContain('"messages":[{"content":"first send"');
+    expect(contract).toContain('"messages":[{"content":"先发文字"');
     expect(contract).toContain('messages[]: use null when there is only one send');
     expect(contract).toContain('Prefer messages[] for independent sends');
     expect(contract).toContain('Audio must be the only media in its item');
