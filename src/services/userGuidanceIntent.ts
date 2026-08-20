@@ -20,6 +20,7 @@ export interface UserGuidanceIntent {
   deferredActorIds?: string[];
   hasHardConstraints?: boolean;
   mediaRequest?: UserGuidanceMediaRequest;
+  voiceRequest?: boolean;
   focusText: string;
   beatType: DirectorBeatType;
   pressure: number;
@@ -285,6 +286,9 @@ export function parseUserGuidanceIntent(text: string, characters: AICharacter[])
   const deferredActorIds = namesAfterSoftFloorDefer(rawText, mentionedByPosition)
     .filter((id) => !actorIds.includes(id) && !suppressedActorIds.includes(id));
   const subjectActorIds = imageRequest ? unique(mentionedActorIds.filter((id) => !actorIds.includes(id))) : [];
+  // Voice intent must come from the structured guidance/model decision layer;
+  // do not infer it from local keyword matching.
+  const voiceRequest = false;
   const directRequest = Boolean(actorIds.length) || isDirectSpeakRequest(rawText);
   if (!imageRequest && !directRequest && !mentionedActorIds.length) {
     return {
@@ -296,6 +300,7 @@ export function parseUserGuidanceIntent(text: string, characters: AICharacter[])
       suppressedActorIds,
       deferredActorIds,
       hasHardConstraints,
+      voiceRequest,
       focusText: rawText,
       beatType: rawText.length > 90 ? 'summarize' : 'invite',
       pressure: hasHardConstraints ? 0.78 : rawText.length > 90 ? 0.66 : 0.58,
@@ -332,9 +337,9 @@ export function parseUserGuidanceIntent(text: string, characters: AICharacter[])
     };
   }
 
-  if (actorIds.length || mentionedActorIds.length) {
+  if (actorIds.length || mentionedActorIds.length || voiceRequest) {
     return {
-      kind: actorIds.length ? 'direct_reply' : 'topic_shift',
+      kind: actorIds.length || voiceRequest ? 'direct_reply' : 'topic_shift',
       rawText,
       actorIds,
       mentionedActorIds,
@@ -342,8 +347,9 @@ export function parseUserGuidanceIntent(text: string, characters: AICharacter[])
       suppressedActorIds,
       deferredActorIds,
       hasHardConstraints,
+      voiceRequest,
       focusText: rawText,
-      beatType: actorIds.length ? 'answer' : 'invite',
+      beatType: actorIds.length || voiceRequest ? 'answer' : 'invite',
       pressure: collectiveActorIds.length ? 0.96 : actorIds.length ? 0.92 : hasHardConstraints ? 0.84 : 0.7,
       maxTurns: actorIds.length ? resolveActorGuidanceMaxTurns({
         actorCount: actorIds.length,

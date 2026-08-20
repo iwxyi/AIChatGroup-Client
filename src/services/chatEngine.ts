@@ -2195,6 +2195,9 @@ function buildUserGuidancePrompt(guidance: UserGuidanceIntent | null | undefined
   const mediaLine = guidance.mediaRequest
     ? `\n- Media request: the user is asking for an image. Subject: ${subjectNames.length ? subjectNames.join('、') : guidance.mediaRequest.subjectText}. Requested visual action: ${guidance.mediaRequest.actionText}.${capabilities.image ? '\n- You have image-generation capability in this turn. If you are the requested actor, set mediaDecision.image.shouldGenerate=true and create a concrete prompt for the requested image. Your visible message should sound like you are sending or presenting that image now, not like you are merely discussing the idea.\n- This request is not optional. Do not answer with ordinary banter before the image decision. The first semantic move must complete the requested image action.' : '\n- You do not have image-generation capability in this turn. If you are the requested actor, say in character that you cannot send/generate the image now instead of pretending an image was sent.'}`
     : '';
+  const voiceLine = guidance.voiceRequest
+    ? `\n- Voice request: the user explicitly wants to hear this reply as audio. If TTS capability is available, set mediaDecision.audio.shouldGenerate=true and make audio.text the exact spoken content. Keep this as a voice-first reply rather than merely discussing the request.`
+    : '';
   const actorLine = requestedActors.length
     ? `\n- Requested actor(s): ${requestedActors.join('、')}. ${isRequestedActor ? 'You are one of them; satisfy the request before normal banter.' : 'You are not the requested actor; do not hijack the request.'}`
     : '';
@@ -2220,7 +2223,7 @@ function buildUserGuidancePrompt(guidance: UserGuidanceIntent | null | undefined
     : '';
   return `\n## User Guidance Override
 - Latest user guidance: ${guidance.rawText}
-- Function: ${guidance.kind}.${actorLine}${mediaLine}${topicLine}${directLine}${constraintLine}${suppressionLine}${deferredLine}${continuationLine}
+- Function: ${guidance.kind}.${actorLine}${mediaLine}${voiceLine}${topicLine}${directLine}${constraintLine}${suppressionLine}${deferredLine}${continuationLine}
 - Treat this as the current room instruction, above narrative pressure, conflict pressure, and recent banter.
 - If the room has been drifting, pull the next line back to this guidance immediately.`;
 }
@@ -2257,6 +2260,7 @@ Guidance retry:
 }
 
 function shouldForceGuidanceMedia(guidance: UserGuidanceIntent | null | undefined, speaker: AICharacter) {
+  if (guidance?.voiceRequest) return !guidance.actorIds.length || guidance.actorIds.includes(speaker.id);
   if (!guidance?.mediaRequest || guidance.mediaRequest.kind !== 'image') return false;
   if (!guidance.actorIds.length) return true;
   return guidance.actorIds.includes(speaker.id);
@@ -2318,9 +2322,21 @@ function mergeGuidanceMediaDecision(params: {
     || supportedDecision?.image?.shouldGenerate
     || supportedDecision?.audio?.shouldGenerate,
   );
-  if (!shouldForceGuidanceMedia(params.guidance, params.speaker) || !params.guidance || params.mediaCapabilities?.image === false) {
+  if (!shouldForceGuidanceMedia(params.guidance, params.speaker) || !params.guidance) {
     return hasSupportedDecision ? supportedDecision : undefined;
   }
+  if (params.guidance.voiceRequest) {
+    if (params.mediaCapabilities?.audio === false) return hasSupportedDecision ? supportedDecision : undefined;
+    return {
+      ...(supportedDecision || {}),
+      audio: {
+        shouldGenerate: true,
+        reason: '用户明确要求听语音。',
+        text: supportedDecision?.audio?.text || params.content,
+      },
+    };
+  }
+  if (params.mediaCapabilities?.image === false) return hasSupportedDecision ? supportedDecision : undefined;
   if (supportedDecision?.images?.some((image) => image.shouldGenerate && image.prompt && image.altText)) {
     return supportedDecision;
   }

@@ -993,6 +993,7 @@ function normalizeStoredGuidance(message: Message): UserGuidanceIntent | null {
     hardConstraintActorIds: stored.hardConstraintActorIds || [],
     suppressedActorIds: stored.suppressedActorIds || [],
     hasHardConstraints: stored.hasHardConstraints,
+    voiceRequest: stored.voiceRequest === true,
     mediaRequest: stored.mediaRequest?.kind === 'image' ? {
       kind: 'image',
       subjectActorIds: stored.mediaRequest.subjectActorIds || [],

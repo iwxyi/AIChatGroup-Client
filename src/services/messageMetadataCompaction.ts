@@ -199,6 +199,7 @@ function compactRuntimeDecision(decision: NonNullable<MessageMetadata['runtimeDe
       reason: compactText(decision.directorIntent.reason, MAX_TEXT.reason),
       userGuidance: decision.directorIntent.userGuidance ? omitEmpty({
         ...decision.directorIntent.userGuidance,
+        voiceRequest: decision.directorIntent.userGuidance.voiceRequest || undefined,
         rawText: compactText(decision.directorIntent.userGuidance.rawText, MAX_TEXT.reason),
         focusText: compactText(decision.directorIntent.userGuidance.focusText, MAX_TEXT.reason),
         reason: compactText(decision.directorIntent.userGuidance.reason, MAX_TEXT.reason),
