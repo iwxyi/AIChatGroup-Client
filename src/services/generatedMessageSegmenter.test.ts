@@ -59,6 +59,32 @@ describe('generatedMessageSegmenter', () => {
     expect(segments[0]?.extraMessages).toBeUndefined();
   });
 
+  it('commits messages protocol parts independently and preserves per-part media metadata', () => {
+    const message: GeneratedRoundMessage = {
+      ...buildMessage('第一句'),
+      messageParts: [
+        { content: '第一句', metadata: { format: 'plain' } },
+        {
+          content: '（语音）第二句',
+          metadata: {
+            generationDecision: { audio: { shouldGenerate: true, text: '第二句' } },
+            attachments: [{ id: 'audio-1', kind: 'audio', status: 'queued', altText: '语音：第二句', promptText: '第二句', createdAt: 1, updatedAt: 1 }],
+          },
+        },
+        {
+          content: '第三句',
+          metadata: { generationDecision: { images: [{ shouldGenerate: true, prompt: '一张图', altText: '一张图' }] } },
+        },
+      ],
+    };
+    const segments = splitGeneratedRoundMessage(message);
+    expect(segments.map((item) => item.content)).toEqual(['第一句', '（语音）第二句', '第三句']);
+    expect(segments[1]?.metadata?.generationDecision?.audio?.shouldGenerate).toBe(true);
+    expect(segments[2]?.metadata?.generationDecision?.images?.[0]?.shouldGenerate).toBe(true);
+    expect(segments[1]?.metadata?.turnSegment).toEqual({ index: 1, count: 3 });
+    expect(buildGeneratedTurnContent(message)).toBe('第一句\n（语音）第二句\n第三句');
+  });
+
   it('limits extra messages to four later bubbles without dropping generated text', () => {
     const message = {
       ...buildMessage('一', 6),

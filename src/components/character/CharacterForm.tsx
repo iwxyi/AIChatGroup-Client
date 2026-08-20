@@ -398,7 +398,7 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
   const [visualAssets, setVisualAssets] = useState<CharacterVisualReferenceImage[]>(() => dedupeVisualAssets(initial?.visualIdentity?.referenceImages || []));
   const visualAssetInputRef = useRef<HTMLInputElement | null>(null);
   const visualAssetsRef = useRef<CharacterVisualReferenceImage[]>(dedupeVisualAssets(initial?.visualIdentity?.referenceImages || []));
-  const loadedInitialIdRef = useRef<string | null>(initial?.id || null);
+  const loadedInitialSignatureRef = useRef<string | null>(initial ? `${initial.id || 'draft'}:${initial.updatedAt || 0}:${initial.characterDetailLoaded ? 'detail' : 'summary'}` : null);
   const processedVisualImageTaskIdsRef = useRef(new Set<string>());
   const avatarTaskTargetKey = initial?.id ? `character:${initial.id}` : 'character-form:draft';
   const visualImageTargetKey = initial?.id ? `character-visual:${initial.id}` : 'character-form:visual-draft';
@@ -513,9 +513,9 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
 
   useEffect(() => {
     if (!initial) return;
-    const initialId = initial.id || null;
-    if (loadedInitialIdRef.current === initialId) return;
-    loadedInitialIdRef.current = initialId;
+    const initialSignature = `${initial.id || 'draft'}:${initial.updatedAt || 0}:${initial.characterDetailLoaded ? 'detail' : 'summary'}`;
+    if (loadedInitialSignatureRef.current === initialSignature) return;
+    loadedInitialSignatureRef.current = initialSignature;
     setModelProfileIds(normalizeCharacterModelProfileIds(initial.modelProfileIds, initial.modelProfileId || null));
     setGenerationPreferences({
       moments: initial.generationPreferences?.moments || 'follow_global',

@@ -56,6 +56,7 @@ import { getPromptSpeakerLabel, getPromptTurnTypeLabel, isHumanDirectedMessage }
 
 export interface GeneratedRoundMessage extends Omit<Message, 'id' | 'timestamp' | 'isDeleted'> {
   extraMessages?: string[] | null;
+  messageParts?: Array<{ content: string; metadata?: MessageMetadata }> | null;
   interactionHint?: InteractionEventPayload | null;
   interactionHints?: InteractionEventPayload[] | null;
   addressedTargetIds?: string[] | null;
@@ -126,6 +127,7 @@ type GenerationWithGuidanceTrace = {
   storyChoices?: MessageMetadata['storyChoices'] | null;
   fullNarrativeResponse?: string;
   extraMessages?: string[] | null;
+  messageParts?: Array<{ content: string; mediaDecision?: MediaGenerationDecision | null }> | null;
   storyEvents?: import('../types/message').StoryEvent[] | null;
   guidanceExecution?: GuidanceExecutionTrace;
   streamedFallbackUsed?: boolean;
@@ -3152,7 +3154,13 @@ async function generateWithPrompt(params: {
   const storyEventContent = storyEvents.length && narrativeRuntime
     ? narrativeRuntime.buildStoryEventsVisibleText(storyEvents, params.characters || [])
     : '';
-  const rawContent = storyEventContent || (parsedEnvelope ? parsedEnvelope.content : isLikelyInlineEnvelopeResponse(response) ? '' : response);
+  const messageParts = isStoryReader || !Array.isArray(parsedEnvelope?.messages)
+    ? null
+    : parsedEnvelope.messages
+      .filter((part): part is { content: string; mediaDecision?: MediaGenerationDecision | null } => Boolean(part && typeof part.content === 'string' && part.content.trim()))
+      .slice(0, 5)
+      .map((part) => ({ content: part.content.trim(), mediaDecision: part.mediaDecision || null }));
+  const rawContent = storyEventContent || (messageParts?.[0]?.content || (parsedEnvelope ? parsedEnvelope.content : isLikelyInlineEnvelopeResponse(response) ? '' : response));
   const rawNarrativeText = typeof parsedEnvelope?.narrativeText === 'string' ? parsedEnvelope.narrativeText : '';
   const finalizedResponse = finalizeResponse(rawContent, params.intent, params.speaker, params.activeMessages, params.showRoleActions, Boolean(parsedEnvelope?.intentionalRepeat), params.surface);
   const finalizedNarrativeText = rawNarrativeText ? trimHumanChatStyle(rawNarrativeText, true) : '';
@@ -3188,12 +3196,14 @@ async function generateWithPrompt(params: {
     surface: params.surface,
     turnPlan: params.turnPlan,
   });
-  const fullResponse = buildFullTurnResponse(finalResponse, extraMessages);
+  const fullResponse = messageParts?.length
+    ? messageParts.map((part) => part.content).join('\n')
+    : buildFullTurnResponse(finalResponse, extraMessages);
   const eventStoryChoices = narrativeRuntime ? narrativeRuntime.getStoryChoicesFromEvents(storyEvents) : [];
   const storyChoices = eventStoryChoices?.length ? eventStoryChoices : normalizeStoryChoiceSuggestions(parsedEnvelope?.storyChoices);
   const fullNarrativeResponse = narrativeBlocks.map((block) => block.text).join('\n\n') || finalizedNarrativeText;
   streamBridge.flush(fullNarrativeResponse || finalResponse);
-  return { parsedEnvelope, rawContent, rawNarrativeText, finalResponse, narrativeText: finalizedNarrativeText, narrativeBlocks, storyChoices, fullResponse, fullNarrativeResponse, extraMessages, storyEvents, streamedFallbackUsed };
+  return { parsedEnvelope, rawContent, rawNarrativeText, finalResponse, narrativeText: finalizedNarrativeText, narrativeBlocks, storyChoices, fullResponse, fullNarrativeResponse, extraMessages, messageParts, storyEvents, streamedFallbackUsed };
 }
 
 async function generateNonDuplicateResponse(params: {
@@ -3229,6 +3239,7 @@ async function generateNonDuplicateResponse(params: {
   let lastNarrativeBlocks: NarrativeBlock[] = [];
   let lastFullNarrativeResponse = '';
   let lastExtraMessages: string[] | null = null;
+  let lastMessageParts: GenerationWithGuidanceTrace['messageParts'] = null;
   let lastStoryEvents: import('../types/message').StoryEvent[] | null = null;
   let lastStoryChoices: MessageMetadata['storyChoices'] | null = null;
   let lastStreamedFallbackUsed = false;
@@ -3315,6 +3326,7 @@ async function generateNonDuplicateResponse(params: {
     lastNarrativeBlocks = generated.narrativeBlocks;
     lastFullNarrativeResponse = generated.fullNarrativeResponse;
     lastExtraMessages = generated.extraMessages || null;
+    lastMessageParts = generated.messageParts || null;
     lastStoryEvents = generated.storyEvents || null;
     lastStoryChoices = generated.storyChoices || null;
     lastStreamedFallbackUsed = Boolean(generated.streamedFallbackUsed);
@@ -3536,6 +3548,7 @@ async function generateNonDuplicateResponse(params: {
         fullResponse: generated.fullResponse,
         fullNarrativeResponse: generated.fullNarrativeResponse,
         extraMessages: generated.extraMessages,
+        messageParts: generated.messageParts || null,
         storyEvents: generated.storyEvents || null,
         guidanceExecution: params.guidance ? {
           status: guidanceEvaluation.matched
@@ -3584,6 +3597,7 @@ async function generateNonDuplicateResponse(params: {
     rawResponse: lastRawResponse || lastFullResponse || lastFinalResponse,
     fullNarrativeResponse: lastFullNarrativeResponse || lastNarrativeText || lastFullResponse || lastFinalResponse,
     extraMessages: lastExtraMessages,
+    messageParts: lastMessageParts,
     storyEvents: lastStoryEvents,
     streamedFallbackUsed: lastStreamedFallbackUsed,
     guidanceExecution: params.guidance ? {
@@ -3605,6 +3619,7 @@ function buildCompletedMessage(params: {
   finalResponse: string;
   fullResponse: string;
   extraMessages?: string[] | null;
+  messageParts?: Array<{ content: string; metadata?: MessageMetadata }> | null;
   emotion: number;
   parsedEnvelope: ReturnType<typeof parseInlineInteractionEnvelope>;
   metadata?: MessageMetadata;
@@ -3624,6 +3639,7 @@ function buildCompletedMessage(params: {
     senderName: params.speakerName,
     content: params.finalResponse,
     extraMessages: params.extraMessages,
+    messageParts: params.messageParts,
     metadata: params.metadata,
     emotion: params.emotion,
     interactionHint: interactionHints[0] || null,
@@ -4135,6 +4151,24 @@ export async function generateSpeakerMessage(params: {
     appendRuntimeTraceDiagnostics(runtimeBundleWithMovePlan, deliberationArtifactTrace),
     structuredOutputTrace,
   );
+  const runtimeDecisionMetadata = buildRuntimeDecisionMetadata({
+    directorIntent: effectiveDirectorIntent,
+    narrativeLines: params.narrativeLines,
+    speakerSelection: params.speakerSelection,
+    speakerScore: reconciledSpeakerScore,
+    innerLife,
+    surface: responseSurface,
+    turnPlan,
+    personaActivation,
+    intentionalRepeat: Boolean(generated.parsedEnvelope?.intentionalRepeat),
+    memoryTrace,
+    characterMindTrace,
+    companionshipTrace,
+    expressionFeedback: expressionFeedbackTrace,
+    guidanceExecution,
+    worldInfluence: worldInfluenceSnapshot,
+    runtimeBundle: runtimeBundleWithDiagnostics,
+  });
   if (structuredOutputTrace.policyHits.includes('structured_output:no_json_envelope')
     || structuredOutputTrace.policyHits.some((item) => item.includes('_dropped:'))
     || structuredOutputTrace.policyHits.includes('structured_output:invite_guidance_without_social_outing')) {
@@ -4159,6 +4193,39 @@ export async function generateSpeakerMessage(params: {
       responseLength: generatedStoryResponse.length,
     }, 'warn', 'chat-run');
   }
+  const baseMetadata = buildMessageMetadata({
+    decision: generated.messageParts?.length ? null : mergedMediaDecision,
+    capabilities: mediaCapabilities,
+    content: generatedStoryResponse,
+    activeMessages,
+    surface: responseSurface,
+    storyEvents,
+    storyEventsNormalized: true,
+    storyQuality: narrativeRuntime && storyEvents.length ? narrativeRuntime.evaluateStoryEventQuality(storyEvents) : null,
+    narrativeTurn,
+    storyChoices,
+    deliberationArtifacts: generated.parsedEnvelope?.deliberationArtifacts || null,
+    presenceUpdate: generated.parsedEnvelope?.presenceUpdate || null,
+    runtimeDecision: runtimeDecisionMetadata,
+  });
+  const messageParts = generated.messageParts?.map((part, index) => ({
+    content: part.content,
+    metadata: buildMessageMetadata({
+      decision: part.mediaDecision || null,
+      capabilities: mediaCapabilities,
+      content: part.content,
+      activeMessages,
+      surface: responseSurface,
+      storyEvents: index === 0 ? storyEvents : [],
+      storyEventsNormalized: true,
+      storyQuality: index === 0 && narrativeRuntime && storyEvents.length ? narrativeRuntime.evaluateStoryEventQuality(storyEvents) : null,
+      narrativeTurn: index === 0 ? narrativeTurn : null,
+      storyChoices: index === 0 ? storyChoices : null,
+      deliberationArtifacts: index === 0 ? generated.parsedEnvelope?.deliberationArtifacts || null : null,
+      presenceUpdate: index === 0 ? generated.parsedEnvelope?.presenceUpdate || null : null,
+      runtimeDecision: index === 0 ? runtimeDecisionMetadata : undefined,
+    }),
+  })) || null;
   const completedMessage = buildCompletedMessage({
     chat: params.chat,
     characters: effectiveMembers,
@@ -4167,40 +4234,10 @@ export async function generateSpeakerMessage(params: {
     finalResponse: generated.finalResponse,
     fullResponse: generatedDialogueResponse,
     extraMessages: generated.extraMessages,
+    messageParts,
     emotion: getEmotion(params.speaker.id),
     parsedEnvelope: generated.parsedEnvelope,
-	    metadata: buildMessageMetadata({
-	      decision: mergedMediaDecision,
-	      capabilities: mediaCapabilities,
-	      content: generatedStoryResponse,
-        activeMessages,
-        surface: responseSurface,
-        storyEvents,
-        storyEventsNormalized: true,
-        storyQuality: narrativeRuntime && storyEvents.length ? narrativeRuntime.evaluateStoryEventQuality(storyEvents) : null,
-        narrativeTurn,
-        storyChoices,
-        deliberationArtifacts: generated.parsedEnvelope?.deliberationArtifacts || null,
-        presenceUpdate: generated.parsedEnvelope?.presenceUpdate || null,
-	      runtimeDecision: buildRuntimeDecisionMetadata({
-	        directorIntent: effectiveDirectorIntent,
-	        narrativeLines: params.narrativeLines,
-            speakerSelection: params.speakerSelection,
-	        speakerScore: reconciledSpeakerScore,
-          innerLife,
-          surface: responseSurface,
-          turnPlan,
-          personaActivation,
-          intentionalRepeat: Boolean(generated.parsedEnvelope?.intentionalRepeat),
-          memoryTrace,
-          characterMindTrace,
-          companionshipTrace,
-          expressionFeedback: expressionFeedbackTrace,
-          guidanceExecution,
-          worldInfluence: worldInfluenceSnapshot,
-          runtimeBundle: runtimeBundleWithDiagnostics,
-	      }),
-	    }),
+	    metadata: baseMetadata,
 	  });
   const visibleMessage = maybeAutoWithdrawMessage(completedMessage, { language: 'zh' });
   if (visibleMessage.metadata?.withdrawal?.withdrawn) {

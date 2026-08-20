@@ -91,7 +91,7 @@ describe('buildInlineInteractionContract analysis room detection', () => {
     expect(contract).toContain('visible content must either make a deliberative move');
   });
 
-  it('describes extraMessages as optional later bubbles without null example bias', () => {
+  it('describes messages protocol as the preferred independent bubble format', () => {
     const contract = buildInlineInteractionContract({
       chat: {
         id: 'chat-1',
@@ -112,11 +112,26 @@ describe('buildInlineInteractionContract analysis room detection', () => {
       },
     });
 
-    expect(contract).toContain('"extraMessages":["optional later bubble from the same speaker"]');
-    expect(contract).toContain('use null when there are no later sends');
-    expect(contract).toContain('first send in content and later sends in extraMessages');
+    expect(contract).toContain('"messages":[{"content":"first send"');
+    expect(contract).toContain('messages[]: use null when there is only one send');
+    expect(contract).toContain('Prefer messages[] for independent sends');
+    expect(contract).toContain('Audio must be the only media in its item');
     expect(contract).toContain('A bubble may contain one or more paragraphs');
-    expect(contract).not.toContain('"extraMessages":null');
+  });
+
+  it('parses the messages protocol and keeps per-message media decisions', () => {
+    const parsed = parseInlineInteractionEnvelope(JSON.stringify({
+      content: '第一句',
+      messages: [
+        { content: '第一句', mediaDecision: null },
+        { content: '第二句', mediaDecision: { audio: { shouldGenerate: true, text: '第二句' } } },
+      ],
+      extraMessages: null,
+    }));
+    expect(parsed?.messages).toEqual([
+      { content: '第一句', mediaDecision: null },
+      { content: '第二句', mediaDecision: { audio: { shouldGenerate: true, text: '第二句' } } },
+    ]);
   });
 
   it('includes generated image prompts as lightweight image reference summaries', () => {
@@ -160,8 +175,8 @@ describe('buildInlineInteractionContract analysis room detection', () => {
     });
 
     expect(contract).toContain('imageReferenceRegistry');
-    expect(contract).toContain('infer the user\'s actual image goal from the latest message plus recent conversation');
-    expect(contract).toContain('image.prompt must be the final prompt for the image model');
+    expect(contract).toContain('Infer the user\'s actual image goal from the latest message plus recent conversation');
+    expect(contract).toContain('Each image prompt must be final model-ready text');
     expect(contract).toContain('"refId":"message-image:image-1"');
     expect(contract).toContain('"promptText":"A realistic braised pork belly dish');
     expect(contract).toContain('"semanticSummary":"模型识别：红烧肉色泽红亮，适合做封面。"');

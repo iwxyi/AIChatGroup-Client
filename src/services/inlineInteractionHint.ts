@@ -72,6 +72,10 @@ export interface InlineDeliberationArtifacts {
 
 export interface InlineInteractionEnvelope {
   content: string;
+  messages?: Array<{
+    content: string;
+    mediaDecision?: MediaGenerationDecision | null;
+  }> | null;
   narrativeText?: string | null;
   storyEvents?: InlineStoryEvent[] | null;
   narrativeBlocks?: InlineStoryBlock[] | null;
@@ -234,9 +238,19 @@ function sanitizePresenceUpdate(value: MessagePresenceUpdate | null | undefined)
 }
 
 function sanitizeEnvelope(envelope: InlineInteractionEnvelope): InlineInteractionEnvelope {
+  const messages = Array.isArray(envelope.messages)
+    ? envelope.messages
+      .filter((part): part is NonNullable<InlineInteractionEnvelope['messages']>[number] => Boolean(part && typeof part === 'object' && typeof part.content === 'string' && part.content.trim()))
+      .slice(0, 5)
+      .map((part) => ({
+        content: part.content.trim(),
+        mediaDecision: part.mediaDecision && typeof part.mediaDecision === 'object' ? part.mediaDecision : null,
+      }))
+    : null;
   return {
     ...envelope,
     content: typeof envelope.content === 'string' ? envelope.content : '',
+    messages,
     socialEventHints: normalizeSocialEventHints(envelope.socialEventHints),
     conflictFocus: sanitizeConflictFocus(envelope.conflictFocus),
     storyEvents: normalizeStoryEvents(envelope.storyEvents),
@@ -247,6 +261,7 @@ function sanitizeEnvelope(envelope: InlineInteractionEnvelope): InlineInteractio
 
 function hasVisibleEnvelopeContent(envelope: InlineInteractionEnvelope) {
   if (typeof envelope.content === 'string' && envelope.content.trim()) return true;
+  if (Array.isArray(envelope.messages) && envelope.messages.some((item) => item && typeof item.content === 'string' && item.content.trim())) return true;
   if (typeof envelope.narrativeText === 'string' && envelope.narrativeText.trim()) return true;
   if (Array.isArray(envelope.extraMessages) && envelope.extraMessages.some((item) => typeof item === 'string' && item.trim())) return true;
   if (Array.isArray(envelope.narrativeBlocks) && envelope.narrativeBlocks.some((item) => item && typeof item === 'object' && typeof item.text === 'string' && item.text.trim())) return true;
@@ -366,7 +381,7 @@ export function buildInlineInteractionContract(params: {
 4. Do not use intentionalRepeat=true for accidental template drift. If you are merely falling back into the same opener, explanation scaffold, punctuation habit, or generic answer shape, set false and rewrite with a different discourse move.`;
 
   const mediaRules = (shouldIncludeMediaDecision
-    ? `\n\nRules for mediaDecision:\n1. Media is optional. Keep every available media field false/null unless the user asks for it or it materially improves this exact reply; never pretend media was sent when no task is queued.\n${mediaCapabilities.image ? `2. Use images for requested or genuinely useful visual content. images is an array of 1-9 distinct image tasks; use one entry per image, never repeat the same prompt. Each image prompt must be final model-ready text and altText must be concise and specific.\n3. imageReferenceRegistry below lists recent chat images. Use IDs only when the request clearly identifies a reference; never output URLs, base64, or markdown image links.\nImage reference registry:\n${JSON.stringify(imageReferenceRegistry)}\n` : ''}${mediaCapabilities.audio ? '4. Use audio only when the user asks for a voice reply or speaking is clearly the natural requested form. The voice identity is fixed, but delivery may reflect the character\'s current emotion and relationship context. audio.text is the exact spoken content and must not add facts beyond the visible reply. When audio is selected, keep visible text concise and semantically aligned with the spoken content; do not send a long essay followed by a short unrelated audio clip. Do not generate audio repeatedly for consecutive ordinary turns unless the user is still explicitly asking for voice or the scene clearly requires it.\n' : ''}5. Text, audio, and images may be combined in one turn. A text bubble may carry images or audio inline; use extraMessages only when later text bubbles are separately meaningful.`
+    ? `\n\nRules for mediaDecision:\n1. Media is optional. Keep every available media field false/null unless the user asks for it or it materially improves this exact reply; never pretend media was sent when no task is queued.\n${mediaCapabilities.image ? `2. Use images for requested or genuinely useful visual content. Infer the user's actual image goal from the latest message plus recent conversation. images is an array of 1-9 distinct image tasks; use one entry per image, never repeat the same prompt. Each image prompt must be final model-ready text and altText must be concise and specific.\n3. imageReferenceRegistry below lists recent chat images. Use IDs only when the request clearly identifies a reference; never output URLs, base64, or markdown image links.\nImage reference registry:\n${JSON.stringify(imageReferenceRegistry)}\n` : ''}${mediaCapabilities.audio ? '4. Use audio only when the user asks for a voice reply or speaking is clearly the natural requested form. The voice identity is fixed, but delivery may reflect the character\'s current emotion and relationship context. audio.text is the exact spoken content and must not add facts beyond the visible reply. When audio is selected, keep visible text concise and semantically aligned with the spoken content; do not send a long essay followed by a short unrelated audio clip.\n' : ''}5. Text, audio, and images may be combined in one turn. Prefer messages[] when this turn contains multiple independent consecutive sends. Each item has content and its own optional mediaDecision. A voice item must be a standalone bubble; text and images may be combined or sent separately. Multiple text/image/audio items may be emitted in natural sequence.\n6. Keep legacy content + extraMessages compatible. When messages[] is present it is authoritative and extraMessages should be null.`
     : '') + intentionalRepeatRules;
   const expressiveAudioOverride = mediaCapabilities.audio
     ? '\n\nAudio policy clarification: decide from the user\'s actual intent and the character\'s situation, not from a local keyword rule. If the latest user request explicitly asks to hear the reply, speak, sing, or send a voice message, audio is required when TTS is available. Character identity, habitual voice-message preference, affection, urgency, teasing, singing, crying, anger, or an emotionally important scene may also justify proactive audio. Consecutive audio turns are allowed when natural for the scene; do not suppress them merely because the previous turn also used audio. Keep each spoken text aligned with its visible message.\n'
@@ -374,7 +389,7 @@ export function buildInlineInteractionContract(params: {
 
   const turnPlanRules = params.turnPlan
     ? params.turnPlan.allowExtraMessages
-      ? `\nTurn plan: rhythm=${params.turnPlan.rhythm}; this turn may use 2-${Math.max(2, params.turnPlan.targetBubbleCount)} consecutive bubbles if that is how the speaker would naturally send it. Put the first send in content and later sends in extraMessages. A bubble may contain one or more paragraphs when that reads more naturally than separate sends.`
+      ? `\nTurn plan: rhythm=${params.turnPlan.rhythm}; this turn may use 2-${Math.max(2, params.turnPlan.targetBubbleCount)} consecutive bubbles if that is how the speaker would naturally send it. Prefer messages[] for independent sends; otherwise put the first send in content and later sends in extraMessages. A bubble may contain one or more paragraphs when that reads more naturally than separate sends.`
       : `\nTurn plan: rhythm=${params.turnPlan.rhythm}; one bubble is the default, but content may still contain paragraph breaks if the visible reply genuinely has separate thoughts.`
     : '';
   const aiDirectInteractionRules = params.chat.type === 'ai_direct'
@@ -465,11 +480,11 @@ ${transcriptScope}${recentSocialEvents ? `\n\nRecent social events to avoid dupl
 
   return `\n\nOutput contract:
 Return exactly one JSON object:
-{"content":"visible first bubble","extraMessages":["optional later bubble from the same speaker"],"intentionalRepeat":false${mediaExample}${deliberationExample},"presenceUpdate":null,"conflictFocus":null,"interactionHints":null,"socialEventHints":null${toolRequestExample}}
+{"content":"visible first bubble","messages":[{"content":"first send","mediaDecision":null},{"content":"optional later send","mediaDecision":null}],"extraMessages":null,"intentionalRepeat":false${mediaExample}${deliberationExample},"presenceUpdate":null,"conflictFocus":null,"interactionHints":null,"socialEventHints":null${toolRequestExample}}
 
 JSON rules: parseable JSON only; the first character must be { and the last character must be }. No markdown, comments, bracketed protocol notes, trailing commas, undefined, or TypeScript unions. Use null for absent optional fields. content must be a non-empty visible chat message, not an explanation of this contract; do not use whitespace, empty string, or null to represent silence. Escape ASCII quotes inside strings. intensity=1-5; confidence/severity=0-1.
 
-extraMessages: use null when there are no later sends. Use an array only for optional later bubbles from the same speaker, max 4, when the reply would naturally arrive as consecutive chat messages. Do not split one sentence into fragments or use it for another actor. One bubble may contain multiple paragraphs; multiple bubbles should have distinct social purposes. Judge all hidden fields from content+extraMessages.${turnPlanRules}${deliberationRules}
+messages[]: use null when there is only one send. When present, it is the authoritative ordered list of independent sends (max 5); every item must contain non-empty content and may contain its own mediaDecision. Audio must be the only media in its item and therefore appears in its own bubble. Images may accompany text or appear alone.\n\nextraMessages: use null when messages[] is present or there are no later sends. Use an array only for legacy compatibility when later bubbles from the same speaker are needed. Do not split one sentence into fragments or use it for another actor. One bubble may contain multiple paragraphs; multiple bubbles should have distinct social purposes. Judge hidden fields from messages[] when present, otherwise content+extraMessages.${turnPlanRules}${deliberationRules}
 
 ${params.webSearchEnabled && !params.webSearchResultInjected && !isStoryReader ? `web_search toolRequest: Use this only when the speaker cannot answer responsibly from the supplied conversation and stable knowledge, and live/current/external facts are actually required. If no search is needed, keep toolRequest=null and answer normally. When search is needed, set content to a short in-character waiting line and set {"type":"web_search","query":"specific search query","reason":"why live search is needed"}. Do not invent search results.` : ''}
 ${params.webSearchResultInjected && !isStoryReader ? 'web_search result: Search results have already been supplied in this prompt. Use them if relevant, cite URLs naturally when needed, and keep toolRequest=null. Do not ask for another search in this turn.' : ''}

@@ -15,12 +15,15 @@ function normalizeModelExtraMessages(extraMessages: unknown) {
 }
 
 function withoutTransientExtras(message: GeneratedRoundMessage): GeneratedRoundMessage {
-  if (message.extraMessages == null) return message;
-  const { extraMessages: _extraMessages, ...rest } = message;
+  if (message.extraMessages == null && message.messageParts == null) return message;
+  const { extraMessages: _extraMessages, messageParts: _messageParts, ...rest } = message;
   return rest;
 }
 
 function getVisibleTurnParts(message: GeneratedRoundMessage) {
+  if (Array.isArray(message.messageParts) && message.messageParts.length) {
+    return message.messageParts.map((part) => part.content).filter(Boolean);
+  }
   return [message.content, ...normalizeModelExtraMessages(message.extraMessages)].filter(Boolean);
 }
 
@@ -33,6 +36,27 @@ export function splitGeneratedMessageText(content: string, _requestedCount = 1) 
 }
 
 export function splitGeneratedRoundMessage(message: GeneratedRoundMessage) {
+  if (Array.isArray(message.messageParts) && message.messageParts.length) {
+    const baseMessage = withoutTransientExtras(message);
+    const parts = message.messageParts.filter((part) => Boolean(part.content?.trim()));
+    return parts.map((part, index) => ({
+      ...baseMessage,
+      content: part.content,
+      metadata: {
+        ...(part.metadata || {}),
+        turnSegment: {
+          index,
+          count: parts.length,
+        },
+      },
+      interactionHint: index === 0 ? message.interactionHint : null,
+      interactionHints: index === 0 ? message.interactionHints : null,
+      addressedTargetIds: index === 0 ? message.addressedTargetIds : null,
+      primaryAddressedTargetId: index === 0 ? message.primaryAddressedTargetId : null,
+      socialEventHints: index === 0 ? message.socialEventHints : null,
+      conflictFocus: index === 0 ? message.conflictFocus : null,
+    }));
+  }
   const parts = getVisibleTurnParts(message);
   const baseMessage = withoutTransientExtras(message);
   if (parts.length <= 1) return [baseMessage];

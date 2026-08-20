@@ -316,6 +316,7 @@ function hasCharacterDetailEvidence(character: AICharacter | undefined) {
     || hasRecordDetail(character.emotionalState)
     || hasRecordDetail(character.behavior)
     || hasRecordDetail(character.intervention)
+    || hasRecordDetail(character.voiceConfig)
   ));
 }
 
