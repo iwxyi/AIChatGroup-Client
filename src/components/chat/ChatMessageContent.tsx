@@ -1,12 +1,14 @@
-import { useEffect, useRef, useState, type MouseEvent } from 'react';
-import { Box, Button, Chip, IconButton, LinearProgress, Typography, keyframes } from '@mui/material';
+import { useEffect, useState, type MouseEvent } from 'react';
+import { Box, Button, LinearProgress, Typography, keyframes } from '@mui/material';
 import type { Message, MessageAttachment, NarrativeBlock } from '../../types/message';
 import type { AICharacter } from '../../types/character';
 import { getAttachmentStatusDetail, getAttachmentStatusLabel } from '../../services/messageAttachmentDisplay';
+import { backendUrl } from '../../services/backendUrl';
 import MarkdownText from '../common/MarkdownText';
 import { formatNarrativeLineText } from '../../services/narrativeLinePresentation';
 import { useSettingsStore } from '../../stores/useSettingsStore';
 import { reducedMotionSx } from '../../styles/motion';
+import { VoicePlaybackBar } from './VoicePlaybackBar';
 
 const typingBounce = keyframes`
   0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
@@ -106,11 +108,6 @@ function getAttachmentKnownSize(attachment: Pick<MessageAttachment, 'width' | 'h
   return null;
 }
 
-function formatAudioDuration(durationMs?: number) {
-  const seconds = Math.max(1, Math.round((durationMs || 0) / 1000));
-  return `${seconds}"`;
-}
-
 function estimateAudioDurationMs(attachment: MessageAttachment) {
   if (attachment.durationMs && attachment.durationMs > 0) return attachment.durationMs;
   const textLength = (attachment.promptText || attachment.altText || '').replace(/\s/g, '').length;
@@ -118,70 +115,15 @@ function estimateAudioDurationMs(attachment: MessageAttachment) {
 }
 
 function MessageAudioAttachment({ attachment, showTranscript }: { attachment: MessageAttachment; showTranscript: boolean }) {
-  const voiceWaveformStyle = useSettingsStore((state) => state.chatAppearance.voiceWaveformStyle || 'wave');
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const [playing, setPlaying] = useState(false);
-  const [durationMs, setDurationMs] = useState(attachment.durationMs || 0);
-  const [playbackError, setPlaybackError] = useState<string | null>(null);
-  const effectiveDurationMs = durationMs || estimateAudioDurationMs(attachment);
-  const bubbleWidth = Math.round(Math.min(320, Math.max(142, 118 + (effectiveDurationMs / 1000) * 9)));
-  const previewBars = Array.from({ length: 18 }, (_, index) => 26 + ((index * 17 + attachment.id.length * 7) % 68));
-  const toggle = async () => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    setPlaybackError(null);
-    if (audio.paused) {
-      try {
-        await audio.play();
-      } catch (error) {
-        setPlaybackError(error instanceof Error ? error.message : '语音暂时无法播放');
-      }
-    } else audio.pause();
-  };
+  const audioSource = attachment.url?.startsWith('/') ? backendUrl(attachment.url) : attachment.url;
+  if (!audioSource) return null;
   return (
-    <Box sx={{ display: 'grid', gap: 0.55, width: bubbleWidth, maxWidth: '100%' }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.45, minHeight: 42, px: 0.55, pr: 1.15, borderRadius: 999, bgcolor: 'rgba(255, 112, 67, 0.11)', border: '1px solid rgba(255, 112, 67, 0.22)' }}>
-        <audio
-          ref={audioRef}
-          src={attachment.url}
-          preload="metadata"
-          onPlay={() => setPlaying(true)}
-          onPause={() => setPlaying(false)}
-          onEnded={() => setPlaying(false)}
-          onError={() => {
-            setPlaying(false);
-            setPlaybackError('语音文件暂时无法读取，请重新生成');
-          }}
-          onLoadedMetadata={(event) => {
-            const seconds = event.currentTarget.duration;
-            if (Number.isFinite(seconds) && seconds > 0) setDurationMs(Math.round(seconds * 1000));
-          }}
-          style={{ display: 'none' }}
-        />
-        <IconButton size="small" aria-label={playing ? '暂停语音' : '播放语音'} onClick={() => void toggle()} sx={{ color: 'primary.main' }}>
-          <span style={{ fontSize: 17, lineHeight: 1 }}>{playing ? 'Ⅱ' : '▶'}</span>
-        </IconButton>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.3, flex: 1, minWidth: 0, height: 28, color: 'primary.main' }} aria-hidden="true">
-          {voiceWaveformStyle === 'blocks' || voiceWaveformStyle === 'pulse' || voiceWaveformStyle === 'spectrum' ? previewBars.map((height, index) => (
-            <Box key={index} sx={{ flex: 1, minWidth: 2, height: `${Math.max(22, height)}%`, borderRadius: 99, bgcolor: voiceWaveformStyle === 'spectrum' ? 'secondary.main' : 'currentColor', opacity: voiceWaveformStyle === 'spectrum' ? 0.42 + (index % 4) * 0.13 : 0.55, animation: voiceWaveformStyle === 'pulse' && playing ? `${typingBounce} 0.75s ease-in-out infinite` : undefined, animationDelay: `${index * 0.06}s` }} />
-          )) : voiceWaveformStyle === 'orbit' ? previewBars.filter((_, index) => index % 2 === 0).map((height, index) => (
-            <Box key={index} sx={{ width: 5, height: 5, borderRadius: '50%', bgcolor: index % 2 ? 'secondary.main' : 'currentColor', opacity: 0.62, transform: `translateY(${(height - 50) / 9}px)`, animation: playing ? `${typingBounce} 0.9s ease-in-out infinite` : undefined, animationDelay: `${index * 0.08}s` }} />
-          )) : (
-            <svg viewBox="0 0 180 28" preserveAspectRatio="none" style={{ width: '100%', height: '100%', overflow: 'visible' }}>
-              <defs><linearGradient id={`formal-voice-${attachment.id}`} x1="0" y1="0" x2="1" y2="0"><stop stopColor="currentColor" /><stop offset="1" stopColor="var(--mui-palette-secondary-main)" /></linearGradient></defs>
-              <path d="M1 18 C14 18 16 7 28 10 S44 22 58 15 S76 5 90 11 S110 22 124 14 S146 7 179 12" fill="none" stroke={voiceWaveformStyle === 'ribbon' ? `url(#formal-voice-${attachment.id})` : 'currentColor'} strokeWidth={voiceWaveformStyle === 'ribbon' ? 3 : voiceWaveformStyle === 'neon' ? 2.4 : 2} strokeLinecap="round" style={voiceWaveformStyle === 'neon' ? { filter: 'drop-shadow(0 0 4px currentColor)' } : undefined} />
-            </svg>
-          )}
-        </Box>
-        <Typography variant="caption" sx={{ flexShrink: 0, fontWeight: 700, color: 'text.secondary' }}>{formatAudioDuration(effectiveDurationMs)}</Typography>
-      </Box>
-      {playbackError ? <Typography variant="caption" sx={{ color: 'error.main' }}>{playbackError}</Typography> : null}
-      {showTranscript && attachment.promptText ? (
-        <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: 'text.secondary' }}>
-          {attachment.promptText}
-        </Typography>
-      ) : null}
-    </Box>
+    <VoicePlaybackBar
+      src={audioSource}
+      initialDurationMs={attachment.durationMs}
+      estimatedDurationMs={estimateAudioDurationMs(attachment)}
+      transcript={showTranscript ? attachment.promptText : undefined}
+    />
   );
 }
 
@@ -206,6 +148,7 @@ function MessageImageAttachment({
   const maxWidth = getAttachmentMaxWidth(ratioValue);
   const maxHeight = Math.min(viewportHeight * 0.56, 520);
   const width = getAttachmentDisplayWidth({ displaySize, ratioValue, maxWidth, maxHeight });
+  const imageSource = attachment.url?.startsWith('/') ? backendUrl(attachment.url) : attachment.url;
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
     const updateViewportHeight = () => setViewportHeight(window.innerHeight);
@@ -232,7 +175,7 @@ function MessageImageAttachment({
       >
           <Box
             component="img"
-            src={attachment.url}
+            src={imageSource}
             alt={attachment.altText}
             loading="lazy"
             decoding="async"
@@ -375,11 +318,6 @@ export function MessageContent({ message, onRetryMedia, onOpenImage, onOpenPromp
   const attachments = message.metadata?.attachments || [];
   const shouldHideMediaPlaceholderText = shouldHideGeneratedMediaPlaceholderText(message);
   const isAttachmentProcessing = (status: string | undefined) => status === 'queued' || status === 'generating' || status === 'placeholder';
-  const statusChipColor = (status: string | undefined): 'error' | 'success' | 'primary' => {
-    if (status === 'failed') return 'error';
-    if (status === 'ready') return 'success';
-    return 'primary';
-  };
   const getMediaFrameStyle = (attachment: Pick<MessageAttachment, 'width' | 'height' | 'aspectRatio'>) => {
     const knownSize = getAttachmentKnownSize(attachment);
     const ratioValue = parseAttachmentRatio(attachment);
@@ -455,14 +393,10 @@ export function MessageContent({ message, onRetryMedia, onOpenImage, onOpenPromp
       const loadingWidth = Math.round(Math.min(300, Math.max(142, 118 + (estimatedDurationMs / 1000) * 9)));
       return (
         <Box key={attachment.id} sx={{ width: loadingWidth, maxWidth: '100%', borderRadius: 999, border: '1px solid', borderColor: 'divider', px: 1.25, py: 0.75, bgcolor: 'action.hover' }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
-            <Typography variant="caption" color="text.secondary">{getAttachmentStatusLabel(attachment)}</Typography>
-            <Chip size="small" label={attachment.status === 'failed' ? '失败' : '处理中'} color={statusChipColor(attachment.status)} variant="outlined" sx={{ height: 20 }} />
-          </Box>
-          {attachment.status !== 'failed' ? <LinearProgress sx={{ mt: 0.5 }} /> : null}
-          <Typography variant="caption" sx={{ display: 'block', mt: 0.45, color: attachment.status === 'failed' ? 'error.main' : 'text.secondary', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-            {getAttachmentStatusDetail(attachment)}
+          <Typography variant="caption" color={attachment.status === 'failed' ? 'error.main' : 'text.secondary'}>
+            {attachment.status === 'failed' ? getAttachmentStatusDetail(attachment) : getAttachmentStatusLabel(attachment)}
           </Typography>
+          {attachment.status !== 'failed' ? <LinearProgress sx={{ mt: 0.5 }} /> : null}
           {attachment.status === 'failed' && onRetryMedia ? (
             <Button size="small" variant="outlined" color="error" sx={{ mt: 0.6 }} onClick={() => void onRetryMedia?.(message, attachment.id)}>
               重试

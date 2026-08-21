@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
 import { Alert, Box, Typography, Button, Divider, IconButton, Chip } from '@mui/material';
 import type { Theme } from '@mui/material/styles';
@@ -46,6 +46,7 @@ import { formatInAppNotificationWindow, notificationAlertSeverity, useInAppNotif
 import { getRegisteredSyncWorkerEntries } from '../stores/storeSyncScheduler';
 import { motion, transition } from '../styles/motion';
 import { formatAiAmount } from '../utils/aiPoints';
+import { getRichMediaQueueSnapshot, subscribeRichMediaQueue } from '../services/richMessageMedia';
 
 interface HomeOverviewCard {
   label: string;
@@ -475,6 +476,7 @@ export default function HomePage() {
   const [officialProviderAccess, setOfficialProviderAccess] = useState<Record<string, OfficialBalanceProviderInfo> | null>(null);
   const [companionshipSnapshot, setCompanionshipSnapshot] = useState<HomeCompanionshipSnapshot | null>(null);
   const [calendarNow, setCalendarNow] = useState(() => Date.now());
+  const richMediaQueue = useSyncExternalStore(subscribeRichMediaQueue, getRichMediaQueueSnapshot, getRichMediaQueueSnapshot);
   const inAppNotifications = useInAppNotificationStore((state) => state.items);
   const recentChats = useMemo(() => chats.slice(0, 10), [chats]);
   const recentChatIds = useMemo(() => new Set(recentChats.map((chat) => chat.id)), [recentChats]);
@@ -814,6 +816,14 @@ export default function HomePage() {
       icon: <AutoAwesomeIcon />,
       color: 'secondary.main',
       onOpen: () => navigate('/characters'),
+      attention: true,
+    }] : []),
+    ...(richMediaQueue.length ? [{
+      label: richMediaQueue[0]?.kind === 'audio' ? '正在生成语音' : '正在生成图片',
+      value: richMediaQueue.length > 1 ? `${richMediaQueue[0]?.position || 1}/${richMediaQueue[0]?.total || richMediaQueue.length}` : 1,
+      icon: <AutoAwesomeIcon />,
+      color: richMediaQueue[0]?.kind === 'audio' ? 'primary.main' : 'secondary.main',
+      onOpen: () => navigate('/chats'),
       attention: true,
     }] : []),
     ...(activeDiaryJobs > 0 ? [{

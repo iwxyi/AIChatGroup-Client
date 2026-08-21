@@ -3045,6 +3045,7 @@ export default function ChatDetailPage() {
       aiProfiles,
       upsertMessage: upsertMessageStable,
     });
+    setSnackbar({ open: true, message: '已重新加入生成队列', severity: 'info' });
   }, [aiProfiles, characters, chatInteractionDisabled, chatReadOnlyReason, currentChatMessages, upsertMessageStable]);
 
   useChatAutoSocialFlow({ chat, runAutoSocialEventFlow });

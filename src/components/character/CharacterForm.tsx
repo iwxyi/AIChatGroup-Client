@@ -419,25 +419,25 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
   const visualIdentityExamples = useMemo(() => ({
     description: i18n.language.startsWith('zh')
       ? [
-          '二十多岁，短发，清爽自然，笑起来有点腼腆，常戴银色细框眼镜，日常穿搭干净利落。',
-          '三十岁上下，皮肤偏白，眼神很稳，头发随手扎起，偏爱宽松但有质感的衣服。',
-          '看起来像刚下班的人，神情放松但有点疲惫，发型利落，身上带着生活气息。',
+          '二十多岁，短发，银色细框眼镜，干净利落的衬衫；深夜台灯下盯着代码，桌上散着写满批注的便签。',
+          '三十岁上下，皮肤偏白，眼神很稳，头发随手扎起，宽松但有质感的衣服；雨后站在旧书店门口，指尖夹着一页折角的诗稿。',
+          '神情放松却带疲惫，发型利落，衣着有生活气息；下班后的空地铁车厢里靠窗坐着，窗外霓虹从脸侧掠过。',
         ]
       : [
-          'Mid-20s, short hair, natural look, a little shy when smiling, thin silver glasses, clean everyday outfits.',
-          'Around 30, fair skin, calm eyes, casually tied hair, prefers loose but textured clothes.',
-          'Looks like someone just off work, relaxed but slightly tired, neat hair, lived-in everyday vibe.',
+          'Mid-20s, short hair, thin silver glasses, clean shirt; focused on code beneath a late-night desk lamp, annotated sticky notes scattered nearby.',
+          'Around 30, fair skin, calm eyes, casually tied hair, loose textured clothes; standing outside an old bookshop after rain, holding a folded page of poetry.',
+          'Relaxed but slightly tired, neat hair, lived-in outfit; seated by the window of an empty subway after work, neon light passing across the face.',
         ],
     styleHint: i18n.language.startsWith('zh')
       ? [
-          '偏手机随拍感，真实自然，少一点摆拍感，整体偏生活化。',
-          '更适合真实聊天截图里的照片感，光线自然，构图稍微随意一点。',
-          '保持现实感和亲切感，不要过度精修。',
+          '电影感叙事构图，动作和光影服务于人物身份，主体清晰，不要普通摆拍。',
+          '具有代表性的场景与道具，画面有故事正在发生的感觉，人物仍然清楚可辨。',
+          '可写实或风格化，但要让姿态、环境和色彩共同强化人物气质。',
         ]
       : [
-          'Prefer a candid phone-photo feel, natural and lived-in, not overly posed.',
-          'Better suited to a chat app snapshot, with natural light and slightly casual framing.',
-          'Keep it real and approachable, avoid over-polished portrait styling.',
+          'Cinematic narrative composition: action and lighting serve the role, with a clear subject and no generic posed portrait.',
+          'Use representative setting and props so the image feels like a story in progress while the character remains recognizable.',
+          'May be realistic or stylized, but pose, environment, and color must reinforce the character’s temperament.',
         ],
     negativePrompt: i18n.language.startsWith('zh')
       ? [

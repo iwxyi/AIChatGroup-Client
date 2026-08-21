@@ -38,14 +38,14 @@ export interface CharacterVisualIdentityDraftInput {
 export function buildCharacterVisualImagePrompt(input: CharacterVisualIdentityDraftInput & { visualIdentity?: GeneratedCharacterProfile['visualIdentity'] }, language: 'zh' | 'en') {
   const visual = input.visualIdentity || {};
   return [
-    language === 'zh' ? `为聊天角色“${input.name.trim() || '未命名角色'}”生成一张稳定形象参考图。` : `Generate a stable visual reference image for the chat character "${input.name.trim() || 'Unnamed character'}".`,
+    language === 'zh' ? `为聊天角色“${input.name.trim() || '未命名角色'}”生成一张标志性形象图。` : `Generate an iconic character image for the chat character "${input.name.trim() || 'Unnamed character'}".`,
     visual.description?.trim() ? (language === 'zh' ? `视觉形象：${visual.description.trim()}` : `Visual identity: ${visual.description.trim()}`) : '',
     input.background?.trim() ? (language === 'zh' ? `角色背景：${input.background.trim()}` : `Background: ${input.background.trim()}`) : '',
     input.speakingStyle?.trim() ? (language === 'zh' ? `表达气质：${input.speakingStyle.trim()}` : `Speaking vibe: ${input.speakingStyle.trim()}`) : '',
     visual.styleHint?.trim() ? (language === 'zh' ? `风格：${visual.styleHint.trim()}` : `Style: ${visual.styleHint.trim()}`) : '',
     language === 'zh'
-      ? '要求：单人半身或全身清晰参考图，脸部、发型、体型、常见穿搭和标志性配饰清楚可见；适合作为后续聊天图片的身份参考；自然真实，避免文字、水印、多人、遮挡脸。'
-      : 'Requirements: one clear half-body or full-body reference image with visible face, hair, body type, common outfit, and signature accessories; suitable as identity reference for future chat images; natural and realistic, no text, no watermark, no multiple people, no covered face.',
+      ? '画面要求：以一个最能概括角色的标志性瞬间来构图，而不是普通证件照或日常站姿。让角色处于与身份、欲望、能力或气质强相关的动作、场景与光影中：例如神话人物施展法器、病弱诗人倚窗、将军战阵冲锋、程序员深夜办公、都市人物在符合其身份的空间行动。必须保留清晰可辨的脸部、发型、体型、常见穿搭与标志性道具；单人主体、半身或全身、动态但构图稳定、人物不被遮挡。不要文字、水印、多人、通用棚拍、呆板正面站姿或与人设无关的背景。'
+      : 'Composition requirements: build around one iconic narrative moment that best captures the character, never a generic ID portrait or casual standing pose. Put the character in an action, setting, and lighting situation tied directly to their identity, desire, ability, or temperament: a mythic hero wielding a signature weapon, a frail poet by a window, a general charging through battle, a programmer working late, or an urban figure acting in a space that expresses their status. Keep face, hair, body type, familiar outfit, and signature props clearly recognizable; one subject, half or full body, dynamic yet stable composition, unobscured character. No text, watermark, multiple people, generic studio portrait, stiff front-facing pose, or unrelated background.',
     visual.negativePrompt?.trim() ? (language === 'zh' ? `避免：${visual.negativePrompt.trim()}` : `Avoid: ${visual.negativePrompt.trim()}`) : '',
   ].filter(Boolean).join('\n');
 }
@@ -132,7 +132,7 @@ Return strict JSON only, with this shape:
     "gradientDirection": "135deg|160deg|180deg"
   },
   "visualIdentity": {
-    "description": "optional, 1-3 concise sentences describing a stable visual anchor for image generation",
+    "description": "optional, 1-3 concise sentences describing stable visual anchors plus one iconic action or scene for image generation",
     "styleHint": "optional style guidance",
     "negativePrompt": "optional negative prompt",
     "seed": "optional seed"
@@ -146,6 +146,7 @@ Rules:
 - Keep expertise practical for conversation.
 - Make coreProfile psychologically specific to this role, not generic labels. It should describe long-term inner drives, vulnerabilities, relationship style, conflict style, self-image, and likely perception filters.
 - voiceProfile describes the desired voice, not a provider voice ID. Gender is a strict safety constraint: use female or male only when the character context clearly establishes it; otherwise use neutral or unknown. Never infer gender from stereotypes alone.
+- Make visualIdentity specific: preserve stable physical anchors and signature props, then choose one memorable action or scene that embodies this character rather than an ordinary portrait pose.
 - Make bubbleStyle visually distinctive and aligned with the character's vibe, role, and speaking style.
 - Keep bubbleStyle practical for chat readability with strong text/background contrast.
 - Do not wrap in markdown fences.
@@ -323,12 +324,12 @@ export function buildGeneratePrompt(name: string, language: 'zh' | 'en', context
   const { theme, description } = normalizeGenerationContext(context);
   if (language === 'zh') {
     return theme || description
-      ? `请基于以下用户需求生成一个适合多人群聊讨论的 AI 角色档案。\n主题/分组：${theme || '未指定'}\n描述：${description || '未指定'}\n目标角色：${name}\n必须同时遵守主题和描述，描述里的数量、身份结构、时代、题材和关系约束优先；不要因为角色名或括号内身份而偏离用户需求。如果描述中包含候选角色设定摘要，必须把目标角色与其他角色的关系、秘密、冲突、亲近/敌意/信任/威胁差异写入 background 和 coreProfile，不要抹平成普通朋友或默认中立关系。输出字段必须完整，语气自然，专业领域用简洁短语。请额外生成适合后续图片参考的 visualIdentity 文本锚点，以及适合长期演化的 coreProfile 心理画像。`
-      : `请基于名字“${name}”生成一个适合多人群聊讨论的 AI 角色档案。输出字段必须完整，语气自然，专业领域用简洁短语。请额外生成适合后续图片参考的 visualIdentity 文本锚点，以及适合长期演化的 coreProfile 心理画像。`;
+      ? `请基于以下用户需求生成一个适合多人群聊讨论的 AI 角色档案。\n主题/分组：${theme || '未指定'}\n描述：${description || '未指定'}\n目标角色：${name}\n必须同时遵守主题和描述，描述里的数量、身份结构、时代、题材和关系约束优先；不要因为角色名或括号内身份而偏离用户需求。如果描述中包含候选角色设定摘要，必须把目标角色与其他角色的关系、秘密、冲突、亲近/敌意/信任/威胁差异写入 background 和 coreProfile，不要抹平成普通朋友或默认中立关系。输出字段必须完整，语气自然，专业领域用简洁短语。visualIdentity 先提供稳定外观锚点，再提供一个最能代表其身份、能力、欲望或气质的标志性动作/场景；不要写成普通站姿或泛日常背景。另请生成适合长期演化的 coreProfile 心理画像。`
+      : `请基于名字“${name}”生成一个适合多人群聊讨论的 AI 角色档案。输出字段必须完整，语气自然，专业领域用简洁短语。visualIdentity 先提供稳定外观锚点，再提供一个最能代表其身份、能力、欲望或气质的标志性动作/场景；不要写成普通站姿或泛日常背景。另请生成适合长期演化的 coreProfile 心理画像。`;
   }
   return theme || description
-    ? `Generate a complete AI character profile for a multi-person group chat app from this user request.\nTheme/group: ${theme || 'not specified'}\nDescription: ${description || 'not specified'}\nTarget character: ${name}\nFollow both the theme and description; counts, role composition, era, genre, and relationship constraints in the description take priority. Do not let the name or parenthesized role drift away from the user's requested context. If the description contains candidate role setup summaries, preserve the target character's relationships, secrets, conflicts, warmth/hostility, trust/distrust, respect, and threat dynamics with other characters in background and coreProfile. Do not flatten them into generic friendship or neutral defaults. Keep fields concise and usable. Also generate a visualIdentity text anchor for later image reference and a coreProfile psychological profile for long-term evolution.`
-    : `Generate a complete AI character profile for the name "${name}" for a multi-person group chat app. Keep the fields concise and usable. Also generate a visualIdentity text anchor for later image reference and a coreProfile psychological profile for long-term evolution.`;
+    ? `Generate a complete AI character profile for a multi-person group chat app from this user request.\nTheme/group: ${theme || 'not specified'}\nDescription: ${description || 'not specified'}\nTarget character: ${name}\nFollow both the theme and description; counts, role composition, era, genre, and relationship constraints in the description take priority. Do not let the name or parenthesized role drift away from the user's requested context. If the description contains candidate role setup summaries, preserve the target character's relationships, secrets, conflicts, warmth/hostility, trust/distrust, respect, and threat dynamics with other characters in background and coreProfile. Do not flatten them into generic friendship or neutral defaults. Keep fields concise and usable. For visualIdentity, provide stable appearance anchors plus one iconic action or scene that embodies their identity, ability, desire, or temperament; never a generic standing pose or vague everyday background. Also generate a coreProfile psychological profile for long-term evolution.`
+    : `Generate a complete AI character profile for the name "${name}" for a multi-person group chat app. Keep the fields concise and usable. For visualIdentity, provide stable appearance anchors plus one iconic action or scene that embodies their identity, ability, desire, or temperament; never a generic standing pose or vague everyday background. Also generate a coreProfile psychological profile for long-term evolution.`;
 }
 
 function sanitizeBatchNames(names: string[]) {
@@ -375,12 +376,12 @@ function buildBatchGeneratePrompt(names: string[], language: 'zh' | 'en', contex
   const { theme, description } = normalizeGenerationContext(context);
   if (language === 'zh') {
     return theme || description
-      ? `请基于以下用户需求为角色批量生成档案。\n主题/分组：${theme || '未指定'}\n描述：${description || '未指定'}\n角色名单：${normalizedNames.join('、')}\n每个角色都必须同时贴合主题和描述，描述里的数量、身份结构、时代、题材和关系约束优先；不要因为角色名或括号内身份而带偏整体设定。如果描述中包含候选角色设定摘要，必须把每个角色与其他角色的关系、秘密、冲突、亲近/敌意/信任/威胁差异写入 background 和 coreProfile，不要抹平成普通朋友或默认中立关系。返回严格 JSON 数组，每项都包含 name、avatar、personality、behavior、expertise、speakingStyle、background、speechProfile、voiceProfile、coreProfile、bubbleStyle、visualIdentity。voiceProfile 只描述期望声音，不填写供应商音色 ID；性别不明确时必须用 unknown。personality 和 behavior 要按角色差异给出有区分度的 0-100 数值，不要全部填 50。每个名字都必须返回一项，name 必须与输入完全一致，只返回合法 JSON。字符串里的换行请写成 \n，不要输出原始换行。`
-      : `请为以下名字批量生成角色档案：${normalizedNames.join('、')}。返回严格 JSON 数组，每项都包含 name、avatar、personality、behavior、expertise、speakingStyle、background、speechProfile、voiceProfile、coreProfile、bubbleStyle、visualIdentity。voiceProfile 只描述期望声音，不填写供应商音色 ID；性别不明确时必须用 unknown。personality 和 behavior 要按角色差异给出有区分度的 0-100 数值，不要全部填 50。每个名字都必须返回一项，name 必须与输入完全一致，只返回合法 JSON。字符串里的换行请写成 \n，不要输出原始换行。`;
+      ? `请基于以下用户需求为角色批量生成档案。\n主题/分组：${theme || '未指定'}\n描述：${description || '未指定'}\n角色名单：${normalizedNames.join('、')}\n每个角色都必须同时贴合主题和描述，描述里的数量、身份结构、时代、题材和关系约束优先；不要因为角色名或括号内身份而带偏整体设定。如果描述中包含候选角色设定摘要，必须把每个角色与其他角色的关系、秘密、冲突、亲近/敌意/信任/威胁差异写入 background 和 coreProfile，不要抹平成普通朋友或默认中立关系。每个 visualIdentity 都要先写稳定外观锚点，再写一个最能代表其身份、能力、欲望或气质的标志性动作/场景；不要普通站姿或泛日常背景。返回严格 JSON 数组，每项都包含 name、avatar、personality、behavior、expertise、speakingStyle、background、speechProfile、voiceProfile、coreProfile、bubbleStyle、visualIdentity。voiceProfile 只描述期望声音，不填写供应商音色 ID；性别不明确时必须用 unknown。personality 和 behavior 要按角色差异给出有区分度的 0-100 数值，不要全部填 50。每个名字都必须返回一项，name 必须与输入完全一致，只返回合法 JSON。字符串里的换行请写成 \n，不要输出原始换行。`
+      : `请为以下名字批量生成角色档案：${normalizedNames.join('、')}。每个 visualIdentity 都要先写稳定外观锚点，再写一个最能代表其身份、能力、欲望或气质的标志性动作/场景；不要普通站姿或泛日常背景。返回严格 JSON 数组，每项都包含 name、avatar、personality、behavior、expertise、speakingStyle、background、speechProfile、voiceProfile、coreProfile、bubbleStyle、visualIdentity。voiceProfile 只描述期望声音，不填写供应商音色 ID；性别不明确时必须用 unknown。personality 和 behavior 要按角色差异给出有区分度的 0-100 数值，不要全部填 50。每个名字都必须返回一项，name 必须与输入完全一致，只返回合法 JSON。字符串里的换行请写成 \n，不要输出原始换行。`;
   }
   return theme || description
-    ? `Generate character profiles from this user request.\nTheme/group: ${theme || 'not specified'}\nDescription: ${description || 'not specified'}\nCharacter list: ${normalizedNames.join(', ')}\nEvery character must fit both the theme and description; counts, role composition, era, genre, and relationship constraints in the description take priority. Do not let names or parenthesized roles drift the overall setting away from the user's request. If the description contains candidate role setup summaries, preserve each character's relationships, secrets, conflicts, warmth/hostility, trust/distrust, respect, and threat dynamics with other characters in background and coreProfile. Do not flatten them into generic friendship or neutral defaults. Return a strict JSON array. Every item must include name, avatar, personality, behavior, expertise, speakingStyle, background, speechProfile, voiceProfile, coreProfile, bubbleStyle, and visualIdentity. voiceProfile describes the desired voice without a provider voice ID; use unknown when gender is not established. personality and behavior must use distinctive 0-100 values for each role; do not set every axis to 50. Every provided name must have one item, and each name must exactly match the input. Escape newlines inside strings as \n. Return only valid JSON.`
-    : `Generate character profiles for these names: ${normalizedNames.join(', ')}. Return a strict JSON array. Every item must include name, avatar, personality, behavior, expertise, speakingStyle, background, speechProfile, voiceProfile, coreProfile, bubbleStyle, and visualIdentity. voiceProfile describes the desired voice without a provider voice ID; use unknown when gender is not established. personality and behavior must use distinctive 0-100 values for each role; do not set every axis to 50. Every provided name must have one item, and each name must exactly match the input. Escape newlines inside strings as \n. Return only valid JSON.`;
+    ? `Generate character profiles from this user request.\nTheme/group: ${theme || 'not specified'}\nDescription: ${description || 'not specified'}\nCharacter list: ${normalizedNames.join(', ')}\nEvery character must fit both the theme and description; counts, role composition, era, genre, and relationship constraints in the description take priority. Do not let names or parenthesized roles drift the overall setting away from the user's request. If the description contains candidate role setup summaries, preserve each character's relationships, secrets, conflicts, warmth/hostility, trust/distrust, respect, and threat dynamics with other characters in background and coreProfile. Do not flatten them into generic friendship or neutral defaults. Every visualIdentity must contain stable appearance anchors plus one iconic action or scene that embodies the character's identity, ability, desire, or temperament; no generic standing poses or vague everyday backgrounds. Return a strict JSON array. Every item must include name, avatar, personality, behavior, expertise, speakingStyle, background, speechProfile, voiceProfile, coreProfile, bubbleStyle, and visualIdentity. voiceProfile describes the desired voice without a provider voice ID; use unknown when gender is not established. personality and behavior must use distinctive 0-100 values for each role; do not set every axis to 50. Every provided name must have one item, and each name must exactly match the input. Escape newlines inside strings as \n. Return only valid JSON.`
+    : `Generate character profiles for these names: ${normalizedNames.join(', ')}. Every visualIdentity must contain stable appearance anchors plus one iconic action or scene that embodies the character's identity, ability, desire, or temperament; no generic standing poses or vague everyday backgrounds. Return a strict JSON array. Every item must include name, avatar, personality, behavior, expertise, speakingStyle, background, speechProfile, voiceProfile, coreProfile, bubbleStyle, and visualIdentity. voiceProfile describes the desired voice without a provider voice ID; use unknown when gender is not established. personality and behavior must use distinctive 0-100 values for each role; do not set every axis to 50. Every provided name must have one item, and each name must exactly match the input. Escape newlines inside strings as \n. Return only valid JSON.`;
 }
 
 export function parseGeneratedProfileMap(content: string, names: string[]) {
@@ -480,21 +481,21 @@ export async function generateCharacterVisualIdentityDraft(config: APIConfig, in
   const expertise = (input.expertise || []).filter(Boolean).join(language === 'zh' ? '、' : ', ');
   const prompt = language === 'zh'
     ? [
-        `请为聊天角色“${input.name.trim() || '未命名角色'}”生成稳定视觉形象描述。`,
+        `请为聊天角色“${input.name.trim() || '未命名角色'}”生成标志性视觉形象描述。`,
         input.group?.trim() ? `分组/主题：${input.group.trim()}` : '',
         input.background?.trim() ? `背景：${input.background.trim()}` : '',
         input.speakingStyle?.trim() ? `说话气质：${input.speakingStyle.trim()}` : '',
         expertise ? `兴趣/专长：${expertise}` : '',
-        '返回严格 JSON：{"description":"1-3句稳定外观锚点，包含年龄感、发型、气质、常见穿搭或标志性元素，但不要写死每个场景","styleHint":"适合聊天图片的风格提示","negativePrompt":"需要避免的内容","seed":null}',
+        '返回严格 JSON：{"description":"1-3句：先写稳定外观锚点（年龄感、发型、气质、常见穿搭、标志性道具），再写一个最能体现人物身份、欲望、能力或气质的标志性动作/场景；拒绝普通站姿和泛日常背景","styleHint":"适合聊天图片、强调叙事动作和光影的风格提示","negativePrompt":"需要避免的内容","seed":null}',
         '不要输出 markdown，不要解释。',
       ].filter(Boolean).join('\n')
     : [
-        `Generate a stable visual identity draft for the chat character "${input.name.trim() || 'Unnamed character'}".`,
+        `Generate an iconic visual identity draft for the chat character "${input.name.trim() || 'Unnamed character'}".`,
         input.group?.trim() ? `Group/theme: ${input.group.trim()}` : '',
         input.background?.trim() ? `Background: ${input.background.trim()}` : '',
         input.speakingStyle?.trim() ? `Speaking vibe: ${input.speakingStyle.trim()}` : '',
         expertise ? `Interests/expertise: ${expertise}` : '',
-        'Return strict JSON: {"description":"1-3 sentences with stable appearance anchors such as age impression, hair, vibe, common outfit, or signature elements, without locking every scene","styleHint":"style guidance suitable for chat images","negativePrompt":"things to avoid","seed":null}',
+        'Return strict JSON: {"description":"1-3 sentences: stable appearance anchors such as age impression, hair, vibe, familiar outfit, and signature props, followed by one iconic action or scene that embodies the role; reject generic standing poses and vague everyday backgrounds","styleHint":"style guidance for chat images with narrative action and expressive lighting","negativePrompt":"things to avoid","seed":null}',
         'Do not output markdown or explanations.',
       ].filter(Boolean).join('\n');
   const response = await generateResponse(
