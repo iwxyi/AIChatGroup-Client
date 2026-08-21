@@ -110,11 +110,23 @@ export default function CharacterCard({ character, onEdit, onDelete, onStartDire
         '&::before': {
           ...buildSelectionRailSx(Boolean(selected)),
         },
+        ...(selected ? {
+          boxShadow: (theme) => theme.palette.mode === 'light'
+            ? '0 0 0 2px rgba(49,90,156,0.30) inset, 0 14px 34px rgba(49,90,156,0.12)'
+            : '0 0 0 2px rgba(120,156,220,0.34) inset, 0 18px 42px rgba(0,0,0,0.34)',
+        } : {}),
       }}
     >
       <Box sx={{ position: 'relative', height: '100%' }}>
         {selectionMode && selectable ? (
-          <Box sx={{ position: 'absolute', top: 10, left: 10, zIndex: 1, color: selected ? 'primary.main' : 'action.disabled' }}>
+          <Box
+            role="checkbox"
+            aria-checked={Boolean(selected)}
+            tabIndex={0}
+            onClick={(event) => { event.stopPropagation(); handleClick(); }}
+            onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); handleClick(); } }}
+            sx={{ position: 'absolute', top: 6, left: 6, zIndex: 2, p: 0.35, borderRadius: 1, cursor: 'pointer', color: selected ? 'primary.main' : 'action.disabled', bgcolor: selected ? 'background.paper' : 'transparent', '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 1 } }}
+          >
             <CheckCircleIcon fontSize="small" />
           </Box>
         ) : null}

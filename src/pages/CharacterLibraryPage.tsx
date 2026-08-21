@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { useLayoutHeaderActions } from '../components/layout/AppLayoutContext';
-import { Box, Button, Alert, IconButton, Menu, MenuItem, Chip, Dialog, DialogTitle, DialogContent, DialogActions, TextField, Typography, Divider, Tooltip } from '@mui/material';
+import { Box, Button, Alert, IconButton, Menu, MenuItem, Chip, Dialog, DialogTitle, DialogContent, DialogActions, TextField, Typography, Divider, Tooltip, Checkbox, FormControlLabel, Radio, RadioGroup, FormControl, FormLabel } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import MoreIcon from '@mui/icons-material/MoreVert';
 import ClearAllIcon from '@mui/icons-material/ClearAll';
@@ -24,8 +24,12 @@ import ExpandableFab from '../components/common/ExpandableFab';
 import VipLimitDialog from '../components/common/VipLimitDialog';
 import { usePaneLayout } from '../components/layout/PaneLayoutContext';
 import { canDeleteCharacterGroup, getCharacterGroupList, getCharactersInGroup, normalizeCharacter, normalizeCharacterGroup, normalizeCharacterName, getDuplicateCharacterBannerText, getDuplicateCharacterCount, getDuplicateCharacters } from '../types/character';
-import { enqueueAvatarGenerationForCharacters } from '../services/avatarGeneration';
-import { generateCharacterProfile } from '../services/characterGenerator';
+import { enqueueAvatarGenerationForCharacter } from '../services/avatarGeneration';
+import { avatarGenerationQueue } from '../services/avatarGenerationQueue';
+import { buildCharacterVisualImagePrompt, generateCharacterProfileDraft, generateCharacterVisualIdentityDraft, generateCharacterVoiceProfileDraft } from '../services/characterGenerator';
+import { assignGeneratedVoiceProfile } from '../services/speechVoiceAssignment';
+import { enqueueCharacterCompletionTask, type CharacterCompletionKind } from '../services/characterCompletionQueue';
+import { isImageAvatar } from '../utils/avatar';
 import { createCharacterBubbleStyleId } from '../utils/bubbleStyle';
 import { getPreferredAIProfile, isAIProfileUsable } from '../types/settings';
 import { useChatStore } from '../stores/useChatStore';
@@ -46,6 +50,15 @@ const CHARACTER_LIBRARY_VIEW_KEY = 'character-library-view';
 const CHARACTER_LIBRARY_INITIAL_RENDER_COUNT = 24;
 const CHARACTER_LIBRARY_RENDER_BATCH_SIZE = 24;
 const CHARACTER_LIBRARY_PAGE_SIZE = 24;
+const CHARACTER_COMPLETION_FIELDS_KEY = 'character-library-completion-fields';
+const CHARACTER_COMPLETION_MODE_KEY = 'character-library-completion-mode';
+type CharacterCompletionField = 'base' | 'avatar' | 'visual' | 'bubble' | 'voice' | 'profile' | 'personality';
+type CharacterCompletionMode = 'empty' | 'complete' | 'regenerate';
+const completionFieldLabels: Record<CharacterCompletionField, string> = { base: '基础设定', avatar: '头像图', visual: '形象图', bubble: '消息气泡', voice: '语音音色', profile: '角色画像', personality: '人物性格' };
+const completionFields: CharacterCompletionField[] = ['base', 'avatar', 'visual', 'bubble', 'voice', 'profile', 'personality'];
+const isCompletionMode = (value: unknown): value is CharacterCompletionMode => value === 'empty' || value === 'complete' || value === 'regenerate';
+const isCompletionField = (value: unknown): value is CharacterCompletionField => completionFields.includes(value as CharacterCompletionField);
+const isCompletionFieldList = (value: unknown): value is CharacterCompletionField[] => Array.isArray(value) && value.every(isCompletionField);
 const isCharacterLibraryGroup = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0;
 const isCharacterSortField = (value: unknown): value is CharacterSortField => value === 'name' || value === 'createdAt';
 const isCharacterSortDirection = (value: unknown): value is CharacterSortDirection => value === 'asc' || value === 'desc';
@@ -304,6 +317,9 @@ export default function CharacterLibraryPage() {
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [completionOpen, setCompletionOpen] = useState(false);
+  const [completionFieldsSelected, setCompletionFieldsSelected] = useState<CharacterCompletionField[]>(() => readPersistentUiValue(CHARACTER_COMPLETION_FIELDS_KEY, completionFields, isCompletionFieldList));
+  const [completionMode, setCompletionMode] = useState<CharacterCompletionMode>(() => readPersistentUiValue(CHARACTER_COMPLETION_MODE_KEY, 'empty', isCompletionMode));
   const [bulkGroupDialogOpen, setBulkGroupDialogOpen] = useState(false);
   const [bulkGroupValue, setBulkGroupValue] = useState('');
   const [groupActionTarget, setGroupActionTarget] = useState<string | null>(null);
@@ -368,6 +384,9 @@ export default function CharacterLibraryPage() {
   useEffect(() => {
     writePersistentUiValue(CHARACTER_LIBRARY_VIEW_KEY, view);
   }, [view]);
+
+  useEffect(() => { writePersistentUiValue(CHARACTER_COMPLETION_FIELDS_KEY, completionFieldsSelected); }, [completionFieldsSelected]);
+  useEffect(() => { writePersistentUiValue(CHARACTER_COMPLETION_MODE_KEY, completionMode); }, [completionMode]);
 
   useEffect(() => {
     setVisibleCharacterCount(CHARACTER_LIBRARY_INITIAL_RENDER_COUNT);
@@ -455,8 +474,10 @@ export default function CharacterLibraryPage() {
   const characterLoadMoreRef = useRef<HTMLDivElement | null>(null);
   const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const selectedCustomCharacters = useMemo(
-    () => custom.filter((character) => selectedIdSet.has(character.id)),
-    [custom, selectedIdSet],
+    () => custom
+      .filter((character) => selectedIdSet.has(character.id))
+      .map((character) => libraryItems.find((item) => item.id === character.id) || character),
+    [custom, libraryItems, selectedIdSet],
   );
 
   useEffect(() => {
@@ -560,64 +581,112 @@ export default function CharacterLibraryPage() {
     resetSelection();
   };
 
-  const handleBulkGenerateAvatars = () => {
-    try {
-      const queued = enqueueAvatarGenerationForCharacters(
-        selectedCustomCharacters,
-        aiProfiles,
-        i18n.language.startsWith('zh') ? 'zh' : 'en',
-        avatarGeneration,
-      );
-      setSnackbar({
-        open: true,
-        message: i18n.language.startsWith('zh')
-          ? `已为 ${queued.length} 个角色加入头像生成队列`
-          : `Queued avatar generation for ${queued.length} characters`,
-        severity: queued.length > 0 ? 'success' : 'error',
-      });
-    } catch (error) {
-      setSnackbar({
-        open: true,
-        message: error instanceof Error ? error.message : (i18n.language.startsWith('zh') ? '头像生成入队失败' : 'Failed to queue avatar generation'),
-        severity: 'error',
-      });
-    }
-  };
-
-  const handleBulkGenerateBubbles = async () => {
-    const profile = getPreferredAIProfile(aiProfiles, 'text');
-    if (!isAIProfileUsable(profile)) {
-      setSnackbar({ open: true, message: i18n.language.startsWith('zh') ? '请先配置AI模型' : 'Configure AI model first', severity: 'error' });
-      return;
-    }
-
-    let successCount = 0;
-    for (const character of selectedCustomCharacters) {
-      try {
-        const generated = await generateCharacterProfile(profile, character.name, i18n.language.startsWith('zh') ? 'zh' : 'en', character.group || null);
-        await useCharacterStore.getState().updateCharacter(character.id, {
-          bubbleStyle: { ...generated.bubbleStyle, id: createCharacterBubbleStyleId() },
-        });
-        successCount += 1;
-      } catch (error) {
-        setSnackbar({
-          open: true,
-          message: error instanceof Error ? error.message : (i18n.language.startsWith('zh') ? '批量生成气泡失败' : 'Failed to generate bubbles'),
-          severity: 'error',
-        });
-        return;
-      }
-    }
-
-    setSnackbar({
-      open: true,
-      message: i18n.language.startsWith('zh') ? `已为 ${successCount} 个角色生成气泡` : `Generated bubbles for ${successCount} characters`,
-      severity: successCount > 0 ? 'success' : 'error',
-    });
-  };
-
   const handleSelectionMoreMenu = (event: MouseEvent<HTMLElement>) => {
     setSelectionMenuAnchorEl(event.currentTarget);
+  };
+
+  const handleSelectAllCharacters = () => {
+    setSelectedIds(custom.map((character) => character.id));
+    setSelectionMode(true);
+    closeSelectionMoreMenu();
+  };
+
+  const isCompletionMissing = (character: AICharacter, field: CharacterCompletionField) => {
+    if (field === 'avatar') return !isImageAvatar(character.avatar);
+    // 形象描述和形象图是两份独立数据：已有描述时，仍应为没有图片的角色生成形象图。
+    if (field === 'visual') return !(character.visualIdentity?.referenceImages?.length);
+    if (field === 'bubble') return !character.bubbleStyle && !character.bubbleStyleId;
+    if (field === 'voice') return !character.voiceConfig?.voiceName;
+    if (field === 'profile') return !character.coreProfile || !Object.values(character.coreProfile).some((value) => Array.isArray(value) ? value.length > 0 : Boolean(value));
+    if (field === 'personality') return !character.personality || Object.values(character.personality).every((value) => !value);
+    return !character.background?.trim() || !character.speakingStyle?.trim() || !character.expertise?.length;
+  };
+
+  const isCompletionFieldDisabled = (field: CharacterCompletionField) => (
+    completionMode !== 'regenerate'
+    && selectedCustomCharacters.length > 0
+    && selectedCustomCharacters.every((character) => !isCompletionMissing(character, field))
+  );
+
+  const openCompletionDialog = () => {
+    closeSelectionMoreMenu();
+    setCompletionOpen(true);
+  };
+
+  const enqueueCompletion = () => {
+    const charactersToProcess = selectedCustomCharacters;
+    charactersToProcess.forEach((character) => completionFieldsSelected.forEach((field) => {
+      const missing = isCompletionMissing(character, field);
+      if (completionMode !== 'regenerate' && !missing) return;
+      const kind: CharacterCompletionKind = field === 'avatar' || field === 'visual' ? 'image' : 'text';
+      enqueueCharacterCompletionTask({
+        kind,
+        characterId: character.id,
+        characterName: character.name,
+        field,
+        label: completionFieldLabels[field],
+        run: async () => {
+          if (field === 'base' || field === 'personality' || field === 'profile') {
+            const profile = getPreferredAIProfile(aiProfiles, 'text');
+            if (!isAIProfileUsable(profile)) throw new Error('请先配置文本 AI 模型');
+            const generated = await generateCharacterProfileDraft(profile, character.name, i18n.language.startsWith('zh') ? 'zh' : 'en', character.group || null);
+            await useCharacterStore.getState().updateCharacter(character.id, {
+              ...(field === 'base' ? { background: completionMode === 'complete' ? (character.background || generated.background) : generated.background, speakingStyle: completionMode === 'complete' ? (character.speakingStyle || generated.speakingStyle) : generated.speakingStyle, expertise: completionMode === 'complete' && character.expertise?.length ? character.expertise : generated.expertise } : {}),
+              ...(field === 'personality' ? { personality: completionMode === 'complete' && character.personality ? character.personality : generated.personality } : {}),
+              ...(field === 'profile' ? { coreProfile: completionMode === 'complete' && character.coreProfile ? character.coreProfile : generated.coreProfile } : {}),
+            });
+            return;
+          }
+          if (field === 'bubble') {
+            const profile = getPreferredAIProfile(aiProfiles, 'text');
+            if (!isAIProfileUsable(profile)) throw new Error('请先配置文本 AI 模型');
+            const generated = await generateCharacterProfileDraft(profile, character.name, i18n.language.startsWith('zh') ? 'zh' : 'en', character.group || null);
+            await useCharacterStore.getState().updateCharacter(character.id, { bubbleStyle: { ...generated.bubbleStyle, id: createCharacterBubbleStyleId() } });
+            return;
+          }
+          if (field === 'voice') {
+            const profile = getPreferredAIProfile(aiProfiles, 'text');
+            if (!isAIProfileUsable(profile)) throw new Error('请先配置文本 AI 模型');
+            const generated = await generateCharacterVoiceProfileDraft(profile, { name: character.name, background: character.background, speakingStyle: character.speakingStyle, expertise: character.expertise, group: character.group, coreProfile: character.coreProfile, speechProfile: character.speechProfile }, i18n.language.startsWith('zh') ? 'zh' : 'en');
+            const assigned = await assignGeneratedVoiceProfile(generated, character.id, [], getPreferredAIProfile(aiProfiles, 'tts')?.provider);
+            await useCharacterStore.getState().updateCharacter(character.id, { voiceConfig: { ...(character.voiceConfig || {}), ...assigned.voiceConfig, voiceProfile: generated } });
+            return;
+          }
+          if (field === 'visual') {
+            const current = useCharacterStore.getState().characters.find((item) => item.id === character.id) || character;
+            let visualIdentity = current.visualIdentity || {};
+            if (!visualIdentity.description?.trim() || completionMode !== 'empty') {
+              const profile = getPreferredAIProfile(aiProfiles, 'text');
+              if (!isAIProfileUsable(profile)) throw new Error('请先配置文本 AI 模型');
+              const draft = await generateCharacterVisualIdentityDraft(profile, { name: current.name, background: current.background, speakingStyle: current.speakingStyle, expertise: current.expertise, group: current.group }, i18n.language.startsWith('zh') ? 'zh' : 'en');
+              visualIdentity = completionMode === 'regenerate'
+                ? { ...visualIdentity, ...draft }
+                : { ...visualIdentity, description: visualIdentity.description?.trim() || draft.description, styleHint: visualIdentity.styleHint?.trim() || draft.styleHint, negativePrompt: visualIdentity.negativePrompt?.trim() || draft.negativePrompt, seed: visualIdentity.seed ?? draft.seed };
+              await useCharacterStore.getState().updateCharacter(current.id, { visualIdentity });
+            }
+            const imageProfile = getPreferredAIProfile(aiProfiles, 'image');
+            if (!isAIProfileUsable(imageProfile)) throw new Error('请先配置图片 AI 模型');
+            const taskId = avatarGenerationQueue.enqueue(imageProfile, buildCharacterVisualImagePrompt({ name: current.name, background: current.background, speakingStyle: current.speakingStyle, expertise: current.expertise, group: current.group, visualIdentity }, i18n.language.startsWith('zh') ? 'zh' : 'en'), { targetKey: `character-visual:${current.id}`, characterId: null, description: `${current.name.trim() || '未命名角色'} · 形象图`, negativePrompt: visualIdentity.negativePrompt, seed: visualIdentity.seed });
+            const state = await avatarGenerationQueue.waitForTask(taskId);
+            if (!state.imageDataUrl) throw new Error('图片生成未返回图像');
+            const asset = await api.createCharacterVisualAsset(current.id, { dataUrl: state.imageDataUrl, label: '形象图', source: 'generated', isPrimary: true });
+            // 视觉资产由独立接口持久化，重新加载详情，避免同一资产同时出现在
+            // visual_identity 和 character_visual_assets 中而显示重复。
+            await useCharacterStore.getState().loadCharacters();
+            return;
+          }
+          if (field === 'avatar') {
+            const imageProfile = getPreferredAIProfile(aiProfiles, 'image');
+            if (!isAIProfileUsable(imageProfile)) throw new Error('请先配置图片 AI 模型');
+            const taskId = enqueueAvatarGenerationForCharacter({ id: character.id, name: character.name, background: character.background, speakingStyle: character.speakingStyle, expertise: character.expertise, group: character.group, personality: character.personality, speechProfile: character.speechProfile, coreProfile: character.coreProfile }, aiProfiles, i18n.language.startsWith('zh') ? 'zh' : 'en', avatarGeneration, { targetKey: `character:${character.id}`, characterId: character.id });
+            await avatarGenerationQueue.waitForTask(taskId);
+          }
+        },
+      });
+    }));
+    setCompletionOpen(false);
+    resetSelection();
+    setSnackbar({ open: true, message: '已加入补全队列', severity: 'success' });
   };
 
   const closeSelectionMoreMenu = () => {
@@ -815,28 +884,23 @@ export default function CharacterLibraryPage() {
           <Box sx={{ ml: 'auto', display: 'flex', gap: 1, flexWrap: 'wrap' }}>
             <Button size="small" variant="outlined" startIcon={<ClearAllIcon />} onClick={resetSelection}>{i18n.language.startsWith('zh') ? '取消选择' : 'Cancel'}</Button>
             <Button size="small" color="error" variant="outlined" startIcon={<DeleteSweepIcon />} onClick={() => setBulkDeleteOpen(true)} disabled={selectedIds.length === 0}>{i18n.language.startsWith('zh') ? '批量删除' : 'Delete selected'}</Button>
-            <IconButton size="small" onClick={handleSelectionMoreMenu} disabled={selectedIds.length === 0}>
+            <IconButton size="small" onClick={handleSelectionMoreMenu} disabled={!selectionMode}>
               <MoreIcon fontSize="small" />
             </IconButton>
           </Box>
           <Menu anchorEl={selectionMenuAnchorEl} open={Boolean(selectionMenuAnchorEl) && selectionMode} onClose={closeSelectionMoreMenu}>
-            <MenuItem onClick={() => {
-              closeSelectionMoreMenu();
-              handleBulkGenerateAvatars();
-            }}>
-              {i18n.language.startsWith('zh') ? '批量生成头像' : 'Generate avatars'}
-            </MenuItem>
-            <MenuItem onClick={async () => {
-              closeSelectionMoreMenu();
-              await handleBulkGenerateBubbles();
-            }}>
-              {i18n.language.startsWith('zh') ? '批量生成气泡' : 'Generate bubbles'}
+            <MenuItem onClick={handleSelectAllCharacters}>
+              {i18n.language.startsWith('zh') ? '全选' : 'Select all'}
             </MenuItem>
             <MenuItem onClick={() => {
               closeSelectionMoreMenu();
               setBulkGroupDialogOpen(true);
             }}>
               {i18n.language.startsWith('zh') ? '更改分组' : 'Change group'}
+            </MenuItem>
+            <Divider />
+            <MenuItem onClick={openCompletionDialog} disabled={selectedIds.length === 0}>
+              {i18n.language.startsWith('zh') ? '批量补全' : 'Complete selected'}
             </MenuItem>
           </Menu>
         </Box>
@@ -865,7 +929,7 @@ export default function CharacterLibraryPage() {
           sx={{
             ...(view === 'list' ? buildListGridSx() : {
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 248px), 1fr))',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 220px), 1fr))',
               gap: 1.5,
             }),
             alignItems: 'stretch',
@@ -907,6 +971,45 @@ export default function CharacterLibraryPage() {
         onCancel={() => setDeleteId(null)}
         destructive
       />
+
+      <Dialog open={completionOpen} onClose={() => setCompletionOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>批量补全</DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'grid', gap: 0.35 }}>
+            {completionFields.map((field) => {
+              const missingCount = selectedCustomCharacters.filter((character) => isCompletionMissing(character, field)).length;
+              const checked = completionFieldsSelected.includes(field);
+              const disabled = isCompletionFieldDisabled(field);
+              return (
+                <FormControlLabel
+                  key={field}
+                  disabled={disabled}
+                  control={<Checkbox checked={checked} onChange={() => setCompletionFieldsSelected((current) => checked ? current.filter((item) => item !== field) : [...current, field])} />}
+                  label={`${completionFieldLabels[field]}（${missingCount}/${selectedCustomCharacters.length}）`}
+                />
+              );
+            })}
+          </Box>
+          <FormControl sx={{ mt: 2 }}>
+            <FormLabel>处理方式</FormLabel>
+            <RadioGroup row value={completionMode} onChange={(event) => setCompletionMode(event.target.value as CharacterCompletionMode)} sx={{ flexWrap: 'nowrap', gap: 1 }}>
+              <Tooltip title="只处理完全没有内容的项目，不改已有内容" placement="right">
+                <FormControlLabel value="empty" control={<Radio />} label="仅空数据" sx={{ mr: 0, whiteSpace: 'nowrap' }} />
+              </Tooltip>
+              <Tooltip title="补齐缺失部分，保留你已经填写的内容" placement="right">
+                <FormControlLabel value="complete" control={<Radio />} label="补全信息" sx={{ mr: 0, whiteSpace: 'nowrap' }} />
+              </Tooltip>
+              <Tooltip title="基于现有设定重新生成，可替换已有图片" placement="right">
+                <FormControlLabel value="regenerate" control={<Radio />} label="重新生成" sx={{ mr: 0, whiteSpace: 'nowrap' }} />
+              </Tooltip>
+            </RadioGroup>
+          </FormControl>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCompletionOpen(false)}>取消</Button>
+          <Button variant="contained" onClick={enqueueCompletion} disabled={!completionFieldsSelected.some((field) => !isCompletionFieldDisabled(field)) || !selectedCustomCharacters.length}>确认</Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={bulkGroupDialogOpen} onClose={() => setBulkGroupDialogOpen(false)} maxWidth="xs" fullWidth>
         <DialogTitle>{i18n.language.startsWith('zh') ? '更改分组' : 'Change group'}</DialogTitle>

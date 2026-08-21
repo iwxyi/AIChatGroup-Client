@@ -153,7 +153,11 @@ export function enqueueAvatarGenerationForCharacter(
   return avatarGenerationQueue.enqueue(
     imageProfile,
     buildAvatarPrompt(character, language, settings),
-    { targetKey: options?.targetKey || `character:${character.id}`, characterId: options?.characterId ?? character.id },
+    {
+      targetKey: options?.targetKey || `character:${character.id}`,
+      characterId: options?.characterId ?? character.id,
+      description: `${character.name.trim() || '未命名角色'} · 头像`,
+    },
   );
 }
 

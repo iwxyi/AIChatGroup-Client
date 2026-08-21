@@ -33,6 +33,7 @@ import SectionHeader from '../components/common/SectionHeader';
 import HomeCommandLauncher from '../features/homeCommand/HomeCommandLauncher';
 import { MIN_MEMBERS } from '../constants/defaults';
 import { avatarGenerationQueue, type AvatarGenerationQueueSummary } from '../services/avatarGenerationQueue';
+import { getCharacterCompletionSummary, subscribeCharacterCompletionQueue, type CharacterCompletionSummary } from '../services/characterCompletionQueue';
 import type { HomeCompanionshipSnapshot } from '../services/companionshipProjection';
 import { shouldShowCompanionshipStatusHints } from '../services/companionshipStatusVisibility';
 import { isCloudSyncEnabled } from '../services/cloudSyncPreference';
@@ -467,6 +468,7 @@ export default function HomePage() {
   const isLoggedIn = useAuthStore((state) => state.isLoggedIn);
   const user = useAuthStore((state) => state.user);
   const [avatarQueueSummary, setAvatarQueueSummary] = useState<AvatarGenerationQueueSummary>(() => avatarGenerationQueue.getSummary());
+  const [characterCompletionSummary, setCharacterCompletionSummary] = useState<CharacterCompletionSummary>(() => getCharacterCompletionSummary());
   const [cloudSyncEnabled, setCloudSyncEnabledState] = useState(() => isCloudSyncEnabled());
   const [workerEntries, setWorkerEntries] = useState(() => getRegisteredSyncWorkerEntries());
   const [aiPointBalance, setAiPointBalance] = useState<number | null | undefined>(undefined);
@@ -491,6 +493,7 @@ export default function HomePage() {
   }, [markCharactersWarm, markChatsWarm, prefetchCharacters, prefetchChats]);
 
   useEffect(() => avatarGenerationQueue.subscribeSummary(setAvatarQueueSummary), []);
+  useEffect(() => subscribeCharacterCompletionQueue(setCharacterCompletionSummary), []);
 
   useEffect(() => {
     const timer = window.setInterval(() => setCalendarNow(Date.now()), 60_000);
@@ -605,6 +608,8 @@ export default function HomePage() {
   const needsNicknameSetup = !needsLogin && !String(user?.nickname || '').trim();
   const needsOwnCharacter = characters.length > 0 && customCharacters.length === 0;
   const hasActiveAvatarTasks = avatarQueueSummary.active > 0;
+  const hasActiveCharacterCompletions = characterCompletionSummary.text.active > 0 || characterCompletionSummary.image.active > 0;
+  const hasActiveImageCompletions = characterCompletionSummary.image.active > 0;
   const knownMessages = useMemo(() => [
     ...recentActiveMessages,
     ...recentWindowMessages,
@@ -781,13 +786,33 @@ export default function HomePage() {
       onOpen: () => navigate('/characters'),
       attention: true,
     }] : []),
-    ...(hasActiveAvatarTasks ? [{
+    ...(hasActiveAvatarTasks && !hasActiveImageCompletions ? [{
       label: avatarQueueSummary.running > 0
-        ? `头像生成中，队列 ${avatarQueueSummary.queued}`
+        ? `正在生成：${avatarQueueSummary.current || '头像'}，队列 ${avatarQueueSummary.queued}`
         : '头像等待生成',
       value: avatarQueueSummary.active,
       icon: <AutoAwesomeIcon />,
       color: 'primary.main',
+      onOpen: () => navigate('/characters'),
+      attention: true,
+    }] : []),
+    ...(hasActiveCharacterCompletions ? [{
+      label: '角色补全中',
+      value: `${characterCompletionSummary.text.completed + characterCompletionSummary.image.completed}/${characterCompletionSummary.text.total + characterCompletionSummary.image.total}`
+        + (characterCompletionSummary.text.failed + characterCompletionSummary.image.failed > 0
+          ? ` · 失败 ${characterCompletionSummary.text.failed + characterCompletionSummary.image.failed}`
+          : ''),
+      icon: <AutoAwesomeIcon />,
+      color: 'primary.main',
+      onOpen: () => navigate('/characters'),
+      attention: true,
+    }] : []),
+    ...(hasActiveImageCompletions ? [{
+      label: `正在生成：${characterCompletionSummary.image.current || avatarQueueSummary.current || '图片'}`,
+      value: `${characterCompletionSummary.image.completed}/${characterCompletionSummary.image.total}`
+        + (characterCompletionSummary.image.failed > 0 ? ` · 失败 ${characterCompletionSummary.image.failed}` : ''),
+      icon: <AutoAwesomeIcon />,
+      color: 'secondary.main',
       onOpen: () => navigate('/characters'),
       attention: true,
     }] : []),

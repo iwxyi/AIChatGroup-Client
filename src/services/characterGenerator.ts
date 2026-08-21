@@ -35,6 +35,21 @@ export interface CharacterVisualIdentityDraftInput {
   group?: string | null;
 }
 
+export function buildCharacterVisualImagePrompt(input: CharacterVisualIdentityDraftInput & { visualIdentity?: GeneratedCharacterProfile['visualIdentity'] }, language: 'zh' | 'en') {
+  const visual = input.visualIdentity || {};
+  return [
+    language === 'zh' ? `为聊天角色“${input.name.trim() || '未命名角色'}”生成一张稳定形象参考图。` : `Generate a stable visual reference image for the chat character "${input.name.trim() || 'Unnamed character'}".`,
+    visual.description?.trim() ? (language === 'zh' ? `视觉形象：${visual.description.trim()}` : `Visual identity: ${visual.description.trim()}`) : '',
+    input.background?.trim() ? (language === 'zh' ? `角色背景：${input.background.trim()}` : `Background: ${input.background.trim()}`) : '',
+    input.speakingStyle?.trim() ? (language === 'zh' ? `表达气质：${input.speakingStyle.trim()}` : `Speaking vibe: ${input.speakingStyle.trim()}`) : '',
+    visual.styleHint?.trim() ? (language === 'zh' ? `风格：${visual.styleHint.trim()}` : `Style: ${visual.styleHint.trim()}`) : '',
+    language === 'zh'
+      ? '要求：单人半身或全身清晰参考图，脸部、发型、体型、常见穿搭和标志性配饰清楚可见；适合作为后续聊天图片的身份参考；自然真实，避免文字、水印、多人、遮挡脸。'
+      : 'Requirements: one clear half-body or full-body reference image with visible face, hair, body type, common outfit, and signature accessories; suitable as identity reference for future chat images; natural and realistic, no text, no watermark, no multiple people, no covered face.',
+    visual.negativePrompt?.trim() ? (language === 'zh' ? `避免：${visual.negativePrompt.trim()}` : `Avoid: ${visual.negativePrompt.trim()}`) : '',
+  ].filter(Boolean).join('\n');
+}
+
 export interface CharacterVoiceProfileDraftInput {
   name: string;
   background?: string;
@@ -455,6 +470,10 @@ export async function generateCharacterProfile(config: APIConfig, name: string, 
   const profile = await generateCharacterProfileBase(config, name, language, context);
   const assignment = await assignGeneratedVoiceProfile(profile.voiceProfile, name.trim());
   return { ...profile, voiceConfig: { ...assignment.voiceConfig, voiceProfile: profile.voiceProfile } };
+}
+
+export async function generateCharacterProfileDraft(config: APIConfig, name: string, language: 'zh' | 'en', context?: CharacterGenerationContext) {
+  return generateCharacterProfileBase(config, name, language, context);
 }
 
 export async function generateCharacterVisualIdentityDraft(config: APIConfig, input: CharacterVisualIdentityDraftInput, language: 'zh' | 'en') {

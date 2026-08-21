@@ -13,6 +13,7 @@ export interface AvatarGenerationTaskState {
   error: string | null;
   imageDataUrl: string | null;
   characterId?: string | null;
+  description?: string;
   negativePrompt?: string;
   seed?: string | number | null;
 }
@@ -23,6 +24,7 @@ interface AvatarGenerationTask extends AvatarGenerationTaskState {
   negativePrompt?: string;
   seed?: string | number | null;
   controller: AbortController | null;
+  description?: string;
 }
 
 type TaskListener = (state: AvatarGenerationTaskState) => void;
@@ -32,6 +34,7 @@ export interface AvatarGenerationQueueSummary {
   queued: number;
   running: number;
   active: number;
+  current?: string;
 }
 
 class AvatarGenerationQueueService {
@@ -43,7 +46,7 @@ class AvatarGenerationQueueService {
   private latestTaskIdByTarget = new Map<string, string>();
   private runningTaskId: string | null = null;
 
-  enqueue(profile: AIModelProfile, prompt: string, options: { targetKey: string; characterId?: string | null; negativePrompt?: string; seed?: string | number | null }) {
+  enqueue(profile: AIModelProfile, prompt: string, options: { targetKey: string; characterId?: string | null; negativePrompt?: string; seed?: string | number | null; description?: string }) {
     const previous = this.getLatestTaskForTarget(options.targetKey);
     if (previous && (previous.status === 'queued' || previous.status === 'running')) {
       this.cancel(previous.id);
@@ -61,6 +64,7 @@ class AvatarGenerationQueueService {
       status: 'queued',
       error: null,
       imageDataUrl: null,
+      description: options.description,
       controller: null,
     };
 
@@ -81,6 +85,27 @@ class AvatarGenerationQueueService {
     return this.subscribeInternal(this.listenersByTask, taskId, listener, this.tasks.get(taskId) || null);
   }
 
+  waitForTask(taskId: string) {
+    return new Promise<AvatarGenerationTaskState>((resolve, reject) => {
+      let unsubscribe = () => undefined;
+      let settled = false;
+      const finish = (callback: () => void) => {
+        if (settled) return;
+        settled = true;
+        callback();
+        unsubscribe();
+      };
+      unsubscribe = this.subscribe(taskId, (state) => {
+        if (state.status === 'succeeded') {
+          finish(() => resolve(state));
+        } else if (state.status === 'failed' || state.status === 'cancelled') {
+          finish(() => reject(new Error(state.error || '图片生成失败')));
+        }
+      });
+      if (settled) unsubscribe();
+    });
+  }
+
   subscribeTarget(targetKey: string, listener: TaskListener) {
     const current = this.getLatestTaskForTarget(targetKey);
     return this.subscribeInternal(this.listenersByTarget, targetKey, listener, current ? (this.tasks.get(current.id) || null) : null);
@@ -97,6 +122,7 @@ class AvatarGenerationQueueService {
       queued,
       running,
       active: queued + running,
+      current: this.runningTaskId ? this.tasks.get(this.runningTaskId)?.description : undefined,
     };
   }
 
@@ -230,6 +256,7 @@ class AvatarGenerationQueueService {
       error: task.error,
       imageDataUrl: task.imageDataUrl,
       characterId: task.characterId || null,
+      description: task.description,
     };
   }
 }

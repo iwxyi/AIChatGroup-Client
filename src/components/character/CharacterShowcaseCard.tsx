@@ -10,6 +10,7 @@ import { buildInteractiveSurfaceSx, buildSelectionRailSx, microPillChipSx } from
 import { motion, reducedMotionSx, transition } from '../../styles/motion';
 import { useTranslation } from 'react-i18next';
 import { avatarGenerationQueue, type AvatarGenerationStatus } from '../../services/avatarGenerationQueue';
+import { getCharacterCompletionTaskStatus, subscribeCharacterCompletionQueue, type CharacterCompletionStatus } from '../../services/characterCompletionQueue';
 
 interface CharacterShowcaseCardProps {
   character: AICharacter;
@@ -77,20 +78,35 @@ export default function CharacterShowcaseCard({ character, onEdit, onDelete, onS
   const { t, i18n } = useTranslation();
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [visualGenerationStatus, setVisualGenerationStatus] = useState<AvatarGenerationStatus | null>(null);
+  const [avatarGenerationStatus, setAvatarGenerationStatus] = useState<AvatarGenerationStatus | null>(null);
+  const [visualCompletionStatus, setVisualCompletionStatus] = useState<CharacterCompletionStatus | null>(null);
   const [generatedVisualUrl, setGeneratedVisualUrl] = useState<string | null>(null);
   const pressTimerRef = useRef<number | null>(null);
   const longPressTriggeredRef = useRef(false);
   const visualImage = getPrimaryVisualImage(character);
-  const visualGenerating = visualGenerationStatus === 'queued' || visualGenerationStatus === 'running';
+  const visualGenerating = visualGenerationStatus === 'queued' || visualGenerationStatus === 'running'
+    || visualCompletionStatus === 'queued' || visualCompletionStatus === 'running';
+  const avatarGenerating = avatarGenerationStatus === 'queued' || avatarGenerationStatus === 'running';
   const expertise = formatExpertiseList(Array.isArray(character.expertise) ? character.expertise : [], i18n.language).slice(0, 3);
   const background = typeof character.background === 'string' ? character.background.trim() : '';
   const speakingStyle = typeof character.speakingStyle === 'string' ? character.speakingStyle.trim() : '';
   const description = background || speakingStyle;
 
-  useEffect(() => avatarGenerationQueue.subscribeTarget(`character-visual:${character.id}`, (state) => {
-    setVisualGenerationStatus(state.status);
-    setGeneratedVisualUrl(state.status === 'succeeded' ? state.imageDataUrl : null);
-  }), [character.id]);
+  useEffect(() => {
+    const updateCompletionStatus = () => setVisualCompletionStatus(getCharacterCompletionTaskStatus(character.id, 'visual'));
+    updateCompletionStatus();
+    const unsubscribeCompletion = subscribeCharacterCompletionQueue(updateCompletionStatus);
+    const unsubscribeImage = avatarGenerationQueue.subscribeTarget(`character-visual:${character.id}`, (state) => {
+      setVisualGenerationStatus(state.status);
+      setGeneratedVisualUrl(state.status === 'succeeded' ? state.imageDataUrl : null);
+    });
+    const unsubscribeAvatar = avatarGenerationQueue.subscribeTarget(`character:${character.id}`, (state) => setAvatarGenerationStatus(state.status));
+    return () => {
+      unsubscribeCompletion();
+      unsubscribeImage();
+      unsubscribeAvatar();
+    };
+  }, [character.id]);
 
   const clearPressTimer = () => {
     if (pressTimerRef.current !== null) {
@@ -134,11 +150,23 @@ export default function CharacterShowcaseCard({ character, onEdit, onDelete, onS
         containIntrinsicSize: '360px',
         overflow: 'hidden',
         '&::before': { ...buildSelectionRailSx(Boolean(selected)) },
+        ...(selected ? {
+          boxShadow: (theme) => theme.palette.mode === 'light'
+            ? '0 0 0 2px rgba(49,90,156,0.30) inset, 0 18px 38px rgba(49,90,156,0.14)'
+            : '0 0 0 2px rgba(120,156,220,0.34) inset, 0 20px 44px rgba(0,0,0,0.36)',
+        } : {}),
       }}
     >
       <Box sx={{ position: 'relative', height: '100%' }}>
         {selectionMode && selectable ? (
-          <Box sx={{ position: 'absolute', top: 10, left: 10, zIndex: 2, color: selected ? 'primary.main' : 'action.disabled' }}>
+          <Box
+            role="checkbox"
+            aria-checked={Boolean(selected)}
+            tabIndex={0}
+            onClick={(event) => { event.stopPropagation(); handleClick(); }}
+            onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); handleClick(); } }}
+            sx={{ position: 'absolute', top: 6, left: 6, zIndex: 3, p: 0.35, borderRadius: 1, cursor: 'pointer', color: selected ? 'primary.main' : 'action.disabled', bgcolor: selected ? 'background.paper' : 'transparent', '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 1 } }}
+          >
             <CheckCircleIcon fontSize="small" />
           </Box>
         ) : null}
@@ -178,13 +206,20 @@ export default function CharacterShowcaseCard({ character, onEdit, onDelete, onS
         >
           <Box sx={{ display: 'grid', gridTemplateRows: 'auto minmax(182px, 1fr) auto', width: '100%', minHeight: 360 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.15, px: 1.5, py: 1.25, pr: (onEdit || onDelete) ? 5.5 : 1.5, borderBottom: '1px solid', borderColor: 'divider' }}>
-              <Avatar
-                src={isImageAvatar(character.avatar) ? resolveSafeAvatarSrc(character.avatar) : undefined}
-                slotProps={{ img: { onError: () => rememberFailedAvatarUrl(character.avatar), loading: 'lazy', decoding: 'async' } }}
-                sx={{ width: 34, height: 34, fontSize: '1rem', bgcolor: 'primary.light' }}
-              >
-                {isImageAvatar(character.avatar) ? undefined : character.avatar}
-              </Avatar>
+              <Box sx={{ position: 'relative', width: 34, height: 34, flexShrink: 0 }}>
+                <Avatar
+                  src={isImageAvatar(character.avatar) ? resolveSafeAvatarSrc(character.avatar) : undefined}
+                  slotProps={{ img: { onError: () => rememberFailedAvatarUrl(character.avatar), loading: 'lazy', decoding: 'async' } }}
+                  sx={{ width: 34, height: 34, fontSize: '1rem', bgcolor: 'primary.light' }}
+                >
+                  {isImageAvatar(character.avatar) ? undefined : character.avatar}
+                </Avatar>
+                {avatarGenerating ? (
+                  <Box sx={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', borderRadius: '50%', bgcolor: 'rgba(10,15,25,0.52)', color: 'common.white' }}>
+                    <CircularProgress size={18} thickness={4} color="inherit" />
+                  </Box>
+                ) : null}
+              </Box>
               <Box sx={{ minWidth: 0, flex: 1 }}>
                 <Typography variant="subtitle2" noWrap sx={{ fontWeight: 700, lineHeight: 1.25 }}>{character.name}</Typography>
                 <Typography variant="caption" color="text.secondary" noWrap>
@@ -212,7 +247,7 @@ export default function CharacterShowcaseCard({ character, onEdit, onDelete, onS
               ) : null}
             </Box>
             <Box sx={{ px: 1.5, pt: 1.25, pb: 1.5 }}>
-              <Typography variant="body2" color="text.secondary" sx={{ display: '-webkit-box', minHeight: '2.8em', overflow: 'hidden', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, lineHeight: 1.45 }}>
+              <Typography variant="body2" color="text.secondary" sx={{ display: '-webkit-box', minHeight: '4.2em', overflow: 'hidden', WebkitBoxOrient: 'vertical', WebkitLineClamp: 3, lineHeight: 1.45 }}>
                 {description || (i18n.language.startsWith('zh') ? '尚未填写角色介绍' : 'No character introduction yet')}
               </Typography>
               {expertise.length ? (

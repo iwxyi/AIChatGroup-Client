@@ -42,7 +42,7 @@ import type { AICharacter, PersonalityParams, CharacterBehaviorParams, Character
 import { getCharacterGroupList, normalizeCharacterGroup, normalizeCharacterModelProfileIds, getDuplicateCharacterNameKeys, getDuplicateCharacterWarningText, hasDuplicateCharacterName } from '../../types/character';
 import type { BubbleStyleDefinition } from '../../types/bubbleStyle';
 import { DEFAULT_PERSONALITY, DEFAULT_CHARACTER_BEHAVIOR, DEFAULT_CHARACTER_MEMORY, DEFAULT_CHARACTER_INTERVENTION, DEFAULT_CORE_PROFILE } from '../../types/character';
-import { generateCharacterProfile, generateCharacterVisualIdentityDraft, generateCharacterVoiceProfileDraft } from '../../services/characterGenerator';
+import { buildCharacterVisualImagePrompt, generateCharacterProfile, generateCharacterVisualIdentityDraft, generateCharacterVoiceProfileDraft } from '../../services/characterGenerator';
 import { useSettingsStore } from '../../stores/useSettingsStore';
 import { useCharacterStore } from '../../stores/useCharacterStore';
 import { useCharacterArtifactStore, type CharacterArtifactEntry } from '../../stores/useCharacterArtifactStore';
@@ -169,7 +169,8 @@ function pickRandomExample(options: string[]) {
 }
 
 function getVisualAssetIdentity(asset: CharacterVisualReferenceImage) {
-  return asset.assetId || asset.id || asset.checksum || asset.url;
+  // 资产 ID 可能因重复上传而不同，优先用内容指纹/URL 去重。
+  return asset.checksum || asset.url || asset.assetId || asset.id;
 }
 
 function dedupeVisualAssets(assets: CharacterVisualReferenceImage[]) {
@@ -517,6 +518,7 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
     if (loadedInitialSignatureRef.current === initialSignature) return;
     loadedInitialSignatureRef.current = initialSignature;
     setModelProfileIds(normalizeCharacterModelProfileIds(initial.modelProfileIds, initial.modelProfileId || null));
+    setAvatar(initial.avatar || '🤖');
     setGenerationPreferences({
       moments: initial.generationPreferences?.moments || 'follow_global',
       diaries: initial.generationPreferences?.diaries || 'follow_global',
@@ -929,7 +931,7 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
     syncVisualIdentityReferenceImages(normalized, { primaryReferenceImageId: nextPrimary });
   };
 
-  const handleGenerateVisualImage = () => {
+  const handleGenerateVisualImage = async () => {
     if (visualImageTaskId) {
       avatarGenerationQueue.cancel(visualImageTaskId);
       return;
@@ -940,23 +942,46 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
       setVisualImageTaskError(i18n.language.startsWith('zh') ? '请先配置默认图片模型' : 'Configure a default image model first.');
       return;
     }
-    const prompt = [
-      i18n.language.startsWith('zh') ? `为聊天角色“${name.trim() || '未命名角色'}”生成一张稳定形象参考图。` : `Generate a stable visual reference image for the chat character "${name.trim() || 'Unnamed character'}".`,
-      visualIdentity.description?.trim() ? (i18n.language.startsWith('zh') ? `视觉形象：${visualIdentity.description.trim()}` : `Visual identity: ${visualIdentity.description.trim()}`) : '',
-      background.trim() ? (i18n.language.startsWith('zh') ? `角色背景：${background.trim()}` : `Background: ${background.trim()}`) : '',
-      speakingStyle.trim() ? (i18n.language.startsWith('zh') ? `表达气质：${speakingStyle.trim()}` : `Speaking vibe: ${speakingStyle.trim()}`) : '',
-      visualIdentity.styleHint?.trim() ? (i18n.language.startsWith('zh') ? `风格：${visualIdentity.styleHint.trim()}` : `Style: ${visualIdentity.styleHint.trim()}`) : '',
-      i18n.language.startsWith('zh')
-        ? '要求：单人半身或全身清晰参考图，脸部、发型、体型、常见穿搭和标志性配饰清楚可见；适合作为后续聊天图片的身份参考；自然真实，避免文字、水印、多人、遮挡脸。'
-        : 'Requirements: one clear half-body or full-body reference image with visible face, hair, body type, common outfit, and signature accessories; suitable as identity reference for future chat images; natural and realistic, no text, no watermark, no multiple people, no covered face.',
-      visualIdentity.negativePrompt?.trim() ? (i18n.language.startsWith('zh') ? `避免：${visualIdentity.negativePrompt.trim()}` : `Avoid: ${visualIdentity.negativePrompt.trim()}`) : '',
-    ].filter(Boolean).join('\n');
+    let nextVisualIdentity = visualIdentity;
+    if (!visualAssets.length && (!visualIdentity.description?.trim() || !visualIdentity.styleHint?.trim() || !visualIdentity.negativePrompt?.trim())) {
+      const textModelProfileId = modelProfileIds.text || null;
+      const textProfile = settings.aiProfiles.find((profile) => profile.id === textModelProfileId)
+        || getPreferredAIProfile(settings.aiProfiles, 'text')
+        || settings.aiProfiles.find((profile) => isAIProfileUsable(profile));
+      if (!isAIProfileUsable(textProfile)) {
+        setVisualImageTaskStatus('failed');
+        setVisualImageTaskError(getGenerateNoKeyError(i18n.language));
+        return;
+      }
+      try {
+        const draft = await generateCharacterVisualIdentityDraft(textProfile, {
+          name,
+          background,
+          speakingStyle,
+          expertise,
+          group,
+        }, i18n.language.startsWith('zh') ? 'zh' : 'en');
+        nextVisualIdentity = {
+          ...visualIdentity,
+          description: visualIdentity.description?.trim() || draft.description,
+          styleHint: visualIdentity.styleHint?.trim() || draft.styleHint,
+          negativePrompt: visualIdentity.negativePrompt?.trim() || draft.negativePrompt,
+          seed: visualIdentity.seed ?? draft.seed,
+        };
+        setVisualIdentity(nextVisualIdentity);
+      } catch (error) {
+        setVisualImageTaskStatus('failed');
+        setVisualImageTaskError(error instanceof Error ? error.message : String(error));
+        return;
+      }
+    }
+    const prompt = buildCharacterVisualImagePrompt({ name, background, speakingStyle, expertise, group, visualIdentity: nextVisualIdentity }, i18n.language.startsWith('zh') ? 'zh' : 'en');
     setVisualImageTaskError(null);
     setVisualImageTaskStatus('queued');
     setVisualImageTaskId(avatarGenerationQueue.enqueue(imageProfile, prompt, {
       targetKey: visualImageTargetKey,
-      negativePrompt: visualIdentity.negativePrompt,
-      seed: visualIdentity.seed,
+      negativePrompt: nextVisualIdentity.negativePrompt,
+      seed: nextVisualIdentity.seed,
     }) || null);
   };
 
