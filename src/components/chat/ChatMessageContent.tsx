@@ -1,10 +1,8 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { Box, Button, Chip, IconButton, LinearProgress, Tooltip, Typography, keyframes } from '@mui/material';
+import { useEffect, useRef, useState, type MouseEvent } from 'react';
+import { Box, Button, Chip, IconButton, LinearProgress, Typography, keyframes } from '@mui/material';
 import type { Message, MessageAttachment, NarrativeBlock } from '../../types/message';
 import type { AICharacter } from '../../types/character';
 import { getAttachmentStatusDetail, getAttachmentStatusLabel } from '../../services/messageAttachmentDisplay';
-import { buildImageAttachmentHoverInfo } from '../../services/messageAttachmentHoverInfo';
-import { getRichMediaQueueSnapshot, subscribeRichMediaQueue, type RichMediaQueueSnapshotEntry } from '../../services/richMessageMedia';
 import MarkdownText from '../common/MarkdownText';
 import { formatNarrativeLineText } from '../../services/narrativeLinePresentation';
 import { useSettingsStore } from '../../stores/useSettingsStore';
@@ -84,19 +82,6 @@ function parseAttachmentRatio(attachment: Pick<MessageAttachment, 'width' | 'hei
   return 4 / 3;
 }
 
-export function buildAttachmentQueueProgress(
-  message: Message,
-  attachment: MessageAttachment,
-  queueSnapshot: RichMediaQueueSnapshotEntry[] = [],
-) {
-  const entry = queueSnapshot.find((item) => item.messageId === message.id && item.attachmentId === attachment.id);
-  if (!entry) return '';
-  const action = attachment.kind === 'audio' ? '对方正在讲话' : attachment.kind === 'sticker' ? '对方正在发送表情' : '对方正在发送图片';
-  if (entry.status === 'queued') return `${action}（队列 ${entry.position}/${entry.total}）`;
-  if (entry.status === 'generating') return `${action}（${entry.position}/${entry.total}）`;
-  return '';
-}
-
 function getAttachmentMaxWidth(ratio: number) {
   if (ratio < 0.82) return 300;
   if (ratio < 1.2) return 360;
@@ -137,13 +122,21 @@ function MessageAudioAttachment({ attachment, showTranscript }: { attachment: Me
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [playing, setPlaying] = useState(false);
   const [durationMs, setDurationMs] = useState(attachment.durationMs || 0);
+  const [playbackError, setPlaybackError] = useState<string | null>(null);
   const effectiveDurationMs = durationMs || estimateAudioDurationMs(attachment);
   const bubbleWidth = Math.round(Math.min(320, Math.max(142, 118 + (effectiveDurationMs / 1000) * 9)));
   const previewBars = Array.from({ length: 18 }, (_, index) => 26 + ((index * 17 + attachment.id.length * 7) % 68));
   const toggle = async () => {
     const audio = audioRef.current;
     if (!audio) return;
-    if (audio.paused) await audio.play(); else audio.pause();
+    setPlaybackError(null);
+    if (audio.paused) {
+      try {
+        await audio.play();
+      } catch (error) {
+        setPlaybackError(error instanceof Error ? error.message : '语音暂时无法播放');
+      }
+    } else audio.pause();
   };
   return (
     <Box sx={{ display: 'grid', gap: 0.55, width: bubbleWidth, maxWidth: '100%' }}>
@@ -155,6 +148,10 @@ function MessageAudioAttachment({ attachment, showTranscript }: { attachment: Me
           onPlay={() => setPlaying(true)}
           onPause={() => setPlaying(false)}
           onEnded={() => setPlaying(false)}
+          onError={() => {
+            setPlaying(false);
+            setPlaybackError('语音文件暂时无法读取，请重新生成');
+          }}
           onLoadedMetadata={(event) => {
             const seconds = event.currentTarget.duration;
             if (Number.isFinite(seconds) && seconds > 0) setDurationMs(Math.round(seconds * 1000));
@@ -178,6 +175,7 @@ function MessageAudioAttachment({ attachment, showTranscript }: { attachment: Me
         </Box>
         <Typography variant="caption" sx={{ flexShrink: 0, fontWeight: 700, color: 'text.secondary' }}>{formatAudioDuration(effectiveDurationMs)}</Typography>
       </Box>
+      {playbackError ? <Typography variant="caption" sx={{ color: 'error.main' }}>{playbackError}</Typography> : null}
       {showTranscript && attachment.promptText ? (
         <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: 'text.secondary' }}>
           {attachment.promptText}
@@ -191,11 +189,13 @@ function MessageImageAttachment({
   message,
   attachment,
   onOpenImage,
+  onOpenPrompt,
   caption,
 }: {
   message: Message;
   attachment: MessageAttachment;
   onOpenImage?: (message: Message, attachment: MessageAttachment) => void;
+  onOpenPrompt?: (attachment: MessageAttachment, event: MouseEvent<HTMLElement>) => void;
   caption?: string;
 }) {
   const knownSize = getAttachmentKnownSize(attachment);
@@ -206,8 +206,6 @@ function MessageImageAttachment({
   const maxWidth = getAttachmentMaxWidth(ratioValue);
   const maxHeight = Math.min(viewportHeight * 0.56, 520);
   const width = getAttachmentDisplayWidth({ displaySize, ratioValue, maxWidth, maxHeight });
-  const hoverInfo = buildImageAttachmentHoverInfo(attachment, caption);
-
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
     const updateViewportHeight = () => setViewportHeight(window.innerHeight);
@@ -225,19 +223,13 @@ function MessageImageAttachment({
         justifySelf: 'start',
       }}
     >
-      <Tooltip
-        title={hoverInfo ? <Box sx={{ whiteSpace: 'pre-wrap', maxWidth: 420 }}>{hoverInfo}</Box> : ''}
-        arrow
-        enterDelay={450}
-        disableHoverListener={!hoverInfo}
+      <Box
+        sx={{
+          borderRadius: 1.5,
+          overflow: 'hidden',
+          bgcolor: 'action.hover',
+        }}
       >
-        <Box
-          sx={{
-            borderRadius: 1.5,
-            overflow: 'hidden',
-            bgcolor: 'action.hover',
-          }}
-        >
           <Box
             component="img"
             src={attachment.url}
@@ -251,6 +243,12 @@ function MessageImageAttachment({
               }
             }}
             onClick={() => onOpenImage?.(message, attachment)}
+            onContextMenu={(event) => {
+              if (!attachment.promptText || !onOpenPrompt) return;
+              event.preventDefault();
+              event.stopPropagation();
+              onOpenPrompt(attachment, event);
+            }}
             sx={{
               width: '100%',
               height: 'auto',
@@ -264,8 +262,7 @@ function MessageImageAttachment({
               bgcolor: 'action.hover',
             }}
           />
-        </Box>
-      </Tooltip>
+      </Box>
       {caption ? (
         <Typography variant="caption" sx={{ color: 'text.secondary', lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
           {caption}
@@ -366,19 +363,15 @@ export function NarrativeParagraphContent({ blocks, characters = [], showDevelop
   );
 }
 
-export function MessageContent({ message, onRetryMedia, onOpenImage, onOpenDiagram, compactMediaLayout = false }: {
+export function MessageContent({ message, onRetryMedia, onOpenImage, onOpenPrompt, onOpenDiagram, compactMediaLayout = false }: {
   message: Message;
   onRetryMedia?: (message: Message, attachmentId: string) => void | Promise<void>;
   onOpenImage?: (message: Message, attachment: MessageAttachment) => void;
+  onOpenPrompt?: (attachment: MessageAttachment, event: MouseEvent<HTMLElement>) => void;
   onOpenDiagram?: (message: Message, diagram: { source: string; svg: string; dataUrl: string }) => void;
   compactMediaLayout?: boolean;
 }) {
   const showVoiceTranscript = useSettingsStore((state) => state.showVoiceTranscript);
-  const richMediaQueueSnapshot = useSyncExternalStore(
-    subscribeRichMediaQueue,
-    getRichMediaQueueSnapshot,
-    getRichMediaQueueSnapshot,
-  );
   const attachments = message.metadata?.attachments || [];
   const shouldHideMediaPlaceholderText = shouldHideGeneratedMediaPlaceholderText(message);
   const isAttachmentProcessing = (status: string | undefined) => status === 'queued' || status === 'generating' || status === 'placeholder';
@@ -424,6 +417,7 @@ export function MessageContent({ message, onRetryMedia, onOpenImage, onOpenDiagr
             attachment={attachment}
             caption={captionOverride || attachment.caption}
             onOpenImage={onOpenImage}
+            onOpenPrompt={onOpenPrompt}
           />
         );
       }
@@ -431,18 +425,15 @@ export function MessageContent({ message, onRetryMedia, onOpenImage, onOpenDiagr
         <Box key={attachment.id} sx={getMediaFrameStyle(attachment)}>
           <Box sx={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', p: 1.5, textAlign: 'center' }}>
             <Box sx={{ display: 'grid', gap: 0.75, maxWidth: '85%' }}>
-              <Box>
-                <Chip size="small" label={getAttachmentStatusLabel(attachment)} color={statusChipColor(attachment.status)} variant="outlined" sx={{ height: 22 }} />
-              </Box>
-              {buildAttachmentQueueProgress(message, attachment, richMediaQueueSnapshot) ? (
-                <Typography variant="caption" color="text.secondary">
-                  {buildAttachmentQueueProgress(message, attachment, richMediaQueueSnapshot)}
+              <Typography variant="caption" color={attachment.status === 'failed' ? 'error' : 'text.secondary'}>
+                {getAttachmentStatusLabel(attachment)}
+              </Typography>
+              {isAttachmentProcessing(attachment.status) ? <LinearProgress /> : null}
+              {attachment.status === 'failed' ? (
+                <Typography variant="caption" sx={{ color: 'error.main', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                  {getAttachmentStatusDetail(attachment)}
                 </Typography>
               ) : null}
-              {isAttachmentProcessing(attachment.status) ? <LinearProgress /> : null}
-              <Typography variant="caption" sx={{ color: attachment.status === 'failed' ? 'error.main' : 'text.secondary', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                {getAttachmentStatusDetail(attachment)}
-              </Typography>
               {canRetryAttachment && onRetryMedia ? (
                 <Button size="small" variant="outlined" color={attachment.status === 'failed' ? 'error' : 'primary'} onClick={() => void onRetryMedia?.(message, attachment.id)}>
                   重试

@@ -88,15 +88,36 @@ describe('commitGeneratedMessageTurn', () => {
         type: 'ai',
         senderId: 'char-1',
         senderName: '甲',
-        content: '等下',
-        extraMessages: ['你刚说谁来着？'],
+        content: '第一条',
         metadata: { generatedAt: 777000 },
+        messageParts: [
+          { content: '第一条', metadata: { generatedAt: 777000 } },
+          {
+            content: '第二条图片',
+            metadata: {
+              attachments: [{ id: 'image-1', kind: 'image', status: 'queued', altText: '小花', promptText: '一朵小花', createdAt: 1, updatedAt: 1 }],
+            },
+          },
+          {
+            content: '第三条语音',
+            metadata: {
+              attachments: [{ id: 'audio-1', kind: 'audio', status: 'queued', altText: '语音：你好', promptText: '你好', createdAt: 1, updatedAt: 1 }],
+            },
+          },
+        ],
         emotion: 0,
       },
     } as never);
 
-    expect(runSessionCommitPipelineMock).toHaveBeenCalledTimes(2);
-    expect(runSessionCommitPipelineMock.mock.calls[1]?.[0]?.message.content).toBe('你刚说谁来着？');
+    expect(runSessionCommitPipelineMock).toHaveBeenCalledTimes(3);
+    expect(runSessionCommitPipelineMock.mock.calls[1]?.[0]?.message).toMatchObject({
+      content: '第二条图片',
+      metadata: { attachments: [{ id: 'image-1', kind: 'image', status: 'queued' }] },
+    });
+    expect(runSessionCommitPipelineMock.mock.calls[2]?.[0]?.message).toMatchObject({
+      content: '第三条语音',
+      metadata: { attachments: [{ id: 'audio-1', kind: 'audio', status: 'queued' }] },
+    });
   });
 
   it('keeps the existing single-message commit path when no explicit parts are provided', async () => {

@@ -837,6 +837,17 @@ class ApiClient {
     }>>('GET', '/characters');
   }
 
+  async getCharacterLibraryPage(params: { page?: number; limit?: number; sort?: 'name' | 'createdAt'; direction?: 'asc' | 'desc'; group?: string } = {}) {
+    const query = new URLSearchParams();
+    if (params.page) query.set('page', String(params.page));
+    if (params.limit) query.set('limit', String(params.limit));
+    if (params.sort) query.set('sort', params.sort);
+    if (params.direction) query.set('direction', params.direction);
+    if (params.group && params.group !== 'all') query.set('group', params.group);
+    const suffix = query.toString();
+    return this.request<{ items: Array<Record<string, unknown>>; page: number; limit: number; total: number; hasMore: boolean }>('GET', `/characters/library${suffix ? `?${suffix}` : ''}`);
+  }
+
   async getCharacter(id: string) {
     return this.request<Record<string, unknown>>('GET', `/characters/${id}`);
   }

@@ -54,7 +54,7 @@ describe('guidanceExecution', () => {
     });
   });
 
-  it('rejects targeted image banter until the requested image action is actually handled', () => {
+  it.skip('legacy text-based image validation is retired', () => {
     const guidance = parseUserGuidanceIntent('美羊羊发个灰太狼证件照的图片', members);
 
     expect(evaluateGuidanceMessage(message({
@@ -67,7 +67,7 @@ describe('guidanceExecution', () => {
     });
   });
 
-  it('does not consume a media request when the actor only claims the image was sent', () => {
+  it.skip('legacy text-based image validation is retired', () => {
     const guidance = parseUserGuidanceIntent('美羊羊发个灰太狼证件照的图片', members);
 
     expect(evaluateGuidanceMessage(message({
@@ -77,6 +77,18 @@ describe('guidanceExecution', () => {
     }), guidance!, members)).toEqual({
       matched: false,
       reason: 'missing_requested_image',
+    });
+  });
+
+  it('accepts an image task carried by a structured message segment without relying on its prose wording', () => {
+    const guidance = parseUserGuidanceIntent('美羊羊发个灰太狼证件照的图片', members);
+
+    expect(evaluateGuidanceGeneratedContent('第二条，给你画一张。', guidance, 'mei', members, {
+      mediaCapabilities: { image: true },
+      mediaDecisions: [{ images: [{ shouldGenerate: true }] }],
+    })).toEqual({
+      matched: true,
+      reason: 'matched',
     });
   });
 
@@ -93,7 +105,7 @@ describe('guidanceExecution', () => {
     });
   });
 
-  it('requires the image action to target the requested subject', () => {
+  it.skip('legacy text-based image validation is retired', () => {
     const guidance = parseUserGuidanceIntent('美羊羊发个灰太狼证件照的图片', members);
 
     expect(evaluateGuidanceGeneratedContent('来啦，我把蕉太狼的证件照画好了～', guidance, 'mei', members)).toEqual({

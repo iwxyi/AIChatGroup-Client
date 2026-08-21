@@ -15,6 +15,12 @@ export interface GuidanceExecutionOptions {
     image?: boolean;
     audio?: boolean;
   };
+  /** Structured media decisions returned for individual message segments. */
+  mediaDecisions?: Array<{
+    images?: Array<{ shouldGenerate?: boolean }>;
+    image?: { shouldGenerate?: boolean } | null;
+    audio?: { shouldGenerate?: boolean } | null;
+  }>;
 }
 
 export interface GuidanceProgressSnapshot {
@@ -176,6 +182,11 @@ function imageAttachmentMatchesGuidance(message: Pick<Message, 'metadata'>, guid
 function evaluateMediaGuidanceContent(content: string, guidance: UserGuidanceIntent, characters?: AICharacter[], options?: GuidanceExecutionOptions): GuidanceExecutionReason {
   const request = guidance.mediaRequest;
   if (!request) return 'matched';
+  const hasStructuredImageDecision = options?.mediaDecisions?.some((decision) => (
+    decision.images?.some((image) => image.shouldGenerate === true)
+    || decision.image?.shouldGenerate === true
+  ));
+  if (hasStructuredImageDecision) return 'matched';
   if (hasImageUnableText(content)) return 'matched';
   if (request.kind === 'image' && options?.mediaCapabilities?.image === false) return 'missing_requested_image';
   if (!hasConcreteImageAction(content)) return 'missing_requested_image';

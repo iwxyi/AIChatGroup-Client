@@ -114,6 +114,16 @@ function buildProfiles(): AIModelProfile[] {
       model: 'image-model',
       isDefault: true,
     },
+    {
+      id: 'tts-default',
+      name: '默认语音',
+      type: 'tts',
+      provider: 'official',
+      apiKey: '',
+      baseUrl: '/api',
+      model: 'speech-tts',
+      isDefault: true,
+    },
   ];
 }
 
@@ -1236,6 +1246,36 @@ describe('chatEngine streaming preview', () => {
     });
   });
 
+  it('keeps per-segment image and audio decisions from the structured messages protocol', async () => {
+    generateResponseMock.mockReset();
+    generateResponseMock.mockResolvedValue(JSON.stringify({
+      content: '第一条',
+      messages: [
+        { content: '第一条', mediaDecision: null },
+        { content: '第二条图片', mediaDecision: { images: [{ shouldGenerate: true, prompt: '一朵小花', altText: '小花' }] } },
+        { content: '第三条语音', mediaDecision: { audio: { shouldGenerate: true, text: '语音内容' } } },
+      ],
+      interactionHints: null,
+      socialEventHints: null,
+      conflictFocus: null,
+    }));
+    const speaker = buildCharacter('speaker', '潇潇', {
+      voiceConfig: { voiceName: 'zh_female_cancan' },
+    });
+    const message = await generateSpeakerMessage({
+      chat: buildChat({ memberIds: ['speaker'] }),
+      speaker,
+      characters: [speaker],
+      messages: [buildUserMessage('请分三条回复', 1)],
+      apiConfig: buildProfiles(),
+    });
+
+    expect(generateResponseMock).toHaveBeenCalledTimes(1);
+    expect(message.messageParts).toHaveLength(3);
+    expect(message.messageParts?.[1]?.metadata?.attachments?.[0]).toMatchObject({ kind: 'image', status: 'queued' });
+    expect(message.messageParts?.[2]?.metadata?.attachments?.[0]).toMatchObject({ kind: 'audio', status: 'queued' });
+  });
+
   it('uses model-selected historical image refs for generated image attachments', () => {
     const parsed = parseInlineInteractionEnvelope(JSON.stringify({
       content: '我按上一张图重新做一个标题更大的版本。',
@@ -2048,7 +2088,7 @@ describe('chatEngine streaming preview', () => {
     });
   });
 
-  it('forces a queued image attachment for explicit media guidance when the text model omits mediaDecision', async () => {
+  it.skip('legacy local media fallback is retired; the model must return mediaDecision', async () => {
     generateResponseMock.mockReset();
     generateResponseMock.mockResolvedValue(JSON.stringify({
       content: '来啦，我把灰太狼先生的证件照画得超精神～',
@@ -3119,7 +3159,7 @@ describe('chatEngine streaming preview', () => {
     expect(message.content).toBe('春风又绿江南岸');
   });
 
-  it('retries explicit media guidance when the first draft keeps chatting instead of sending the requested image', async () => {
+  it.skip('legacy local media retry is retired; one model reply is committed as returned', async () => {
     generateResponseMock.mockReset();
     generateResponseMock
       .mockResolvedValueOnce(JSON.stringify({
@@ -3199,7 +3239,7 @@ describe('chatEngine streaming preview', () => {
     });
   });
 
-  it('does not let a character pretend to send an image when no image model is available', async () => {
+  it.skip('legacy local media capability prompt is retired; the model receives capabilities in the output contract', async () => {
     generateResponseMock.mockReset();
     generateResponseMock
       .mockResolvedValueOnce(JSON.stringify({
@@ -3432,7 +3472,7 @@ describe('chatEngine streaming preview', () => {
     expect(message.metadata?.runtimeDecision?.guidanceExecution).toBeUndefined();
   });
 
-  it('recovers the latest unresolved media guidance from messages even without a passed directorIntent', async () => {
+  it.skip('legacy local media guidance recovery is retired', async () => {
     generateResponseMock.mockReset();
     generateResponseMock.mockResolvedValue(JSON.stringify({
       content: '来啦来啦，灰太狼先生的证件照我画好了～',
@@ -3491,7 +3531,7 @@ describe('chatEngine streaming preview', () => {
     });
   });
 
-  it('locks explicit media guidance to the requested speaker instead of letting other members抢话', async () => {
+  it.skip('legacy local media speaker lock is retired', async () => {
     generateResponseMock.mockReset();
     generateResponseMock.mockResolvedValue(JSON.stringify({
       content: '来啦，我把灰太狼先生画成最帅证件照～',
@@ -3601,7 +3641,7 @@ describe('chatEngine streaming preview', () => {
     expect((completed[0] as { metadata?: { runtimeDecision?: { directorIntent?: { userGuidance?: { actorIds?: string[] } } } } }).metadata?.runtimeDecision?.directorIntent?.userGuidance?.actorIds).toEqual(['susu']);
   });
 
-  it('does not rotate explicit targeted guidance to another speaker when the locked actor fails', async () => {
+  it.skip('legacy local media speaker lock is retired', async () => {
     generateResponseMock.mockReset();
     generateResponseMock.mockResolvedValue(JSON.stringify({
       content: '',

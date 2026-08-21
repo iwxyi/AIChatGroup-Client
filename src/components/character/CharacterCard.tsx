@@ -104,6 +104,8 @@ export default function CharacterCard({ character, onEdit, onDelete, onStartDire
       sx={{
         ...buildInteractiveSurfaceSx({ selected: Boolean(selected) }),
         height: '100%',
+        contentVisibility: 'auto',
+        containIntrinsicSize: '132px',
         overflow: 'hidden',
         '&::before': {
           ...buildSelectionRailSx(Boolean(selected)),
@@ -156,7 +158,7 @@ export default function CharacterCard({ character, onEdit, onDelete, onStartDire
             <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5 }}>
               <Avatar
                 src={isImageAvatar(character.avatar) ? resolveSafeAvatarSrc(character.avatar) : undefined}
-                slotProps={{ img: { onError: () => rememberFailedAvatarUrl(character.avatar) } }}
+                slotProps={{ img: { onError: () => rememberFailedAvatarUrl(character.avatar), loading: 'lazy', decoding: 'async' } }}
                 sx={{ width: 48, height: 48, fontSize: '1.5rem', bgcolor: 'primary.light' }}>
                 {isImageAvatar(character.avatar) ? undefined : character.avatar}
               </Avatar>

@@ -832,6 +832,7 @@ export default function ChatDetailPage() {
   const [visiblePendingAppCommand, setVisiblePendingAppCommand] = useState<PendingAppCommand | null>(null);
   const [pendingAppCommandChoiceId, setPendingAppCommandChoiceId] = useState<string | null>(null);
   const [composerDockHeight, setComposerDockHeight] = useState(0);
+  const [keyboardInset, setKeyboardInset] = useState(0);
   const [composerInjectedAttachments, setComposerInjectedAttachments] = useState<MessageAttachment[]>([]);
   const [isDirectReplyPending, setIsDirectReplyPending] = useState(false);
 
@@ -855,6 +856,34 @@ export default function ChatDetailPage() {
   const composerDockRef = useRef<HTMLDivElement | null>(null);
   const pendingAppCommandChoiceRef = useRef(false);
   const assistantTitleRetryKeyRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!isMobile || typeof window === 'undefined') return undefined;
+    const visualViewport = window.visualViewport;
+    if (!visualViewport) return undefined;
+    const updateKeyboardInset = () => {
+      const active = document.activeElement;
+      const isTextEditing = active instanceof HTMLInputElement
+        || active instanceof HTMLTextAreaElement
+        || active?.getAttribute('contenteditable') === 'true';
+      const coveredHeight = Math.max(0, Math.round(window.innerHeight - visualViewport.height - visualViewport.offsetTop));
+      const nextInset = isTextEditing && coveredHeight > 80 ? coveredHeight : 0;
+      setKeyboardInset((current) => current === nextInset ? current : nextInset);
+    };
+    updateKeyboardInset();
+    visualViewport.addEventListener('resize', updateKeyboardInset);
+    visualViewport.addEventListener('scroll', updateKeyboardInset);
+    window.addEventListener('resize', updateKeyboardInset);
+    document.addEventListener('focusin', updateKeyboardInset);
+    document.addEventListener('focusout', updateKeyboardInset);
+    return () => {
+      visualViewport.removeEventListener('resize', updateKeyboardInset);
+      visualViewport.removeEventListener('scroll', updateKeyboardInset);
+      window.removeEventListener('resize', updateKeyboardInset);
+      document.removeEventListener('focusin', updateKeyboardInset);
+      document.removeEventListener('focusout', updateKeyboardInset);
+    };
+  }, [isMobile]);
   useEffect(() => {
     if (useUIStore.persist.hasHydrated()) {
       setUiHydrated(true);
@@ -2828,7 +2857,7 @@ export default function ChatDetailPage() {
   const messageListBottomInset = isRemoteDeletedChat
     ? { xs: '24px', sm: '24px' }
     : composerDockHeight > 0
-      ? { xs: `${composerDockHeight + 12}px`, sm: `${composerDockHeight + 12}px` }
+      ? { xs: `${composerDockHeight + 12 + keyboardInset}px`, sm: `${composerDockHeight + 12}px` }
       : { xs: 'calc(112px + env(safe-area-inset-bottom, 0px))', sm: '104px' };
 
   useLayoutEffect(() => {
@@ -3566,7 +3595,7 @@ export default function ChatDetailPage() {
             position: 'absolute',
             left: 0,
             right: 0,
-            bottom: 0,
+            bottom: { xs: `${keyboardInset}px`, sm: 0 },
             zIndex: 2,
             display: 'grid',
             gap: 0.75,
@@ -3585,7 +3614,7 @@ export default function ChatDetailPage() {
             hideSpeakAsChip={chat.type === 'ai_direct'}
             inputCapabilities={effectiveTextInputCapabilities}
             inputCapabilityWarning={effectiveTextInputCapabilityWarning}
-            autoFocus={isAssistantChat}
+            autoFocus={isAssistantChat && !isMobile}
             topContent={composerTopContent}
             injectedAttachments={composerInjectedAttachments}
             onInjectedAttachmentsConsumed={() => setComposerInjectedAttachments([])}

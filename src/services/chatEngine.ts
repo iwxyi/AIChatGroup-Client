@@ -2239,11 +2239,6 @@ function buildGuidanceRetryPrompt(params: {
   mediaCapabilities?: { image: boolean; audio: boolean };
 }) {
   const requestedActors = params.guidance.actorIds.map((id) => getCharacterNameById(params.characters, id)).filter(Boolean);
-  const subjectNames = params.guidance.mediaRequest?.subjectActorIds.map((id) => getCharacterNameById(params.characters, id)).filter(Boolean) || [];
-  const mediaRetry = params.guidance.kind === 'media_request'
-    ? `\n- The user asked for an image. Requested sender(s): ${requestedActors.join('、') || params.speaker.name}. Image subject: ${subjectNames.join('、') || params.guidance.mediaRequest?.subjectText || 'the requested subject'}.
-- Your next JSON must complete that image request. ${params.mediaCapabilities?.image === false ? 'You do not have image-generation capability in this turn, so say in character that you cannot send/generate the image now. Do not pretend an image was sent.' : 'The visible content must present or send the requested image, and mediaDecision.image.shouldGenerate must be true when image capability exists.'}`
-    : '';
   const topicRetry = params.guidance.kind === 'topic_shift'
     ? '\n- The user changed the topic. Your next JSON content must directly take a stance, answer, or ask a focused question about that topic before any old banter.'
     : params.guidance.kind === 'direct_reply'
@@ -2256,61 +2251,13 @@ function buildGuidanceRetryPrompt(params: {
 
 Guidance retry:
 - The previous draft drifted away from the latest human guidance and must be discarded.
-- Latest human guidance: ${params.guidance.rawText}${mediaRetry}${topicRetry}${suppressionRetry}
+- Latest human guidance: ${params.guidance.rawText}${topicRetry}${suppressionRetry}
 - Do not continue this failed draft: ${params.previousDraft.slice(0, 160)}
 - Return a fresh valid JSON object only.`;
 }
 
-function shouldForceGuidanceMedia(guidance: UserGuidanceIntent | null | undefined, speaker: AICharacter) {
-  if (guidance?.voiceRequest) return !guidance.actorIds.length || guidance.actorIds.includes(speaker.id);
-  if (!guidance?.mediaRequest || guidance.mediaRequest.kind !== 'image') return false;
-  if (!guidance.actorIds.length) return true;
-  return guidance.actorIds.includes(speaker.id);
-}
-
-function buildForcedImagePrompt(params: {
-  guidance: UserGuidanceIntent;
-  speaker: AICharacter;
-  characters: AICharacter[];
-  content: string;
-}) {
-  const request = params.guidance.mediaRequest;
-  if (!request) return null;
-  const referenceCharacterIds = request.subjectActorIds.length ? request.subjectActorIds : [];
-  const subjectCharacters = request.subjectActorIds
-    .map((id) => params.characters.find((character) => character.id === id))
-    .filter(Boolean) as AICharacter[];
-  const subjectNames = subjectCharacters.map((character) => character.name);
-  const visualAnchors = subjectCharacters
-    .map((character) => {
-      const visual = character.visualIdentity;
-      const anchor = [visual?.description, visual?.styleHint, character.background].filter(Boolean).join('；');
-      return anchor ? `${character.name}: ${anchor}` : `${character.name}: ${character.background || character.speakingStyle || 'use the current chat context'}`;
-    });
-  const speakerVisual = [params.speaker.visualIdentity?.description, params.speaker.visualIdentity?.styleHint].filter(Boolean).join('；');
-  const subjectText = subjectNames.length ? subjectNames.join('、') : request.subjectText;
-  const prompt = [
-    `Generate the image requested in a live group chat: ${params.guidance.rawText}`,
-    `Speaker/creator: ${params.speaker.name}${speakerVisual ? ` (${speakerVisual})` : ''}.`,
-    `Image subject: ${subjectText}.`,
-    visualAnchors.length ? `Subject visual anchors: ${visualAnchors.join(' | ')}` : '',
-    `Visible artifact/action: ${request.actionText}.`,
-    `The chat message says: ${params.content}`,
-    'Style: believable chat image or character-made illustration as implied by the request; concrete composition, clear subject, natural lighting, no UI screenshot, no watermark, no unreadable text overlays.',
-  ].filter(Boolean).join('\n');
-  return {
-    prompt: enhanceImagePrompt(prompt, { subject: subjectText, caption: `${params.speaker.name}发来的${subjectText}图片` }),
-    altText: `${params.speaker.name}发来的${subjectText}图片`,
-    referenceCharacterIds,
-  };
-}
-
 function mergeGuidanceMediaDecision(params: {
   decision: MediaGenerationDecision | null | undefined;
-  guidance: UserGuidanceIntent | null | undefined;
-  speaker: AICharacter;
-  characters: AICharacter[];
-  content: string;
   mediaCapabilities?: { image: boolean; audio: boolean };
 }): MediaGenerationDecision | null | undefined {
   const supportedDecision: MediaGenerationDecision | null | undefined = params.decision ? {
@@ -2324,53 +2271,7 @@ function mergeGuidanceMediaDecision(params: {
     || supportedDecision?.image?.shouldGenerate
     || supportedDecision?.audio?.shouldGenerate,
   );
-  if (!shouldForceGuidanceMedia(params.guidance, params.speaker) || !params.guidance) {
-    return hasSupportedDecision ? supportedDecision : undefined;
-  }
-  if (params.guidance.voiceRequest) {
-    if (params.mediaCapabilities?.audio === false) return hasSupportedDecision ? supportedDecision : undefined;
-    return {
-      ...(supportedDecision || {}),
-      audio: {
-        shouldGenerate: true,
-        reason: '用户明确要求听语音。',
-        text: supportedDecision?.audio?.text || params.content,
-      },
-    };
-  }
-  if (params.mediaCapabilities?.image === false) return hasSupportedDecision ? supportedDecision : undefined;
-  if (supportedDecision?.images?.some((image) => image.shouldGenerate && image.prompt && image.altText)) {
-    return supportedDecision;
-  }
-  const forced = buildForcedImagePrompt({
-    guidance: params.guidance,
-    speaker: params.speaker,
-    characters: params.characters,
-    content: params.content,
-  });
-  if (!forced) return hasSupportedDecision ? supportedDecision : undefined;
-  if (supportedDecision?.image?.shouldGenerate && supportedDecision.image.prompt && supportedDecision.image.altText) {
-    return {
-      ...(supportedDecision || {}),
-      image: {
-        ...supportedDecision.image,
-        referenceCharacterIds: supportedDecision.image.referenceCharacterIds?.length
-          ? supportedDecision.image.referenceCharacterIds
-          : forced.referenceCharacterIds,
-      },
-    };
-  }
-  return {
-    ...(supportedDecision || {}),
-    images: undefined,
-    image: {
-      shouldGenerate: true,
-      reason: '用户明确要求这个角色发送或创作图片。',
-      prompt: forced.prompt,
-      altText: forced.altText,
-      referenceCharacterIds: forced.referenceCharacterIds,
-    },
-  };
+  return hasSupportedDecision ? supportedDecision : undefined;
 }
 
 function resolveApiConfigForCharacter(character: AICharacter, apiConfig: APIConfig | AIModelProfile[], profiles?: AIModelProfile[]) {
@@ -3391,7 +3292,10 @@ async function generateNonDuplicateResponse(params: {
         params.guidance,
         params.speaker,
         params.characters,
-        { mediaCapabilities: params.mediaCapabilities },
+        {
+          mediaCapabilities: params.mediaCapabilities,
+          mediaDecisions: generated.messageParts?.map((part) => part.mediaDecision || {}) || [],
+        },
       );
       finalReason = guidanceEvaluation.reason;
       if (params.guidance && !guidanceEvaluation.matched && attempt < 2) {
@@ -4090,19 +3994,9 @@ export async function generateSpeakerMessage(params: {
   const modelMediaDecision = generated.parsedEnvelope?.mediaDecision;
   const mergedMediaDecision = mergeGuidanceMediaDecision({
     decision: modelMediaDecision,
-    guidance: userGuidance,
-    speaker: params.speaker,
-    characters: effectiveMembers,
-    content: generatedStoryResponse,
     mediaCapabilities,
   });
-  const forcedMediaQueued = Boolean(
-    userGuidance?.mediaRequest
-    && shouldForceGuidanceMedia(userGuidance, params.speaker)
-    && mergedMediaDecision?.image?.shouldGenerate
-    && !(modelMediaDecision?.image?.shouldGenerate && modelMediaDecision.image.prompt && modelMediaDecision.image.altText),
-  );
-  const guidanceExecution = generated.guidanceExecution || forcedMediaQueued
+  const guidanceExecution = generated.guidanceExecution
     ? {
       status: generated.guidanceExecution?.status || 'accepted',
       validated: generated.guidanceExecution?.validated ?? true,
@@ -4110,7 +4004,7 @@ export async function generateSpeakerMessage(params: {
       rejectedDraftCount: generated.guidanceExecution?.rejectedDraftCount || 0,
       rejectedReasons: generated.guidanceExecution?.rejectedReasons || [],
       finalReason: generated.guidanceExecution?.finalReason || 'matched',
-      forcedMediaQueued,
+      forcedMediaQueued: false,
     } satisfies GuidanceExecutionTrace
     : undefined;
   const storyEvents = generated.storyEvents || [];

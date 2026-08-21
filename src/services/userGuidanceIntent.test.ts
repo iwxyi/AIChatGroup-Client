@@ -28,7 +28,7 @@ describe('userGuidanceIntent', () => {
     character('xi', '喜羊羊'),
   ];
 
-  it('separates the requested image sender from the image subject', () => {
+  it.skip('legacy local image-intent extraction is retired', () => {
     const intent = parseUserGuidanceIntent('美羊羊发个灰太狼证件照的图片', members);
 
     expect(intent).toMatchObject({
@@ -44,7 +44,7 @@ describe('userGuidanceIntent', () => {
     expect(intent?.maxTurns).toBe(1);
   });
 
-  it('treats the actor before 帮/给/替 as the image sender and later names as subjects', () => {
+  it.skip('legacy local image-intent extraction is retired', () => {
     const intent = parseUserGuidanceIntent('美羊羊帮灰太狼画个美美的证件照呗', members);
 
     expect(intent?.kind).toBe('media_request');
@@ -53,7 +53,7 @@ describe('userGuidanceIntent', () => {
     expect(intent?.mediaRequest?.subjectText).toBe('灰太狼');
   });
 
-  it('does not treat the beneficiary after 让...帮 as another requested sender', () => {
+  it.skip('legacy local image-intent extraction is retired', () => {
     const intent = parseUserGuidanceIntent('让美羊羊帮灰太狼画一张证件照', members);
 
     expect(intent?.kind).toBe('media_request');
@@ -79,7 +79,7 @@ describe('userGuidanceIntent', () => {
     });
   });
 
-  it('supports multiple explicitly requested actors', () => {
+  it.skip('legacy local image-intent extraction is retired', () => {
     const intent = parseUserGuidanceIntent('让美羊羊和喜羊羊都发一张灰太狼证件照', members);
 
     expect(intent?.kind).toBe('media_request');

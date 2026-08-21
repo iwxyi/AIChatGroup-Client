@@ -183,6 +183,8 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
   const navigate = useNavigate();
   const location = useLocation();
   const [viewerOpen, setViewerOpen] = useState(false);
+  const [promptAttachment, setPromptAttachment] = useState<MessageAttachment | null>(null);
+  const [promptDialogOpen, setPromptDialogOpen] = useState(false);
   const [menuPosition, setMenuPosition] = useState<MenuPosition | null>(null);
   const [feedbackDialogOpen, setFeedbackDialogOpen] = useState(false);
   const [copyStatus, setCopyStatus] = useState<'success' | 'error' | null>(null);
@@ -481,11 +483,30 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
 
   const openMenuAt = (x: number, y: number) => {
     if (pending) return;
+    // 普通消息菜单不应沿用上一次图片菜单留下的提示词附件。
+    setPromptAttachment(null);
+    setPromptDialogOpen(false);
     setMenuPosition({ mouseX: x, mouseY: y });
   };
 
   const closeMenus = () => {
     setMenuPosition(null);
+  };
+
+  const openPromptMenu = (attachment: MessageAttachment, event: React.MouseEvent<HTMLElement>) => {
+    openMenuAt(event.clientX, event.clientY);
+    setPromptAttachment(attachment);
+  };
+
+  const closePromptDialog = () => {
+    setPromptDialogOpen(false);
+    setPromptAttachment(null);
+  };
+
+  const handleCopyPrompt = async () => {
+    if (!promptAttachment?.promptText) return;
+    const copied = await copyTextToClipboard(promptAttachment.promptText);
+    setCopyStatus(copied ? 'success' : 'error');
   };
 
   const cancelLongPress = () => {
@@ -799,7 +820,7 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
                   </Box>
                 </Tooltip>
               ) : withdrawalNoticeNode
-            ) : <MessageContent message={visibleMessage} onRetryMedia={onRetryMedia} onOpenImage={onOpenImage} onOpenDiagram={onOpenDiagram} compactMediaLayout={compactMediaBubble} />}
+            ) : <MessageContent message={visibleMessage} onRetryMedia={onRetryMedia} onOpenImage={onOpenImage} onOpenPrompt={openPromptMenu} onOpenDiagram={onOpenDiagram} compactMediaLayout={compactMediaBubble} />}
           </Box>
           {voiceGeneratingIndicator || voiceBar}
           {nonHtmlArtifactRefs.length ? (
@@ -874,7 +895,7 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
 
       <Dialog open={viewerOpen} onClose={() => setViewerOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>{message.senderName}</DialogTitle>
-        <DialogContent><MessageContent message={visibleMessage} onRetryMedia={onRetryMedia} onOpenImage={onOpenImage} onOpenDiagram={onOpenDiagram} compactMediaLayout={compactMediaBubble} /></DialogContent>
+        <DialogContent><MessageContent message={visibleMessage} onRetryMedia={onRetryMedia} onOpenImage={onOpenImage} onOpenPrompt={openPromptMenu} onOpenDiagram={onOpenDiagram} compactMediaLayout={compactMediaBubble} /></DialogContent>
       </Dialog>
 
       <Menu
@@ -898,6 +919,12 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
           <ListItemIcon sx={{ minWidth: 32 }}><ContentCopyIcon fontSize="small" /></ListItemIcon>
           复制
         </MenuItem>
+        {promptAttachment?.promptText ? (
+          <MenuItem onClick={() => { closeMenus(); setPromptDialogOpen(true); }}>
+            <ListItemIcon sx={{ minWidth: 32 }}><InsightsIcon fontSize="small" /></ListItemIcon>
+            查看提示词
+          </MenuItem>
+        ) : null}
         {canEditRevision ? (
           <MenuItem onClick={openRevisionEditor}>
             <ListItemIcon sx={{ minWidth: 32 }}><EditIcon fontSize="small" /></ListItemIcon>
@@ -942,6 +969,29 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
           </MenuItem>
         ) : null}
       </Menu>
+      <Dialog open={promptDialogOpen && Boolean(promptAttachment)} onClose={closePromptDialog} maxWidth="sm" fullWidth>
+        <DialogTitle>图片提示词</DialogTitle>
+        <DialogContent sx={{ pt: 0.5 }}>
+          <Typography
+            component="pre"
+            sx={{
+              m: 0,
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+              userSelect: 'text',
+              WebkitUserSelect: 'text',
+              fontFamily: 'inherit',
+              lineHeight: 1.7,
+            }}
+          >
+            {promptAttachment?.promptText || ''}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCopyPrompt} disabled={!promptAttachment?.promptText}>复制</Button>
+          <Button onClick={closePromptDialog}>关闭</Button>
+        </DialogActions>
+      </Dialog>
       <Dialog open={feedbackDialogOpen} onClose={() => setFeedbackDialogOpen(false)} maxWidth="xs" fullWidth>
         <DialogTitle>表达反馈</DialogTitle>
         <DialogContent sx={{ pt: 0.5 }}>

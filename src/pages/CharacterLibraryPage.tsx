@@ -13,6 +13,7 @@ import { useCharacterStore } from '../stores/useCharacterStore';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { useAuthStore } from '../stores/useAuthStore';
 import CharacterCard from '../components/character/CharacterCard';
+import CharacterShowcaseCard from '../components/character/CharacterShowcaseCard';
 import CharacterGroupFilterBar from '../components/character/CharacterGroupFilterBar';
 import ConfirmDialog from '../components/common/ConfirmDialog';
 import EmptyState from '../components/common/EmptyState';
@@ -22,7 +23,7 @@ import AppSnackbar from '../components/common/AppSnackbar';
 import ExpandableFab from '../components/common/ExpandableFab';
 import VipLimitDialog from '../components/common/VipLimitDialog';
 import { usePaneLayout } from '../components/layout/PaneLayoutContext';
-import { canDeleteCharacterGroup, getCharacterGroupList, getCharactersInGroup, normalizeCharacterGroup, normalizeCharacterName, getDuplicateCharacterBannerText, getDuplicateCharacterCount, getDuplicateCharacters } from '../types/character';
+import { canDeleteCharacterGroup, getCharacterGroupList, getCharactersInGroup, normalizeCharacter, normalizeCharacterGroup, normalizeCharacterName, getDuplicateCharacterBannerText, getDuplicateCharacterCount, getDuplicateCharacters } from '../types/character';
 import { enqueueAvatarGenerationForCharacters } from '../services/avatarGeneration';
 import { generateCharacterProfile } from '../services/characterGenerator';
 import { createCharacterBubbleStyleId } from '../utils/bubbleStyle';
@@ -36,13 +37,19 @@ import { buildListGridSx } from '../styles/interaction';
 
 type CharacterSortField = 'name' | 'createdAt';
 type CharacterSortDirection = 'asc' | 'desc';
+type CharacterLibraryView = 'list' | 'card';
 const CHARACTER_LIBRARY_GROUP_KEY = 'character-library-group';
 const CHARACTER_LIBRARY_SORT_FIELD_KEY = 'character-library-sort-field';
 const CHARACTER_LIBRARY_SORT_DIRECTION_KEY = 'character-library-sort-direction';
 const CHARACTER_LIBRARY_SORT_GROUP_FIRST_KEY = 'character-library-sort-group-first';
+const CHARACTER_LIBRARY_VIEW_KEY = 'character-library-view';
+const CHARACTER_LIBRARY_INITIAL_RENDER_COUNT = 24;
+const CHARACTER_LIBRARY_RENDER_BATCH_SIZE = 24;
+const CHARACTER_LIBRARY_PAGE_SIZE = 24;
 const isCharacterLibraryGroup = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0;
 const isCharacterSortField = (value: unknown): value is CharacterSortField => value === 'name' || value === 'createdAt';
 const isCharacterSortDirection = (value: unknown): value is CharacterSortDirection => value === 'asc' || value === 'desc';
+const isCharacterLibraryView = (value: unknown): value is CharacterLibraryView => value === 'list' || value === 'card';
 const isBoolean = (value: unknown): value is boolean => typeof value === 'boolean';
 
 function getActiveCharacterId(pathname: string) {
@@ -98,14 +105,24 @@ function buildDuplicateCharacterGroups(characters: AICharacter[], language: stri
   }));
 }
 
+function MenuCheck({ selected }: { selected: boolean }) {
+  return (
+    <Box component="span" aria-hidden="true" sx={{ width: 24, flexShrink: 0, display: 'inline-flex', alignItems: 'center' }}>
+      {selected ? '✓' : ''}
+    </Box>
+  );
+}
+
 function CharacterLibraryHeaderActions({
   customCount,
   sortField,
   sortDirection,
   sortGroupFirst,
+  view,
   onSortFieldChange,
   onSortDirectionChange,
   onToggleSortGroupFirst,
+  onViewChange,
   onImport,
   onExport,
 }: {
@@ -113,9 +130,11 @@ function CharacterLibraryHeaderActions({
   sortField: CharacterSortField;
   sortDirection: CharacterSortDirection;
   sortGroupFirst: boolean;
+  view: CharacterLibraryView;
   onSortFieldChange: (value: CharacterSortField) => void;
   onSortDirectionChange: (value: CharacterSortDirection) => void;
   onToggleSortGroupFirst: () => void;
+  onViewChange: (value: CharacterLibraryView) => void;
   onImport: () => void;
   onExport: () => void;
 }) {
@@ -174,21 +193,28 @@ function CharacterLibraryHeaderActions({
         onClose={() => setSortMenuAnchorEl(null)}
       >
         <MenuItem selected={sortField === 'name'} onClick={() => { onSortFieldChange('name'); setSortMenuAnchorEl(null); }}>
-          {sortField === 'name' ? '✓ ' : ''}{isZh ? '名称' : 'Name'}
+          <MenuCheck selected={sortField === 'name'} />{isZh ? '名称' : 'Name'}
         </MenuItem>
         <MenuItem selected={sortField === 'createdAt'} onClick={() => { onSortFieldChange('createdAt'); setSortMenuAnchorEl(null); }}>
-          {sortField === 'createdAt' ? '✓ ' : ''}{isZh ? '创建时间' : 'Created time'}
+          <MenuCheck selected={sortField === 'createdAt'} />{isZh ? '创建时间' : 'Created time'}
         </MenuItem>
         <Divider />
         <MenuItem selected={sortDirection === 'asc'} onClick={() => { onSortDirectionChange('asc'); setSortMenuAnchorEl(null); }}>
-          {sortDirection === 'asc' ? '✓ ' : ''}{isZh ? '正序' : 'Ascending'}
+          <MenuCheck selected={sortDirection === 'asc'} />{isZh ? '正序' : 'Ascending'}
         </MenuItem>
         <MenuItem selected={sortDirection === 'desc'} onClick={() => { onSortDirectionChange('desc'); setSortMenuAnchorEl(null); }}>
-          {sortDirection === 'desc' ? '✓ ' : ''}{isZh ? '逆序' : 'Descending'}
+          <MenuCheck selected={sortDirection === 'desc'} />{isZh ? '逆序' : 'Descending'}
         </MenuItem>
         <Divider />
         <MenuItem selected={sortGroupFirst} onClick={() => { onToggleSortGroupFirst(); setSortMenuAnchorEl(null); }}>
-          {sortGroupFirst ? '✓ ' : ''}{isZh ? '分组优先' : 'Group first'}
+          <MenuCheck selected={sortGroupFirst} />{isZh ? '分组优先' : 'Group first'}
+        </MenuItem>
+        <Divider />
+        <MenuItem selected={view === 'list'} onClick={() => { onViewChange('list'); setSortMenuAnchorEl(null); }}>
+          <MenuCheck selected={view === 'list'} />{isZh ? '列表视图' : 'List view'}
+        </MenuItem>
+        <MenuItem selected={view === 'card'} onClick={() => { onViewChange('card'); setSortMenuAnchorEl(null); }}>
+          <MenuCheck selected={view === 'card'} />{isZh ? '卡片视图' : 'Card view'}
         </MenuItem>
       </Menu>
       <Tooltip title={isZh ? '更多' : 'More'}>
@@ -285,6 +311,13 @@ export default function CharacterLibraryPage() {
   const [sortField, setSortField] = useState<CharacterSortField>(() => readPersistentUiValue(CHARACTER_LIBRARY_SORT_FIELD_KEY, 'name', isCharacterSortField));
   const [sortDirection, setSortDirection] = useState<CharacterSortDirection>(() => readPersistentUiValue(CHARACTER_LIBRARY_SORT_DIRECTION_KEY, 'asc', isCharacterSortDirection));
   const [sortGroupFirst, setSortGroupFirst] = useState(() => readPersistentUiValue(CHARACTER_LIBRARY_SORT_GROUP_FIRST_KEY, false, isBoolean));
+  const [view, setView] = useState<CharacterLibraryView>(() => readPersistentUiValue(CHARACTER_LIBRARY_VIEW_KEY, 'list', isCharacterLibraryView));
+  const [visibleCharacterCount, setVisibleCharacterCount] = useState(CHARACTER_LIBRARY_INITIAL_RENDER_COUNT);
+  const [libraryItems, setLibraryItems] = useState<AICharacter[]>([]);
+  const [libraryTotal, setLibraryTotal] = useState(0);
+  const [libraryPage, setLibraryPage] = useState(1);
+  const [libraryLoading, setLibraryLoading] = useState(false);
+  const libraryRequestIdRef = useRef(0);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selectionMenuAnchorEl, setSelectionMenuAnchorEl] = useState<null | HTMLElement>(null);
   const groupPressTimerRef = useRef<number | null>(null);
@@ -331,6 +364,17 @@ export default function CharacterLibraryPage() {
   useEffect(() => {
     writePersistentUiValue(CHARACTER_LIBRARY_SORT_GROUP_FIRST_KEY, sortGroupFirst);
   }, [sortGroupFirst]);
+
+  useEffect(() => {
+    writePersistentUiValue(CHARACTER_LIBRARY_VIEW_KEY, view);
+  }, [view]);
+
+  useEffect(() => {
+    setVisibleCharacterCount(CHARACTER_LIBRARY_INITIAL_RENDER_COUNT);
+    setLibraryPage(1);
+    setLibraryItems([]);
+    setLibraryTotal(0);
+  }, [selectedGroup, sortDirection, sortField, sortGroupFirst, view]);
 
   useEffect(() => {
     let active = true;
@@ -399,15 +443,55 @@ export default function CharacterLibraryPage() {
   const filteredCustom = useMemo(() => (
     selectedGroup === 'all' ? custom : getCharactersInGroup(custom, selectedGroup)
   ), [custom, selectedGroup]);
-  const displayChars = useMemo(
-    () => sortCharactersForLibrary(filteredCustom, sortField, sortDirection, sortGroupFirst),
-    [filteredCustom, sortDirection, sortField, sortGroupFirst]
+  const displayChars = useMemo(() => view === 'card'
+    ? libraryItems
+    : sortCharactersForLibrary(filteredCustom, sortField, sortDirection, sortGroupFirst),
+  [filteredCustom, libraryItems, sortDirection, sortField, sortGroupFirst, view]);
+  const visibleDisplayChars = useMemo(
+    () => view === 'card' ? displayChars : displayChars.slice(0, visibleCharacterCount),
+    [displayChars, view, visibleCharacterCount],
   );
+  const hasMoreCharacters = view === 'card' ? libraryItems.length < libraryTotal : visibleDisplayChars.length < displayChars.length;
+  const characterLoadMoreRef = useRef<HTMLDivElement | null>(null);
   const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const selectedCustomCharacters = useMemo(
     () => custom.filter((character) => selectedIdSet.has(character.id)),
     [custom, selectedIdSet],
   );
+
+  useEffect(() => {
+    if (view !== 'card') {
+      setLibraryLoading(false);
+      return;
+    }
+    if (authMode !== 'cloud' || !isLoggedIn) {
+      const localItems = sortCharactersForLibrary(filteredCustom, sortField, sortDirection, sortGroupFirst);
+      const start = (libraryPage - 1) * CHARACTER_LIBRARY_PAGE_SIZE;
+      setLibraryItems((current) => libraryPage === 1 ? localItems.slice(0, CHARACTER_LIBRARY_PAGE_SIZE) : [...current, ...localItems.slice(start, start + CHARACTER_LIBRARY_PAGE_SIZE)]);
+      setLibraryTotal(localItems.length);
+      setLibraryLoading(false);
+      return;
+    }
+    const requestId = libraryRequestIdRef.current + 1;
+    libraryRequestIdRef.current = requestId;
+    setLibraryLoading(true);
+    void api.getCharacterLibraryPage({
+      page: libraryPage,
+      limit: CHARACTER_LIBRARY_PAGE_SIZE,
+      sort: sortField,
+      direction: sortDirection,
+      group: selectedGroup,
+    }).then((result) => {
+      if (libraryRequestIdRef.current !== requestId) return;
+      const nextItems = result.items.map((item) => normalizeCharacter(item as unknown as AICharacter));
+      setLibraryItems((current) => libraryPage === 1 ? nextItems : [...current, ...nextItems]);
+      setLibraryTotal(result.total);
+    }).catch(() => {
+      if (libraryRequestIdRef.current === requestId) setLibraryItems((current) => libraryPage === 1 ? [] : current);
+    }).finally(() => {
+      if (libraryRequestIdRef.current === requestId) setLibraryLoading(false);
+    });
+  }, [authMode, filteredCustom, isLoggedIn, libraryPage, selectedGroup, sortDirection, sortField, sortGroupFirst, view]);
 
   useEffect(() => {
     if (selectedGroup === 'all') return;
@@ -416,6 +500,21 @@ export default function CharacterLibraryPage() {
       setSelectedGroup('all');
     }
   }, [custom.length, customGroups, selectedGroup]);
+
+  useEffect(() => {
+    if (!hasMoreCharacters || !characterLoadMoreRef.current || typeof IntersectionObserver === 'undefined') return;
+    const scrollRoot = characterLoadMoreRef.current.closest<HTMLElement>('[data-pneumata-scroll-region]');
+    const observer = new IntersectionObserver((entries) => {
+      if (!entries[0]?.isIntersecting) return;
+      if (view === 'card') {
+        if (!libraryLoading) setLibraryPage((current) => current + 1);
+      } else {
+        setVisibleCharacterCount((current) => Math.min(current + CHARACTER_LIBRARY_RENDER_BATCH_SIZE, displayChars.length));
+      }
+    }, { root: scrollRoot, rootMargin: '640px 0px' });
+    observer.observe(characterLoadMoreRef.current);
+    return () => observer.disconnect();
+  }, [displayChars.length, hasMoreCharacters, libraryLoading, view]);
 
   const resetSelection = () => {
     setSelectionMode(false);
@@ -636,9 +735,11 @@ export default function CharacterLibraryPage() {
         sortField={sortField}
         sortDirection={sortDirection}
         sortGroupFirst={sortGroupFirst}
+        view={view}
         onSortFieldChange={setSortField}
         onSortDirectionChange={setSortDirection}
         onToggleSortGroupFirst={() => setSortGroupFirst((value) => !value)}
+        onViewChange={setView}
         onImport={handleImport}
         onExport={handleExport}
       />
@@ -650,7 +751,7 @@ export default function CharacterLibraryPage() {
       setHeaderBackAction(null);
       setHideMobileBottomNav(false);
     };
-  }, [custom.length, handleExport, handleImport, i18n.language, setHeaderActions, setHeaderBackAction, setHeaderTitle, setHideMobileBottomNav, sortDirection, sortField, sortGroupFirst]);
+  }, [custom.length, handleExport, handleImport, i18n.language, setHeaderActions, setHeaderBackAction, setHeaderTitle, setHideMobileBottomNav, sortDirection, sortField, sortGroupFirst, view]);
 
   return (
     <Box sx={{ position: 'relative', containerType: 'inline-size', p: 3, pt: { xs: 1, sm: 1, md: 3 }, pb: { xs: 'calc(env(safe-area-inset-bottom, 0px) + 82px)', sm: 12 } }}>
@@ -747,7 +848,7 @@ export default function CharacterLibraryPage() {
           {i18n.language.startsWith('zh') ? `角色数量已达当前会员上限（${custom.length}/${maxCharacters}），升级会员后可创建更多角色。` : `Character limit reached (${custom.length}/${maxCharacters}). Upgrade membership to create more characters.`}
         </Alert>
       ) : null}
-      {isLoading && characters.length === 0 ? (
+      {(isLoading && characters.length === 0) || (view === 'card' && libraryLoading && libraryItems.length === 0) ? (
         <ListSkeletonGrid />
       ) : displayChars.length === 0 ? (
         <EmptyState
@@ -762,34 +863,39 @@ export default function CharacterLibraryPage() {
       ) : (
         <Box
           sx={{
-            ...buildListGridSx(),
+            ...(view === 'list' ? buildListGridSx() : {
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 248px), 1fr))',
+              gap: 1.5,
+            }),
             alignItems: 'stretch',
           }}
         >
-          {displayChars.map((char) => {
-            return (
-              <CharacterCard
-                key={char.id}
-                character={char}
-                selected={selectedIdSet.has(char.id) || activeCharacterId === char.id}
-                selectable
-                selectionMode={selectionMode}
-                onLongPress={() => enterSelectionMode(char.id)}
-                onEdit={() => navigate(`/characters/${char.id}/edit`)}
-                onDelete={() => setDeleteId(char.id)}
-                onStartDirectChat={!selectionMode ? () => void handleStartDirectChat(char.id, char.name) : undefined}
-                onClick={() => {
-                  if (selectionMode) {
-                    toggleSelection(char.id);
-                    return;
-                  }
-                  navigate(`/characters/${char.id}/edit`);
-                }}
-              />
-            );
+          {visibleDisplayChars.map((char) => {
+            const cardProps = {
+              character: char,
+              selected: selectedIdSet.has(char.id) || activeCharacterId === char.id,
+              selectable: true,
+              selectionMode,
+              onLongPress: () => enterSelectionMode(char.id),
+              onEdit: () => navigate(`/characters/${char.id}/edit`),
+              onDelete: () => setDeleteId(char.id),
+              onStartDirectChat: !selectionMode ? () => void handleStartDirectChat(char.id, char.name) : undefined,
+              onClick: () => {
+                if (selectionMode) {
+                  toggleSelection(char.id);
+                  return;
+                }
+                navigate(`/characters/${char.id}/edit`);
+              },
+            };
+            return view === 'card'
+              ? <CharacterShowcaseCard key={char.id} {...cardProps} />
+              : <CharacterCard key={char.id} {...cardProps} />;
           })}
         </Box>
       )}
+      {hasMoreCharacters ? <Box ref={characterLoadMoreRef} sx={{ height: 1 }} aria-label={i18n.language.startsWith('zh') ? '正在加载更多角色' : 'Loading more characters'} /> : null}
 
       </Box>
 
