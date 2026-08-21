@@ -14,6 +14,12 @@ import { getCharacterCompletionTaskStatus, subscribeCharacterCompletionQueue, ty
 
 const SHOWCASE_HEADER_HEIGHT = 52;
 
+const visualGlassSurfaceSx = {
+  backdropFilter: 'blur(12px) saturate(1.04)',
+  WebkitBackdropFilter: 'blur(12px) saturate(1.04)',
+  bgcolor: (theme: { palette: { mode: string } }) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.88)' : 'rgba(12,16,24,0.90)',
+};
+
 interface CharacterShowcaseCardProps {
   character: AICharacter;
   onEdit?: () => void;
@@ -50,13 +56,65 @@ function VisualPlaceholder({ name }: { name: string }) {
           opacity: 0.72,
         },
         '@media (hover: hover)': {
-          '&:hover svg': {
-            animation: 'character-showcase-placeholder 1.8s ease-in-out 1',
+          '& .placeholder-orbit': {
+            animation: 'character-showcase-placeholder-orbit 5.8s linear infinite',
+            animationPlayState: 'paused',
+          },
+          '& .placeholder-scan': {
+            animation: 'character-showcase-placeholder-scan 3.2s linear infinite',
+            animationPlayState: 'paused',
+          },
+          '& .placeholder-latitude': {
+            animation: 'character-showcase-placeholder-latitude 4.2s ease-in-out infinite',
+            animationPlayState: 'paused',
+          },
+          '& .placeholder-core': {
+            animation: 'character-showcase-placeholder-core 2.6s ease-in-out infinite',
+            animationPlayState: 'paused',
+          },
+          '& .placeholder-trace-a': {
+            animation: 'character-showcase-placeholder-trace-a 3.6s ease-in-out infinite',
+            animationPlayState: 'paused',
+          },
+          '& .placeholder-trace-b': {
+            animation: 'character-showcase-placeholder-trace-b 2.9s ease-in-out infinite',
+            animationPlayState: 'paused',
+          },
+          '&:hover .placeholder-orbit, &:hover .placeholder-scan, &:hover .placeholder-latitude, &:hover .placeholder-core, &:hover .placeholder-trace-a, &:hover .placeholder-trace-b': {
+            animationPlayState: 'running',
           },
         },
-        '@keyframes character-showcase-placeholder': {
-          '0%, 100%': { opacity: 0.48, transform: 'translateY(2px)' },
-          '50%': { opacity: 0.82, transform: 'translateY(-2px)' },
+        '@keyframes character-showcase-placeholder-orbit': {
+          from: { transform: 'rotate(0deg)' },
+          to: { transform: 'rotate(360deg)' },
+        },
+        '@keyframes character-showcase-placeholder-scan': {
+          from: { strokeDashoffset: 24, opacity: 0.3 },
+          '45%': { opacity: 0.72 },
+          to: { strokeDashoffset: 0, opacity: 0.3 },
+        },
+        '@keyframes character-showcase-placeholder-latitude': {
+          '0%, 100%': { opacity: 0.54, transform: 'scaleX(0.9)' },
+          '50%': { opacity: 0.9, transform: 'scaleX(1.04)' },
+        },
+        '@keyframes character-showcase-placeholder-core': {
+          '0%, 100%': { opacity: 0.56, transform: 'scale(0.86)' },
+          '50%': { opacity: 1, transform: 'scale(1.12)' },
+        },
+        '@keyframes character-showcase-placeholder-trace-a': {
+          '0%, 100%': { opacity: 0.42, transform: 'scaleX(0.62)' },
+          '46%': { opacity: 0.72, transform: 'scaleX(1)' },
+          '72%': { opacity: 0.52, transform: 'scaleX(0.82)' },
+        },
+        '@keyframes character-showcase-placeholder-trace-b': {
+          '0%, 100%': { opacity: 0.34, transform: 'scaleX(0.74)' },
+          '38%': { opacity: 0.58, transform: 'scaleX(1)' },
+          '68%': { opacity: 0.42, transform: 'scaleX(0.54)' },
+        },
+        '@media (prefers-reduced-motion: reduce)': {
+          '& .placeholder-orbit, & .placeholder-scan, & .placeholder-latitude, & .placeholder-core, & .placeholder-trace-a, & .placeholder-trace-b': {
+            animation: 'none !important',
+          },
         },
         ...reducedMotionSx,
       }}
@@ -64,13 +122,16 @@ function VisualPlaceholder({ name }: { name: string }) {
       <svg viewBox="0 0 180 220" fill="none" aria-hidden="true">
         <rect x="30" y="22" width="120" height="174" rx="22" stroke="currentColor" strokeWidth="1.5" opacity="0.38" />
         <path d="M30 58V44c0-12 10-22 22-22h14M150 58V44c0-12-10-22-22-22h-14M30 160v14c0 12 10 22 22 22h14M150 160v14c0 12-10 22-22 22h-14" stroke="currentColor" strokeWidth="3" strokeLinecap="round" opacity="0.72" />
-        <circle cx="90" cy="104" r="42" stroke="currentColor" strokeWidth="1.5" strokeDasharray="2 8" opacity="0.62" />
-        <ellipse cx="90" cy="104" rx="21" ry="42" stroke="currentColor" strokeWidth="2" opacity="0.82" />
-        <path d="M48 104h84M90 62v84" stroke="currentColor" strokeWidth="1" opacity="0.38" />
-        <circle cx="90" cy="104" r="5" fill="currentColor" />
-        <circle cx="90" cy="62" r="3" fill="currentColor" opacity="0.72" />
-        <circle cx="132" cy="104" r="3" fill="currentColor" opacity="0.72" />
-        <path d="M57 169h66M69 181h42" stroke="currentColor" strokeWidth="2" strokeLinecap="round" opacity="0.58" />
+        <g className="placeholder-orbit" style={{ transformOrigin: '90px 104px' }}>
+          <circle cx="90" cy="104" r="42" stroke="currentColor" strokeWidth="1.5" strokeDasharray="2 8" opacity="0.62" />
+          <circle cx="90" cy="62" r="3" fill="currentColor" opacity="0.72" />
+          <circle cx="132" cy="104" r="3" fill="currentColor" opacity="0.72" />
+        </g>
+        <ellipse className="placeholder-latitude" cx="90" cy="104" rx="21" ry="42" stroke="currentColor" strokeWidth="2" opacity="0.82" style={{ transformOrigin: '90px 104px' }} />
+        <path className="placeholder-scan" d="M48 104h84M90 62v84" stroke="currentColor" strokeWidth="1" strokeDasharray="4 8" strokeDashoffset="24" opacity="0.38" />
+        <circle className="placeholder-core" cx="90" cy="104" r="5" fill="currentColor" style={{ transformOrigin: '90px 104px' }} />
+        <path className="placeholder-trace-a" d="M57 169h66" stroke="currentColor" strokeWidth="2" strokeLinecap="round" opacity="0.58" style={{ transformOrigin: '90px 169px' }} />
+        <path className="placeholder-trace-b" d="M69 181h42" stroke="currentColor" strokeWidth="2" strokeLinecap="round" opacity="0.48" style={{ transformOrigin: '90px 181px' }} />
       </svg>
     </Box>
   );
@@ -176,7 +237,8 @@ export default function CharacterShowcaseCard({ character, onEdit, onDelete, onS
       variant="outlined"
       sx={{
         ...buildInteractiveSurfaceSx({ selected: Boolean(selected), radius: 1.5 }),
-        height: '100%',
+        width: '100%',
+        alignSelf: 'start',
         contentVisibility: 'auto',
         containIntrinsicSize: '360px',
         overflow: 'hidden',
@@ -190,6 +252,13 @@ export default function CharacterShowcaseCard({ character, onEdit, onDelete, onS
               ? '0 12px 28px rgba(36,54,88,0.10)'
               : '0 16px 34px rgba(0,0,0,0.24)',
           },
+          '&:is(:hover, :focus-within) .character-showcase-visual': {
+            transform: 'translate3d(0, 0, 0) scale(1.075)',
+          },
+          '&:is(:hover, :focus-within) .character-showcase-focus': {
+            opacity: 1,
+            transform: 'scale(1.01)',
+          },
         },
         ...reducedMotionSx,
         '&::before': { ...buildSelectionRailSx(Boolean(selected)) },
@@ -200,7 +269,7 @@ export default function CharacterShowcaseCard({ character, onEdit, onDelete, onS
         } : {}),
       }}
     >
-      <Box sx={{ position: 'relative', height: '100%' }}>
+      <Box sx={{ position: 'relative' }}>
         {selectionMode && selectable ? (
           <Box
             role="checkbox"
@@ -232,8 +301,17 @@ export default function CharacterShowcaseCard({ character, onEdit, onDelete, onS
             <MoreIcon fontSize="small" />
           </IconButton>
         ) : null}
-        <CardActionArea
+          <CardActionArea
+          component="div"
+          role="button"
+          tabIndex={!onClick && !selectable ? -1 : 0}
           onClick={handleClick}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              handleClick();
+            }
+          }}
           onPointerDown={startLongPress}
           onPointerUp={clearPressTimer}
           onPointerLeave={() => { clearPressTimer(); longPressTriggeredRef.current = false; }}
@@ -244,24 +322,11 @@ export default function CharacterShowcaseCard({ character, onEdit, onDelete, onS
             longPressTriggeredRef.current = true;
             onLongPress();
           }}
-          disabled={!onClick && !selectable}
-          sx={{ height: '100%', alignItems: 'stretch', textAlign: 'left' }}
+          sx={{ display: 'block', alignItems: 'stretch', textAlign: 'left' }}
         >
-          <Box sx={{ position: 'relative', width: '100%', minHeight: 350, overflow: 'hidden', bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(49,90,156,0.04)' : 'rgba(120,156,220,0.07)', pt: `${SHOWCASE_HEADER_HEIGHT}px` }}>
-            {visualSrc ? (
-              <Box
-                component="img"
-                src={visualSrc}
-                alt={`${character.name} ${i18n.language.startsWith('zh') ? '形象图' : 'visual identity'}`}
-                onError={() => { if (visualImage?.url) rememberFailedAvatarUrl(visualImage.url); }}
-                loading="lazy"
-                decoding="async"
-                sx={{ position: 'absolute', top: SHOWCASE_HEADER_HEIGHT, left: 0, width: '100%', height: `calc(100% - ${SHOWCASE_HEADER_HEIGHT}px)`, display: 'block', objectFit: 'cover', objectPosition: 'center top', transform: 'scale(1.035)', transformOrigin: 'center top', filter: 'saturate(0.96) contrast(0.98)' }}
-              />
-            ) : <Box sx={{ position: 'absolute', top: SHOWCASE_HEADER_HEIGHT, left: 0, width: '100%', height: `calc(100% - ${SHOWCASE_HEADER_HEIGHT}px)` }}><VisualPlaceholder name={character.name} /></Box>}
-            <Box sx={{ position: 'absolute', top: 0, left: 0, right: 0, height: SHOWCASE_HEADER_HEIGHT, zIndex: 2, display: 'flex', alignItems: 'center', gap: 1, px: 1.25, py: 0.5, pr: (onEdit || onDelete) ? 5 : 1.25, overflow: 'hidden', borderBottom: '1px solid', borderColor: (theme) => theme.palette.mode === 'light' ? 'rgba(49,90,156,0.12)' : 'rgba(160,180,220,0.14)', backdropFilter: 'blur(12px) saturate(1.04)', WebkitBackdropFilter: 'blur(12px) saturate(1.04)', bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.78)' : 'rgba(12,16,24,0.82)', boxShadow: 'none', textShadow: (theme) => theme.palette.mode === 'light' ? '0 1px 2px rgba(255,255,255,0.64)' : '0 1px 2px rgba(0,0,0,0.48)' }}>
-              {visualSrc ? <Box component="img" src={visualSrc} aria-hidden="true" sx={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top', opacity: 0.48, filter: 'blur(6px) saturate(1.06)', transform: 'scaleY(-1) scale(1.06)' }} /> : null}
-              <Box sx={{ position: 'absolute', inset: 0, bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.12)' : 'rgba(12,16,24,0.16)' }} />
+          <Box sx={{ position: 'relative', display: 'flex', flexDirection: 'column', width: '100%', overflow: 'hidden', bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(49,90,156,0.04)' : 'rgba(120,156,220,0.07)' }}>
+            <Box sx={{ position: 'relative', flex: `0 0 ${SHOWCASE_HEADER_HEIGHT}px`, zIndex: 2, display: 'flex', alignItems: 'center', gap: 1, px: 1.25, py: 0.5, pr: (onEdit || onDelete) ? 5 : 1.25, overflow: 'hidden', borderBottom: '1px solid', borderColor: (theme) => theme.palette.mode === 'light' ? 'rgba(49,90,156,0.12)' : 'rgba(160,180,220,0.14)', ...visualGlassSurfaceSx, boxShadow: 'none', textShadow: (theme) => theme.palette.mode === 'light' ? '0 1px 2px rgba(255,255,255,0.64)' : '0 1px 2px rgba(0,0,0,0.48)' }}>
+              {visualSrc ? <Box component="img" src={visualSrc} aria-hidden="true" loading="lazy" decoding="async" sx={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top', opacity: 0.18, filter: 'blur(6px) saturate(1.06)', transform: 'scaleY(-1) scale(1.06)' }} /> : null}
               <Box sx={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
               <Box sx={{ position: 'relative', width: 34, height: 34, flexShrink: 0 }}>
                 <Avatar
@@ -287,13 +352,55 @@ export default function CharacterShowcaseCard({ character, onEdit, onDelete, onS
               </Box>
               </Box>
             </Box>
-            {visualGenerating ? (
-              <Box sx={{ position: 'absolute', inset: 0, zIndex: 1, display: 'grid', placeItems: 'center', alignContent: 'center', gap: 0.75, bgcolor: 'rgba(10,15,25,0.26)', color: 'common.white', textAlign: 'center', backdropFilter: 'blur(2px)', animation: 'character-showcase-generating 2.2s ease-in-out infinite', '@keyframes character-showcase-generating': { '0%, 100%': { opacity: 0.72 }, '50%': { opacity: 1 } }, ...reducedMotionSx }}>
-                <CircularProgress size={28} thickness={4} color="inherit" />
-                <Typography variant="caption" sx={{ fontWeight: 600 }}>{i18n.language.startsWith('zh') ? '正在生成形象图' : 'Generating visual identity'}</Typography>
-              </Box>
-            ) : null}
-            <Box sx={{ position: 'absolute', zIndex: 2, left: 0, right: 0, bottom: 0, px: 1.25, pt: 1.1, pb: 1.1, color: (theme) => theme.palette.mode === 'light' ? 'text.primary' : 'common.white', bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.78)' : 'rgba(12,16,24,0.82)', backdropFilter: 'blur(12px) saturate(1.04)', WebkitBackdropFilter: 'blur(12px) saturate(1.04)', borderTop: '1px solid', borderColor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.34)' : 'rgba(255,255,255,0.12)', boxShadow: 'none' }}>
+            <Box className="character-showcase-visual-frame" sx={{ position: 'relative', flex: '0 0 auto', aspectRatio: '1 / 1', overflow: 'hidden', bgcolor: 'action.hover', contain: 'paint' }}>
+              {visualSrc ? (
+                <Box
+                  component="img"
+                  className="character-showcase-visual-backdrop"
+                  src={visualSrc}
+                  aria-hidden="true"
+                  loading="lazy"
+                  decoding="async"
+                  sx={{ position: 'absolute', inset: '-10%', width: '120%', height: '120%', display: 'block', objectFit: 'cover', objectPosition: 'center', opacity: 0.32, filter: 'blur(18px) saturate(0.82)', transform: 'scale(1.035)' }}
+                />
+              ) : null}
+              {visualSrc ? (
+                <Box
+                  component="img"
+                  src={visualSrc}
+                  alt={`${character.name} ${i18n.language.startsWith('zh') ? '形象图' : 'visual identity'}`}
+                  onError={() => { if (visualImage?.url) rememberFailedAvatarUrl(visualImage.url); }}
+                  loading="lazy"
+                  decoding="async"
+                  className="character-showcase-visual"
+                  sx={{ position: 'relative', zIndex: 0, width: '100%', height: '100%', display: 'block', objectFit: 'contain', objectPosition: 'center', transform: 'translate3d(0, 0, 0) scale(1)', transformOrigin: 'center center', backfaceVisibility: 'hidden', transition: transition(['transform'], 520, motion.softInOut), willChange: 'transform' }}
+                />
+              ) : <VisualPlaceholder name={character.name} />}
+              <Box
+                className="character-showcase-focus"
+                aria-hidden="true"
+                sx={{
+                  position: 'absolute', inset: 0, zIndex: 1, pointerEvents: 'none', opacity: 0,
+                  transform: 'scale(1)',
+                  transition: transition(['opacity', 'transform'], motion.durations.settle, motion.emphasized),
+                  boxShadow: (theme) => theme.palette.mode === 'light'
+                    ? 'inset 0 0 0 1px rgba(255,255,255,0.22), inset 0 -34px 42px rgba(20,35,64,0.07)'
+                    : 'inset 0 0 0 1px rgba(255,255,255,0.14), inset 0 -34px 42px rgba(0,0,0,0.14)',
+                  background: (theme) => theme.palette.mode === 'light'
+                    ? 'radial-gradient(circle at 50% 42%, rgba(255,255,255,0.07), transparent 48%)'
+                    : 'radial-gradient(circle at 50% 42%, rgba(255,255,255,0.055), transparent 48%)',
+                }}
+              />
+              {visualGenerating ? (
+                <Box sx={{ position: 'absolute', inset: 0, zIndex: 1, display: 'grid', placeItems: 'center', alignContent: 'center', gap: 0.75, bgcolor: 'rgba(10,15,25,0.26)', color: 'common.white', textAlign: 'center', backdropFilter: 'blur(2px)', animation: 'character-showcase-generating 2.2s ease-in-out infinite', '@keyframes character-showcase-generating': { '0%, 100%': { opacity: 0.72 }, '50%': { opacity: 1 } }, ...reducedMotionSx }}>
+                  <CircularProgress size={28} thickness={4} color="inherit" />
+                  <Typography variant="caption" sx={{ fontWeight: 600 }}>{i18n.language.startsWith('zh') ? '正在生成形象图' : 'Generating visual identity'}</Typography>
+                </Box>
+              ) : null}
+            </Box>
+            <Box sx={{ position: 'relative', zIndex: 2, flexShrink: 0, overflow: 'hidden', px: 1.25, pt: 1.1, pb: 1.1, color: (theme) => theme.palette.mode === 'light' ? 'text.primary' : 'common.white', ...visualGlassSurfaceSx, borderTop: '1px solid', borderColor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.34)' : 'rgba(255,255,255,0.12)', boxShadow: 'none' }}>
+              {visualSrc ? <Box component="img" src={visualSrc} aria-hidden="true" loading="lazy" decoding="async" sx={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center bottom', opacity: 0.18, filter: 'blur(6px) saturate(1.06)', transform: 'scaleY(-1) scale(1.06)' }} /> : null}
+              <Box sx={{ position: 'relative', zIndex: 1 }}>
               <Box>
                 <Typography ref={descriptionRef} variant="body2" color="text.secondary" sx={{ display: '-webkit-box', minHeight: '4.2em', overflow: 'hidden', WebkitBoxOrient: 'vertical', WebkitLineClamp: 3, lineHeight: 1.45, fontSize: '0.82rem' }}>
                 {description || (i18n.language.startsWith('zh') ? '尚未填写角色介绍' : 'No character introduction yet')}
@@ -308,6 +415,7 @@ export default function CharacterShowcaseCard({ character, onEdit, onDelete, onS
                   </Box>
                 ) : <Box />}
                 <Button size="small" variant="text" onClick={(event) => { event.stopPropagation(); setDetailsOpen(true); }} sx={{ minWidth: 0, px: 0.25, py: 0, height: 20, fontSize: '0.72rem', color: 'text.secondary', '&:hover': { bgcolor: 'transparent', color: 'primary.main' } }}>{i18n.language.startsWith('zh') ? '详情' : 'More'}</Button>
+              </Box>
               </Box>
             </Box>
           </Box>

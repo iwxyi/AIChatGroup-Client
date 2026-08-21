@@ -98,6 +98,16 @@ function sortCharactersForLibrary(
   });
 }
 
+function mergeCharacterLibraryPage(current: AICharacter[], next: AICharacter[], replace: boolean) {
+  const merged = replace ? next : [...current, ...next];
+  const seen = new Set<string>();
+  return merged.filter((character) => {
+    if (seen.has(character.id)) return false;
+    seen.add(character.id);
+    return true;
+  });
+}
+
 function buildDuplicateCharacterGroups(characters: AICharacter[], language: string) {
   const groups = new Map<string, { name: string; items: AICharacter[] }>();
   getDuplicateCharacters(characters).forEach((character) => {
@@ -333,6 +343,7 @@ export default function CharacterLibraryPage() {
   const [libraryTotal, setLibraryTotal] = useState(0);
   const [libraryPage, setLibraryPage] = useState(1);
   const [libraryLoading, setLibraryLoading] = useState(false);
+  const [libraryRefreshToken, setLibraryRefreshToken] = useState(0);
   const libraryRequestIdRef = useRef(0);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selectionMenuAnchorEl, setSelectionMenuAnchorEl] = useState<null | HTMLElement>(null);
@@ -488,7 +499,8 @@ export default function CharacterLibraryPage() {
     if (authMode !== 'cloud' || !isLoggedIn) {
       const localItems = sortCharactersForLibrary(filteredCustom, sortField, sortDirection, sortGroupFirst);
       const start = (libraryPage - 1) * CHARACTER_LIBRARY_PAGE_SIZE;
-      setLibraryItems((current) => libraryPage === 1 ? localItems.slice(0, CHARACTER_LIBRARY_PAGE_SIZE) : [...current, ...localItems.slice(start, start + CHARACTER_LIBRARY_PAGE_SIZE)]);
+      const pageItems = localItems.slice(start, start + CHARACTER_LIBRARY_PAGE_SIZE);
+      setLibraryItems((current) => mergeCharacterLibraryPage(current, pageItems, libraryPage === 1));
       setLibraryTotal(localItems.length);
       setLibraryLoading(false);
       return;
@@ -505,14 +517,14 @@ export default function CharacterLibraryPage() {
     }).then((result) => {
       if (libraryRequestIdRef.current !== requestId) return;
       const nextItems = result.items.map((item) => normalizeCharacter(item as unknown as AICharacter));
-      setLibraryItems((current) => libraryPage === 1 ? nextItems : [...current, ...nextItems]);
+      setLibraryItems((current) => mergeCharacterLibraryPage(current, nextItems, libraryPage === 1));
       setLibraryTotal(result.total);
     }).catch(() => {
       if (libraryRequestIdRef.current === requestId) setLibraryItems((current) => libraryPage === 1 ? [] : current);
     }).finally(() => {
       if (libraryRequestIdRef.current === requestId) setLibraryLoading(false);
     });
-  }, [authMode, filteredCustom, isLoggedIn, libraryPage, selectedGroup, sortDirection, sortField, sortGroupFirst, view]);
+  }, [authMode, filteredCustom, isLoggedIn, libraryPage, libraryRefreshToken, selectedGroup, sortDirection, sortField, sortGroupFirst, view]);
 
   useEffect(() => {
     if (selectedGroup === 'all') return;
@@ -542,6 +554,14 @@ export default function CharacterLibraryPage() {
     setSelectedIds([]);
   };
 
+  const resetCardLibrary = () => {
+    libraryRequestIdRef.current += 1;
+    setLibraryPage(1);
+    setLibraryItems([]);
+    setLibraryTotal(0);
+    setLibraryRefreshToken((current) => current + 1);
+  };
+
   const toggleSelection = (id: string) => {
     setSelectedIds((prev) => prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]);
   };
@@ -561,6 +581,7 @@ export default function CharacterLibraryPage() {
       await updateCharactersGroup(ids, null);
     } else {
       await deleteCharacters(ids);
+      resetCardLibrary();
     }
     setGroupActionDialogOpen(false);
     setGroupActionTarget(null);
@@ -577,6 +598,7 @@ export default function CharacterLibraryPage() {
 
   const applyBulkDelete = async () => {
     await deleteCharacters(selectedIds);
+    resetCardLibrary();
     setBulkDeleteOpen(false);
     resetSelection();
   };
@@ -586,7 +608,9 @@ export default function CharacterLibraryPage() {
   };
 
   const handleSelectAllCharacters = () => {
-    setSelectedIds(custom.map((character) => character.id));
+    // 全选只作用于当前筛选结果；卡片模式还受分页影响，只选择已加载的卡片。
+    const selectableCharacters = view === 'card' ? displayChars : filteredCustom;
+    setSelectedIds(selectableCharacters.map((character) => character.id));
     setSelectionMode(true);
     closeSelectionMoreMenu();
   };
@@ -732,6 +756,7 @@ export default function CharacterLibraryPage() {
     if (!deleteId) return;
     try {
       await deleteCharacter(deleteId);
+      resetCardLibrary();
       setSnackbar({ open: true, message: i18n.language.startsWith('zh') ? '已删除' : 'Deleted', severity: 'success' });
     } catch (error) {
       setSnackbar({ open: true, message: error instanceof Error ? error.message : t('common.error'), severity: 'error' });
