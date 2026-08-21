@@ -12,6 +12,8 @@ import { useTranslation } from 'react-i18next';
 import { avatarGenerationQueue, type AvatarGenerationStatus } from '../../services/avatarGenerationQueue';
 import { getCharacterCompletionTaskStatus, subscribeCharacterCompletionQueue, type CharacterCompletionStatus } from '../../services/characterCompletionQueue';
 
+const SHOWCASE_HEADER_HEIGHT = 52;
+
 interface CharacterShowcaseCardProps {
   character: AICharacter;
   onEdit?: () => void;
@@ -87,6 +89,7 @@ export default function CharacterShowcaseCard({ character, onEdit, onDelete, onS
   const pressTimerRef = useRef<number | null>(null);
   const longPressTriggeredRef = useRef(false);
   const visualImage = getPrimaryVisualImage(character);
+  const visualSrc = generatedVisualUrl || (visualImage && isImageAvatar(visualImage.url) ? resolveSafeAvatarSrc(visualImage.url) : null);
   const visualGenerating = visualGenerationStatus === 'queued' || visualGenerationStatus === 'running'
     || visualCompletionStatus === 'queued' || visualCompletionStatus === 'running';
   const avatarGenerating = avatarGenerationStatus === 'queued' || avatarGenerationStatus === 'running';
@@ -220,8 +223,8 @@ export default function CharacterShowcaseCard({ character, onEdit, onDelete, onS
               setAnchorEl(event.currentTarget);
             }}
             sx={{
-              position: 'absolute', top: 10, right: 10, zIndex: 2, borderRadius: 1,
-              bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.72)' : 'rgba(18,20,28,0.70)',
+              position: 'absolute', top: 10, right: 10, zIndex: 5, borderRadius: 1,
+              bgcolor: 'transparent',
               transition: transition(['background-color', 'transform'], motion.durations.fast, motion.softOut),
               '&:hover': { bgcolor: 'action.hover', transform: 'scale(1.04)' },
             }}
@@ -244,8 +247,22 @@ export default function CharacterShowcaseCard({ character, onEdit, onDelete, onS
           disabled={!onClick && !selectable}
           sx={{ height: '100%', alignItems: 'stretch', textAlign: 'left' }}
         >
-          <Box sx={{ display: 'grid', gridTemplateRows: 'auto minmax(182px, 1fr) auto', width: '100%', minHeight: 350 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1.25, py: 1, pr: (onEdit || onDelete) ? 5 : 1.25, borderBottom: '1px solid', borderColor: 'divider', bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.62)' : 'rgba(20,24,34,0.56)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}>
+          <Box sx={{ position: 'relative', width: '100%', minHeight: 350, overflow: 'hidden', bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(49,90,156,0.04)' : 'rgba(120,156,220,0.07)', pt: `${SHOWCASE_HEADER_HEIGHT}px` }}>
+            {visualSrc ? (
+              <Box
+                component="img"
+                src={visualSrc}
+                alt={`${character.name} ${i18n.language.startsWith('zh') ? '形象图' : 'visual identity'}`}
+                onError={() => { if (visualImage?.url) rememberFailedAvatarUrl(visualImage.url); }}
+                loading="lazy"
+                decoding="async"
+                sx={{ position: 'absolute', top: SHOWCASE_HEADER_HEIGHT, left: 0, width: '100%', height: `calc(100% - ${SHOWCASE_HEADER_HEIGHT}px)`, display: 'block', objectFit: 'cover', objectPosition: 'center top', transform: 'scale(1.035)', transformOrigin: 'center top', filter: 'saturate(0.96) contrast(0.98)' }}
+              />
+            ) : <Box sx={{ position: 'absolute', top: SHOWCASE_HEADER_HEIGHT, left: 0, width: '100%', height: `calc(100% - ${SHOWCASE_HEADER_HEIGHT}px)` }}><VisualPlaceholder name={character.name} /></Box>}
+            <Box sx={{ position: 'absolute', top: 0, left: 0, right: 0, height: SHOWCASE_HEADER_HEIGHT, zIndex: 2, display: 'flex', alignItems: 'center', gap: 1, px: 1.25, py: 0.5, pr: (onEdit || onDelete) ? 5 : 1.25, overflow: 'hidden', borderBottom: '1px solid', borderColor: (theme) => theme.palette.mode === 'light' ? 'rgba(49,90,156,0.12)' : 'rgba(160,180,220,0.14)', backdropFilter: 'blur(12px) saturate(1.04)', WebkitBackdropFilter: 'blur(12px) saturate(1.04)', bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.78)' : 'rgba(12,16,24,0.82)', boxShadow: 'none', textShadow: (theme) => theme.palette.mode === 'light' ? '0 1px 2px rgba(255,255,255,0.64)' : '0 1px 2px rgba(0,0,0,0.48)' }}>
+              {visualSrc ? <Box component="img" src={visualSrc} aria-hidden="true" sx={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top', opacity: 0.48, filter: 'blur(6px) saturate(1.06)', transform: 'scaleY(-1) scale(1.06)' }} /> : null}
+              <Box sx={{ position: 'absolute', inset: 0, bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.12)' : 'rgba(12,16,24,0.16)' }} />
+              <Box sx={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
               <Box sx={{ position: 'relative', width: 34, height: 34, flexShrink: 0 }}>
                 <Avatar
                   src={isImageAvatar(character.avatar) ? resolveSafeAvatarSrc(character.avatar) : undefined}
@@ -268,27 +285,15 @@ export default function CharacterShowcaseCard({ character, onEdit, onDelete, onS
                   </Typography>
                 </Box>
               </Box>
+              </Box>
             </Box>
-            <Box sx={{ position: 'relative', aspectRatio: '1 / 1', minHeight: 0, borderBottom: '1px solid', borderColor: 'divider', bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(49,90,156,0.025)' : 'rgba(120,156,220,0.045)' }}>
-              {generatedVisualUrl || (visualImage && isImageAvatar(visualImage.url)) ? (
-                <Box
-                  component="img"
-                  src={generatedVisualUrl || resolveSafeAvatarSrc(visualImage?.url)}
-                  alt={`${character.name} ${i18n.language.startsWith('zh') ? '形象图' : 'visual identity'}`}
-                  onError={() => { if (visualImage?.url) rememberFailedAvatarUrl(visualImage.url); }}
-                  loading="lazy"
-                  decoding="async"
-                  sx={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover', objectPosition: 'center' }}
-                />
-              ) : <VisualPlaceholder name={character.name} />}
-              {visualGenerating ? (
-                <Box sx={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', alignContent: 'center', gap: 0.75, bgcolor: 'rgba(10,15,25,0.34)', color: 'common.white', textAlign: 'center', backdropFilter: 'blur(2px)', animation: 'character-showcase-generating 2.2s ease-in-out infinite', '@keyframes character-showcase-generating': { '0%, 100%': { opacity: 0.72 }, '50%': { opacity: 1 } }, ...reducedMotionSx }}>
-                  <CircularProgress size={28} thickness={4} color="inherit" />
-                  <Typography variant="caption" sx={{ fontWeight: 600 }}>{i18n.language.startsWith('zh') ? '正在生成形象图' : 'Generating visual identity'}</Typography>
-                </Box>
-              ) : null}
-            </Box>
-            <Box sx={{ px: 1.25, pt: 1.1, pb: 1.25, bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.44)' : 'rgba(20,24,34,0.32)' }}>
+            {visualGenerating ? (
+              <Box sx={{ position: 'absolute', inset: 0, zIndex: 1, display: 'grid', placeItems: 'center', alignContent: 'center', gap: 0.75, bgcolor: 'rgba(10,15,25,0.26)', color: 'common.white', textAlign: 'center', backdropFilter: 'blur(2px)', animation: 'character-showcase-generating 2.2s ease-in-out infinite', '@keyframes character-showcase-generating': { '0%, 100%': { opacity: 0.72 }, '50%': { opacity: 1 } }, ...reducedMotionSx }}>
+                <CircularProgress size={28} thickness={4} color="inherit" />
+                <Typography variant="caption" sx={{ fontWeight: 600 }}>{i18n.language.startsWith('zh') ? '正在生成形象图' : 'Generating visual identity'}</Typography>
+              </Box>
+            ) : null}
+            <Box sx={{ position: 'absolute', zIndex: 2, left: 0, right: 0, bottom: 0, px: 1.25, pt: 1.1, pb: 1.1, color: (theme) => theme.palette.mode === 'light' ? 'text.primary' : 'common.white', bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.78)' : 'rgba(12,16,24,0.82)', backdropFilter: 'blur(12px) saturate(1.04)', WebkitBackdropFilter: 'blur(12px) saturate(1.04)', borderTop: '1px solid', borderColor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.34)' : 'rgba(255,255,255,0.12)', boxShadow: 'none' }}>
               <Box>
                 <Typography ref={descriptionRef} variant="body2" color="text.secondary" sx={{ display: '-webkit-box', minHeight: '4.2em', overflow: 'hidden', WebkitBoxOrient: 'vertical', WebkitLineClamp: 3, lineHeight: 1.45, fontSize: '0.82rem' }}>
                 {description || (i18n.language.startsWith('zh') ? '尚未填写角色介绍' : 'No character introduction yet')}
