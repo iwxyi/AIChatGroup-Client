@@ -750,6 +750,9 @@ const baseTheme: ThemeOptions = {
       },
     },
     MuiMenu: {
+      defaultProps: {
+        transitionDuration: { enter: 250, exit: 220 },
+      },
       styleOverrides: {
         paper: ({ theme }) => ({
           borderRadius: 8,
@@ -760,6 +763,11 @@ const baseTheme: ThemeOptions = {
           WebkitBackdropFilter: 'blur(22px) saturate(1.18)',
           boxShadow: theme.palette.menuShadow,
         }),
+      },
+    },
+    MuiPopover: {
+      defaultProps: {
+        transitionDuration: { enter: 250, exit: 220 },
       },
     },
     MuiMenuItem: {

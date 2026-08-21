@@ -1,12 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
-import { Avatar, Box, Card, CardActionArea, Chip, CircularProgress, IconButton, Menu, MenuItem, Typography } from '@mui/material';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Avatar, Box, Button, Card, CardActionArea, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Divider, IconButton, Menu, MenuItem, Typography } from '@mui/material';
 import MoreIcon from '@mui/icons-material/MoreVert';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import type { AICharacter } from '../../types/character';
 import { formatExpertiseList } from '../../utils/expertise';
 import { isImageAvatar } from '../../utils/avatar';
 import { rememberFailedAvatarUrl, resolveSafeAvatarSrc } from '../../utils/avatarFallback';
-import { buildInteractiveSurfaceSx, buildSelectionRailSx, microPillChipSx } from '../../styles/interaction';
+import { buildInteractiveSurfaceSx, buildSelectionRailSx } from '../../styles/interaction';
 import { motion, reducedMotionSx, transition } from '../../styles/motion';
 import { useTranslation } from 'react-i18next';
 import { avatarGenerationQueue, type AvatarGenerationStatus } from '../../services/avatarGenerationQueue';
@@ -81,6 +81,9 @@ export default function CharacterShowcaseCard({ character, onEdit, onDelete, onS
   const [avatarGenerationStatus, setAvatarGenerationStatus] = useState<AvatarGenerationStatus | null>(null);
   const [visualCompletionStatus, setVisualCompletionStatus] = useState<CharacterCompletionStatus | null>(null);
   const [generatedVisualUrl, setGeneratedVisualUrl] = useState<string | null>(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const descriptionRef = useRef<HTMLDivElement | null>(null);
+  const [descriptionClamped, setDescriptionClamped] = useState(false);
   const pressTimerRef = useRef<number | null>(null);
   const longPressTriggeredRef = useRef(false);
   const visualImage = getPrimaryVisualImage(character);
@@ -91,6 +94,31 @@ export default function CharacterShowcaseCard({ character, onEdit, onDelete, onS
   const background = typeof character.background === 'string' ? character.background.trim() : '';
   const speakingStyle = typeof character.speakingStyle === 'string' ? character.speakingStyle.trim() : '';
   const description = background || speakingStyle;
+  const personalityLabels: Record<string, string> = i18n.language.startsWith('zh') ? {
+    openness: '开放性', extroversion: '外向性', agreeableness: '宜人性', neuroticism: '敏感度', humor: '幽默感', creativity: '创造力', assertiveness: '决断力', empathy: '共情力',
+  } : {
+    openness: '开放性', extroversion: '外向性', agreeableness: '亲和力', neuroticism: '敏感度', humor: '幽默感', creativity: '创造力', assertiveness: '决断力', empathy: '共情力',
+  };
+  const visualDescription = character.visualIdentity?.description?.trim() || '';
+  const personalitySummary = Object.entries(character.personality || {})
+    .filter(([, value]) => typeof value === 'number' && value > 0)
+    .sort(([, a], [, b]) => Number(b) - Number(a))
+    .slice(0, 4)
+    .map(([key, value]) => `${personalityLabels[key] || key} ${value}`)
+    .join(' · ');
+  const coreProfile = character.coreProfile || {};
+  const coreProfileItems = [
+    ['核心欲望', coreProfile.coreDesire], ['核心恐惧', coreProfile.coreFear], ['社交面具', coreProfile.socialMask], ['自我形象', coreProfile.selfImage], ['依恋倾向', coreProfile.attachmentStyle], ['冲突风格', coreProfile.conflictStyle],
+  ].filter(([, value]) => typeof value === 'string' && Boolean(value.trim())) as Array<[string, string]>;
+  const speechItems = [
+    ['口头禅', character.speechProfile?.catchphrases?.join('、')], ['常用语气', character.speechProfile?.fillers?.join('、')], ['说话风格', speakingStyle],
+  ].filter(([, value]) => Boolean(value)) as Array<[string, string]>;
+
+  useLayoutEffect(() => {
+    const element = descriptionRef.current;
+    if (!element) return;
+    setDescriptionClamped(element.scrollHeight > element.clientHeight + 1);
+  }, [description]);
 
   useEffect(() => {
     const updateCompletionStatus = () => setVisualCompletionStatus(getCharacterCompletionTaskStatus(character.id, 'visual'));
@@ -149,6 +177,18 @@ export default function CharacterShowcaseCard({ character, onEdit, onDelete, onS
         contentVisibility: 'auto',
         containIntrinsicSize: '360px',
         overflow: 'hidden',
+        borderColor: (theme) => theme.palette.mode === 'light' ? 'rgba(49,90,156,0.14)' : 'rgba(160,180,220,0.16)',
+        bgcolor: 'background.paper',
+        transition: transition(['box-shadow', 'border-color'], motion.durations.fast, motion.softOut),
+        '@media (hover: hover)': {
+          '&:hover': {
+            borderColor: (theme) => theme.palette.mode === 'light' ? 'rgba(49,90,156,0.28)' : 'rgba(160,180,220,0.30)',
+            boxShadow: (theme) => theme.palette.mode === 'light'
+              ? '0 12px 28px rgba(36,54,88,0.10)'
+              : '0 16px 34px rgba(0,0,0,0.24)',
+          },
+        },
+        ...reducedMotionSx,
         '&::before': { ...buildSelectionRailSx(Boolean(selected)) },
         ...(selected ? {
           boxShadow: (theme) => theme.palette.mode === 'light'
@@ -204,8 +244,8 @@ export default function CharacterShowcaseCard({ character, onEdit, onDelete, onS
           disabled={!onClick && !selectable}
           sx={{ height: '100%', alignItems: 'stretch', textAlign: 'left' }}
         >
-          <Box sx={{ display: 'grid', gridTemplateRows: 'auto minmax(182px, 1fr) auto', width: '100%', minHeight: 360 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.15, px: 1.5, py: 1.25, pr: (onEdit || onDelete) ? 5.5 : 1.5, borderBottom: '1px solid', borderColor: 'divider' }}>
+          <Box sx={{ display: 'grid', gridTemplateRows: 'auto minmax(182px, 1fr) auto', width: '100%', minHeight: 350 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1.25, py: 1, pr: (onEdit || onDelete) ? 5 : 1.25, borderBottom: '1px solid', borderColor: 'divider', bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.62)' : 'rgba(20,24,34,0.56)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}>
               <Box sx={{ position: 'relative', width: 34, height: 34, flexShrink: 0 }}>
                 <Avatar
                   src={isImageAvatar(character.avatar) ? resolveSafeAvatarSrc(character.avatar) : undefined}
@@ -221,13 +261,15 @@ export default function CharacterShowcaseCard({ character, onEdit, onDelete, onS
                 ) : null}
               </Box>
               <Box sx={{ minWidth: 0, flex: 1 }}>
-                <Typography variant="subtitle2" noWrap sx={{ fontWeight: 700, lineHeight: 1.25 }}>{character.name}</Typography>
-                <Typography variant="caption" color="text.secondary" noWrap>
-                  {character.group || (i18n.language.startsWith('zh') ? '未分组' : 'Ungrouped')}
-                </Typography>
+                <Typography variant="subtitle2" noWrap sx={{ fontWeight: 700, lineHeight: 1.2, letterSpacing: '-0.01em' }}>{character.name}</Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
+                  <Typography variant="caption" color="text.secondary" noWrap>
+                    {character.group || (i18n.language.startsWith('zh') ? '未分组' : 'Ungrouped')}
+                  </Typography>
+                </Box>
               </Box>
             </Box>
-            <Box sx={{ position: 'relative', aspectRatio: '1 / 1', minHeight: 0, borderBottom: '1px solid', borderColor: 'divider' }}>
+            <Box sx={{ position: 'relative', aspectRatio: '1 / 1', minHeight: 0, borderBottom: '1px solid', borderColor: 'divider', bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(49,90,156,0.025)' : 'rgba(120,156,220,0.045)' }}>
               {generatedVisualUrl || (visualImage && isImageAvatar(visualImage.url)) ? (
                 <Box
                   component="img"
@@ -240,21 +282,28 @@ export default function CharacterShowcaseCard({ character, onEdit, onDelete, onS
                 />
               ) : <VisualPlaceholder name={character.name} />}
               {visualGenerating ? (
-                <Box sx={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', alignContent: 'center', gap: 0.75, bgcolor: 'rgba(10,15,25,0.48)', color: 'common.white', textAlign: 'center' }}>
+                <Box sx={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', alignContent: 'center', gap: 0.75, bgcolor: 'rgba(10,15,25,0.34)', color: 'common.white', textAlign: 'center', backdropFilter: 'blur(2px)', animation: 'character-showcase-generating 2.2s ease-in-out infinite', '@keyframes character-showcase-generating': { '0%, 100%': { opacity: 0.72 }, '50%': { opacity: 1 } }, ...reducedMotionSx }}>
                   <CircularProgress size={28} thickness={4} color="inherit" />
                   <Typography variant="caption" sx={{ fontWeight: 600 }}>{i18n.language.startsWith('zh') ? '正在生成形象图' : 'Generating visual identity'}</Typography>
                 </Box>
               ) : null}
             </Box>
-            <Box sx={{ px: 1.5, pt: 1.25, pb: 1.5 }}>
-              <Typography variant="body2" color="text.secondary" sx={{ display: '-webkit-box', minHeight: '4.2em', overflow: 'hidden', WebkitBoxOrient: 'vertical', WebkitLineClamp: 3, lineHeight: 1.45 }}>
+            <Box sx={{ px: 1.25, pt: 1.1, pb: 1.25, bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.44)' : 'rgba(20,24,34,0.32)' }}>
+              <Box>
+                <Typography ref={descriptionRef} variant="body2" color="text.secondary" sx={{ display: '-webkit-box', minHeight: '4.2em', overflow: 'hidden', WebkitBoxOrient: 'vertical', WebkitLineClamp: 3, lineHeight: 1.45, fontSize: '0.82rem' }}>
                 {description || (i18n.language.startsWith('zh') ? '尚未填写角色介绍' : 'No character introduction yet')}
-              </Typography>
-              {expertise.length ? (
-                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 1.1 }}>
-                  {expertise.map((item) => <Chip key={item} label={item} size="small" variant="outlined" sx={microPillChipSx} />)}
-                </Box>
-              ) : null}
+                </Typography>
+              </Box>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, minHeight: 20, mt: 0.65 }}>
+                {expertise.length ? (
+                  <Box sx={{ minWidth: 0, flex: 1, overflow: 'hidden', color: 'text.secondary' }}>
+                    <Typography variant="caption" noWrap sx={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', color: 'inherit', fontSize: '0.68rem' }}>
+                      {expertise.join(' · ')}
+                    </Typography>
+                  </Box>
+                ) : <Box />}
+                <Button size="small" variant="text" onClick={(event) => { event.stopPropagation(); setDetailsOpen(true); }} sx={{ minWidth: 0, px: 0.25, py: 0, height: 20, fontSize: '0.72rem', color: 'text.secondary', '&:hover': { bgcolor: 'transparent', color: 'primary.main' } }}>{i18n.language.startsWith('zh') ? '详情' : 'More'}</Button>
+              </Box>
             </Box>
           </Box>
         </CardActionArea>
@@ -264,6 +313,30 @@ export default function CharacterShowcaseCard({ character, onEdit, onDelete, onS
         {onEdit ? <MenuItem onClick={() => handleMenuAction(onEdit)}>{t('common.edit')}</MenuItem> : null}
         {onDelete ? <MenuItem sx={{ color: 'error.main' }} onClick={() => handleMenuAction(onDelete)}>{t('common.delete')}</MenuItem> : null}
       </Menu>
+      <Dialog open={detailsOpen} onClose={() => setDetailsOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ pb: 1 }}>{character.name}</DialogTitle>
+        <DialogContent dividers sx={{ display: 'grid', gap: 1.5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
+            <Avatar src={isImageAvatar(character.avatar) ? resolveSafeAvatarSrc(character.avatar) : undefined} sx={{ width: 44, height: 44, bgcolor: 'primary.light' }}>
+              {isImageAvatar(character.avatar) ? undefined : character.avatar}
+            </Avatar>
+            <Box sx={{ minWidth: 0 }}>
+              <Typography variant="body2" color="text.secondary">{character.group || (i18n.language.startsWith('zh') ? '未分组' : 'Ungrouped')}</Typography>
+              {expertise.length ? <Typography variant="caption" color="text.secondary">{expertise.join(' · ')}</Typography> : null}
+            </Box>
+          </Box>
+          <Divider />
+          <Box>
+            <Typography variant="caption" color="text.secondary">{i18n.language.startsWith('zh') ? '角色介绍' : 'Introduction'}</Typography>
+            <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', mt: 0.45 }}>{background || '—'}</Typography>
+          </Box>
+          {speechItems.map(([label, value]) => <Box key={label}><Typography variant="caption" color="text.secondary">{label}</Typography><Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', mt: 0.35 }}>{value}</Typography></Box>)}
+          {visualDescription ? <Box><Typography variant="caption" color="text.secondary">{i18n.language.startsWith('zh') ? '形象设定' : 'Visual identity'}</Typography><Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', mt: 0.45 }}>{visualDescription}</Typography></Box> : null}
+          {personalitySummary ? <Box><Typography variant="caption" color="text.secondary">{i18n.language.startsWith('zh') ? '人物性格' : 'Personality'}</Typography><Typography variant="body2" sx={{ mt: 0.45 }}>{personalitySummary}</Typography></Box> : null}
+          {coreProfileItems.length ? <Box><Typography variant="caption" color="text.secondary">{i18n.language.startsWith('zh') ? '角色画像' : 'Character profile'}</Typography><Box sx={{ display: 'grid', gap: 0.7, mt: 0.45 }}>{coreProfileItems.map(([label, value]) => <Box key={label}><Typography variant="caption" color="text.secondary">{label}</Typography><Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>{value}</Typography></Box>)}</Box></Box> : null}
+        </DialogContent>
+        <DialogActions><Button onClick={() => setDetailsOpen(false)}>{i18n.language.startsWith('zh') ? '关闭' : 'Close'}</Button></DialogActions>
+      </Dialog>
     </Card>
   );
 }
