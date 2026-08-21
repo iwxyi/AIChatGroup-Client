@@ -177,7 +177,7 @@ function getImageUrlKind(url: string): CompactImageAttachmentRef['urlKind'] {
   return 'unknown';
 }
 
-function compactImageAttachmentRef(ref: ImageAttachmentRef): CompactImageAttachmentRef {
+function compactImageAttachmentRef(ref: ImageAttachmentRef, includePromptText = false): CompactImageAttachmentRef {
   return {
     id: ref.id,
     messageId: ref.messageId,
@@ -186,7 +186,7 @@ function compactImageAttachmentRef(ref: ImageAttachmentRef): CompactImageAttachm
     mimeType: ref.mimeType,
     altText: ref.altText,
     caption: ref.caption,
-    ...(ref.promptText ? { promptText: ref.promptText } : {}),
+    ...(includePromptText && ref.promptText ? { promptText: ref.promptText } : {}),
     ...(ref.semanticSummary ? { semanticSummary: ref.semanticSummary } : {}),
     width: ref.width,
     height: ref.height,
@@ -217,8 +217,8 @@ function imageAttachmentRefsWithUrls(message: Message): ImageAttachmentRef[] {
     }));
 }
 
-export function buildCompactImageAttachmentRefs(message: Message) {
-  return imageAttachmentRefsWithUrls(message).map(compactImageAttachmentRef);
+export function buildCompactImageAttachmentRefs(message: Message, options: { includePromptText?: boolean } = {}) {
+  return imageAttachmentRefsWithUrls(message).map((ref) => compactImageAttachmentRef(ref, options.includePromptText));
 }
 
 function buildImageReferenceRegistry(messages: Message[]) {
@@ -233,10 +233,14 @@ function buildImageReferenceRegistry(messages: Message[]) {
 }
 
 export function buildCompactImageReferenceRegistry(messages: Message[]) {
+  const latestImageMessageId = messages
+    .filter((message) => !message.isDeleted && message.type !== 'system' && message.type !== 'event')
+    .filter((message) => message.metadata?.attachments?.some((attachment) => attachment.kind === 'image' && attachment.status === 'ready' && Boolean(attachment.url)))
+    .sort((left, right) => right.timestamp - left.timestamp)[0]?.id;
   return messages
     .filter((message) => !message.isDeleted)
     .sort((left, right) => right.timestamp - left.timestamp)
-    .flatMap((message) => buildCompactImageAttachmentRefs(message).map((ref) => ({
+    .flatMap((message) => buildCompactImageAttachmentRefs(message, { includePromptText: message.id === latestImageMessageId }).map((ref) => ({
       ...ref,
       messageRole: message.type === 'ai' ? 'assistant' : message.type === 'user' || message.type === 'god' ? 'user' : 'other',
       messageContentPreview: message.content.trim().slice(0, 240),

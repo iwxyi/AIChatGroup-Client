@@ -317,6 +317,10 @@ function buildRecentTranscriptScope(messages: Message[]) {
 }
 
 function buildImageReferenceRegistry(messages: Message[]) {
+  const latestImageMessageId = messages
+    .filter((message) => !message.isDeleted && message.type !== 'system' && message.type !== 'event')
+    .filter((message) => message.metadata?.attachments?.some((attachment) => attachment.kind === 'image' && attachment.status === 'ready' && Boolean(attachment.url)))
+    .sort((left, right) => right.timestamp - left.timestamp)[0]?.id;
   return messages
     .filter((message) => !message.isDeleted && message.type !== 'system' && message.type !== 'event')
     .sort((left, right) => right.timestamp - left.timestamp)
@@ -330,7 +334,7 @@ function buildImageReferenceRegistry(messages: Message[]) {
         senderName: message.senderName,
         altText: attachment.altText,
         caption: attachment.caption || '',
-        promptText: attachment.promptText?.trim().slice(0, 800) || '',
+        promptText: message.id === latestImageMessageId ? attachment.promptText?.trim().slice(0, 800) || '' : '',
         semanticSummary: attachment.semanticSummary?.trim().slice(0, 800) || '',
         messageContentPreview: message.content.trim().slice(0, 180),
         messageTimestamp: message.timestamp,
