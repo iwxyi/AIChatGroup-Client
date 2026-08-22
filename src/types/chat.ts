@@ -307,6 +307,15 @@ export interface LearningScenarioState {
   knowledgeItems: LearningKnowledgeItem[];
   lastStudyAction?: 'map' | 'practice' | 'review' | 'plan' | 'note';
   lastStudyActionAt?: number;
+  nextStepSuggestion?: LearningNextStepSuggestion;
+}
+
+export interface LearningNextStepSuggestion {
+  action: 'map' | 'practice' | 'review' | 'record';
+  title: string;
+  reason: string;
+  prompt: string;
+  generatedAt: number;
 }
 
 export interface LayeredGrowthState {

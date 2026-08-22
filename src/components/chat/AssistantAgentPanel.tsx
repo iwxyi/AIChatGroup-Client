@@ -100,6 +100,32 @@ function artifactFileExtension(item: AssistantArtifactItem) {
   return language || 'txt';
 }
 
+function LearningProgressSummary({ chat }: { chat: GroupChat }) {
+  const learning = chat.scenarioState?.learning;
+  if (!learning) return null;
+  const suggestion = learning.nextStepSuggestion;
+  const items = learning.knowledgeItems || [];
+  const statusLabel: Record<string, string> = { unknown: '未知', exposed: '已整理', learning: '学习中', practicing: '练习中', usable: '可使用', verified: '已核验', stale: '待复习' };
+  return (
+    <Box sx={{ p: 1.25, border: '1px solid', borderColor: 'primary.main', borderRadius: 1, bgcolor: 'action.selected' }}>
+      <Typography variant="body2" sx={{ fontWeight: 800 }}>学习进步</Typography>
+      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.35, lineHeight: 1.55 }}>
+        总目标：{learning.goal || chat.topic || '未设置'}
+      </Typography>
+      <Stack direction="row" spacing={0.5} sx={{ mt: 1, flexWrap: 'wrap', rowGap: 0.5 }}>
+        {items.slice(0, 12).map((item) => <Chip key={item.id} size="small" label={`${item.title} · ${statusLabel[item.status] || item.status}`} variant="outlined" />)}
+        {!items.length ? <Typography variant="caption" color="text.secondary">还没有知识点记录，可以先发送“整理知识点”。</Typography> : null}
+      </Stack>
+      {suggestion ? (
+        <Box sx={{ mt: 1, pt: 1, borderTop: '1px solid', borderColor: 'divider' }}>
+          <Typography variant="caption" sx={{ fontWeight: 750, display: 'block' }}>建议下一步：{suggestion.title}</Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25 }}>{suggestion.reason}</Typography>
+        </Box>
+      ) : null}
+    </Box>
+  );
+}
+
 function artifactMimeType(item: AssistantArtifactItem) {
   if (item.kind === 'html') return 'text/html;charset=utf-8';
   if (item.kind === 'json') return 'application/json;charset=utf-8';
@@ -1092,6 +1118,7 @@ export default function AssistantAgentPanel({
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, height: '100%', minHeight: 0 }}>
       <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', pr: { xs: 0.25, md: 0.5 }, ...buildScrollableRegionSx() }}>
         <Stack spacing={2}>
+          <LearningProgressSummary chat={chat} />
           <Box
             sx={{
               p: 1.25,
@@ -1103,9 +1130,11 @@ export default function AssistantAgentPanel({
           >
             <Stack direction="row" spacing={1.25} sx={{ alignItems: 'center', justifyContent: 'space-between', minWidth: 0 }}>
               <Box sx={{ minWidth: 0 }}>
-                <Typography variant="body2" sx={{ fontWeight: 800 }}>Agent</Typography>
+                <Typography variant="body2" sx={{ fontWeight: 800 }}>{chat.scenarioState?.learning ? '学习资料与记录' : 'Agent'}</Typography>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.55 }}>
-                  {agentEnabled ? '已开启产物整理与修改能力。' : '开启后可生成并管理文档、代码、图表、网页等产物。'}
+                  {chat.scenarioState?.learning
+                    ? (agentEnabled ? '可生成资料、试卷、HTML 练习，并查询或修改 CSV/JSON 学习记录。' : '开启后可沉淀学习资料和记录。')
+                    : (agentEnabled ? '已开启产物整理与修改能力。' : '开启后可生成并管理文档、代码、图表、网页等产物。')}
                 </Typography>
               </Box>
               <Switch

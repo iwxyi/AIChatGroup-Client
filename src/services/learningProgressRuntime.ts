@@ -1,5 +1,6 @@
 import type { GroupChat, LearningKnowledgeItem } from '../types/chat';
 import type { AssistantArtifactItem } from '../types/assistantArtifact';
+import { deriveLearningNextStep } from './learningNextStep';
 
 function currentContent(item: AssistantArtifactItem) {
   const version = item.versions.find((entry) => entry.id === item.currentVersionId) || item.versions.at(-1);
@@ -40,5 +41,6 @@ export function mergeLearningKnowledgeFromArtifacts(chat: GroupChat, artifacts: 
     const old = existing.get(item.title.toLocaleLowerCase());
     existing.set(item.title.toLocaleLowerCase(), old ? { ...item, ...old, sourceArtifactIds: Array.from(new Set([...(old.sourceArtifactIds || []), ...(item.sourceArtifactIds || [])])) } : item);
   });
-  return { scenarioState: { ...(chat.scenarioState || {}), learning: { ...previous, knowledgeItems: Array.from(existing.values()).slice(0, 120) } } };
+  const nextLearning = { ...previous, knowledgeItems: Array.from(existing.values()).slice(0, 120), lastStudyAction: 'map' as const };
+  return { scenarioState: { ...(chat.scenarioState || {}), learning: { ...nextLearning, nextStepSuggestion: deriveLearningNextStep(nextLearning) } } };
 }

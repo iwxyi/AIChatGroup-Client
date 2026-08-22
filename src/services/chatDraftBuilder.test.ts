@@ -90,6 +90,20 @@ describe('chatDraftBuilder composeGroupMemberIds', () => {
     }));
   });
 
+  it('persists learning teacher configuration and keeps the group topology', () => {
+    const draft = buildGroupChatDraft({
+      type: 'group', name: '数据库学习', topic: '掌握数据库索引', style: 'free', runtimeEvolutionIntensity: 'slow',
+      sessionKind: { family: 'study', scenarioId: 'learning-progress', surfaceProfile: 'hybrid', topology: 'group' },
+      studyGoalLabel: '掌握数据库索引', teachingMode: 'serious', teacherExpertise: '索引设计与查询优化', assessmentPolicy: 'strict',
+      memberIds: ['teacher-a', 'user'], operatorIds: [], showRoleActions: true, seedMemoryText: '', seedArtifactText: '',
+      ownerCharacterId: null, adminCharacterIds: [], autoModeration: false, allowMute: true, allowPrivateThreads: false,
+      allowCliques: false, allowMockery: false, mood: '', focus: '', recentEvent: '', allowSpeakAs: true,
+      allowDirectorMode: true, allowEventInjection: true, allowForcedReply: true,
+    });
+    expect(draft.sessionKind).toMatchObject({ family: 'study', scenarioId: 'learning-progress', topology: 'group' });
+    expect(draft.scenarioState?.learning).toMatchObject({ teachingMode: 'serious', teacherExpertise: '索引设计与查询优化', assessmentPolicy: 'strict', teacherIds: ['teacher-a'], studentIds: ['user'] });
+  });
+
   it('starts story reader rooms without legacy branches or visible role actions', () => {
     const draft = buildGroupChatDraft({
       type: 'group',
