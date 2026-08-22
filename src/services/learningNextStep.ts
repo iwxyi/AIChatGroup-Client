@@ -23,3 +23,22 @@ export function deriveLearningNextStep(learning: LearningScenarioState, now = Da
   }
   return { action: 'record', title: '记录一次新的学习证据', reason: '当前知识点没有明显的复习阻塞，适合补充最近一次学习表现。', prompt: '请让我用一句话记录刚才能独立完成的内容、仍然卡住的地方和下一次复习时间。', generatedAt: now };
 }
+
+export function recordObservedLearningEvidence(learning: LearningScenarioState, message: string, now = Date.now()): LearningScenarioState {
+  const content = message.replace(/\s+/g, ' ').trim();
+  if (!content || !learning.knowledgeItems.length) return learning;
+  const nextItems = learning.knowledgeItems.map((item) => {
+    const title = item.title.trim();
+    if (!title || !content.toLocaleLowerCase().includes(title.toLocaleLowerCase())) return item;
+    return {
+      ...item,
+      status: item.status === 'stale' ? 'practicing' as const : item.status === 'verified' ? item.status : 'practicing' as const,
+      evidenceCount: (item.evidenceCount || 0) + 1,
+      lastReviewedAt: now,
+      notes: `观察到学习者在对话中提及该知识点；仍需独立练习或核验。`,
+    };
+  });
+  if (nextItems.every((item, index) => item === learning.knowledgeItems[index])) return learning;
+  const nextLearning = { ...learning, knowledgeItems: nextItems, lastStudyAction: 'note' as const, lastStudyActionAt: now };
+  return { ...nextLearning, nextStepSuggestion: deriveLearningNextStep(nextLearning, now) };
+}

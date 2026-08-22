@@ -1,6 +1,7 @@
 import type { ConversationPhase, GroupChat } from '../../types/chat';
 import { applyGovernanceToParticipant, mergeGovernanceActionSchema, type SessionEngineActionContext, type SessionEngineDefinition, type SessionGenerationPromptContext, type SessionRuntimeContextBundle } from '../../types/sessionEngine';
 import type { Message } from '../../types/message';
+import { deriveLearningNextStep, recordObservedLearningEvidence } from '../learningNextStep';
 
 const STUDY_PHASES = [
   { key: 'mapping', label: '目标拆解', allowedActions: ['speak', 'send_message', 'assign_task'] as string[] },
@@ -75,14 +76,17 @@ export const STUDY_ENGINE: SessionEngineDefinition = {
   },
   onMessageCommitted: ({ conversation, message }) => {
     const summary = message.content.trim().slice(0, 120);
-    const learning = conversation.scenarioState?.learning || { goal: conversation.topic || '学习目标', knowledgeItems: [] };
+    const baseLearning = conversation.scenarioState?.learning || { goal: conversation.topic || '学习目标', knowledgeItems: [] };
+    const learning = message.senderId === 'user'
+      ? recordObservedLearningEvidence(baseLearning, message.content)
+      : baseLearning;
     const phase = learning.lastStudyAction === 'map' ? 'learning' : learning.lastStudyAction === 'review' ? 'review' : (conversation.scenarioState?.phase || 'mapping');
     return {
       chatPatch: {
         scenarioState: {
           ...(conversation.scenarioState || {}),
           phase,
-          learning: { ...learning, lastStudyActionAt: Date.now() },
+          learning: { ...learning, lastStudyActionAt: Date.now(), nextStepSuggestion: learning.nextStepSuggestion || deriveLearningNextStep(learning) },
           goals: conversation.scenarioState?.goals?.length ? conversation.scenarioState.goals : [{ goalId: 'study-goal', label: learning.goal, status: 'active' as const }],
           progress: [{ key: 'study-progress', label: '学习进展', value: learning.knowledgeItems.length, target: 0 }],
         },
