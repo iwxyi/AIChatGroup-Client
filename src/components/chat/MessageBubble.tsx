@@ -20,6 +20,7 @@ import { MessageContent, NarrativeParagraphContent, PendingTypingDots } from './
 import { VoicePlaybackBar } from './VoicePlaybackBar';
 import DebugChip from '../common/DebugChip';
 import AppSnackbar from '../common/AppSnackbar';
+import { CopyTextDialog } from '../common/CopyTextDialog';
 import { EXPRESSION_FEEDBACK_MENU_GROUPS, type ExpressionFeedbackKind } from '../../services/characterExpressionFeedback';
 import { copyTextToClipboard } from '../../utils/clipboard';
 import type { AssistantHtmlInteractionPayload } from '../../features/assistantHtml/AssistantHtmlFrame';
@@ -138,6 +139,7 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
   const [menuPosition, setMenuPosition] = useState<MenuPosition | null>(null);
   const [feedbackDialogOpen, setFeedbackDialogOpen] = useState(false);
   const [copyStatus, setCopyStatus] = useState<'success' | 'error' | null>(null);
+  const [copyFallback, setCopyFallback] = useState<{ label: string; value: string } | null>(null);
   const voiceCacheKey = `message:${message.serverId || message.id}`;
   const [voiceUrl, setVoiceUrl] = useState<string | null>(() => getCachedSpeechPlayback(voiceCacheKey));
   const [voiceGenerationStage, setVoiceGenerationStage] = useState<'synthesizing' | 'preparing' | null>(null);
@@ -344,7 +346,8 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
   const handleCopy = async () => {
     const copied = await copyTextToClipboard(message.content);
     closeMenus();
-    setCopyStatus(copied ? 'success' : 'error');
+    if (copied) setCopyStatus('success');
+    else setCopyFallback({ label: '消息内容', value: message.content });
   };
 
   const handleDelete = () => {
@@ -798,6 +801,12 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
         onClose={() => setCopyStatus(null)}
         offset="composer"
         alertVariant="filled"
+      />
+      <CopyTextDialog
+        open={Boolean(copyFallback)}
+        label={copyFallback?.label}
+        value={copyFallback?.value || ''}
+        onClose={() => setCopyFallback(null)}
       />
       <AppSnackbar
         open={Boolean(voiceError)}

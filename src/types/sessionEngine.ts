@@ -295,6 +295,7 @@ export const DEFAULT_SESSION_FAMILY_REGISTRY: SessionFrameworkRegistry = {
     'task-retrospective': { scenarioId: 'task-retrospective', label: 'task-retrospective', family: 'analysis', surfaceProfile: 'text' },
     'story-reader': { scenarioId: 'story-reader', label: 'story-reader', family: 'conversation', surfaceProfile: 'hybrid' },
     'ielts-coach': { scenarioId: 'ielts-coach', label: 'ielts-coach', family: 'study', surfaceProfile: 'form' },
+    'learning-progress': { scenarioId: 'learning-progress', label: 'learning-progress', family: 'study', surfaceProfile: 'hybrid' },
     'single-agent-workflow': { scenarioId: 'single-agent-workflow', label: 'single-agent-workflow', family: 'agent', surfaceProfile: 'dashboard' },
     'multi-agent-workflow': { scenarioId: 'multi-agent-workflow', label: 'multi-agent-workflow', family: 'agent', surfaceProfile: 'dashboard' },
     'panel-interview': { scenarioId: 'panel-interview', label: 'panel-interview', family: 'interview', surfaceProfile: 'form' },
@@ -333,7 +334,7 @@ export function createDefaultSessionKind(type: GroupChat['type'], mode: GroupCha
   if (mode === 'board_game') return { topology: type === 'group' ? 'table' : 'direct', family: 'board_game', scenarioId: 'board-game', surfaceProfile: 'board' };
   if (mode === 'interview') return { topology: type === 'group' ? 'group' : 'direct', family: 'interview', scenarioId: 'panel-interview', surfaceProfile: 'form' };
   if (mode === 'group_discussion' || mode === 'roundtable') return { topology: type === 'group' ? 'group' : 'team', family: 'analysis', scenarioId: mode === 'roundtable' ? 'roundtable-review' : 'opinion-review', surfaceProfile: 'text' };
-  if (mode === 'classroom') return { topology: type === 'group' ? 'group' : 'direct', family: 'study', scenarioId: 'ielts-coach', surfaceProfile: 'form' };
+  if (mode === 'classroom') return { topology: type === 'group' ? 'group' : 'direct', family: 'study', scenarioId: 'learning-progress', surfaceProfile: 'hybrid' };
   if (mode === 'scripted_play') return { topology: type === 'group' ? 'group' : 'direct', family: 'conversation', scenarioId: 'story-reader', surfaceProfile: 'hybrid' };
   if (mode === 'werewolf') return { topology: 'table', family: 'deduction', scenarioId: 'werewolf-classic', surfaceProfile: 'hybrid' };
   if (mode === 'murder_mystery') return { topology: 'table', family: 'mystery', scenarioId: 'murder-mystery', surfaceProfile: 'hybrid' };

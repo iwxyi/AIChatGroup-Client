@@ -47,7 +47,19 @@ function resolveTextProfile(fallback: APIConfig, aiProfiles: AIModelProfile[]) {
   };
 }
 
-function buildAssistantSystemPrompt() {
+function buildAssistantSystemPrompt(chat?: GroupChat) {
+  if (chat && isLearningProgressChat(chat)) {
+    const learning = chat.scenarioState?.learning;
+    const knowledge = learning?.knowledgeItems?.slice(0, 32).map((item) => `${item.title} [${item.status}]`).join('、') || '尚未建立';
+    return [
+      '你是学习进步房里的教师助理，负责把学习目标变成可沉淀、可复用的学习材料。',
+      `总目标：${learning?.goal || chat.topic || '未明确'}。`,
+      `当前知识点：${knowledge}。`,
+      '用户要求整理知识点时，优先生成结构清晰的 Markdown 或 JSON/CSV 记录；要求资料、试卷或练习时，优先生成可交互的 HTML 学习产物。',
+      '不要声称用户已经掌握没有证据支持的知识；把推断标为待验证，并保留下一步练习建议。',
+      '学习目标可以无限扩展，不要用固定百分比假装精确衡量全部学习成果。',
+    ].join('\n');
+  }
   return [
     '你是通用 AI 助手。',
     '优先准确、清晰、客观地回答用户问题，不要扮演角色，不要使用虚构人物口吻。',
@@ -142,6 +154,10 @@ function isAssistantAgentArtifactEnabled(chat: GroupChat) {
   return Boolean(chat.modeState.assistantCapabilities?.agent && chat.modeState.assistantCapabilities?.artifacts);
 }
 
+function isLearningProgressChat(chat: GroupChat) {
+  return chat.sessionKind?.family === 'study' || chat.sessionKind?.scenarioId === 'learning-progress' || chat.sessionKind?.scenarioId === 'ielts-coach';
+}
+
 function isAssistantAgentSearchEnabled(chat: GroupChat) {
   return Boolean(chat.modeState.assistantCapabilities?.agent && chat.modeState.assistantCapabilities?.webSearch);
 }
@@ -216,6 +232,7 @@ function buildLocalFilePromptBlock(localFiles: AssistantAgentLocalFileContext[])
 async function generateAssistantLocalFileAnswer(params: {
   api: APIConfig;
   inputCapabilities: AIModelInputCapabilities;
+  chat: GroupChat;
   chatId: string;
   userMessage: Message;
   messages: Message[];
@@ -226,7 +243,7 @@ async function generateAssistantLocalFileAnswer(params: {
   const raw = await generateResponse(
     params.api,
     [
-      buildAssistantSystemPrompt(),
+      buildAssistantSystemPrompt(params.chat),
       buildAssistantImageInputPromptBlock(promptImageState),
       buildLocalFilePromptBlock(params.localFiles),
       'Answer the latest user request using the authorized local file content above. If the provided file content is insufficient or truncated, say what is missing instead of guessing.',
@@ -312,6 +329,7 @@ async function generateAssistantSearchAnswer(params: {
 async function generateAssistantGeneralAnswer(params: {
   api: APIConfig;
   inputCapabilities: AIModelInputCapabilities;
+  chat: GroupChat;
   chatId: string;
   userMessage: Message;
   messages: Message[];
@@ -501,6 +519,7 @@ async function persistAssistantArtifactsFromReply(params: {
       ? await generateAssistantLocalFileAnswer({
         api: params.api,
         inputCapabilities: params.inputCapabilities,
+        chat: params.chat,
         chatId: params.chatId,
         userMessage: params.userMessage,
         messages: params.messages,
@@ -511,6 +530,7 @@ async function persistAssistantArtifactsFromReply(params: {
         ? await generateAssistantGeneralAnswer({
           api: params.api,
           inputCapabilities: params.inputCapabilities,
+          chat: params.chat,
           chatId: params.chatId,
           userMessage: params.userMessage,
           messages: params.messages,
@@ -1029,7 +1049,7 @@ export async function runAssistantChatReplyFlow(params: {
 }) {
   ensureAssistantReplyStillCurrent(params);
   const { api: resolvedApi, inputCapabilities } = resolveTextProfile(params.api, params.aiProfiles);
-  if (params.chat.modeState.assistantCapabilities?.agent) {
+  if (params.chat.modeState.assistantCapabilities?.agent && !isLearningProgressChat(params.chat)) {
     const userMessage = latestUserMessage(params.currentMessages);
     if (userMessage && !hasReadyImageAttachments(userMessage)) {
       try {

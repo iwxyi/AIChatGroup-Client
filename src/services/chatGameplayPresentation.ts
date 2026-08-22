@@ -14,6 +14,7 @@ const SCENARIO_SHORT_LABELS = new Map<string, string>([
   ['task-retrospective', '复盘'],
   ['story-reader', '故事'],
   ['ielts-coach', '训练'],
+  ['learning-progress', '学习'],
   ['single-agent-workflow', '任务'],
   ['multi-agent-workflow', '任务'],
   ['board-game', '桌游'],

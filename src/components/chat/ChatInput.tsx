@@ -77,6 +77,16 @@ function buildAttachmentId() {
   return `att_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function getMicrophoneSupportError() {
+  if (typeof window !== 'undefined' && window.location.protocol === 'http:' && !['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname)) {
+    return '语音输入需要安全连接，请使用 HTTPS 打开页面（当前是 HTTP）';
+  }
+  if (typeof window !== 'undefined' && !window.isSecureContext) {
+    return '语音输入需要安全页面，请使用 HTTPS 或 localhost 打开';
+  }
+  return '当前浏览器不支持麦克风输入，请检查浏览器权限或更换浏览器';
+}
+
 export default function ChatInput({ mode, characterName, onSend, onClose, placeholderOverride, sendingLabel, hideSpeakAsChip, onSendError, onOpenPanel, onDraftActivity, inputCapabilities, inputCapabilityWarning, autoFocus, topContent, injectedAttachments, onInjectedAttachmentsConsumed, isReplyPending = false, onStopReply, disabled = false, disabledReason }: ChatInputProps) {
   const [text, setText] = useState('');
   const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
@@ -106,6 +116,8 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
   const panelHandleClickSuppressedRef = useRef(false);
   const imageDragDepthRef = useRef(0);
   const recorderRef = useRef<MediaRecorder | null>(null);
+  const recordingStreamRef = useRef<MediaStream | null>(null);
+  const recordingStartingRef = useRef(false);
   const recordedChunksRef = useRef<Blob[]>([]);
   const sttModel = useSettingsStore((state) => state.aiProfiles.find((profile) => profile.type === 'stt' && (profile.isDefault || profile.provider))
     || state.aiProfiles.find((profile) => profile.type === 'audio' && (profile.audioCapability === 'stt' || profile.audioCapability === 'both')));
@@ -193,17 +205,22 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
   }), []);
 
   const startRecording = useCallback(async () => {
-    if (disabled || isSending || isTranscribing || !sttModel || !navigator.mediaDevices?.getUserMedia) {
+    if (isRecording || recordingStartingRef.current || disabled || isSending || isTranscribing || !sttModel || !navigator.mediaDevices?.getUserMedia) {
       if (!sttModel) onSendError?.('请先在模型页面配置语音（STT）模型');
+      else if (!navigator.mediaDevices?.getUserMedia) onSendError?.(getMicrophoneSupportError());
       return;
     }
+    recordingStartingRef.current = true;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      recordingStreamRef.current = stream;
+      if (typeof MediaRecorder === 'undefined') throw new Error('当前浏览器不支持录音');
       const recorder = new MediaRecorder(stream);
       recordedChunksRef.current = [];
       recorder.ondataavailable = (event) => { if (event.data.size) recordedChunksRef.current.push(event.data); };
       recorder.onstop = async () => {
         stream.getTracks().forEach((track) => track.stop());
+        recordingStreamRef.current = null;
         const blob = new Blob(recordedChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
         if (!blob.size) return;
         setIsTranscribing(true);
@@ -228,16 +245,27 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
       recorder.start();
       setIsRecording(true);
     } catch (error) {
+      recordingStreamRef.current?.getTracks().forEach((track) => track.stop());
+      recordingStreamRef.current = null;
       onSendError?.(error instanceof Error ? error.message : '无法访问麦克风');
+    } finally {
+      recordingStartingRef.current = false;
     }
-  }, [blobToDataUrl, disabled, inputFocused, isSending, isTranscribing, onSendError, publishDraftActivity, sttModel]);
+  }, [blobToDataUrl, disabled, inputFocused, isRecording, isSending, isTranscribing, onSendError, publishDraftActivity, sttModel]);
 
   const stopRecording = useCallback(() => {
     const recorder = recorderRef.current;
-    if (!recorder || recorder.state === 'inactive') return;
-    recorder.stop();
+    if (recorder && recorder.state !== 'inactive') recorder.stop();
+    else recordingStreamRef.current?.getTracks().forEach((track) => track.stop());
+    recordingStreamRef.current = null;
     recorderRef.current = null;
     setIsRecording(false);
+  }, []);
+
+  useEffect(() => () => {
+    const recorder = recorderRef.current;
+    if (recorder && recorder.state !== 'inactive') recorder.stop();
+    recordingStreamRef.current?.getTracks().forEach((track) => track.stop());
   }, []);
 
   const addImageFiles = useCallback(async (selectedFiles: File[]) => {
@@ -629,16 +657,13 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
             </Tooltip>
           </>
         ) : null}
-        <Tooltip title={isTranscribing ? '语音识别中' : isRecording ? '松开结束录音' : '按住说话'} arrow>
+        <Tooltip title={isTranscribing ? '语音识别中' : isRecording ? '点击结束录音' : '点击开始录音'} arrow>
           <span>
             <IconButton
               color={isRecording ? 'error' : 'default'}
               aria-label="语音输入"
               disabled={disabled || isSending || isTranscribing}
-              onPointerDown={(event) => { event.preventDefault(); void startRecording(); }}
-              onPointerUp={(event) => { event.preventDefault(); stopRecording(); }}
-              onPointerCancel={stopRecording}
-              onPointerLeave={() => { if (isRecording) stopRecording(); }}
+              onClick={() => { if (isRecording) stopRecording(); else void startRecording(); }}
               sx={{
                 flexShrink: 0,
                 width: 42,

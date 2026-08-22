@@ -1148,6 +1148,7 @@ export default function ChatDetailPage() {
   );
   const isStoryRoom = chat?.sessionKind?.scenarioId === 'story-reader';
   const isAssistantChat = chat?.type === 'assistant';
+  const isLearningProgressRoom = chat?.sessionKind?.family === 'study' || chat?.sessionKind?.scenarioId === 'learning-progress' || chat?.sessionKind?.scenarioId === 'ielts-coach';
   useEffect(() => {
     if (!id || !isAssistantChat) {
       setPendingAppCommand(null);
@@ -2320,6 +2321,26 @@ export default function ChatDetailPage() {
         return;
       }
       await commitPersistedManualRuntime(userMessage, recentMessagesWithUser);
+      const isLearningProgressRoom = chat.sessionKind?.family === 'study' || chat.sessionKind?.scenarioId === 'learning-progress' || chat.sessionKind?.scenarioId === 'ielts-coach';
+      const learningArtifactRequest = /知识点|知识地图|学习资料|资料清单|试卷|练习题|错题|学习记录|复习计划|html|json|csv/i.test(content);
+      if (isLearningProgressRoom && learningArtifactRequest) {
+        void Promise.all([import('../services/assistantChatFlow'), import('../stores/useAssistantArtifactStore'), import('../services/learningProgressRuntime')]).then(async ([{ runAssistantChatReplyFlow }, artifactStore, { mergeLearningKnowledgeFromArtifacts }]) => {
+          await runAssistantChatReplyFlow({
+          api,
+          aiProfiles,
+          chatId: id,
+          chat,
+          currentMessages: recentMessagesWithUser,
+          selectedArtifactId: selectedAssistantArtifactId,
+          timestamp: userMessage.timestamp + 1,
+          upsertMessage: upsertMessageStable,
+          updateChat,
+          });
+          const latestChat = useChatStore.getState().chats.find((item) => item.id === id) || chat;
+          const learningPatch = mergeLearningKnowledgeFromArtifacts(latestChat, artifactStore.useAssistantArtifactStore.getState().getArtifactsForChat(id));
+          if (Object.keys(learningPatch).length) await updateChat(id, learningPatch);
+        }).catch((error) => showErrorToast(error instanceof Error ? error.message : String(error)));
+      }
       if (chat.type === 'ai_direct') {
         startConversationLoopIfNeeded(chat);
         const { applyAiDirectFeedback } = await import('../services/directSessionRuntime');
@@ -3392,7 +3413,7 @@ export default function ChatDetailPage() {
             onJumpToConversationBottom={handleJumpToConversationBottom}
             loadingText={t('common.loading')}
             topHint="没有更早的消息"
-            topInset={isSplitDetailPane ? { xs: '76px', sm: '76px' } : { xs: 'calc(88px + env(safe-area-inset-top, 0px))', sm: '80px' }}
+            topInset={isSplitDetailPane ? { xs: '68px', sm: '68px' } : { xs: 'calc(80px + env(safe-area-inset-top, 0px))', sm: '72px' }}
             bottomInset={{ xs: '24px', sm: '24px' }}
             readOnly
           />
@@ -3508,7 +3529,7 @@ export default function ChatDetailPage() {
             position: 'absolute',
             left: 12,
             right: 12,
-            top: isSplitDetailPane ? 76 : 'calc(88px + env(safe-area-inset-top, 0px))',
+            top: isSplitDetailPane ? 68 : 'calc(80px + env(safe-area-inset-top, 0px))',
             zIndex: 3,
             p: 1.25,
             borderRadius: 1,
@@ -3536,10 +3557,10 @@ export default function ChatDetailPage() {
             onRetryMedia={handleRetryMedia}
             onAddImagesToReference={handleAddImagesToReference}
             onCharacterAvatarClick={openCharacterPreview}
-            onOpenArtifact={isAssistantChat ? handleOpenAssistantArtifact : undefined}
-            onOpenHtmlFullscreen={isAssistantChat ? handleOpenAssistantHtmlFullscreen : undefined}
-            onHtmlAutosave={isAssistantChat && !chatInteractionDisabled ? handleHtmlAutosave : undefined}
-            onHtmlSubmit={isAssistantChat && !chatInteractionDisabled ? handleHtmlSubmit : undefined}
+            onOpenArtifact={isAssistantChat || isLearningProgressRoom ? handleOpenAssistantArtifact : undefined}
+            onOpenHtmlFullscreen={isAssistantChat || isLearningProgressRoom ? handleOpenAssistantHtmlFullscreen : undefined}
+            onHtmlAutosave={(isAssistantChat || isLearningProgressRoom) && !chatInteractionDisabled ? handleHtmlAutosave : undefined}
+            onHtmlSubmit={(isAssistantChat || isLearningProgressRoom) && !chatInteractionDisabled ? handleHtmlSubmit : undefined}
             selfMemberId={effectiveAiDirectPerspectiveMemberId}
             onReachTop={handleNearTop}
             onReachBottom={handleNearBottom}
@@ -3550,7 +3571,7 @@ export default function ChatDetailPage() {
             hasMoreNewer={hasMoreNewer}
             loadingText={t('common.loading')}
             topHint="没有更早的消息"
-            topInset={isSplitDetailPane ? { xs: '76px', sm: '76px' } : { xs: 'calc(88px + env(safe-area-inset-top, 0px))', sm: '80px' }}
+            topInset={isSplitDetailPane ? { xs: '68px', sm: '68px' } : { xs: 'calc(80px + env(safe-area-inset-top, 0px))', sm: '72px' }}
             bottomInset={messageListBottomInset}
             emptyContent={isStoryRoom && storyRoomOpeningPreview ? <StoryRoomOpeningEmptyState preview={storyRoomOpeningPreview} /> : undefined}
             privateConversation={chat.type !== 'group'}
@@ -3668,8 +3689,8 @@ export default function ChatDetailPage() {
         </Suspense>
       ) : null}
 
-      {chatInteractionDisabled || (isAssistantChat && !rightPanelOpen) ? null : <RightPanel
-        title={isAssistantChat ? '助手能力' : sidebarTitle}
+      {chatInteractionDisabled || ((isAssistantChat || isLearningProgressRoom) && !rightPanelOpen) ? null : <RightPanel
+        title={isAssistantChat ? '助手能力' : isLearningProgressRoom ? '学习资料' : sidebarTitle}
         hideMobileTitle
         desktopMaxWidth={isSplitDetailPane ? 340 : 420}
         desktopViewportRatio={isSplitDetailPane ? 0.28 : 0.34}
@@ -3690,7 +3711,7 @@ export default function ChatDetailPage() {
           <SessionInfoCards cards={globalSessionInfoCards} onOpenChat={(chatId) => navigate(`/chats/${chatId}`)} />
           <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <LazyPanel>
-              {isAssistantChat ? (
+            {isAssistantChat || isLearningProgressRoom ? (
                 <Suspense fallback={<LoadingState title="正在加载" compact />}>
                   <AssistantAgentPanel
                     chat={chat}

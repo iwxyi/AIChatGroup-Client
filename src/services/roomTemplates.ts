@@ -39,6 +39,7 @@ export type RoomTemplateKey =
   | 'xianxia_trial_story'
   | 'apocalypse_road_story'
   | 'ielts_coach'
+  | 'learning_progress'
   | 'interview_prep'
   | 'writing_coach'
   | 'single_agent_workflow'
@@ -421,6 +422,32 @@ const ROOM_TEMPLATE_KERNELS: RoomTemplateDefinition[] = [
         label: '学习主设定',
         fields: [
           { key: 'studyGoalLabel', label: '学习目标', kind: 'text', required: true, placeholder: '例如：雅思口语 7.5' },
+        ],
+      },
+    ],
+  }),
+  createTemplate({
+    key: 'learning_progress',
+    label: '学习进步',
+    description: '设定任意学习目标，整理知识点、生成资料与练习，并根据学习记录持续调整下一步。',
+    structure: 'training',
+    category: 'training',
+    categoryLabel: '学习进步',
+    sessionKind: createTemplateSessionKind('group', 'classroom', { family: 'study', scenarioId: 'learning-progress', surfaceProfile: 'hybrid', topology: 'group' }),
+    style: 'free',
+    runtimeEvolutionIntensity: 'slow',
+    topicPlaceholder: '输入总目标，例如：掌握数据库索引、读懂一本经济学入门书',
+    sellingPoints: ['目标拆解', '知识点与学习记录', '资料、试卷和 HTML 练习'],
+    defaults: { studyGoalLabel: '', initialPhase: 'mapping', progressLabel: '学习进展', progressTarget: 0, allowPrivateThreads: false, allowCliques: false, allowMockery: false },
+    configGroups: [
+      {
+        key: 'learning-progress-required',
+        label: '学习主设定',
+        fields: [
+          { key: 'studyGoalLabel', label: '总学习目标', kind: 'textarea', required: true, placeholder: '例如：三个月内能独立完成一个 React 项目' },
+          { key: 'teachingMode', label: '教学模式', kind: 'single_select', options: [{ label: '娱乐陪练', value: 'entertainment' }, { label: '轻松学习', value: 'casual' }, { label: '严肃训练', value: 'serious' }] },
+          { key: 'teacherExpertise', label: '教师专长（可选）', kind: 'textarea', placeholder: '例如：数据库索引、查询优化；不填写则由角色自行发挥' },
+          { key: 'assessmentPolicy', label: '评估口径', kind: 'single_select', options: [{ label: '仅记录可观察证据', value: 'evidence_only' }, { label: '允许引导式估计', value: 'guided_estimate' }, { label: '严格核验后标记', value: 'strict' }] },
         ],
       },
     ],
@@ -821,6 +848,7 @@ const PUBLIC_ROOM_TEMPLATE_KERNEL_KEYS = new Set<RoomTemplateKey>([
   'open_chat',
   'opinion_review',
   'story_reader',
+  'learning_progress',
 ]);
 
 export function isRoomTemplateAvailableForStandardUsers(template: RoomTemplateDefinition) {

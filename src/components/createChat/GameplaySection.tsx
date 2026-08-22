@@ -44,6 +44,12 @@ interface GameplaySectionProps {
   onStoryBranchModeChange: (value: 'guided' | 'open') => void;
   studyGoalLabel: string;
   onStudyGoalLabelChange: (value: string) => void;
+  teachingMode: string;
+  onTeachingModeChange: (value: string) => void;
+  teacherExpertise: string;
+  onTeacherExpertiseChange: (value: string) => void;
+  assessmentPolicy: string;
+  onAssessmentPolicyChange: (value: string) => void;
   agentGoalLabel: string;
   onAgentGoalLabelChange: (value: string) => void;
   boardColumns: number;
@@ -110,6 +116,9 @@ function getFieldValue(field: RoomTemplateFieldDefinition, props: GameplaySectio
   switch (field.key) {
     case 'storyBranchMode': return props.storyBranchMode;
     case 'studyGoalLabel': return props.studyGoalLabel;
+    case 'teachingMode': return props.teachingMode;
+    case 'teacherExpertise': return props.teacherExpertise;
+    case 'assessmentPolicy': return props.assessmentPolicy;
     case 'agentGoalLabel': return props.agentGoalLabel;
     case 'boardColumns': return props.boardColumns;
     case 'boardRows': return props.boardRows;
@@ -133,6 +142,9 @@ function setFieldValue(field: RoomTemplateFieldDefinition, value: string, props:
   switch (field.key) {
     case 'storyBranchMode': props.onStoryBranchModeChange(value as 'guided' | 'open'); break;
     case 'studyGoalLabel': props.onStudyGoalLabelChange(value); break;
+    case 'teachingMode': props.onTeachingModeChange(value); break;
+    case 'teacherExpertise': props.onTeacherExpertiseChange(value); break;
+    case 'assessmentPolicy': props.onAssessmentPolicyChange(value); break;
     case 'agentGoalLabel': props.onAgentGoalLabelChange(value); break;
     case 'boardColumns': props.onBoardColumnsChange(Math.max(2, Number(value) || 2)); break;
     case 'boardRows': props.onBoardRowsChange(Math.max(2, Number(value) || 2)); break;

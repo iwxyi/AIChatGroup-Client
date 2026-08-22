@@ -3,164 +3,93 @@ import { applyGovernanceToParticipant, mergeGovernanceActionSchema, type Session
 import type { Message } from '../../types/message';
 
 const STUDY_PHASES = [
-  { key: 'learning', label: 'Learning', allowedActions: ['speak', 'send_message', 'assign_task'] as string[] },
-  { key: 'review', label: 'Review', allowedActions: ['speak', 'send_message', 'summarize'] as string[] },
+  { key: 'mapping', label: '目标拆解', allowedActions: ['speak', 'send_message', 'assign_task'] as string[] },
+  { key: 'learning', label: '学习练习', allowedActions: ['speak', 'send_message', 'assign_task'] as string[] },
+  { key: 'review', label: '复习反馈', allowedActions: ['speak', 'send_message', 'summarize'] as string[] },
 ];
-function getPhaseDefinitions() {
-  return [...STUDY_PHASES];
-}
 
 function buildParticipants(conversation: GroupChat) {
-  return conversation.memberIds.map((memberId, index) => ({
+  return conversation.memberIds.map((memberId, index) => applyGovernanceToParticipant(conversation, {
     participantId: `${conversation.id}:${memberId}`,
     conversationId: conversation.id,
     entityType: memberId === 'user' ? 'user' as const : 'ai' as const,
     entityRefId: memberId,
     seatIndex: index,
     displayName: memberId === 'user' ? '我' : undefined,
+    title: memberId === 'user' ? '学习者' : '教师',
+    roleKey: memberId === 'user' ? 'student' : 'teacher',
     canSpeak: true,
     canAct: true,
-    flags: { actorRefKind: memberId === 'user' ? 'user_persona' : 'ai_character' },
-  })).map((participant) => applyGovernanceToParticipant(conversation, participant));
-}
-
-function getVisiblePanels() {
-  return [
-    { key: 'members', title: 'Members', type: 'members' as const, tabKey: 'members' as const },
-    { key: 'world', title: 'Study', type: 'runtime' as const, tabKey: 'world' as const },
-    { key: 'actions', title: 'Tasks', type: 'actions' as const },
-  ];
-}
-
-function getAvailableActions() {
-  return [
-    { type: 'assign_study_task' },
-    { type: 'review_progress' },
-  ];
-}
-
-function buildGenerationPromptContext(params: { conversation: GroupChat }): SessionGenerationPromptContext {
-  const phase = params.conversation.scenarioState?.phase || 'learning';
-  return {
-    responseStyle: 'professional',
-    allowMarkdown: true,
-    styleProfile: 'task_room',
-    additionalConstraints: phase === 'review'
-      ? ['Review progress concretely and close the loop on what improved, what still blocks, and what to do next.']
-      : ['Teach or coach directly, with practical next steps before extra chatter.'],
-  };
-}
-
-function buildRuntimeContextBundle(params: { conversation: GroupChat; speaker: { id: string } }): SessionRuntimeContextBundle {
-  const phase = params.conversation.scenarioState?.phase || 'learning';
-  return {
-    turnPlan: {
-      speakerId: params.speaker.id,
-      obligation: 'should',
-      moveClass: phase === 'review' ? 'resolve' : 'deepen',
-      targetScope: 'task',
-      depth: 'deep',
-      channelId: 'public',
-      reason: `study:${phase}`,
-    },
-    expressionPlan: {
-      surface: 'task',
-      texture: 'rich',
-      rhythm: 'back_and_forth',
-      allowMarkdown: true,
-    },
-    realizationPlan: {
-      moveClass: phase === 'review' ? 'resolve' : 'deepen',
-      targetScope: 'task',
-      noveltyGoal: phase === 'review' ? 'resolve' : 'new_angle',
-      surfaceDepth: 'deep',
-      emotionalPosture: 'warm',
-    },
-    trace: {
-      policyHits: [`study_phase:${phase}`],
-    },
-  };
+    flags: { actorRefKind: memberId === 'user' ? 'user_persona' : 'ai_character', studyRole: memberId === 'user' ? 'student' : 'teacher' },
+  }));
 }
 
 function getActionSchema(conversation: GroupChat) {
+  const goal = conversation.scenarioState?.learning?.goal || conversation.topic || '当前学习目标';
   return {
-    title: '教学动作',
+    title: '学习动作',
     actions: [
-      {
-        type: 'assign_study_task',
-        label: '布置任务',
-        description: '布置一个新的学习任务。',
-        visibility: 'public' as const,
-        fields: [
-          { key: 'task', label: '任务内容', type: 'textarea' as const, required: true, placeholder: '例如：完成一轮口语 Part 2 练习' },
-        ],
-      },
-      {
-        type: 'review_progress',
-        label: '复盘进度',
-        description: '总结当前学习进展。',
-        visibility: 'public' as const,
-        fields: [
-          { key: 'focus', label: '复盘重点', type: 'textarea' as const, placeholder: '例如：发音、流利度、结构表达' },
-        ],
-      },
+      { type: 'map_learning_goal', label: '整理知识点', description: '把总目标拆成可学习、可复习的知识点。', visibility: 'public' as const, fields: [{ key: 'goal', label: '目标范围', type: 'textarea' as const, required: true, placeholder: goal }] },
+      { type: 'create_learning_practice', label: '生成练习', description: '根据知识点和薄弱项生成资料、试卷或 HTML 练习。', visibility: 'public' as const, fields: [{ key: 'focus', label: '练习重点', type: 'textarea' as const, placeholder: '例如：只练习最近不稳定的部分' }] },
+      { type: 'review_learning_progress', label: '复盘学习', description: '基于学习记录总结已会、未稳和下一步。', visibility: 'public' as const, fields: [{ key: 'focus', label: '复盘重点', type: 'textarea' as const, placeholder: '例如：最近错题和下周安排' }] },
     ],
-  };
-}
-
-function getActionSchemaWithGovernance(context: SessionEngineActionContext) {
-  return mergeGovernanceActionSchema(getActionSchema(context.conversation), context);
-}
-
-function onMessageCommitted(params: {
-  conversation: GroupChat;
-  characters: Parameters<SessionEngineDefinition['onMessageCommitted']>[0]['characters'];
-  message: Pick<Message, 'content' | 'type' | 'senderId'>;
-}) {
-  const summary = params.message.content.trim().slice(0, 72);
-  const currentProgress = params.conversation.scenarioState?.progress?.find((item) => item.key === 'study-progress')?.value || 0;
-  const nextProgress = Math.min(100, currentProgress + 12);
-  const nextPhase = nextProgress >= 72 ? 'review' : 'learning';
-  return {
-    chatPatch: {
-      scenarioState: {
-        ...(params.conversation.scenarioState || {}),
-        phase: nextPhase,
-        goals: params.conversation.scenarioState?.goals?.length
-          ? params.conversation.scenarioState.goals.map((goal) => ({ ...goal, progress: nextProgress / 100 }))
-          : [{ goalId: 'study-goal', label: params.conversation.topic || '学习目标', status: 'active' as const, progress: nextProgress / 100 }],
-        progress: [{ key: 'study-progress', label: '学习进度', value: nextProgress, target: 100 }],
-      },
-      worldState: {
-        ...params.conversation.worldState,
-        phase: (nextPhase === 'review' ? 'aligned' : 'warming') as ConversationPhase,
-        focus: params.conversation.scenarioState?.goals?.[0]?.label || params.conversation.topic || '学习目标',
-        recentEvent: `学习推进：${summary}${params.message.content.trim().length > 72 ? '…' : ''}`,
-        mood: nextPhase === 'review' ? 'reflective' : 'focused',
-      },
-    },
-    characterPatches: [],
-    runtimeEvents: [{
-      eventType: nextPhase === 'review' ? 'study_review' : 'study_progress',
-      title: nextPhase === 'review' ? '进入复盘阶段' : '学习推进',
-      summary,
-      eventClass: 'phase',
-      visibilityScope: 'public',
-      channelId: 'public',
-    }],
   };
 }
 
 export const STUDY_ENGINE: SessionEngineDefinition = {
   key: 'classroom',
-  createInitialConfig: () => ({ structuredTurns: false, mode: 'classroom', sessionFamily: 'study', scenarioId: 'ielts-coach' }),
-  createInitialState: () => ({ phase: 'learning', round: 0 }),
+  createInitialConfig: () => ({ structuredTurns: false, mode: 'classroom', sessionFamily: 'study', scenarioId: 'learning-progress' }),
+  createInitialState: () => ({ phase: 'mapping', round: 0 }),
   buildParticipants,
-  getPhaseDefinitions,
-  getVisiblePanels,
-  getAvailableActions,
-  getActionSchema: getActionSchemaWithGovernance,
-  buildGenerationPromptContext,
-  buildRuntimeContextBundle,
-  onMessageCommitted,
+  getPhaseDefinitions: () => STUDY_PHASES.map((phase) => ({ ...phase })),
+  getVisiblePanels: () => [
+    { key: 'members', title: '参与者', type: 'members' as const, tabKey: 'members' as const },
+    { key: 'world', title: '学习进步', type: 'runtime' as const, tabKey: 'world' as const },
+    { key: 'actions', title: '学习动作', type: 'actions' as const, tabKey: 'world' as const },
+  ],
+  getAvailableActions: () => [{ type: 'map_learning_goal' }, { type: 'create_learning_practice' }, { type: 'review_learning_progress' }],
+  getActionSchema: (context: SessionEngineActionContext) => mergeGovernanceActionSchema(getActionSchema(context.conversation), context),
+  buildGenerationPromptContext: ({ conversation }): SessionGenerationPromptContext => {
+    const phase = conversation.scenarioState?.phase || 'mapping';
+    const teachingMode = conversation.scenarioState?.learning?.teachingMode || 'casual';
+    return {
+      responseStyle: teachingMode === 'entertainment' ? 'chat' : 'professional',
+      allowMarkdown: true,
+      styleProfile: 'task_room',
+      additionalConstraints: [
+        `This is a learning-progress room in phase ${phase}. Teaching mode: ${teachingMode}.`,
+        phase === 'mapping' ? 'Break the broad goal into a useful knowledge map before prescribing a long curriculum.' : 'Give one concrete next step and distinguish observed evidence from assumptions about mastery.',
+        'Never pretend that a single score fully measures an open-ended learning goal.',
+      ],
+    };
+  },
+  buildRuntimeContextBundle: ({ conversation, speaker }): SessionRuntimeContextBundle => {
+    const phase = conversation.scenarioState?.phase || 'mapping';
+    const moveClass = phase === 'review' ? 'resolve' : phase === 'mapping' ? 'deepen' : 'perform';
+    return {
+      turnPlan: { speakerId: speaker.id, obligation: 'should', moveClass, targetScope: 'task', depth: 'deep', channelId: 'public', reason: `learning-progress:${phase}` },
+      expressionPlan: { surface: 'task', texture: 'rich', rhythm: 'back_and_forth', allowMarkdown: true },
+      realizationPlan: { moveClass, targetScope: 'task', noveltyGoal: phase === 'mapping' ? 'new_angle' : 'new_evidence', surfaceDepth: 'deep', emotionalPosture: 'warm' },
+      trace: { policyHits: [`study_phase:${phase}`, `teaching_mode:${conversation.scenarioState?.learning?.teachingMode || 'casual'}`] },
+    };
+  },
+  onMessageCommitted: ({ conversation, message }) => {
+    const summary = message.content.trim().slice(0, 120);
+    const learning = conversation.scenarioState?.learning || { goal: conversation.topic || '学习目标', knowledgeItems: [] };
+    const phase = learning.lastStudyAction === 'map' ? 'learning' : learning.lastStudyAction === 'review' ? 'review' : (conversation.scenarioState?.phase || 'mapping');
+    return {
+      chatPatch: {
+        scenarioState: {
+          ...(conversation.scenarioState || {}),
+          phase,
+          learning: { ...learning, lastStudyActionAt: Date.now() },
+          goals: conversation.scenarioState?.goals?.length ? conversation.scenarioState.goals : [{ goalId: 'study-goal', label: learning.goal, status: 'active' as const }],
+          progress: [{ key: 'study-progress', label: '学习进展', value: learning.knowledgeItems.length, target: 0 }],
+        },
+        worldState: { ...conversation.worldState, phase: (phase === 'review' ? 'aligned' : 'warming') as ConversationPhase, focus: learning.goal, recentEvent: `学习进步：${summary}${message.content.trim().length > 120 ? '…' : ''}`, mood: phase === 'review' ? 'reflective' : 'focused' },
+      },
+      characterPatches: [],
+      runtimeEvents: [{ eventType: 'study_progress', title: '学习进步', summary, eventClass: 'phase', visibilityScope: 'public', channelId: 'public' }],
+    };
+  },
 };

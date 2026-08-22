@@ -280,6 +280,33 @@ export interface ScenarioState {
   werewolfPostGameMode?: string;
   mysteryScript?: string;
   mysteryRoleMappingMode?: string;
+  learning?: LearningScenarioState;
+}
+
+export type LearningKnowledgeStatus = 'unknown' | 'exposed' | 'learning' | 'practicing' | 'usable' | 'verified' | 'stale';
+export interface LearningKnowledgeItem {
+  id: string;
+  title: string;
+  description?: string;
+  status: LearningKnowledgeStatus;
+  confidence?: number;
+  evidenceCount?: number;
+  lastReviewedAt?: number;
+  nextReviewAt?: number;
+  sourceArtifactIds?: string[];
+  notes?: string;
+}
+export interface LearningScenarioState {
+  goal: string;
+  domain?: string;
+  teachingMode?: 'entertainment' | 'casual' | 'serious';
+  teacherExpertise?: string;
+  assessmentPolicy?: 'evidence_only' | 'guided_estimate' | 'strict';
+  teacherIds?: string[];
+  studentIds?: string[];
+  knowledgeItems: LearningKnowledgeItem[];
+  lastStudyAction?: 'map' | 'practice' | 'review' | 'plan' | 'note';
+  lastStudyActionAt?: number;
 }
 
 export interface LayeredGrowthState {

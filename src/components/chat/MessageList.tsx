@@ -24,7 +24,11 @@ import { motion, prefersReducedMotion, transition } from '../../styles/motion';
 import { buildMessageListRenderItems, type MessageListRenderItem } from './messageListRenderItems';
 
 const TOP_PREFETCH_THRESHOLD = 520;
-const BOTTOM_STICKY_THRESHOLD = 96;
+// Keep following the tail when the user is only slightly above it. The input
+// composer overlays the lower edge and a newly appended bubble can itself be
+// taller than the old fixed threshold, so a 96px cutoff makes normal sends
+// appear behind the composer unless the scrollbar is exactly at the end.
+const BOTTOM_STICKY_THRESHOLD = 176;
 const JUMP_TO_BOTTOM_PAGE_MULTIPLIER = 3;
 const BOTTOM_RESTORE_ANCHOR_THRESHOLD = 700;
 const SMOOTH_SCROLL_DISTANCE_LIMIT = 900;
@@ -597,6 +601,7 @@ export default function MessageList({
   const shouldStickToBottomRef = useRef(true);
   const lastReportedBottomPinnedRef = useRef<boolean | null>(null);
   const lastReportedNearBottomRef = useRef<boolean | null>(null);
+  const lastKnownBottomDistanceRef = useRef<number | null>(null);
   const hasJumpedToBottomRef = useRef(false);
   const initialScrollPositionRef = useRef(initialScrollPosition);
   const pendingInitialRestoreRef = useRef<MessageListScrollPosition | null>(initialScrollPosition?.pinned ? null : initialScrollPosition);
@@ -809,7 +814,7 @@ export default function MessageList({
   }, []);
 
   const getAdaptiveBottomThreshold = useCallback((element: HTMLDivElement) => (
-    element.clientHeight * adaptiveBottomPagesRef.current
+    Math.max(BOTTOM_STICKY_THRESHOLD, element.clientHeight * adaptiveBottomPagesRef.current)
   ), []);
 
   const reportNearBottomState = useCallback((element: HTMLDivElement) => {
@@ -1211,6 +1216,7 @@ export default function MessageList({
     const container = containerRef.current;
     if (!container) return false;
     const distance = getDistanceFromBottom(container);
+    lastKnownBottomDistanceRef.current = distance;
     const pinned = distance <= BOTTOM_STICKY_THRESHOLD && !hasMoreNewer;
     updateJumpToBottomVisibility(shouldShowJumpToBottomButton(container));
     shouldStickToBottomRef.current = pinned;
@@ -1673,8 +1679,13 @@ export default function MessageList({
       || currentMetrics.storyChoiceKey !== previousMetrics.storyChoiceKey;
     const tailGrew = currentMetrics.lastItemKey === previousMetrics.lastItemKey
       && currentMetrics.lastItemContentLength > previousMetrics.lastItemContentLength;
+    // Use the distance captured before this render. A newly appended bubble
+    // increases scrollHeight, so measuring only after insertion can make a
+    // previously-following view look far from the bottom.
+    const wasNearBottomBeforeRender = (lastKnownBottomDistanceRef.current ?? Number.POSITIVE_INFINITY) <= BOTTOM_STICKY_THRESHOLD;
     const shouldFollowTail = shouldStickToBottomRef.current
       || lastReportedBottomPinnedRef.current === true
+      || wasNearBottomBeforeRender
       || (!hasUserScrollIntentRef.current && (tailChanged || tailGrew));
     if (!shouldFollowTail) return;
 
@@ -1755,6 +1766,7 @@ export default function MessageList({
         }
 
         const previousScrollTop = lastScrollTopRef.current;
+        lastKnownBottomDistanceRef.current = getDistanceFromBottom(container);
         const isScrollingUp = container.scrollTop < previousScrollTop - 2;
         const isScrollingDown = container.scrollTop > previousScrollTop + 2;
         const previousSample = lastScrollSampleRef.current;

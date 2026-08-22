@@ -13,7 +13,7 @@ interface GlassHeaderProps {
   tone?: 'default' | 'intro';
 }
 
-export const GLASS_HEADER_HEIGHT = 64;
+export const GLASS_HEADER_HEIGHT = 56;
 
 export default function GlassHeader({
   title,
@@ -36,8 +36,8 @@ export default function GlassHeader({
         right: overlay ? 0 : 'auto',
         zIndex,
         minHeight: safeAreaTop ? `calc(${GLASS_HEADER_HEIGHT}px + env(safe-area-inset-top, 0px))` : GLASS_HEADER_HEIGHT,
-        pt: safeAreaTop ? 'calc(env(safe-area-inset-top, 0px) + 8px)' : 1,
-        pb: 1,
+        pt: safeAreaTop ? 'calc(env(safe-area-inset-top, 0px) + 5px)' : 0.5,
+        pb: 0.5,
         px: { xs: 1.5, sm: 2.5 },
         display: 'flex',
         alignItems: 'center',
@@ -108,7 +108,7 @@ export default function GlassHeader({
             {title}
           </Typography>
         ) : title != null ? (
-          <Box sx={{ minWidth: 0, flex: 1, minHeight: 40, display: 'flex', alignItems: 'center' }}>{title}</Box>
+          <Box sx={{ minWidth: 0, flex: 1, minHeight: 36, display: 'flex', alignItems: 'center' }}>{title}</Box>
         ) : null}
       </Box>
       {actions ? (

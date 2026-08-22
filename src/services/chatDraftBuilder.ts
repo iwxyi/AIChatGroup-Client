@@ -24,6 +24,9 @@ export interface ChatDraftInput {
   storyDirection?: string;
   storyOutline?: string;
   studyGoalLabel?: string;
+  teachingMode?: 'entertainment' | 'casual' | 'serious';
+  teacherExpertise?: string;
+  assessmentPolicy?: 'evidence_only' | 'guided_estimate' | 'strict';
   agentGoalLabel?: string;
   boardColumns?: number;
   werewolfRoleConfig?: string;
@@ -310,6 +313,7 @@ export function buildGroupChatDraft(input: ChatDraftInput): Omit<GroupChat, 'id'
   const discussionMode = resolveDiscussionMode(sessionKind, templateDefaults.discussionMode);
   const isDiscussionRoom = isDiscussionScenario(sessionKind);
   const initialStoryAssets = isStoryReader ? buildInitialStoryAssets(input) : null;
+  const isStudyRoom = sessionKind.family === 'study';
   const mode = sessionKind.scenarioId === 'opinion-review'
     ? 'group_discussion'
     : isOrderedDiscussionMode(discussionMode)
@@ -318,7 +322,7 @@ export function buildGroupChatDraft(input: ChatDraftInput): Omit<GroupChat, 'id'
         ? 'group_discussion'
       : sessionKind.scenarioId === 'story-reader'
         ? 'scripted_play'
-        : sessionKind.scenarioId === 'ielts-coach'
+        : sessionKind.scenarioId === 'ielts-coach' || sessionKind.scenarioId === 'learning-progress'
           ? 'classroom'
           : sessionKind.scenarioId === 'single-agent-workflow' || sessionKind.scenarioId === 'multi-agent-workflow'
             ? 'agent_workflow'
@@ -337,7 +341,10 @@ export function buildGroupChatDraft(input: ChatDraftInput): Omit<GroupChat, 'id'
       ...DEFAULT_OPEN_CHAT_MODE_CONFIG,
       showRoleActions: isStoryReader ? false : input.showRoleActions,
     },
-    modeState: DEFAULT_OPEN_CHAT_MODE_STATE,
+    modeState: {
+      ...DEFAULT_OPEN_CHAT_MODE_STATE,
+      ...(isStudyRoom ? { assistantCapabilities: { agent: true, artifacts: true, updatedAt: Date.now() } } : {}),
+    },
     scenarioPackage: {
       scenarioId: sessionKind.scenarioId,
       label: sessionKind.scenarioId,
@@ -369,7 +376,7 @@ export function buildGroupChatDraft(input: ChatDraftInput): Omit<GroupChat, 'id'
               : sessionKind.scenarioId === 'murder-mystery'
                 ? 'investigation'
                 : undefined),
-      goals: templateDefaults.goalLabel || isDiscussionRoom || sessionKind.scenarioId === 'werewolf-classic' || sessionKind.scenarioId === 'murder-mystery' || sessionKind.scenarioId === 'board-game'
+      goals: templateDefaults.goalLabel || isDiscussionRoom || sessionKind.family === 'study' || sessionKind.scenarioId === 'werewolf-classic' || sessionKind.scenarioId === 'murder-mystery' || sessionKind.scenarioId === 'board-game'
         ? [{
             goalId: isDiscussionRoom ? 'discussion-goal' : `${sessionKind.family}-goal`,
             label: templateDefaults.goalLabel
@@ -384,10 +391,10 @@ export function buildGroupChatDraft(input: ChatDraftInput): Omit<GroupChat, 'id'
             progress: 0,
           }]
         : [],
-      progress: templateDefaults.progressLabel || isDiscussionRoom
+      progress: templateDefaults.progressLabel || sessionKind.family === 'study' || isDiscussionRoom
         ? [{
             key: isDiscussionRoom ? 'speeches' : `${sessionKind.family}-progress`,
-            label: templateDefaults.progressLabel || (discussionMode === 'roundtable' ? '圆桌发言' : '审议发言'),
+            label: templateDefaults.progressLabel || (sessionKind.family === 'study' ? '学习进展' : discussionMode === 'roundtable' ? '圆桌发言' : '审议发言'),
             value: 0,
             target: isDiscussionRoom
               ? 0
@@ -429,6 +436,15 @@ export function buildGroupChatDraft(input: ChatDraftInput): Omit<GroupChat, 'id'
       werewolfPostGameMode: input.werewolfPostGameMode || 'free_talk',
       mysteryScript: input.mysteryScript || '',
       mysteryRoleMappingMode: input.mysteryRoleMappingMode || 'alias',
+      learning: isStudyRoom ? {
+        goal: input.studyGoalLabel?.trim() || input.topic.trim() || input.name.trim() || '学习目标',
+        teachingMode: input.teachingMode || 'casual',
+        teacherExpertise: input.teacherExpertise?.trim() || undefined,
+        assessmentPolicy: input.assessmentPolicy || 'evidence_only',
+        teacherIds: input.memberIds.filter((memberId) => memberId !== 'user'),
+        studentIds: input.memberIds.filter((memberId) => memberId === 'user'),
+        knowledgeItems: [],
+      } : undefined,
     },
     channels: [{ channelId: 'public', visibility: 'public', label: 'Public' }],
     layoutState: { slots: input.memberIds.map((memberId, index) => ({ slotId: `slot-${index + 1}`, x: index, y: 0, actorId: memberId })) },

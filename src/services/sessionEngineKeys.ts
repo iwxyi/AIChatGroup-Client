@@ -30,6 +30,7 @@ const sessionScenarioToEngineKey = new Map<string, GroupChat['mode']>([
   ['task-retrospective', 'group_discussion'],
   ['story-reader', 'scripted_play'],
   ['ielts-coach', 'classroom'],
+  ['learning-progress', 'classroom'],
   ['single-agent-workflow', 'agent_workflow'],
   ['multi-agent-workflow', 'agent_workflow'],
   ['panel-interview', 'interview'],

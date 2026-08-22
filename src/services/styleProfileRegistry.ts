@@ -97,6 +97,7 @@ const scenarioDefaults = new Map<string, ChatStyleProfile>([
   ['task-retrospective', 'analytical_room'],
   ['panel-interview', 'task_room'],
   ['ielts-coach', 'task_room'],
+  ['learning-progress', 'task_room'],
   ['story-reader', 'dramatic_room'],
   ['werewolf-classic', 'dramatic_room'],
   ['murder-mystery', 'dramatic_room'],

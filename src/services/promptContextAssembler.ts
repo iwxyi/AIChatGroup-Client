@@ -4,6 +4,7 @@ import type { Message } from '../types/message';
 import { interviewPromptAdapter } from './enginePromptAdapters/interviewPromptAdapter';
 import { openChatPromptAdapter } from './enginePromptAdapters/openChatPromptAdapter';
 import { werewolfPromptAdapter } from './enginePromptAdapters/werewolfPromptAdapter';
+import { studyPromptAdapter } from './enginePromptAdapters/studyPromptAdapter';
 
 export interface EnginePromptAdapter {
   key: string;
@@ -23,7 +24,9 @@ const adapters = new Map<string, EnginePromptAdapter>([
   ['ai-private-thread', openChatPromptAdapter],
   [interviewPromptAdapter.key, interviewPromptAdapter],
   ['panel-interview', interviewPromptAdapter],
-  ['ielts-coach', interviewPromptAdapter],
+  ['ielts-coach', studyPromptAdapter],
+  ['learning-progress', studyPromptAdapter],
+  ['learning-progress', interviewPromptAdapter],
   [werewolfPromptAdapter.key, werewolfPromptAdapter],
   ['werewolf-classic', werewolfPromptAdapter],
 ]);

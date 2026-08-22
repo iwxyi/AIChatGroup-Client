@@ -278,6 +278,9 @@ export default function CreateChatPage() {
   const [storyDirection, setStoryDirection] = useState('');
   const [storyOutline, setStoryOutline] = useState('');
   const [studyGoalLabel, setStudyGoalLabel] = useState('');
+  const [teachingMode, setTeachingMode] = useState('casual');
+  const [teacherExpertise, setTeacherExpertise] = useState('');
+  const [assessmentPolicy, setAssessmentPolicy] = useState('evidence_only');
   const [agentGoalLabel, setAgentGoalLabel] = useState('');
   const [boardColumns, setBoardColumns] = useState(8);
   const [boardRows, setBoardRows] = useState(8);
@@ -440,6 +443,9 @@ export default function CreateChatPage() {
         setStoryDirection(String(editingChat.scenarioState?.storyDirection || ''));
         setStoryOutline(String(editingChat.scenarioState?.storyOutline || ''));
         setStudyGoalLabel(editingChat.scenarioState?.goals?.find((item) => item.goalId === 'study-goal')?.label || '');
+        setTeachingMode(editingChat.scenarioState?.learning?.teachingMode || 'casual');
+        setTeacherExpertise(editingChat.scenarioState?.learning?.teacherExpertise || '');
+        setAssessmentPolicy(editingChat.scenarioState?.learning?.assessmentPolicy || 'evidence_only');
         setAgentGoalLabel(editingChat.scenarioState?.goals?.find((item) => item.goalId === 'agent-goal')?.label || '');
         setBoardColumns(editingChat.scenarioState?.board?.schema?.columns || 8);
         setBoardRows(editingChat.scenarioState?.board?.schema?.rows || 8);
@@ -488,6 +494,9 @@ export default function CreateChatPage() {
         setStoryDirection(String(importedChat.scenarioState?.storyDirection || ''));
         setStoryOutline(String(importedChat.scenarioState?.storyOutline || ''));
         setStudyGoalLabel(importedChat.scenarioState?.goals?.find((item) => item.goalId === 'study-goal')?.label || '');
+        setTeachingMode(importedChat.scenarioState?.learning?.teachingMode || 'casual');
+        setTeacherExpertise(importedChat.scenarioState?.learning?.teacherExpertise || '');
+        setAssessmentPolicy(importedChat.scenarioState?.learning?.assessmentPolicy || 'evidence_only');
         setAgentGoalLabel(importedChat.scenarioState?.goals?.find((item) => item.goalId === 'agent-goal')?.label || '');
         setBoardColumns(importedChat.scenarioState?.board?.schema?.columns || 8);
         setBoardRows(importedChat.scenarioState?.board?.schema?.rows || 8);
@@ -580,6 +589,9 @@ export default function CreateChatPage() {
       storyDirection,
       storyOutline,
       studyGoalLabel,
+      teachingMode,
+      teacherExpertise,
+      assessmentPolicy,
       agentGoalLabel,
       boardColumns,
       boardRows,
@@ -635,6 +647,9 @@ export default function CreateChatPage() {
       setStoryDirection(String(draft.storyDirection || ''));
       setStoryOutline(String(draft.storyOutline || ''));
       setStudyGoalLabel(String(draft.studyGoalLabel || ''));
+      setTeachingMode(String(draft.teachingMode || 'casual'));
+      setTeacherExpertise(String(draft.teacherExpertise || ''));
+      setAssessmentPolicy(String(draft.assessmentPolicy || 'evidence_only'));
       setAgentGoalLabel(String(draft.agentGoalLabel || ''));
       setBoardColumns(Number(draft.boardColumns || 8));
       setBoardRows(Number(draft.boardRows || 8));
@@ -1187,6 +1202,9 @@ export default function CreateChatPage() {
     storyDirection,
     storyOutline,
     studyGoalLabel,
+    teachingMode: teachingMode as 'entertainment' | 'casual' | 'serious',
+    teacherExpertise,
+    assessmentPolicy: assessmentPolicy as 'evidence_only' | 'guided_estimate' | 'strict',
     agentGoalLabel,
     boardColumns,
     boardRows,
@@ -1582,6 +1600,12 @@ export default function CreateChatPage() {
             onStoryBranchModeChange={setStoryBranchMode}
             studyGoalLabel={studyGoalLabel}
             onStudyGoalLabelChange={setStudyGoalLabel}
+            teachingMode={teachingMode}
+            onTeachingModeChange={setTeachingMode}
+            teacherExpertise={teacherExpertise}
+            onTeacherExpertiseChange={setTeacherExpertise}
+            assessmentPolicy={assessmentPolicy}
+            onAssessmentPolicyChange={setAssessmentPolicy}
             agentGoalLabel={agentGoalLabel}
             onAgentGoalLabelChange={setAgentGoalLabel}
             boardColumns={boardColumns}
