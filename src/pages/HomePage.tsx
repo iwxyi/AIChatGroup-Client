@@ -494,8 +494,14 @@ export default function HomePage() {
     void prefetchCharacters();
   }, [markCharactersWarm, markChatsWarm, prefetchCharacters, prefetchChats]);
 
-  useEffect(() => avatarGenerationQueue.subscribeSummary(setAvatarQueueSummary), []);
-  useEffect(() => subscribeCharacterCompletionQueue(setCharacterCompletionSummary), []);
+  useEffect(() => {
+    const unsubscribe = avatarGenerationQueue.subscribeSummary(setAvatarQueueSummary);
+    return () => { unsubscribe(); };
+  }, []);
+  useEffect(() => {
+    const unsubscribe = subscribeCharacterCompletionQueue(setCharacterCompletionSummary);
+    return () => { unsubscribe(); };
+  }, []);
 
   useEffect(() => {
     const timer = window.setInterval(() => setCalendarNow(Date.now()), 60_000);

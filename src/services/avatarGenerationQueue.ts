@@ -87,7 +87,7 @@ class AvatarGenerationQueueService {
 
   waitForTask(taskId: string) {
     return new Promise<AvatarGenerationTaskState>((resolve, reject) => {
-      let unsubscribe = () => undefined;
+      let unsubscribe: () => void = () => {};
       let settled = false;
       const finish = (callback: () => void) => {
         if (settled) return;

@@ -280,7 +280,7 @@ class AdminApiClient {
   }
 
   getUserLoginRecords(userId: string, params?: { result?: 'success' | 'failure'; method?: string; limit?: number }) {
-    return this.request<{ items: AdminUserLoginRecord[]; limit: number }>('GET', `/users/${encodeURIComponent(userId)}/login-records${this.buildQuery(params)}`);
+    return this.request<{ items: AdminUserLoginRecord[]; limit: number }>('GET', `/users/${encodeURIComponent(userId)}/login-records${this.buildQuery(params || {})}`);
   }
 
   resetUserLoginFailures(userId: string) {

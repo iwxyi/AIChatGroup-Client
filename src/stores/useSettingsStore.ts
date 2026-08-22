@@ -356,7 +356,7 @@ function syncState(state: Partial<AppSettings> & { api?: APIConfig; aiProfiles?:
       maxContentWidth: Math.max(560, Math.min(1080, Math.round(Number(state.chatAppearance?.maxContentWidth || DEFAULT_CHAT_APPEARANCE_SETTINGS.maxContentWidth)))),
       maxContentWidthUnlimited: Boolean(state.chatAppearance?.maxContentWidthUnlimited),
       voiceWaveformStyle: ['wave', 'blocks', 'neon', 'spectrum', 'pulse', 'orbit', 'ribbon'].includes(state.chatAppearance?.voiceWaveformStyle || '')
-        ? state.chatAppearance.voiceWaveformStyle as ChatAppearanceSettings['voiceWaveformStyle']
+        ? state.chatAppearance?.voiceWaveformStyle as ChatAppearanceSettings['voiceWaveformStyle']
         : DEFAULT_CHAT_APPEARANCE_SETTINGS.voiceWaveformStyle,
       storyReader: {
         ...DEFAULT_CHAT_APPEARANCE_SETTINGS.storyReader,
@@ -500,9 +500,9 @@ export const useSettingsStore = create<SettingsStore>()(
               userBubbleStyle: (settings.userBubbleStyle as BubbleStyleDefinition | null | undefined) || null,
               artifactAppearance: (settings as { artifactAppearance?: ArtifactAppearanceSettings }).artifactAppearance,
               chatAppearance: (settings as { chatAppearance?: ChatAppearanceSettings }).chatAppearance,
-            usageStats: (settings as { usageStats?: UsageStats }).usageStats,
-            settingsDirty: false,
+              usageStats: (settings as { usageStats?: UsageStats }).usageStats,
             }),
+            settingsDirty: false,
             _loaded: true,
             lastSyncedAt: Date.now(),
             syncStatus: 'idle',

@@ -111,11 +111,6 @@ function VisualPlaceholder({ name }: { name: string }) {
           '38%': { opacity: 0.58, transform: 'scaleX(1)' },
           '68%': { opacity: 0.42, transform: 'scaleX(0.54)' },
         },
-        '@media (prefers-reduced-motion: reduce)': {
-          '& .placeholder-orbit, & .placeholder-scan, & .placeholder-latitude, & .placeholder-core, & .placeholder-trace-a, & .placeholder-trace-b': {
-            animation: 'none !important',
-          },
-        },
         ...reducedMotionSx,
       }}
     >

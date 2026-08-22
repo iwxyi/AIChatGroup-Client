@@ -1,5 +1,5 @@
 import type { AICharacter } from '../types/character';
-import type { Message, MessageMetadata } from '../types/message';
+import type { Message, MessageMetadata, MediaGenerationDecision } from '../types/message';
 import type { UserGuidanceIntent } from './userGuidanceIntent';
 
 export type GuidanceExecutionReason = NonNullable<NonNullable<NonNullable<MessageMetadata['runtimeDecision']>['guidanceExecution']>['finalReason']>;
@@ -16,11 +16,7 @@ export interface GuidanceExecutionOptions {
     audio?: boolean;
   };
   /** Structured media decisions returned for individual message segments. */
-  mediaDecisions?: Array<{
-    images?: Array<{ shouldGenerate?: boolean }>;
-    image?: { shouldGenerate?: boolean } | null;
-    audio?: { shouldGenerate?: boolean } | null;
-  }>;
+  mediaDecisions?: MediaGenerationDecision[];
 }
 
 export interface GuidanceProgressSnapshot {

@@ -1217,7 +1217,7 @@ export const useCharacterStore = create<CharacterStore>()(
             if (!characterSyncScopes.isFresh(scope, CHARACTER_DETAIL_REFRESH_TTL_MS)) {
               void refreshCharacterDetail();
             }
-            return cached;
+            return cached ?? null;
           }
           const loaded = await refreshCharacterDetail();
           return loaded ?? null;

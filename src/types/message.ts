@@ -243,6 +243,7 @@ export interface MessageMetadata {
         hardConstraintActorIds?: string[];
         suppressedActorIds?: string[];
         hasHardConstraints?: boolean;
+        voiceRequest?: boolean;
         focusText?: string;
         beatType?: string;
         pressure?: number;
