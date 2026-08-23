@@ -888,10 +888,30 @@ export default function CreateChatPage() {
         draft: {
           name,
           topic,
+          roomTemplate,
           selectedMemberIds: selectedMembers,
           showRoleActions,
         },
         characters,
+        gameplayFields: {
+          storyBranchMode,
+          storyBackground,
+          storyDirection,
+          storyOutline,
+          studyGoalLabel,
+          teachingMode,
+          teacherExpertise,
+          assessmentPolicy,
+          agentGoalLabel,
+          boardColumns,
+          boardRows,
+          deductionFactionCount,
+          werewolfRoleConfig,
+          werewolfPostGameMode,
+          mysteryClueCount,
+          mysteryScript,
+          mysteryRoleMappingMode,
+        },
       });
 
       const appliedName = !name.trim() && suggestion.suggestedName;
@@ -903,6 +923,7 @@ export default function CreateChatPage() {
         : undefined;
       const appliedRoomTemplate = roomTemplate === 'open_chat' && suggestedRoomTemplate && suggestedRoomTemplate !== roomTemplate;
       const appliedMembers = !selectedMembers.length && suggestion.suggestedMemberIds?.length && suggestion.suggestedMemberIds.length >= minRequiredMembers;
+      const targetRoomTemplate = getRoomTemplate(suggestedRoomTemplate || roomTemplate);
 
       if (appliedName) setName(suggestion.suggestedName!);
       if (appliedTopic) setTopic(suggestion.suggestedTopic!);
@@ -913,7 +934,45 @@ export default function CreateChatPage() {
       if (appliedRoleActions) setShowRoleActions(suggestion.suggestedShowRoleActions!);
       if (appliedRoomTemplate) applyRoomTemplate(suggestedRoomTemplate);
       if (appliedMembers) setSelectedMembers(suggestion.suggestedMemberIds!);
-      if (!appliedName && !appliedTopic && !appliedStyle && !appliedRoleActions && !appliedRoomTemplate && !appliedMembers) {
+      const suggestedFields = suggestion.suggestedGameplayFields || {};
+      const expandedFields = suggestion.expandedGameplayFields || {};
+      const applyGameplayText = (current: string, key: keyof typeof suggestedFields, setter: (value: string) => void) => {
+        const expanded = expandedFields[key];
+        const suggested = suggestedFields[key];
+        if (typeof expanded === 'string' && current.trim()) setter(expanded);
+        else if (!current.trim() && typeof suggested === 'string') setter(suggested);
+        return Boolean((typeof expanded === 'string' && current.trim()) || (!current.trim() && typeof suggested === 'string'));
+      };
+      const applyGameplayNumber = (current: number, key: keyof typeof suggestedFields, defaultValue: number, setter: (value: number) => void) => {
+        const suggested = suggestedFields[key];
+        if (current === defaultValue && typeof suggested === 'number') {
+          setter(Math.max(['boardColumns', 'boardRows', 'deductionFactionCount'].includes(String(key)) ? 2 : 1, suggested));
+          return true;
+        }
+        return false;
+      };
+      let appliedGameplay = false;
+      appliedGameplay = applyGameplayText(storyBackground, 'storyBackground', setStoryBackground) || appliedGameplay;
+      appliedGameplay = applyGameplayText(storyDirection, 'storyDirection', setStoryDirection) || appliedGameplay;
+      appliedGameplay = applyGameplayText(storyOutline, 'storyOutline', setStoryOutline) || appliedGameplay;
+      appliedGameplay = applyGameplayText(studyGoalLabel, 'studyGoalLabel', (value) => {
+        setStudyGoalLabel(value);
+        if (targetRoomTemplate.sessionKind.family === 'study') setTopic(value);
+      }) || appliedGameplay;
+      appliedGameplay = applyGameplayText(teacherExpertise, 'teacherExpertise', setTeacherExpertise) || appliedGameplay;
+      appliedGameplay = applyGameplayText(agentGoalLabel, 'agentGoalLabel', setAgentGoalLabel) || appliedGameplay;
+      appliedGameplay = applyGameplayText(werewolfRoleConfig, 'werewolfRoleConfig', setWerewolfRoleConfig) || appliedGameplay;
+      appliedGameplay = applyGameplayText(mysteryScript, 'mysteryScript', setMysteryScript) || appliedGameplay;
+      appliedGameplay = applyGameplayNumber(boardColumns, 'boardColumns', 8, setBoardColumns) || appliedGameplay;
+      appliedGameplay = applyGameplayNumber(boardRows, 'boardRows', 8, setBoardRows) || appliedGameplay;
+      appliedGameplay = applyGameplayNumber(deductionFactionCount, 'deductionFactionCount', 2, setDeductionFactionCount) || appliedGameplay;
+      appliedGameplay = applyGameplayNumber(mysteryClueCount, 'mysteryClueCount', 6, setMysteryClueCount) || appliedGameplay;
+      if (storyBranchMode === 'guided' && suggestedFields.storyBranchMode === 'open') { setStoryBranchMode('open'); appliedGameplay = true; }
+      if (teachingMode === 'casual' && typeof suggestedFields.teachingMode === 'string') { setTeachingMode(suggestedFields.teachingMode); appliedGameplay = true; }
+      if (assessmentPolicy === 'evidence_only' && typeof suggestedFields.assessmentPolicy === 'string') { setAssessmentPolicy(suggestedFields.assessmentPolicy); appliedGameplay = true; }
+      if (werewolfPostGameMode === 'free_talk' && typeof suggestedFields.werewolfPostGameMode === 'string') { setWerewolfPostGameMode(suggestedFields.werewolfPostGameMode); appliedGameplay = true; }
+      if (mysteryRoleMappingMode === 'alias' && typeof suggestedFields.mysteryRoleMappingMode === 'string') { setMysteryRoleMappingMode(suggestedFields.mysteryRoleMappingMode); appliedGameplay = true; }
+      if (!appliedName && !appliedTopic && !appliedStyle && !appliedRoleActions && !appliedRoomTemplate && !appliedMembers && !appliedGameplay) {
         throw new Error(i18n.language.startsWith('zh') ? 'AI 没有返回可用建议' : 'AI did not return usable suggestions');
       }
       if (!selectedMembers.length && suggestion.suggestedMemberIds?.length && suggestion.suggestedMemberIds.length < minRequiredMembers) {
@@ -936,8 +995,26 @@ export default function CreateChatPage() {
     chatDraftDefaults.style,
     i18n.language,
     minRequiredMembers,
+    storyBackground,
+    storyDirection,
+    storyOutline,
+    storyBranchMode,
+    studyGoalLabel,
+    teachingMode,
+    teacherExpertise,
+    assessmentPolicy,
+    agentGoalLabel,
+    boardColumns,
+    boardRows,
+    deductionFactionCount,
+    werewolfRoleConfig,
+    werewolfPostGameMode,
+    mysteryClueCount,
+    mysteryScript,
+    mysteryRoleMappingMode,
     name,
     roomTemplate,
+    selectedRoomTemplate,
     selectedMembers,
     showRoleActions,
     style,

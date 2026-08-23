@@ -32,6 +32,8 @@ export interface GeneratedChatDraftSuggestion {
   suggestedMemberIds?: string[];
   suggestedShowRoleActions?: boolean;
   suggestedRoomTemplate?: RoomTemplateKey;
+  suggestedGameplayFields?: Partial<GenerateChatDraftParams['gameplayFields']>;
+  expandedGameplayFields?: Partial<GenerateChatDraftParams['gameplayFields']>;
 }
 
 interface RawGeneratedChatDraftSuggestion {
@@ -41,6 +43,8 @@ interface RawGeneratedChatDraftSuggestion {
   suggestedMemberIds?: unknown;
   suggestedShowRoleActions?: unknown;
   suggestedRoomTemplate?: unknown;
+  suggestedGameplayFields?: unknown;
+  expandedGameplayFields?: unknown;
 }
 
 interface GenerateChatDraftParams {
@@ -49,10 +53,30 @@ interface GenerateChatDraftParams {
   draft: {
     name: string;
     topic: string;
+    roomTemplate: RoomTemplateKey;
     selectedMemberIds: string[];
     showRoleActions: boolean;
   };
   characters: AICharacter[];
+  gameplayFields: {
+    storyBranchMode: 'guided' | 'open';
+    storyBackground: string;
+    storyDirection: string;
+    storyOutline: string;
+    studyGoalLabel: string;
+    teachingMode: string;
+    teacherExpertise: string;
+    assessmentPolicy: string;
+    agentGoalLabel: string;
+    boardColumns: number;
+    boardRows: number;
+    deductionFactionCount: number;
+    werewolfRoleConfig: string;
+    werewolfPostGameMode: string;
+    mysteryClueCount: number;
+    mysteryScript: string;
+    mysteryRoleMappingMode: string;
+  };
 }
 
 const CHAT_DRAFT_SYSTEM_PROMPT = `You complete a group chat draft from partial user input.
@@ -63,7 +87,9 @@ Return strict JSON only in this shape:
   "suggestedStyle": "free|debate|brainstorm|roleplay",
   "suggestedMemberIds": ["character-id-1", "character-id-2"],
   "suggestedShowRoleActions": true,
-  "suggestedRoomTemplate": "open_chat"
+  "suggestedRoomTemplate": "open_chat",
+  "suggestedGameplayFields": {},
+  "expandedGameplayFields": {}
 }
 Rules:
 - Use only character ids from the provided roster.
@@ -72,6 +98,9 @@ Rules:
 - Choose suggestedRoomTemplate from validRoomTemplates. Items with kind="custom" mean the user will write their own setup for that gameplay type; choose a concrete preset only when the user's intent clearly matches that preset.
 - Keep the title and topic concise and usable.
 - Never invent ids, fields, or explanations.
+- For the active gameplay, return detailed missing fields in suggestedGameplayFields. Only include fields that are relevant to the selected gameplay or its suggested preset.
+- If a user-provided story background, direction, outline, learning goal, teacher expertise, agent goal, werewolf setup, or mystery script is too brief to be useful, return an improved version in expandedGameplayFields. Preserve the user's intent and do not expand text merely for style.
+- Do not overwrite non-empty user fields through suggestedGameplayFields; expandedGameplayFields is the explicit permission to improve a brief existing text.
 - Output valid JSON only.`;
 
 function trimString(value: unknown) {
@@ -102,6 +131,29 @@ function normalizeGeneratedSuggestion(raw: RawGeneratedChatDraftSuggestion, char
     : [];
 
   const suggestedRoomTemplate = trimString(raw.suggestedRoomTemplate) as RoomTemplateKey;
+  const normalizeGameplayFields = (value: unknown) => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+    const fields = value as Record<string, unknown>;
+    const result: Record<string, string | number> = {};
+    const textKeys = ['storyBranchMode', 'storyBackground', 'storyDirection', 'storyOutline', 'studyGoalLabel', 'teachingMode', 'teacherExpertise', 'assessmentPolicy', 'agentGoalLabel', 'werewolfRoleConfig', 'werewolfPostGameMode', 'mysteryScript', 'mysteryRoleMappingMode'];
+    const numberKeys = ['boardColumns', 'boardRows', 'deductionFactionCount', 'mysteryClueCount'];
+    const enumValues: Record<string, Set<string>> = {
+      storyBranchMode: new Set(['guided', 'open']),
+      teachingMode: new Set(['entertainment', 'casual', 'serious']),
+      assessmentPolicy: new Set(['evidence_only', 'guided_estimate', 'strict']),
+      werewolfPostGameMode: new Set(['free_talk', 'review', 'restart']),
+      mysteryRoleMappingMode: new Set(['alias', 'role_only', 'original']),
+    };
+    for (const key of textKeys) {
+      const text = trimString(fields[key]);
+      if (text && (!enumValues[key] || enumValues[key].has(text))) result[key] = text;
+    }
+    for (const key of numberKeys) {
+      const number = fields[key];
+      if (typeof number === 'number' && Number.isFinite(number)) result[key] = Math.round(number);
+    }
+    return Object.keys(result).length ? result : undefined;
+  };
   return {
     suggestedName: suggestedName || undefined,
     suggestedTopic: suggestedTopic || undefined,
@@ -109,6 +161,8 @@ function normalizeGeneratedSuggestion(raw: RawGeneratedChatDraftSuggestion, char
     suggestedMemberIds: suggestedMemberIds.length ? suggestedMemberIds : undefined,
     suggestedShowRoleActions: typeof raw.suggestedShowRoleActions === 'boolean' ? raw.suggestedShowRoleActions : undefined,
     suggestedRoomTemplate: VALID_TEMPLATE_KEYS.has(suggestedRoomTemplate) ? suggestedRoomTemplate : undefined,
+    suggestedGameplayFields: normalizeGameplayFields(raw.suggestedGameplayFields),
+    expandedGameplayFields: normalizeGameplayFields(raw.expandedGameplayFields),
   };
 }
 
@@ -124,7 +178,7 @@ function buildCharacterRoster(characters: AICharacter[]) {
 }
 
 function buildUserPrompt(params: GenerateChatDraftParams) {
-  const { draft, language, characters } = params;
+  const { draft, language, characters, gameplayFields } = params;
   const payload = {
     language,
     constraints: {
@@ -135,8 +189,10 @@ function buildUserPrompt(params: GenerateChatDraftParams) {
     currentDraft: {
       name: draft.name.trim() || null,
       topic: draft.topic.trim() || null,
+      roomTemplate: draft.roomTemplate,
       selectedMemberIds: draft.selectedMemberIds,
       showRoleActions: draft.showRoleActions,
+      gameplayFields,
     },
     roster: buildCharacterRoster(characters),
   };
