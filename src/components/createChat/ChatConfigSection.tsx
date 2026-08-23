@@ -186,47 +186,44 @@ export default function ChatConfigSection(props: ChatConfigSectionProps) {
           <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.75 }}>
             {isZh ? '表达与变化' : 'Expression and change'}
           </Typography>
-          <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.75 }}>{props.styleLabel}</Typography>
-          <Box sx={{ display: 'flex', flexWrap: 'nowrap', gap: 0.75, overflowX: 'auto', pb: 0.25 }}>
-            {CHAT_STYLE_OPTIONS.map((opt) => {
-              const selected = props.style === opt.value;
-              return (
-                <Chip
-                  key={opt.value}
-                  clickable
-                  label={props.getStyleLabel(opt.value)}
-                  color={selected ? 'primary' : 'default'}
-                  variant={selected ? 'filled' : 'outlined'}
-                  onClick={() => props.onStyleChange(opt.value)}
-                  sx={{
-                    height: 32,
-                    borderRadius: 999,
-                    fontWeight: selected ? 700 : 500,
-                    '& .MuiChip-label': { px: 1.25 },
-                  }}
-                />
-              );
-            })}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, minWidth: 0 }}>
+            <Typography variant="body2" sx={{ fontWeight: 600, flexShrink: 0 }}>{props.styleLabel}</Typography>
+            <Box sx={{ display: 'flex', flex: 1, minWidth: 0, flexWrap: 'nowrap', gap: 0.75, overflowX: 'auto', pb: 0.25 }}>
+              {CHAT_STYLE_OPTIONS.map((opt) => {
+                const selected = props.style === opt.value;
+                return (
+                  <Chip
+                    key={opt.value}
+                    clickable
+                    label={props.getStyleLabel(opt.value)}
+                    color={selected ? 'primary' : 'default'}
+                    variant={selected ? 'filled' : 'outlined'}
+                    onClick={() => props.onStyleChange(opt.value)}
+                    sx={{ height: 32, flexShrink: 0, borderRadius: 999, fontWeight: selected ? 700 : 500, '& .MuiChip-label': { px: 1.25 } }}
+                  />
+                );
+              })}
+            </Box>
           </Box>
-          <Typography variant="body2" sx={{ fontWeight: 600, mt: 1.5, mb: 0.75 }}>
-            {isZh ? '变化沉淀速度' : 'Change settlement speed'}
-          </Typography>
-          <Box sx={{ display: 'flex', flexWrap: 'nowrap', gap: 0.75, overflowX: 'auto', pb: 0.25 }}>
-            {([
-              { value: 'slow' as const, zh: '慢', en: 'Slow' },
-              { value: 'balanced' as const, zh: '平衡', en: 'Balanced' },
-              { value: 'fast' as const, zh: '快', en: 'Fast' },
-            ]).map((option) => (
-              <Chip
-                key={option.value}
-                clickable
-                label={isZh ? option.zh : option.en}
-                color={props.runtimeEvolutionIntensity === option.value ? 'primary' : 'default'}
-                variant={props.runtimeEvolutionIntensity === option.value ? 'filled' : 'outlined'}
-                onClick={() => props.onRuntimeEvolutionIntensityChange(option.value)}
-                sx={{ height: 32, borderRadius: 999, fontWeight: props.runtimeEvolutionIntensity === option.value ? 700 : 500, '& .MuiChip-label': { px: 1.25 } }}
-              />
-            ))}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, minWidth: 0 }}>
+            <Typography variant="body2" sx={{ fontWeight: 600, flexShrink: 0 }}>{isZh ? '变化沉淀速度' : 'Change settlement speed'}</Typography>
+            <Box sx={{ display: 'flex', flex: 1, minWidth: 0, flexWrap: 'nowrap', gap: 0.75, overflowX: 'auto', pb: 0.25 }}>
+              {([
+                { value: 'slow' as const, zh: '慢', en: 'Slow' },
+                { value: 'balanced' as const, zh: '平衡', en: 'Balanced' },
+                { value: 'fast' as const, zh: '快', en: 'Fast' },
+              ]).map((option) => (
+                <Chip
+                  key={option.value}
+                  clickable
+                  label={isZh ? option.zh : option.en}
+                  color={props.runtimeEvolutionIntensity === option.value ? 'primary' : 'default'}
+                  variant={props.runtimeEvolutionIntensity === option.value ? 'filled' : 'outlined'}
+                  onClick={() => props.onRuntimeEvolutionIntensityChange(option.value)}
+                  sx={{ height: 32, flexShrink: 0, borderRadius: 999, fontWeight: props.runtimeEvolutionIntensity === option.value ? 700 : 500, '& .MuiChip-label': { px: 1.25 } }}
+                />
+              ))}
+            </Box>
           </Box>
       </SurfaceCard>
 
