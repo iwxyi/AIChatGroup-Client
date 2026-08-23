@@ -1615,6 +1615,7 @@ export default function CreateChatPage() {
             runtimeEvolutionIntensity={runtimeEvolutionIntensity}
             onRuntimeEvolutionIntensityChange={setRuntimeEvolutionIntensity}
             topic={topic}
+            topicLabel={topicLabel}
             onTopicChange={handleTopicChange}
             storyBranchMode={storyBranchMode}
             onStoryBranchModeChange={setStoryBranchMode}

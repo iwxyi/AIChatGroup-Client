@@ -41,6 +41,7 @@ interface GameplaySectionProps {
   runtimeEvolutionIntensity: 'slow' | 'balanced' | 'fast';
   onRuntimeEvolutionIntensityChange: (value: 'slow' | 'balanced' | 'fast') => void;
   topic: string;
+  topicLabel: string;
   storyBranchMode: 'guided' | 'open';
   onStoryBranchModeChange: (value: 'guided' | 'open') => void;
   studyGoalLabel: string;
@@ -438,9 +439,7 @@ export default function GameplaySection(props: GameplaySectionProps) {
         <Stack spacing={1.5}>
           {!isStudyTemplate ? (
             <TextField
-              label={selectedTemplate.sessionKind.scenarioId === 'story-reader'
-                ? (isZh ? '当前开场提示' : 'Current opening prompt')
-                : (isZh ? '当前议题' : 'Current topic')}
+              label={props.topicLabel}
               placeholder={props.topic ? undefined : selectedTemplate.topicPlaceholder}
               value={props.topic}
               onChange={(event) => props.onTopicChange(event.target.value)}
