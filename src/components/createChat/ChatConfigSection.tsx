@@ -187,7 +187,7 @@ export default function ChatConfigSection(props: ChatConfigSectionProps) {
             {isZh ? '表达与变化' : 'Expression and change'}
           </Typography>
           <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.75 }}>{props.styleLabel}</Typography>
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
+          <Box sx={{ display: 'flex', flexWrap: 'nowrap', gap: 0.75, overflowX: 'auto', pb: 0.25 }}>
             {CHAT_STYLE_OPTIONS.map((opt) => {
               const selected = props.style === opt.value;
               return (
@@ -208,18 +208,26 @@ export default function ChatConfigSection(props: ChatConfigSectionProps) {
               );
             })}
           </Box>
-          <TextField
-            select
-            label={isZh ? '变化沉淀速度' : 'Change settlement speed'}
-            value={props.runtimeEvolutionIntensity}
-            onChange={(event) => props.onRuntimeEvolutionIntensityChange(event.target.value as RuntimeEvolutionIntensity)}
-            fullWidth
-            sx={{ mt: 1.5 }}
-          >
-            <MenuItem value="slow">{isZh ? '慢：关系和人格变化更克制' : 'Slow: restrained relationship and personality changes'}</MenuItem>
-            <MenuItem value="balanced">{isZh ? '平衡：默认变化速度' : 'Balanced: default change speed'}</MenuItem>
-            <MenuItem value="fast">{isZh ? '快：变化更容易快速显现' : 'Fast: changes surface sooner'}</MenuItem>
-          </TextField>
+          <Typography variant="body2" sx={{ fontWeight: 600, mt: 1.5, mb: 0.75 }}>
+            {isZh ? '变化沉淀速度' : 'Change settlement speed'}
+          </Typography>
+          <Box sx={{ display: 'flex', flexWrap: 'nowrap', gap: 0.75, overflowX: 'auto', pb: 0.25 }}>
+            {([
+              { value: 'slow' as const, zh: '慢', en: 'Slow' },
+              { value: 'balanced' as const, zh: '平衡', en: 'Balanced' },
+              { value: 'fast' as const, zh: '快', en: 'Fast' },
+            ]).map((option) => (
+              <Chip
+                key={option.value}
+                clickable
+                label={isZh ? option.zh : option.en}
+                color={props.runtimeEvolutionIntensity === option.value ? 'primary' : 'default'}
+                variant={props.runtimeEvolutionIntensity === option.value ? 'filled' : 'outlined'}
+                onClick={() => props.onRuntimeEvolutionIntensityChange(option.value)}
+                sx={{ height: 32, borderRadius: 999, fontWeight: props.runtimeEvolutionIntensity === option.value ? 700 : 500, '& .MuiChip-label': { px: 1.25 } }}
+              />
+            ))}
+          </Box>
       </SurfaceCard>
 
       {showManagementSettings ? (
