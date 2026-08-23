@@ -239,5 +239,59 @@
       "storyDirection": "末日生存推进：围绕燃油失踪、无线电求救、车队猜忌、秘密线索路线图和庇护所谎言展开，让用户在救人、查内鬼、保资源和冒险绕路之间做选择。",
       "storyOutline": "开场建立服务区和燃油危机；第一轮让车队成员暴露不同立场；后续选择影响资源、生存概率和队伍信任。"
     }
+  },
+  {
+    "key": "ielts_practice",
+    "parentTemplateKey": "learning_progress",
+    "label": "雅思陪练",
+    "description": "围绕听、说、读、写建立知识点、练习和复习记录。",
+    "sellingPoints": ["四科目标拆解", "模拟题与错题", "证据型复习"],
+    "style": "free",
+    "runtimeEvolutionIntensity": "slow",
+    "topicPlaceholder": "例如：三个月内将雅思口语提升到 7.5",
+    "defaults": {
+      "studyGoalLabel": "建立雅思四科的学习计划，并通过练习持续改进",
+      "initialPhase": "mapping",
+      "progressLabel": "雅思学习记录",
+      "allowPrivateThreads": false,
+      "allowCliques": false,
+      "allowMockery": false
+    }
+  },
+  {
+    "key": "programming_learning",
+    "parentTemplateKey": "learning_progress",
+    "label": "编程进阶",
+    "description": "从知识地图、代码练习到项目复盘，记录可观察的学习证据。",
+    "sellingPoints": ["知识地图", "代码练习", "项目复盘"],
+    "style": "free",
+    "runtimeEvolutionIntensity": "slow",
+    "topicPlaceholder": "例如：两个月内独立完成一个 React 全栈项目",
+    "defaults": {
+      "studyGoalLabel": "建立编程知识地图，通过代码练习和项目持续进步",
+      "initialPhase": "mapping",
+      "progressLabel": "编程学习记录",
+      "allowPrivateThreads": false,
+      "allowCliques": false,
+      "allowMockery": false
+    }
+  },
+  {
+    "key": "exam_preparation",
+    "parentTemplateKey": "learning_progress",
+    "label": "考试备考",
+    "description": "按章节整理考点，生成练习与试卷，并沉淀错题和复习安排。",
+    "sellingPoints": ["章节考点", "试卷练习", "错题复习"],
+    "style": "free",
+    "runtimeEvolutionIntensity": "slow",
+    "topicPlaceholder": "例如：准备十二月的研究生入学考试数学科目",
+    "defaults": {
+      "studyGoalLabel": "建立考试考点地图，安排练习、错题整理和间隔复习",
+      "initialPhase": "mapping",
+      "progressLabel": "备考记录",
+      "allowPrivateThreads": false,
+      "allowCliques": false,
+      "allowMockery": false
+    }
   }
 ]

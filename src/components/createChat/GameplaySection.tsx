@@ -8,6 +8,7 @@ import {
   getRoomTemplateKernel,
   getRoomTemplatePresetDescription,
   getRoomTemplatePresetLabel,
+  isRoomTemplateAvailableForStandardUsers,
 } from '../../services/roomTemplates';
 
 const STRUCTURE_LABELS: Record<string, string> = {
@@ -99,7 +100,12 @@ function listAvailableStructures(templates: RoomTemplateDefinition[]) {
 }
 
 function listAvailableKernelsByStructure(templates: RoomTemplateDefinition[], structure: RoomTemplateStructure) {
-  return listAvailableKernels(templates).filter((item) => item.structure === structure);
+  return listAvailableKernels(templates)
+    .filter((item) => item.structure === structure)
+    .sort((left, right) => {
+      if (structure !== 'training') return 0;
+      return Number(right.key === 'learning_progress') - Number(left.key === 'learning_progress');
+    });
 }
 
 function listAvailablePresets(templates: RoomTemplateDefinition[], kernelKey: RoomTemplateKey) {
@@ -338,6 +344,13 @@ export default function GameplaySection(props: GameplaySectionProps) {
                   >
                     <Box sx={{ textAlign: 'left', width: '100%', display: 'flex', flexDirection: 'column', gap: 0.4 }}>
                       <Typography variant="body2" sx={{ fontWeight: 700 }}>{template.label}</Typography>
+                      <Chip
+                        size="small"
+                        label={isRoomTemplateAvailableForStandardUsers(template) ? (isZh ? '已完成' : 'Ready') : (isZh ? '开发中' : 'In development')}
+                        color={isRoomTemplateAvailableForStandardUsers(template) ? 'success' : 'default'}
+                        variant="outlined"
+                        sx={{ alignSelf: 'flex-start', height: 20, '& .MuiChip-label': { px: 0.7, fontSize: 11 } }}
+                      />
                       <Typography variant="caption" color="text.secondary">{template.description}</Typography>
                     </Box>
                   </Button>

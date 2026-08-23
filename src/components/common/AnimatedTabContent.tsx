@@ -53,6 +53,8 @@ function usePrefersReducedMotion() {
 
 export default function AnimatedTabContent<T extends string | number>({ value, direction = 1, children, sx }: AnimatedTabContentProps<T>) {
   const prefersReducedMotion = usePrefersReducedMotion();
+  const paneChildrenByValueRef = useRef(new Map<T, ReactNode>());
+  paneChildrenByValueRef.current.set(value, children);
   const [currentPane, setCurrentPane] = useState<TabPane<T>>(() => ({
     value,
     children,
@@ -79,15 +81,6 @@ export default function AnimatedTabContent<T extends string | number>({ value, d
     }
 
     if (Object.is(currentPane.value, value)) {
-      if (currentPane.children !== children) {
-        scheduleStateUpdate(() => {
-          setCurrentPane((pane) => (
-            Object.is(pane.value, value) && pane.children !== children
-              ? { ...pane, children }
-              : pane
-          ));
-        });
-      }
       return () => {
         cancelled = true;
       };
@@ -102,6 +95,12 @@ export default function AnimatedTabContent<T extends string | number>({ value, d
       value,
       children,
       slot: currentPane.slot === 0 ? 1 : 0,
+    };
+    const outgoingPane: TabPane<T> = {
+      ...currentPane,
+      // The outgoing pane must be frozen, while the active pane always renders
+      // the newest children so controlled inputs keep their IME composition state.
+      children: paneChildrenByValueRef.current.get(currentPane.value) ?? currentPane.children,
     };
 
     if (prefersReducedMotion) {
@@ -119,7 +118,7 @@ export default function AnimatedTabContent<T extends string | number>({ value, d
     scheduleStateUpdate(() => {
       setTransition({
         key: transitionKey,
-        outgoing: currentPane,
+        outgoing: outgoingPane,
         direction,
       });
       setCurrentPane(nextPane);
@@ -169,7 +168,7 @@ export default function AnimatedTabContent<T extends string | number>({ value, d
         }}
       >
         <Box key={String(pane.value)} sx={{ minWidth: 0 }}>
-          {pane.children}
+          {isOutgoing ? pane.children : children}
         </Box>
       </Box>
     );

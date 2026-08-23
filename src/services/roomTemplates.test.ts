@@ -69,6 +69,12 @@ describe('roomTemplates story seeds', () => {
     const keys = ROOM_TEMPLATES.map((template) => template.key);
     expect(keys).toContain('learning_progress');
     expect(keys).not.toContain('ielts_coach');
+    expect(listRoomTemplatePresets('learning_progress').map((template) => template.key)).toEqual([
+      'learning_progress',
+      'ielts_practice',
+      'programming_learning',
+      'exam_preparation',
+    ]);
   });
 
   it('keeps gameplay kernels separate from presets', () => {
