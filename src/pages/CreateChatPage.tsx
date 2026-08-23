@@ -1518,7 +1518,6 @@ export default function CreateChatPage() {
               maxMembers={maxAllowedMembers}
               name={name}
               topic={topic}
-              showTopic={!isStudyRoomTemplate}
               style={style}
               showRoleActions={showRoleActions}
               includeUserAsMember={includeUserAsMember}
