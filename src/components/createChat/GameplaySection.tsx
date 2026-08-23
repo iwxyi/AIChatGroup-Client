@@ -21,12 +21,6 @@ const STRUCTURE_LABELS: Record<string, string> = {
   simulation: '世界模拟',
 };
 
-const INTENSITY_OPTIONS = [
-  { value: 'slow', zh: '慢节奏', en: 'Slow' },
-  { value: 'balanced', zh: '平衡', en: 'Balanced' },
-  { value: 'fast', zh: '快节奏', en: 'Fast' },
-] as const;
-
 interface GameplaySectionProps {
   language: string;
   roomTemplate: RoomTemplateKey;
@@ -38,8 +32,6 @@ interface GameplaySectionProps {
   onSaveAsChat?: () => void;
   saveAsChatDisabled?: boolean;
   onOpenBatchGenerate?: () => void;
-  runtimeEvolutionIntensity: 'slow' | 'balanced' | 'fast';
-  onRuntimeEvolutionIntensityChange: (value: 'slow' | 'balanced' | 'fast') => void;
   topic: string;
   topicLabel: string;
   storyBranchMode: 'guided' | 'open';
@@ -470,22 +462,6 @@ export default function GameplaySection(props: GameplaySectionProps) {
         </Stack>
       </SurfaceCard>
 
-      <SurfaceCard>
-        <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1.5 }}>
-          {isZh ? '通用设定' : 'Common settings'}
-        </Typography>
-        <TextField
-          select
-          label={isZh ? '变化沉淀速度' : 'Change settlement speed'}
-          value={props.runtimeEvolutionIntensity}
-          onChange={(e) => props.onRuntimeEvolutionIntensityChange(e.target.value as 'slow' | 'balanced' | 'fast')}
-          fullWidth
-        >
-          {INTENSITY_OPTIONS.map((item) => (
-            <MenuItem key={item.value} value={item.value}>{isZh ? item.zh : item.en}</MenuItem>
-          ))}
-        </TextField>
-      </SurfaceCard>
     </Stack>
   );
 }

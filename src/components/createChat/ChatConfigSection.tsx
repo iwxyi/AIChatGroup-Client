@@ -23,7 +23,7 @@ import {
 } from '@mui/material';
 import { CHAT_STYLE_OPTIONS, MAX_MEMBERS } from '../../constants/defaults';
 import type { AICharacter } from '../../types/character';
-import type { ChatStyle } from '../../types/chat';
+import type { ChatStyle, RuntimeEvolutionIntensity } from '../../types/chat';
 import { isImageAvatar } from '../../utils/avatar';
 import SurfaceCard from '../common/SurfaceCard';
 
@@ -35,6 +35,7 @@ interface ChatConfigSectionProps {
   topic: string;
   showTopic?: boolean;
   style: ChatStyle;
+  runtimeEvolutionIntensity: RuntimeEvolutionIntensity;
   showRoleActions: boolean;
   includeUserAsMember: boolean;
   operatorIdsText: string;
@@ -57,6 +58,7 @@ interface ChatConfigSectionProps {
   onNameChange: (value: string) => void;
   onTopicChange: (value: string) => void;
   onStyleChange: (value: ChatStyle) => void;
+  onRuntimeEvolutionIntensityChange: (value: RuntimeEvolutionIntensity) => void;
   onShowRoleActionsChange: (value: boolean) => void;
   onIncludeUserAsMemberChange: (value: boolean) => void;
   onOperatorIdsTextChange: (value: string) => void;
@@ -182,8 +184,12 @@ export default function ChatConfigSection(props: ChatConfigSectionProps) {
 
       <SurfaceCard>
           <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.75 }}>
-            {props.styleLabel}
+            {isZh ? '表达与变化' : 'Expression and change'}
           </Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+            {isZh ? '表达风格决定说话方式，变化沉淀速度决定关系、情绪和人格变化出现得快慢。' : 'Expression controls how the room speaks; change settlement controls how quickly relationships, emotions, and personality evolve.'}
+          </Typography>
+          <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.75 }}>{props.styleLabel}</Typography>
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
             {CHAT_STYLE_OPTIONS.map((opt) => {
               const selected = props.style === opt.value;
@@ -205,6 +211,18 @@ export default function ChatConfigSection(props: ChatConfigSectionProps) {
               );
             })}
           </Box>
+          <TextField
+            select
+            label={isZh ? '变化沉淀速度' : 'Change settlement speed'}
+            value={props.runtimeEvolutionIntensity}
+            onChange={(event) => props.onRuntimeEvolutionIntensityChange(event.target.value as RuntimeEvolutionIntensity)}
+            fullWidth
+            sx={{ mt: 1.5 }}
+          >
+            <MenuItem value="slow">{isZh ? '慢：关系和人格变化更克制' : 'Slow: restrained relationship and personality changes'}</MenuItem>
+            <MenuItem value="balanced">{isZh ? '平衡：默认变化速度' : 'Balanced: default change speed'}</MenuItem>
+            <MenuItem value="fast">{isZh ? '快：变化更容易快速显现' : 'Fast: changes surface sooner'}</MenuItem>
+          </TextField>
       </SurfaceCard>
 
       {showManagementSettings ? (

@@ -1519,6 +1519,7 @@ export default function CreateChatPage() {
               name={name}
               topic={topic}
               style={style}
+              runtimeEvolutionIntensity={runtimeEvolutionIntensity}
               showRoleActions={showRoleActions}
               includeUserAsMember={includeUserAsMember}
               operatorIdsText={operatorIdsText}
@@ -1545,6 +1546,7 @@ export default function CreateChatPage() {
               onNameChange={setName}
               onTopicChange={handleTopicChange}
               onStyleChange={handleStyleChange}
+              onRuntimeEvolutionIntensityChange={setRuntimeEvolutionIntensity}
               onShowRoleActionsChange={setShowRoleActions}
               onIncludeUserAsMemberChange={setIncludeUserAsMember}
               onOperatorIdsTextChange={setOperatorIdsText}
@@ -1612,8 +1614,6 @@ export default function CreateChatPage() {
             onSaveAsChat={editingChat ? handleSaveAsChatAction : undefined}
             saveAsChatDisabled={saving || saveAsChatSaving}
             onOpenBatchGenerate={openBatchGenerate}
-            runtimeEvolutionIntensity={runtimeEvolutionIntensity}
-            onRuntimeEvolutionIntensityChange={setRuntimeEvolutionIntensity}
             topic={topic}
             topicLabel={topicLabel}
             onTopicChange={handleTopicChange}
@@ -1734,8 +1734,6 @@ export default function CreateChatPage() {
 
           {showDirectorTab && configTab === directorTabIndex ? (
             <DirectorControlsSection
-              runtimeEvolutionIntensity={runtimeEvolutionIntensity}
-              setRuntimeEvolutionIntensity={setRuntimeEvolutionIntensity}
               allowSpeakAs={allowSpeakAs}
               setAllowSpeakAs={setAllowSpeakAs}
               allowDirectorMode={allowDirectorMode}
