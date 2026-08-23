@@ -240,6 +240,7 @@ export default function GameplaySection(props: GameplaySectionProps) {
   const selectedPresets = listAvailablePresets(props.roomTemplates, selectedKernel.key);
   const selectedPreset = selectedPresets.find((preset) => preset.key === props.roomTemplate) || selectedPresets[0];
   const selectedSellingPoints = selectedTemplate.sellingPoints || selectedKernel.sellingPoints || [];
+  const isStudyTemplate = selectedTemplate.sessionKind.scenarioId === 'learning-progress' || selectedTemplate.sessionKind.scenarioId === 'ielts-coach';
   const presetMenuItems = selectedPresets.flatMap((preset, index) => {
     const items = [
       <MenuItem key={preset.key} value={preset.key}>
@@ -434,9 +435,16 @@ export default function GameplaySection(props: GameplaySectionProps) {
             {isZh ? '详细设定' : 'Detailed settings'}
           </Typography>
           <Stack spacing={1.5}>
+            {(selectedTemplate.configGroups || []).map((group) => renderConfigGroup(
+              group,
+              props,
+              isZh,
+              expandedAdvancedGroups,
+              setAdvancedGroupExpanded,
+            ))}
             <TextField
               select
-              label={isZh ? '当前房间节奏' : 'Room intensity'}
+              label={isZh ? '变化沉淀速度' : 'Change settlement speed'}
               value={props.runtimeEvolutionIntensity}
               onChange={(e) => props.onRuntimeEvolutionIntensityChange(e.target.value as 'slow' | 'balanced' | 'fast')}
               fullWidth
@@ -445,16 +453,16 @@ export default function GameplaySection(props: GameplaySectionProps) {
                 <MenuItem key={item.value} value={item.value}>{isZh ? item.zh : item.en}</MenuItem>
               ))}
             </TextField>
-            <Box sx={{ px: 0.25 }}>
+            {!isStudyTemplate ? <Box sx={{ px: 0.25 }}>
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
                 {selectedTemplate.sessionKind.scenarioId === 'story-reader'
                   ? (isZh ? '开场提示（来自“设定”页）' : 'Opening prompt (from Config tab)')
-                  : selectedTemplate.sessionKind.family === 'study'
+                  : isStudyTemplate
                     ? (isZh ? '学习目标（在本页学习主设定中填写）' : 'Learning goal (set in the study settings above)')
                     : (isZh ? '当前议题 / 目标（来自“设定”页）' : 'Current topic / goal (from Config tab)')}
               </Typography>
               <Typography variant="body2">
-                {selectedTemplate.sessionKind.family === 'study'
+                {isStudyTemplate
                   ? (props.studyGoalLabel.trim() || (isZh ? '请先填写学习主设定中的总学习目标。' : 'Enter the learning goal in the study settings above.'))
                   : props.topic.trim() || (selectedTemplate.sessionKind.scenarioId === 'story-reader'
                     ? (isZh ? '可在“设定”页填写一句开局灵感；完整故事设定在这里编辑。' : 'Add a short opening seed in Config; edit full story settings here.')
@@ -471,14 +479,7 @@ export default function GameplaySection(props: GameplaySectionProps) {
                   {isZh ? '批量生成角色' : 'Batch generate characters'}
                 </Button>
               ) : null}
-            </Box>
-            {(selectedTemplate.configGroups || []).map((group) => renderConfigGroup(
-              group,
-              props,
-              isZh,
-              expandedAdvancedGroups,
-              setAdvancedGroupExpanded,
-            ))}
+            </Box> : null}
           </Stack>
         </Box>
       </SurfaceCard>
