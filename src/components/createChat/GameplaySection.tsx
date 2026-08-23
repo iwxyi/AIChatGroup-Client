@@ -8,7 +8,6 @@ import {
   getRoomTemplateKernel,
   getRoomTemplatePresetDescription,
   getRoomTemplatePresetLabel,
-  isRoomTemplateAvailableForStandardUsers,
 } from '../../services/roomTemplates';
 
 const STRUCTURE_LABELS: Record<string, string> = {
@@ -344,13 +343,6 @@ export default function GameplaySection(props: GameplaySectionProps) {
                   >
                     <Box sx={{ textAlign: 'left', width: '100%', display: 'flex', flexDirection: 'column', gap: 0.4 }}>
                       <Typography variant="body2" sx={{ fontWeight: 700 }}>{template.label}</Typography>
-                      <Chip
-                        size="small"
-                        label={isRoomTemplateAvailableForStandardUsers(template) ? (isZh ? '已完成' : 'Ready') : (isZh ? '开发中' : 'In development')}
-                        color={isRoomTemplateAvailableForStandardUsers(template) ? 'success' : 'default'}
-                        variant="outlined"
-                        sx={{ alignSelf: 'flex-start', height: 20, '& .MuiChip-label': { px: 0.7, fontSize: 11 } }}
-                      />
                       <Typography variant="caption" color="text.secondary">{template.description}</Typography>
                     </Box>
                   </Button>
@@ -457,12 +449,16 @@ export default function GameplaySection(props: GameplaySectionProps) {
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
                 {selectedTemplate.sessionKind.scenarioId === 'story-reader'
                   ? (isZh ? '开场提示（来自“设定”页）' : 'Opening prompt (from Config tab)')
-                  : (isZh ? '当前议题 / 目标（来自“设定”页）' : 'Current topic / goal (from Config tab)')}
+                  : selectedTemplate.sessionKind.family === 'study'
+                    ? (isZh ? '学习目标（在本页学习主设定中填写）' : 'Learning goal (set in the study settings above)')
+                    : (isZh ? '当前议题 / 目标（来自“设定”页）' : 'Current topic / goal (from Config tab)')}
               </Typography>
               <Typography variant="body2">
-                {props.topic.trim() || (selectedTemplate.sessionKind.scenarioId === 'story-reader'
-                  ? (isZh ? '可在“设定”页填写一句开局灵感；完整故事设定在这里编辑。' : 'Add a short opening seed in Config; edit full story settings here.')
-                  : (isZh ? '请先到“设定”页填写群名下方的话题/目标。' : 'Fill the topic/goal field in the Config tab first.'))}
+                {selectedTemplate.sessionKind.family === 'study'
+                  ? (props.studyGoalLabel.trim() || (isZh ? '请先填写学习主设定中的总学习目标。' : 'Enter the learning goal in the study settings above.'))
+                  : props.topic.trim() || (selectedTemplate.sessionKind.scenarioId === 'story-reader'
+                    ? (isZh ? '可在“设定”页填写一句开局灵感；完整故事设定在这里编辑。' : 'Add a short opening seed in Config; edit full story settings here.')
+                    : (isZh ? '请先到“设定”页填写群名下方的话题/目标。' : 'Fill the topic/goal field in the Config tab first.'))}
               </Typography>
               {selectedTemplate.sessionKind.scenarioId === 'story-reader' && props.onOpenBatchGenerate ? (
                 <Button

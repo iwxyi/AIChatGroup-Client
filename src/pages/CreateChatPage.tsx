@@ -848,6 +848,7 @@ export default function CreateChatPage() {
   }, [agentEntitled, applyRoomTemplate, availableRoomTemplates, developerMode, gameplayRuntimeLocked, isZh, roomTemplate, selectedRoomTemplate]);
 
   const isStoryRoomTemplate = selectedRoomTemplate.sessionKind.scenarioId === 'story-reader';
+  const isStudyRoomTemplate = selectedRoomTemplate.sessionKind.family === 'study';
   const topicPlaceholder = selectedRoomTemplate.topicPlaceholder;
   const topicLabel = isStoryRoomTemplate
     ? (isZh ? '开场提示' : 'Opening prompt')
@@ -1499,6 +1500,7 @@ export default function CreateChatPage() {
               maxMembers={maxAllowedMembers}
               name={name}
               topic={topic}
+              showTopic={!isStudyRoomTemplate}
               style={style}
               showRoleActions={showRoleActions}
               includeUserAsMember={includeUserAsMember}

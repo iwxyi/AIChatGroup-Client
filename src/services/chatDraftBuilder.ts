@@ -314,6 +314,9 @@ export function buildGroupChatDraft(input: ChatDraftInput): Omit<GroupChat, 'id'
   const isDiscussionRoom = isDiscussionScenario(sessionKind);
   const initialStoryAssets = isStoryReader ? buildInitialStoryAssets(input) : null;
   const isStudyRoom = sessionKind.family === 'study';
+  const canonicalTopic = isStudyRoom
+    ? input.studyGoalLabel?.trim() || input.topic.trim()
+    : input.topic.trim();
   const mode = sessionKind.scenarioId === 'opinion-review'
     ? 'group_discussion'
     : isOrderedDiscussionMode(discussionMode)
@@ -450,7 +453,7 @@ export function buildGroupChatDraft(input: ChatDraftInput): Omit<GroupChat, 'id'
     layoutState: { slots: input.memberIds.map((memberId, index) => ({ slotId: `slot-${index + 1}`, x: index, y: 0, actorId: memberId })) },
     judgeAgent: { enabled: false, style: 'assistive' },
     name: input.name.trim(),
-    topic: input.topic.trim(),
+    topic: canonicalTopic,
     style: input.style,
     runtimeEvolutionIntensity: input.runtimeEvolutionIntensity,
     memberIds: input.memberIds,

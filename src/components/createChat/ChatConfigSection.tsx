@@ -33,6 +33,7 @@ interface ChatConfigSectionProps {
   maxMembers?: number;
   name: string;
   topic: string;
+  showTopic?: boolean;
   style: ChatStyle;
   showRoleActions: boolean;
   includeUserAsMember: boolean;
@@ -123,15 +124,17 @@ export default function ChatConfigSection(props: ChatConfigSectionProps) {
               }}
             />
           )}
-          <TextField
-            label={props.topicLabel}
-            placeholder={props.topicPlaceholder}
-            value={props.topic}
-            onChange={(e) => props.onTopicChange(e.target.value)}
-            fullWidth
-            multiline
-            rows={2}
-          />
+          {props.showTopic !== false ? (
+            <TextField
+              label={props.topicLabel}
+              placeholder={props.topicPlaceholder}
+              value={props.topic}
+              onChange={(e) => props.onTopicChange(e.target.value)}
+              fullWidth
+              multiline
+              rows={2}
+            />
+          ) : null}
       </SurfaceCard>
 
       <SurfaceCard>
