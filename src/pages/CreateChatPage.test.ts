@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { MAX_MEMBERS, MIN_MEMBERS } from '../constants/defaults';
 import { buildOpeningTopicGuideMessage } from '../services/createChatOpening';
 
 function normalizeMemberIds(selectedMembers: string[]) {
@@ -10,6 +11,11 @@ function normalizeAdminCharacterIds(adminCharacterIds: string[], validMemberIds:
 }
 
 describe('CreateChatPage member normalization', () => {
+  it('allows one AI role in a group room and keeps the ten-role cap', () => {
+    expect(MIN_MEMBERS).toBe(1);
+    expect(MAX_MEMBERS).toBe(10);
+  });
+
   it('deduplicates and removes empty member ids', () => {
     expect(normalizeMemberIds(['a', '', 'b', 'a'])).toEqual(['a', 'b']);
   });

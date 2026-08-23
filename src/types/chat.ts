@@ -487,7 +487,7 @@ export function createDefaultSessionKind(type: ConversationType, mode: Conversat
     return { topology: type === 'group' ? 'group' : 'team', family: 'analysis', scenarioId: mode === 'roundtable' ? 'roundtable-review' : 'opinion-review', surfaceProfile: 'text' };
   }
   if (mode === 'classroom') {
-    return { topology: type === 'group' ? 'group' : 'direct', family: 'study', scenarioId: 'ielts-coach', surfaceProfile: 'form' };
+    return { topology: type === 'group' ? 'group' : 'direct', family: 'study', scenarioId: 'learning-progress', surfaceProfile: 'hybrid' };
   }
   if (mode === 'werewolf') {
     return { topology: 'table', family: 'deduction', scenarioId: 'werewolf-classic', surfaceProfile: 'hybrid' };

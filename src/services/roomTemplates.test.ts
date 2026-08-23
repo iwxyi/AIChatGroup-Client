@@ -65,6 +65,12 @@ function materializeDraft(draft: ReturnType<typeof buildStoryDraft>) {
 }
 
 describe('roomTemplates story seeds', () => {
+  it('replaces the legacy IELTS entry with learning progress', () => {
+    const keys = ROOM_TEMPLATES.map((template) => template.key);
+    expect(keys).toContain('learning_progress');
+    expect(keys).not.toContain('ielts_coach');
+  });
+
   it('keeps gameplay kernels separate from presets', () => {
     const storyKernels = listTemplatesByStructureAndCategory('story', 'story').map((template) => template.key);
     const freeInteractionKernels = listTemplatesByStructureAndCategory('free_interaction', 'free_chat').map((template) => template.key);

@@ -2,7 +2,8 @@ import { CHAT_STYLE_DEFINITIONS } from './chatStyles';
 
 export const CHAT_STYLE_OPTIONS = CHAT_STYLE_DEFINITIONS.map(({ value, icon }) => ({ value, icon }));
 
-export const MIN_MEMBERS = 2;
+// A group room always includes the user; one selected AI role is enough to start it.
+export const MIN_MEMBERS = 1;
 export const MAX_MEMBERS = 10;
 
 export const SPEED_MIN = 0.5;

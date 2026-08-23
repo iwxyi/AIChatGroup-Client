@@ -38,7 +38,6 @@ export type RoomTemplateKey =
   | 'entertainment_circle_story'
   | 'xianxia_trial_story'
   | 'apocalypse_road_story'
-  | 'ielts_coach'
   | 'learning_progress'
   | 'interview_prep'
   | 'writing_coach'
@@ -405,28 +404,6 @@ const ROOM_TEMPLATE_KERNELS: RoomTemplateDefinition[] = [
     defaults: { discussionMode: 'retrospective', initialPhase: 'retrospective', goalLabel: '复盘改进', progressLabel: '复盘进展', allowPrivateThreads: false, allowCliques: false, allowMockery: false },
   }),
   createTemplate({
-    key: 'ielts_coach',
-    label: '雅思陪练',
-    description: '适合陪学、训练、目标推进和反馈。',
-    structure: 'training',
-    category: 'training',
-    categoryLabel: '训练模拟',
-    sessionKind: createTemplateSessionKind('group', 'classroom', { family: 'study', scenarioId: 'ielts-coach', surfaceProfile: 'form', topology: 'group' }),
-    style: 'debate',
-    runtimeEvolutionIntensity: 'slow',
-    topicPlaceholder: '输入学习目标，例如：雅思口语 7.5',
-    defaults: { studyGoalLabel: '雅思口语 7.5', initialPhase: 'learning', progressLabel: '学习进度', progressTarget: 100, allowPrivateThreads: false, allowCliques: false, allowMockery: false },
-    configGroups: [
-      {
-        key: 'study-required',
-        label: '学习主设定',
-        fields: [
-          { key: 'studyGoalLabel', label: '学习目标', kind: 'text', required: true, placeholder: '例如：雅思口语 7.5' },
-        ],
-      },
-    ],
-  }),
-  createTemplate({
     key: 'learning_progress',
     label: '学习进步',
     description: '设定任意学习目标，整理知识点、生成资料与练习，并根据学习记录持续调整下一步。',
@@ -459,7 +436,7 @@ const ROOM_TEMPLATE_KERNELS: RoomTemplateDefinition[] = [
     structure: 'training',
     category: 'training',
     categoryLabel: '训练模拟',
-    sessionKind: createTemplateSessionKind('group', 'interview', { family: 'study', scenarioId: 'ielts-coach', surfaceProfile: 'form', topology: 'group' }),
+    sessionKind: createTemplateSessionKind('group', 'interview', { family: 'study', scenarioId: 'learning-progress', surfaceProfile: 'hybrid', topology: 'group' }),
     style: 'debate',
     runtimeEvolutionIntensity: 'balanced',
     topicPlaceholder: '输入岗位、方向或训练目标',
@@ -488,7 +465,7 @@ const ROOM_TEMPLATE_KERNELS: RoomTemplateDefinition[] = [
     structure: 'training',
     category: 'training',
     categoryLabel: '训练模拟',
-    sessionKind: createTemplateSessionKind('group', 'classroom', { family: 'study', scenarioId: 'ielts-coach', surfaceProfile: 'form', topology: 'group' }),
+    sessionKind: createTemplateSessionKind('group', 'classroom', { family: 'study', scenarioId: 'learning-progress', surfaceProfile: 'hybrid', topology: 'group' }),
     style: 'free',
     runtimeEvolutionIntensity: 'slow',
     topicPlaceholder: '输入写作目标，例如：完成一篇申请文书',
