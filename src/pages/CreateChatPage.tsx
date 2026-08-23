@@ -419,7 +419,7 @@ export default function CreateChatPage() {
       queueMicrotask(() => {
         setMarketBundleCharacterPreviews([]);
         setName(editingChat.name || '');
-        setTopic(editingChat.topic || '');
+        setTopic(editingChat.topic || editingChat.scenarioState?.learning?.goal || '');
         setStyle(editingChat.style);
         styleOverriddenRef.current = true;
         const matchedTemplateKey = editingChat.sessionKind ? getRoomTemplateKeyBySessionKind(editingChat.sessionKind) : null;
@@ -442,7 +442,7 @@ export default function CreateChatPage() {
         setStoryBackground(String(editingChat.scenarioState?.storyBackground || ''));
         setStoryDirection(String(editingChat.scenarioState?.storyDirection || ''));
         setStoryOutline(String(editingChat.scenarioState?.storyOutline || ''));
-        setStudyGoalLabel(editingChat.scenarioState?.goals?.find((item) => item.goalId === 'study-goal')?.label || '');
+        setStudyGoalLabel(editingChat.scenarioState?.goals?.find((item) => item.goalId === 'study-goal')?.label || editingChat.scenarioState?.learning?.goal || editingChat.topic || '');
         setTeachingMode(editingChat.scenarioState?.learning?.teachingMode || 'casual');
         setTeacherExpertise(editingChat.scenarioState?.learning?.teacherExpertise || '');
         setAssessmentPolicy(editingChat.scenarioState?.learning?.assessmentPolicy || 'evidence_only');
@@ -471,7 +471,7 @@ export default function CreateChatPage() {
         const importedChat = buildImportedChatDraft(marketImportDraft.item);
         const matchedTemplateKey = importedChat.sessionKind ? getRoomTemplateKeyBySessionKind(importedChat.sessionKind) : null;
         setName(importedChat.name || '');
-        setTopic(importedChat.topic || '');
+        setTopic(importedChat.topic || importedChat.scenarioState?.learning?.goal || '');
         setStyle(importedChat.style || chatDraftDefaults.style);
         styleOverriddenRef.current = Boolean(importedChat.style);
         setRoomTemplate(matchedTemplateKey || 'open_chat');
@@ -493,7 +493,7 @@ export default function CreateChatPage() {
         setStoryBackground(String(importedChat.scenarioState?.storyBackground || ''));
         setStoryDirection(String(importedChat.scenarioState?.storyDirection || ''));
         setStoryOutline(String(importedChat.scenarioState?.storyOutline || ''));
-        setStudyGoalLabel(importedChat.scenarioState?.goals?.find((item) => item.goalId === 'study-goal')?.label || '');
+        setStudyGoalLabel(importedChat.scenarioState?.goals?.find((item) => item.goalId === 'study-goal')?.label || importedChat.scenarioState?.learning?.goal || importedChat.topic || '');
         setTeachingMode(importedChat.scenarioState?.learning?.teachingMode || 'casual');
         setTeacherExpertise(importedChat.scenarioState?.learning?.teacherExpertise || '');
         setAssessmentPolicy(importedChat.scenarioState?.learning?.assessmentPolicy || 'evidence_only');
@@ -803,7 +803,10 @@ export default function CreateChatPage() {
       setStoryOutline('');
     }
     if (defaults.storyBranchMode !== undefined) setStoryBranchMode(defaults.storyBranchMode);
-    if (defaults.studyGoalLabel !== undefined) setStudyGoalLabel(defaults.studyGoalLabel);
+    if (defaults.studyGoalLabel !== undefined) {
+      setStudyGoalLabel(defaults.studyGoalLabel);
+      if (template.sessionKind.family === 'study') setTopic(defaults.studyGoalLabel);
+    }
     if (defaults.agentGoalLabel !== undefined) setAgentGoalLabel(defaults.agentGoalLabel);
     if (defaults.storyBackground !== undefined) setStoryBackground(defaults.storyBackground);
     if (defaults.storyDirection !== undefined) setStoryDirection(defaults.storyDirection);
@@ -849,10 +852,25 @@ export default function CreateChatPage() {
 
   const isStoryRoomTemplate = selectedRoomTemplate.sessionKind.scenarioId === 'story-reader';
   const isStudyRoomTemplate = selectedRoomTemplate.sessionKind.family === 'study';
-  const topicPlaceholder = selectedRoomTemplate.topicPlaceholder;
+  const studyGoalField = selectedRoomTemplate.configGroups
+    ?.flatMap((group) => group.fields)
+    .find((field) => field.key === 'studyGoalLabel');
+  const topicPlaceholder = isStudyRoomTemplate
+    ? studyGoalField?.placeholder || selectedRoomTemplate.topicPlaceholder
+    : selectedRoomTemplate.topicPlaceholder;
   const topicLabel = isStoryRoomTemplate
     ? (isZh ? '开场提示' : 'Opening prompt')
+    : isStudyRoomTemplate
+      ? studyGoalField?.label || (isZh ? '学习目标' : 'Learning goal')
     : t('chat.topic');
+  const handleTopicChange = useCallback((value: string) => {
+    setTopic(value);
+    if (isStudyRoomTemplate) setStudyGoalLabel(value);
+  }, [isStudyRoomTemplate]);
+  const handleStudyGoalChange = useCallback((value: string) => {
+    setStudyGoalLabel(value);
+    if (isStudyRoomTemplate) setTopic(value);
+  }, [isStudyRoomTemplate]);
 
   const handleAutofill = useCallback(async () => {
     const profile = getPreferredAIProfile(aiProfiles, 'text') || api;
@@ -1526,7 +1544,7 @@ export default function CreateChatPage() {
               topicPlaceholder={topicPlaceholder}
               getStyleLabel={getStyleLabel}
               onNameChange={setName}
-              onTopicChange={setTopic}
+              onTopicChange={handleTopicChange}
               onStyleChange={handleStyleChange}
               onShowRoleActionsChange={setShowRoleActions}
               onIncludeUserAsMemberChange={setIncludeUserAsMember}
@@ -1601,7 +1619,7 @@ export default function CreateChatPage() {
             storyBranchMode={storyBranchMode}
             onStoryBranchModeChange={setStoryBranchMode}
             studyGoalLabel={studyGoalLabel}
-            onStudyGoalLabelChange={setStudyGoalLabel}
+            onStudyGoalLabelChange={handleStudyGoalChange}
             teachingMode={teachingMode}
             onTeachingModeChange={setTeachingMode}
             teacherExpertise={teacherExpertise}
