@@ -186,9 +186,6 @@ export default function ChatConfigSection(props: ChatConfigSectionProps) {
           <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.75 }}>
             {isZh ? '表达与变化' : 'Expression and change'}
           </Typography>
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-            {isZh ? '表达风格决定说话方式，变化沉淀速度决定关系、情绪和人格变化出现得快慢。' : 'Expression controls how the room speaks; change settlement controls how quickly relationships, emotions, and personality evolve.'}
-          </Typography>
           <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.75 }}>{props.styleLabel}</Typography>
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
             {CHAT_STYLE_OPTIONS.map((opt) => {
