@@ -187,7 +187,7 @@ export default function ChatConfigSection(props: ChatConfigSectionProps) {
             {isZh ? '表达与变化' : 'Expression and change'}
           </Typography>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, minWidth: 0 }}>
-            <Typography variant="body2" sx={{ fontWeight: 600, flexShrink: 0, width: { xs: 108, sm: 124 }, textAlign: 'right' }}>{props.styleLabel}</Typography>
+            <Typography variant="body2" sx={{ fontWeight: 600, flexShrink: 0, width: { xs: 108, sm: 124 }, textAlign: 'left' }}>{props.styleLabel}</Typography>
             <Box sx={{ display: 'flex', flex: 1, minWidth: 0, flexWrap: 'nowrap', gap: 0.75, overflowX: 'auto', pb: 0.25 }}>
               {CHAT_STYLE_OPTIONS.map((opt) => {
                 const selected = props.style === opt.value;
@@ -206,7 +206,7 @@ export default function ChatConfigSection(props: ChatConfigSectionProps) {
             </Box>
           </Box>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, minWidth: 0 }}>
-            <Typography variant="body2" sx={{ fontWeight: 600, flexShrink: 0, width: { xs: 108, sm: 124 }, textAlign: 'right' }}>{isZh ? '变化沉淀速度' : 'Change settlement speed'}</Typography>
+            <Typography variant="body2" sx={{ fontWeight: 600, flexShrink: 0, width: { xs: 108, sm: 124 }, textAlign: 'left' }}>{isZh ? '变化沉淀速度' : 'Change settlement speed'}</Typography>
             <Box sx={{ display: 'flex', flex: 1, minWidth: 0, flexWrap: 'nowrap', gap: 0.75, overflowX: 'auto', pb: 0.25 }}>
               {([
                 { value: 'slow' as const, zh: '慢', en: 'Slow' },
