@@ -32,6 +32,7 @@ interface GameplaySectionProps {
   roomTemplate: RoomTemplateKey;
   roomTemplates: RoomTemplateDefinition[];
   onRoomTemplateChange: (value: RoomTemplateKey) => void;
+  onTopicChange: (value: string) => void;
   lockGameplayKernelSelection?: boolean;
   lockPresetSelection?: boolean;
   onSaveAsChat?: () => void;
@@ -435,6 +436,19 @@ export default function GameplaySection(props: GameplaySectionProps) {
           {isZh ? '玩法设定' : 'Gameplay settings'}
         </Typography>
         <Stack spacing={1.5}>
+          {!isStudyTemplate ? (
+            <TextField
+              label={selectedTemplate.sessionKind.scenarioId === 'story-reader'
+                ? (isZh ? '当前开场提示' : 'Current opening prompt')
+                : (isZh ? '当前议题' : 'Current topic')}
+              placeholder={props.topic ? undefined : selectedTemplate.topicPlaceholder}
+              value={props.topic}
+              onChange={(event) => props.onTopicChange(event.target.value)}
+              fullWidth
+              multiline
+              rows={2}
+            />
+          ) : null}
           {(selectedTemplate.configGroups || []).map((group) => renderConfigGroup(
             group,
             props,
@@ -443,29 +457,17 @@ export default function GameplaySection(props: GameplaySectionProps) {
             setAdvancedGroupExpanded,
             { compact: true, hideTitle: isStudyTemplate && group.key === 'learning-progress-required' },
           ))}
-          {!isStudyTemplate ? <Box sx={{ px: 0.25 }}>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
-                {selectedTemplate.sessionKind.scenarioId === 'story-reader'
-                  ? (isZh ? '开场提示（来自“设定”页）' : 'Opening prompt (from Config tab)')
-                  : (isZh ? '当前议题 / 目标（来自“设定”页）' : 'Current topic / goal (from Config tab)')}
-              </Typography>
-              <Typography variant="body2">
-                {props.topic.trim() || (selectedTemplate.sessionKind.scenarioId === 'story-reader'
-                    ? (isZh ? '可在“设定”页填写一句开局灵感；完整故事设定在这里编辑。' : 'Add a short opening seed in Config; edit full story settings here.')
-                    : (isZh ? '请先到“设定”页填写群名下方的话题/目标。' : 'Fill the topic/goal field in the Config tab first.'))}
-              </Typography>
-              {selectedTemplate.sessionKind.scenarioId === 'story-reader' && props.onOpenBatchGenerate ? (
-                <Button
-                  variant="text"
-                  size="small"
-                  startIcon={<AutoAwesomeIcon />}
-                  onClick={props.onOpenBatchGenerate}
-                  sx={{ mt: 0.75, px: 0, minWidth: 0, alignSelf: 'flex-start' }}
-                >
-                  {isZh ? '批量生成角色' : 'Batch generate characters'}
-                </Button>
-              ) : null}
-          </Box> : null}
+          {selectedTemplate.sessionKind.scenarioId === 'story-reader' && props.onOpenBatchGenerate ? (
+            <Button
+              variant="text"
+              size="small"
+              startIcon={<AutoAwesomeIcon />}
+              onClick={props.onOpenBatchGenerate}
+              sx={{ px: 0, minWidth: 0, alignSelf: 'flex-start' }}
+            >
+              {isZh ? '批量生成角色' : 'Batch generate characters'}
+            </Button>
+          ) : null}
         </Stack>
       </SurfaceCard>
 
