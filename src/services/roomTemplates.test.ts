@@ -75,6 +75,8 @@ describe('roomTemplates story seeds', () => {
       'programming_learning',
       'exam_preparation',
     ]);
+    expect(listRoomTemplatePresets('learning_progress').every((template) => template.maxMembers === 1)).toBe(true);
+    expect(getRoomTemplate('open_chat').maxMembers).toBeUndefined();
   });
 
   it('keeps gameplay kernels separate from presets', () => {

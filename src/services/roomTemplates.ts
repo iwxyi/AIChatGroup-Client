@@ -114,6 +114,8 @@ export interface RoomTemplateDefinition {
   sessionKind: SessionKind;
   style: ChatStyle;
   runtimeEvolutionIntensity: RuntimeEvolutionIntensity;
+  /** Maximum number of AI members selectable for this room template. */
+  maxMembers?: number;
   topicPlaceholder: string;
   defaults?: RoomTemplateDefaults;
   configGroups?: RoomTemplateConfigGroup[];
@@ -165,6 +167,7 @@ function createPresetTemplates(kernels: RoomTemplateDefinition[]) {
       sessionKind: parent.sessionKind,
       style: preset.style || parent.style,
       runtimeEvolutionIntensity: preset.runtimeEvolutionIntensity || parent.runtimeEvolutionIntensity,
+      maxMembers: preset.maxMembers ?? parent.maxMembers,
       topicPlaceholder: preset.topicPlaceholder || parent.topicPlaceholder,
       defaults: { ...(parent.defaults || {}), ...(preset.defaults || {}) },
       configGroups: parent.configGroups,
@@ -416,6 +419,7 @@ const ROOM_TEMPLATE_KERNELS: RoomTemplateDefinition[] = [
     sessionKind: createTemplateSessionKind('group', 'classroom', { family: 'study', scenarioId: 'learning-progress', surfaceProfile: 'hybrid', topology: 'group' }),
     style: 'free',
     runtimeEvolutionIntensity: 'slow',
+    maxMembers: 1,
     topicPlaceholder: '输入总目标，例如：掌握数据库索引、读懂一本经济学入门书',
     sellingPoints: ['目标拆解', '知识点与学习记录', '资料、试卷和 HTML 练习'],
     defaults: { studyGoalLabel: '', initialPhase: 'mapping', progressLabel: '学习进展', progressTarget: 0, allowPrivateThreads: false, allowCliques: false, allowMockery: false },

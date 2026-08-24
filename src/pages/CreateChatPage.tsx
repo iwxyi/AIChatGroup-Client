@@ -327,7 +327,9 @@ export default function CreateChatPage() {
     ? (conversationKind === 'group' ? '群聊' : conversationKind === 'ai_direct' ? 'AI私聊' : '单聊')
     : (conversationKind === 'group' ? 'group chat' : conversationKind === 'ai_direct' ? 'AI direct chat' : 'direct chat');
   const minRequiredMembers = isGroupConversation ? MIN_MEMBERS : 1;
-  const maxAllowedMembers = isGroupConversation ? MAX_MEMBERS : (conversationKind === 'ai_direct' ? 2 : 1);
+  const roomTemplateMemberLimit = getRoomTemplate(roomTemplate).maxMembers;
+  const maxAllowedMembers = roomTemplateMemberLimit
+    ?? (isGroupConversation ? MAX_MEMBERS : (conversationKind === 'ai_direct' ? 2 : 1));
 
   const showError = (message: string) => {
     setSnackbar({ open: true, message, severity: 'error' });
@@ -759,6 +761,10 @@ export default function CreateChatPage() {
   }, [availableRoomTemplates, roomTemplate, roomTemplateAvailable]);
   const selectedRoomTemplate = getRoomTemplate(roomTemplate);
   const gameplayRuntimeLocked = Boolean(editingChat && hasGameplayRuntimeData(editingChat));
+  useEffect(() => {
+    if (selectedMembers.length <= maxAllowedMembers) return;
+    setSelectedMembers((current) => current.slice(0, maxAllowedMembers));
+  }, [maxAllowedMembers, selectedMembers.length]);
   const includeUserAsMemberCopy = buildIncludeUserAsMemberCopy({
     isZh,
     isStoryRoom: selectedRoomTemplate.sessionKind.scenarioId === 'story-reader',
@@ -933,7 +939,7 @@ export default function CreateChatPage() {
       }
       if (appliedRoleActions) setShowRoleActions(suggestion.suggestedShowRoleActions!);
       if (appliedRoomTemplate) applyRoomTemplate(suggestedRoomTemplate);
-      if (appliedMembers) setSelectedMembers(suggestion.suggestedMemberIds!);
+      if (appliedMembers) setSelectedMembers(suggestion.suggestedMemberIds!.slice(0, maxAllowedMembers));
       const suggestedFields = suggestion.suggestedGameplayFields || {};
       const expandedFields = suggestion.expandedGameplayFields || {};
       const applyGameplayText = (current: string, key: keyof typeof suggestedFields, setter: (value: string) => void) => {
@@ -995,6 +1001,7 @@ export default function CreateChatPage() {
     chatDraftDefaults.style,
     i18n.language,
     minRequiredMembers,
+    maxAllowedMembers,
     storyBackground,
     storyDirection,
     storyOutline,
@@ -1954,7 +1961,7 @@ export default function CreateChatPage() {
             setStyle={handleStyleChange}
             setSelectedMembers={setSelectedMembers}
             addCharacters={addCharacters}
-            maxMembers={MAX_MEMBERS}
+            maxMembers={maxAllowedMembers}
             onError={showError}
             setSnackbar={setSnackbar}
             getStyleLabel={getStyleLabel}
