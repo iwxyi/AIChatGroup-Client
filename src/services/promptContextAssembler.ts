@@ -26,7 +26,7 @@ const adapters = new Map<string, EnginePromptAdapter>([
   ['panel-interview', interviewPromptAdapter],
   ['ielts-coach', studyPromptAdapter],
   ['learning-progress', studyPromptAdapter],
-  ['learning-progress', interviewPromptAdapter],
+  ['panel-interview', interviewPromptAdapter],
   [werewolfPromptAdapter.key, werewolfPromptAdapter],
   ['werewolf-classic', werewolfPromptAdapter],
 ]);
@@ -48,7 +48,7 @@ export function buildEngineAwarePrompt(args: {
   characters: Map<string, AICharacter>;
   fallback: EnginePromptAdapter['buildSystemPrompt'];
 }) {
-  const adapter = getPromptAdapter(args.engineKey);
+  const adapter = getPromptAdapter(args.chat.mode === 'interview' ? interviewPromptAdapter.key : args.engineKey);
   if (adapter) {
     return adapter.buildSystemPrompt(args);
   }
