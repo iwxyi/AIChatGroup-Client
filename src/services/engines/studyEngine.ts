@@ -9,6 +9,19 @@ const STUDY_PHASES = [
   { key: 'review', label: '复习反馈', allowedActions: ['speak', 'send_message', 'summarize'] as string[] },
 ];
 
+function resolveTurnPolicy(context: { messages: Message[] }) {
+  const latestVisible = context.messages
+    .filter((message) => !message.isDeleted && message.type !== 'system' && message.type !== 'event')
+    .at(-1);
+  // Learning rooms are learner-triggered: one user turn unlocks one teacher
+  // response, then the room waits for the next learner message.
+  return {
+    runChat: latestVisible?.type === 'user' || latestVisible?.type === 'god',
+    runAction: false,
+    interleaveAction: false,
+  };
+}
+
 function buildParticipants(conversation: GroupChat) {
   return conversation.memberIds.map((memberId, index) => applyGovernanceToParticipant(conversation, {
     participantId: `${conversation.id}:${memberId}`,
@@ -49,6 +62,7 @@ export const STUDY_ENGINE: SessionEngineDefinition = {
     { key: 'actions', title: '学习动作', type: 'actions' as const, tabKey: 'world' as const },
   ],
   getAvailableActions: () => [{ type: 'map_learning_goal' }, { type: 'create_learning_practice' }, { type: 'review_learning_progress' }],
+  resolveTurnPolicy,
   getActionSchema: (context: SessionEngineActionContext) => mergeGovernanceActionSchema(getActionSchema(context.conversation), context),
   buildGenerationPromptContext: ({ conversation }): SessionGenerationPromptContext => {
     const phase = conversation.scenarioState?.phase || 'mapping';

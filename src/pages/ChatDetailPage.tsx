@@ -1147,6 +1147,7 @@ export default function ChatDetailPage() {
     [characters, speakAsCharacterId]
   );
   const isStoryRoom = chat?.sessionKind?.scenarioId === 'story-reader';
+  const isStudyRoom = chat?.sessionKind?.family === 'study' || chat?.sessionKind?.scenarioId === 'learning-progress' || chat?.sessionKind?.scenarioId === 'ielts-coach';
   const isAssistantChat = chat?.type === 'assistant';
   const isLearningProgressRoom = chat?.sessionKind?.family === 'study' || chat?.sessionKind?.scenarioId === 'learning-progress' || chat?.sessionKind?.scenarioId === 'ielts-coach';
   useEffect(() => {
@@ -3370,7 +3371,7 @@ export default function ChatDetailPage() {
     }
   }, [canAutoRunConversation, cancelActiveConversationLoop, chat, id, isPaused, isRunning, isStoryRoom, isStoryWaitingForChoice, resume, setSnackbar, startConversationLoopIfNeeded, stop, storyChoiceGate, updateChat, visibleStoryBranchOptions.length]);
 
-  const headerPrimaryActionButton = canAutoRunConversation && !isStoryRoom ? (
+  const headerPrimaryActionButton = canAutoRunConversation && !isStoryRoom && !isStudyRoom ? (
     <IconButton onClick={handleHeaderPrimaryAction} color={isRunning && !isPaused ? 'primary' : 'default'}>
       {isRunning && !isPaused ? <PauseIcon /> : <PlayIcon />}
     </IconButton>
