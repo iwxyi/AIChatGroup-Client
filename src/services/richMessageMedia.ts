@@ -463,7 +463,7 @@ async function runRichMediaQueueEntry(entry: RichMediaQueueEntry) {
 
     const profile = findGenerationProfile(entry.aiProfiles, 'audio', entry.character?.modelProfileIds?.tts || entry.character?.modelProfileIds?.audio);
     if (!profile) throw new Error('语音模型未配置');
-    const voice = entry.character?.voiceConfig?.voiceName || profile.model;
+    const voice = attachment.ttsVoice || entry.character?.voiceConfig?.voiceName || profile.model;
     const speechText = attachment.promptText || workingMessage.content;
     const localOnly = isLocalOnlyMediaMode();
     const voiceStyle = [entry.character?.voiceConfig?.style, entry.character?.voiceConfig?.instructions].filter(Boolean).join('；') || undefined;
@@ -475,7 +475,10 @@ async function runRichMediaQueueEntry(entry: RichMediaQueueEntry) {
           modelId: profile.model,
           text: speechText,
           voice,
-          style: voiceStyle,
+          language: attachment.ttsLanguage,
+          speed: attachment.ttsSpeed,
+          pitch: attachment.ttsPitch,
+          style: attachment.ttsStyle || voiceStyle,
           emotion: voiceEmotion,
           chatId: workingMessage.chatId,
           messageId: workingMessage.serverId || workingMessage.id,
@@ -484,7 +487,17 @@ async function runRichMediaQueueEntry(entry: RichMediaQueueEntry) {
       : null;
     const latestAttachment = getLatestRichMediaMessage(messageId, workingMessage).metadata?.attachments?.find((item) => item.id === attachment.id);
     if (latestAttachment?.generationJobId !== generationJobId) return;
-    const dataUrl = speechResult?.audioDataUrl || await blobToDataUrl((await synthesizeSpeechWithAdapter({ profile, intent: 'chat-audio', input: speechText, voice, format: 'mp3' })).blob);
+    const dataUrl = speechResult?.audioDataUrl || await blobToDataUrl((await synthesizeSpeechWithAdapter({
+      profile,
+      intent: 'chat-audio',
+      input: speechText,
+      voice,
+      format: 'mp3',
+      language: attachment.ttsLanguage,
+      speed: attachment.ttsSpeed,
+      pitch: attachment.ttsPitch,
+      style: attachment.ttsStyle,
+    })).blob);
     const durationMs = await getAudioDurationMs(dataUrl);
     const asset = speechResult?.asset || { id: undefined, url: dataUrl, mimeType: speechResult?.mimeType || 'audio/mpeg', sizeBytes: dataUrl.length, checksum: undefined };
     workingMessage = updateRichMediaMessage({

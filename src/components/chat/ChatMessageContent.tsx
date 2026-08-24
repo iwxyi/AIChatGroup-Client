@@ -122,7 +122,9 @@ function MessageAudioAttachment({ attachment, showTranscript }: { attachment: Me
       src={audioSource}
       initialDurationMs={attachment.durationMs}
       estimatedDurationMs={estimateAudioDurationMs(attachment)}
-      transcript={showTranscript ? attachment.promptText : undefined}
+      transcript={attachment.transcriptVisibility === 'hidden'
+        ? undefined
+        : attachment.transcriptVisibility === 'visible' || showTranscript ? attachment.promptText : undefined}
     />
   );
 }

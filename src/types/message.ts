@@ -21,6 +21,15 @@ export interface MessageAttachment {
   height?: number;
   generationJobId?: string;
   promptText?: string;
+  /** Distinguishes generated learning audio from ordinary character voice messages. */
+  audioPurpose?: 'chat_voice' | 'listening_exercise';
+  /** Per-attachment transcript policy; learning listening audio can override global settings. */
+  transcriptVisibility?: 'default' | 'visible' | 'hidden';
+  ttsVoice?: string;
+  ttsLanguage?: string;
+  ttsSpeed?: number;
+  ttsPitch?: number;
+  ttsStyle?: string;
   semanticSummary?: string;
   aspectRatio?: string;
   imageSize?: string;
@@ -71,6 +80,13 @@ export interface MediaGenerationDecision {
     reason?: string;
     text?: string;
     voiceProfileId?: string;
+    audioPurpose?: 'chat_voice' | 'listening_exercise';
+    transcriptVisibility?: 'default' | 'visible' | 'hidden';
+    voice?: string;
+    language?: string;
+    speed?: number;
+    pitch?: number;
+    style?: string;
   } | null;
 }
 

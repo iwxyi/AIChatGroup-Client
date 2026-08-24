@@ -2310,7 +2310,9 @@ function buildMediaCapabilities(character: AICharacter, profiles?: AIModelProfil
   const audioProfile = resolveProfileForCharacter(character, profiles, 'audio');
   return {
     image: Boolean(imageProfile),
-    audio: Boolean(audioProfile && character.voiceConfig?.voiceName),
+    // Learning listening material may use the configured TTS default even when
+    // the teacher character has no personal voice assignment.
+    audio: Boolean(audioProfile),
   };
 }
 
@@ -2361,6 +2363,15 @@ function normalizeMediaDecision(decision: MediaGenerationDecision | null | undef
       reason: decision.audio.reason || '',
       text: decision.audio.text || content,
       voiceProfileId: decision.audio.voiceProfileId || undefined,
+      audioPurpose: decision.audio.audioPurpose === 'listening_exercise' ? 'listening_exercise' : 'chat_voice',
+      transcriptVisibility: decision.audio.transcriptVisibility === 'hidden'
+        ? 'hidden'
+        : decision.audio.transcriptVisibility === 'visible' ? 'visible' : 'default',
+      voice: decision.audio.voice || undefined,
+      language: decision.audio.language || undefined,
+      speed: typeof decision.audio.speed === 'number' && Number.isFinite(decision.audio.speed) ? decision.audio.speed : undefined,
+      pitch: typeof decision.audio.pitch === 'number' && Number.isFinite(decision.audio.pitch) ? decision.audio.pitch : undefined,
+      style: decision.audio.style || undefined,
     };
   }
   return normalized.images?.length || normalized.audio ? normalized : null;
@@ -2477,6 +2488,13 @@ function buildMessageMetadata(params: {
       status: 'queued',
       altText: `语音：${audioText}`,
       promptText: audioText,
+      audioPurpose: decision.audio.audioPurpose || 'chat_voice',
+      transcriptVisibility: decision.audio.transcriptVisibility || 'default',
+      ttsVoice: decision.audio.voice,
+      ttsLanguage: decision.audio.language,
+      ttsSpeed: decision.audio.speed,
+      ttsPitch: decision.audio.pitch,
+      ttsStyle: decision.audio.style,
       createdAt: now,
       updatedAt: now,
     });

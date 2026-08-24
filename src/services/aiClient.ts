@@ -115,6 +115,10 @@ export interface SpeechSynthesisOptions {
   input: string;
   voice?: string;
   format?: 'mp3' | 'wav' | 'opus' | 'aac' | 'flac' | 'pcm';
+  language?: string;
+  style?: string;
+  speed?: number;
+  pitch?: number;
 }
 
 export interface SpeechSynthesisResult {
@@ -1255,6 +1259,7 @@ async function synthesizeOpenAICompatibleSpeech(config: APIConfig, options: Spee
       input: options.input,
       voice: options.voice || 'alloy',
       response_format: options.format || 'mp3',
+      ...(typeof options.speed === 'number' ? { speed: options.speed } : {}),
     }),
   });
 
@@ -1282,7 +1287,11 @@ function escapeXml(value: string) {
 
 async function synthesizeMicrosoftSpeech(config: APIConfig, options: SpeechSynthesisOptions): Promise<SpeechSynthesisResult> {
   const voice = options.voice || config.model || 'zh-CN-XiaoxiaoNeural';
-  const ssml = `<speak version="1.0" xml:lang="zh-CN"><voice name="${escapeXml(voice)}">${escapeXml(options.input)}</voice></speak>`;
+  const language = options.language || 'zh-CN';
+  const rate = typeof options.speed === 'number' ? `${Math.round(options.speed * 100)}%` : '100%';
+  const pitch = typeof options.pitch === 'number' ? `${options.pitch >= 0 ? '+' : ''}${options.pitch}Hz` : '0Hz';
+  const prosody = `<prosody rate="${escapeXml(rate)}" pitch="${escapeXml(pitch)}">${escapeXml(options.input)}</prosody>`;
+  const ssml = `<speak version="1.0" xml:lang="${escapeXml(language)}"><voice name="${escapeXml(voice)}">${prosody}</voice></speak>`;
   const response = await fetch(buildMicrosoftSpeechUrl(config), {
     method: 'POST',
     headers: {
