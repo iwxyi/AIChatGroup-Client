@@ -334,7 +334,7 @@ describe('runSessionLoop', () => {
 
     expect(runSessionActionExecutorMock).not.toHaveBeenCalled();
     expect(params.updateChat).not.toHaveBeenCalled();
-    expect(params.onIdle).toHaveBeenCalled();
+    expect(params.onIdle).not.toHaveBeenCalled();
     expect(params.onLoopError).not.toHaveBeenCalled();
   });
 

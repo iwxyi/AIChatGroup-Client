@@ -379,7 +379,8 @@ export async function runSessionLoop(params: {
         params.onTurnWorkFinished?.();
         const analysisStopEvent = buildAnalysisRunPolicyEvent(analysisRunPolicy.trace);
         if (analysisStopEvent) await params.appendEventMessage(params.chatId, analysisStopEvent);
-        if (resolveSessionFamilyKey(currentChat) !== 'analysis') params.onIdle?.('当前阶段没有需要自动执行的回合');
+        const sessionFamily = resolveSessionFamilyKey(currentChat);
+        if (sessionFamily !== 'analysis' && sessionFamily !== 'study') params.onIdle?.('当前阶段没有需要自动执行的回合');
         params.pauseLoop?.();
         await new Promise((resolve) => setTimeout(resolve, getLoopWaitTime(currentChat, random)));
         continue;
@@ -390,7 +391,8 @@ export async function runSessionLoop(params: {
         params.onTurnWorkFinished?.();
         const analysisStopEvent = buildAnalysisRunPolicyEvent(analysisRunPolicy.trace);
         if (analysisStopEvent) await params.appendEventMessage(params.chatId, analysisStopEvent);
-        if (resolveSessionFamilyKey(currentChat) !== 'analysis') params.onIdle?.('当前阶段没有需要自动发言的角色');
+        const sessionFamily = resolveSessionFamilyKey(currentChat);
+        if (sessionFamily !== 'analysis' && sessionFamily !== 'study') params.onIdle?.('当前阶段没有需要自动发言的角色');
         params.pauseLoop?.();
         await new Promise((resolve) => setTimeout(resolve, getLoopWaitTime(currentChat, random)));
         continue;
