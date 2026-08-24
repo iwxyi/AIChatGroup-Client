@@ -15,6 +15,7 @@ import { useChatStore } from '../stores/useChatStore';
 import { useCharacterStore } from '../stores/useCharacterStore';
 import { useMessageStore } from '../stores/useMessageStore';
 import { useSchedulerStore } from '../stores/useSchedulerStore';
+import { isGenerationCancelledError } from '../services/generationCancellation';
 
 export type ConversationLoopStartBlockReason = 'direct_chat' | 'waiting_story_choice' | 'already_active';
 type ConversationLoopStartOptions = { ignoreReaderPositionOnce?: boolean; immediate?: boolean };
@@ -440,12 +441,26 @@ export function useChatRunLoop(params: {
       ignoreReaderPositionOnce: Boolean(options.ignoreReaderPositionOnce),
     }, 'info');
     const startDelayMs = resolveConversationLoopStartDelayMs(options);
+    const launchRun = () => {
+      void run(newLoopToken).catch((error: unknown) => {
+        // Navigation/unmount intentionally aborts the active generation. The
+        // runner handles cancellation during a turn, but startup/module-load
+        // failures can reject before that handler exists.
+        if (isGenerationCancelledError(error) || activeAbortControllerRef.current?.signal.aborted) return;
+        logDeveloperDiagnostic('chat-run:unhandled-start-error', {
+          chatId: conversationChat.id,
+          loopId: newLoopToken,
+          error: error instanceof Error ? error.message : String(error),
+        }, 'error', 'chat-run');
+        setRunLoopError(error instanceof Error ? error.message : String(error));
+      });
+    };
     if (startDelayMs <= 0) {
-      void run(newLoopToken);
+      launchRun();
     } else {
       const timer = window.setTimeout(() => {
         pendingStartTimerByLoopTokenRef.current.delete(newLoopToken);
-        void run(newLoopToken);
+        launchRun();
       }, startDelayMs);
       pendingStartTimerByLoopTokenRef.current.set(newLoopToken, timer);
     }

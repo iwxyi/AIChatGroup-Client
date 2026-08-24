@@ -31,6 +31,7 @@ import { buildListGridSx } from '../styles/interaction';
 import { buildAssistantChatDraft } from '../services/chatDraftBuilder';
 import { getLatestChatPreviewMessage, sanitizeChatLatestMessage } from '../services/chatLatestMessage';
 import { MIN_MEMBERS } from '../constants/defaults';
+import type { AICharacter } from '../types/character';
 
 const CHAT_LIST_TAB_KEY = 'chat-list-tab';
 const ASSISTANT_TAB = 3;
@@ -66,11 +67,13 @@ export default function ChatListPage() {
     markChatsWarm: state.markChatsWarm,
     isLoading: state.isLoading,
   })));
-  const { characters, prefetchCharacters, markCharactersWarm } = useCharacterStore(useShallow((state) => ({
+  const { characters, prefetchCharacters, markCharactersWarm, loadDeletedCharacters } = useCharacterStore(useShallow((state) => ({
     characters: state.characters,
     prefetchCharacters: state.prefetchCharacters,
     markCharactersWarm: state.markCharactersWarm,
+    loadDeletedCharacters: state.loadDeletedCharacters,
   })));
+  const [deletedCharacters, setDeletedCharacters] = useState<AICharacter[]>([]);
   const authMode = useAuthStore((state) => state.authMode);
   const isLoggedIn = useAuthStore((state) => state.isLoggedIn);
   const messageWindowsByChatId = useMessageStore((state) => state.messageWindowsByChatId);
@@ -203,7 +206,8 @@ export default function ChatListPage() {
     void restoreLocalChats();
     void prefetchChats();
     void prefetchCharacters();
-  }, [authMode, isLoggedIn, markCharactersWarm, markChatsWarm, prefetchCharacters, prefetchChats, restoreLocalChats]);
+    void loadDeletedCharacters().then(setDeletedCharacters).catch(() => setDeletedCharacters([]));
+  }, [authMode, isLoggedIn, loadDeletedCharacters, markCharactersWarm, markChatsWarm, prefetchCharacters, prefetchChats, restoreLocalChats]);
 
   useEffect(() => {
     setTab(initialTab);
@@ -243,6 +247,10 @@ export default function ChatListPage() {
     const resolvedLatest = cachedLatest || sanitizeChatLatestMessage(chat.latestMessage);
     return resolvedLatest === chat.latestMessage ? chat : { ...chat, latestMessage: resolvedLatest };
   }), [messageWindowsByChatId, visibleChats]);
+  const charactersForChatCards = useMemo(() => {
+    const activeIds = new Set(characters.map((character) => character.id));
+    return [...characters, ...deletedCharacters.filter((character) => !activeIds.has(character.id))];
+  }, [characters, deletedCharacters]);
   const customCharacterCount = useMemo(() => characters.filter((character) => !character.isPreset && !character.deletedAt).length, [characters]);
   const [noCharactersDialogOpen, setNoCharactersDialogOpen] = useState(false);
   const [noCharactersReturnTo, setNoCharactersReturnTo] = useState('/chats/create');
@@ -390,7 +398,7 @@ export default function ChatListPage() {
               <ChatCard
                 key={chat.id}
                 chat={chat}
-                characters={characters}
+                characters={charactersForChatCards}
                 selected={activeChatId === chat.id}
                 onClick={() => navigate(`/chats/${chat.id}?fromTab=${tab}`)}
               />

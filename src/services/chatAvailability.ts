@@ -8,7 +8,7 @@ function hasLiveCharacter(characters: AICharacter[], characterId: string) {
 
 function getRequiredCharacterIds(chat: Pick<GroupChat, 'type' | 'memberIds'>) {
   const memberIds = (chat.memberIds || []).filter((memberId) => !isReservedNonCharacterActorId(memberId));
-  if (chat.type === 'direct' || chat.type === 'ai_direct') return memberIds;
+  if (chat.type === 'direct' || chat.type === 'ai_direct' || chat.type === 'group') return memberIds;
   return [];
 }
 
@@ -19,7 +19,11 @@ export function getMissingRequiredCharacterIds(chat: Pick<GroupChat, 'type' | 'm
 export function isChatBlockedByMissingRequiredCharacters(chat: Pick<GroupChat, 'type' | 'memberIds'> | null | undefined, characters: AICharacter[]) {
   if (!chat) return false;
   const requiredCharacterIds = getRequiredCharacterIds(chat);
-  return requiredCharacterIds.length > 0 && requiredCharacterIds.some((memberId) => !hasLiveCharacter(characters, memberId));
+  if (!requiredCharacterIds.length) return false;
+  // Direct chats need their named counterpart. A group can continue with
+  // surviving members, but becomes read-only when every character was deleted.
+  if (chat.type === 'group') return requiredCharacterIds.every((memberId) => !hasLiveCharacter(characters, memberId));
+  return requiredCharacterIds.some((memberId) => !hasLiveCharacter(characters, memberId));
 }
 
 export function canRecreateMissingCloudChat(chat: Pick<GroupChat, 'type' | 'memberIds'> | null | undefined, characters: AICharacter[]) {

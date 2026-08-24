@@ -11,7 +11,7 @@ describe('sessionScrollCapabilities', () => {
     });
   });
 
-  it('preserves the reader anchor while a story-reader explicit continuation is pending', () => {
+  it('never sticks a story-reader viewport to newly appended chapters', () => {
     expect(resolveSessionScrollCapabilities({
       sessionKind: { family: 'conversation', scenarioId: 'story-reader', surfaceProfile: 'hybrid' },
       explicitContinuationPending: true,
@@ -21,22 +21,22 @@ describe('sessionScrollCapabilities', () => {
     });
   });
 
-  it('preserves a restored non-tail story-reader position until the reader reaches the tail', () => {
+  it('keeps story generation available when no continuation is suspended', () => {
     expect(resolveSessionScrollCapabilities({
       sessionKind: { family: 'conversation', scenarioId: 'story-reader', surfaceProfile: 'hybrid' },
-      restoringReaderPosition: true,
+      restoringReaderPosition: false,
     })).toEqual({
       autoStickToBottom: false,
-      autoContinueFromTail: false,
+      autoContinueFromTail: true,
     });
   });
 
-  it('restores story-reader tail following after the reader reaches the new tail', () => {
+  it('does not make story-reader view sticky after continuation resumes', () => {
     expect(resolveSessionScrollCapabilities({
       sessionKind: { family: 'conversation', scenarioId: 'story-reader', surfaceProfile: 'hybrid' },
       explicitContinuationPending: false,
     })).toEqual({
-      autoStickToBottom: true,
+      autoStickToBottom: false,
       autoContinueFromTail: true,
     });
   });
