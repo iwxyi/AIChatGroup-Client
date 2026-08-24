@@ -28,6 +28,11 @@ const CHAT_CARD_AVATAR_IMG_PROPS = {
 function ChatCard({ chat, characters, onClick, onPrefetch, selected = false }: ChatCardProps) {
   const resolvedLatestMessage = sanitizeChatLatestMessage(chat.latestMessage);
   const members = characters.filter((c) => chat.memberIds.includes(c.id));
+  const deletedMembers = members.filter((member) => member.deletedAt != null);
+  const deletedCount = deletedMembers.length;
+  const deletedStatusLabel = deletedCount > 0
+    ? (deletedCount >= members.length ? '已删除' : `已删除${deletedCount}`)
+    : null;
   const isAssistant = chat.type === 'assistant';
   const isUserDirect = chat.type === 'direct';
   const isAiDirect = chat.type === 'ai_direct';
@@ -40,9 +45,9 @@ function ChatCard({ chat, characters, onClick, onPrefetch, selected = false }: C
   const subtitle = buildChatSubtitle(chat, members, resolvedLatestMessage);
   const gameplayLabel = getChatGameplayShortLabel(chat);
   const directAvatarNode = isAiDirect && directMembers.length ? (
-    <AvatarGroup max={2} total={directMembers.length} sx={{ flexShrink: 0, '& .MuiAvatar-root': { width: 34, height: 34, fontSize: '0.92rem', borderColor: 'background.paper' } }}>
+    <AvatarGroup max={2} total={directMembers.length} sx={{ flexShrink: 0, '& .MuiAvatar-root': { width: 46, height: 46, fontSize: '1.05rem', borderColor: 'background.paper' } }}>
       {directMembers.map((member) => (
-        <Avatar
+      <Avatar
           key={member.id}
           src={isImageAvatar(member.avatar) ? member.avatar : undefined}
           slotProps={{ img: CHAT_CARD_AVATAR_IMG_PROPS }}
@@ -56,12 +61,12 @@ function ChatCard({ chat, characters, onClick, onPrefetch, selected = false }: C
     <Avatar
       src={isImageAvatar(directMember.avatar) ? directMember.avatar : undefined}
       slotProps={{ img: CHAT_CARD_AVATAR_IMG_PROPS }}
-      sx={{ width: 34, height: 34, fontSize: '0.92rem', bgcolor: 'primary.light', flexShrink: 0 }}
+      sx={{ width: 46, height: 46, fontSize: '1.05rem', bgcolor: 'primary.light', flexShrink: 0 }}
     >
       {isImageAvatar(directMember.avatar) ? undefined : directMember.avatar}
     </Avatar>
   ) : (
-    <Avatar sx={{ width: 34, height: 34, fontSize: '0.92rem', bgcolor: 'primary.light', flexShrink: 0 }}>
+    <Avatar sx={{ width: 46, height: 46, fontSize: '1.05rem', bgcolor: 'primary.light', flexShrink: 0 }}>
       <DirectIcon sx={{ fontSize: 18 }} />
     </Avatar>
   );
@@ -90,47 +95,47 @@ function ChatCard({ chat, characters, onClick, onPrefetch, selected = false }: C
       >
         <CardContent sx={{ p: { xs: 1.75, sm: 2 }, position: 'relative', zIndex: 1, '&:last-child': { pb: { xs: 1.75, sm: 2 } } }}>
           {isDirect ? (
-            <Box sx={{ minWidth: 0 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0, mb: 0.85 }}>
+            <Box sx={{ minWidth: 0, position: 'relative', display: 'flex', alignItems: 'stretch', gap: 1.25 }}>
+              {deletedStatusLabel ? (
+                <Chip
+                  size="small"
+                  color="error"
+                  variant="outlined"
+                  label={deletedStatusLabel}
+                  sx={{ position: 'absolute', top: -2, right: 0, height: 21, zIndex: 2, '& .MuiChip-label': { px: 0.7 } }}
+                />
+              ) : null}
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, ml: { xs: -0.5, sm: -0.75 } }}>
                 {directAvatarNode}
-                <Typography variant="subtitle1" noWrap sx={{ fontWeight: 760, letterSpacing: 0, minWidth: 0 }}>
-                  {isAiDirect ? aiDirectDisplayName : directDisplayName}
-                </Typography>
               </Box>
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1.25, minWidth: 0 }}>
-                <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block', minWidth: 0 }}>
-                  {subtitle || chat.name}
-                </Typography>
-                <Typography variant="caption" color="text.disabled" sx={{ flexShrink: 0 }}>
-                  {formatRelativeTime(chat.lastMessageAt)}
-                </Typography>
+              <Box sx={{ minWidth: 0, flex: 1 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0, mb: 0.85, pr: deletedStatusLabel ? 7 : 0 }}>
+                  <Typography variant="subtitle1" noWrap sx={{ fontWeight: 760, letterSpacing: 0, minWidth: 0 }}>
+                    {isAiDirect ? aiDirectDisplayName : directDisplayName}
+                  </Typography>
+                </Box>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1.25, minWidth: 0 }}>
+                  <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block', minWidth: 0 }}>
+                    {subtitle || chat.name}
+                  </Typography>
+                  <Typography variant="caption" color="text.disabled" sx={{ flexShrink: 0 }}>
+                    {formatRelativeTime(chat.lastMessageAt)}
+                  </Typography>
+                </Box>
               </Box>
             </Box>
           ) : (
             <>
-              {gameplayLabel ? (
-                <Chip
-                  label={gameplayLabel}
-                  size="small"
-                  variant="filled"
-                  sx={{
-                    position: 'absolute',
-                    top: 8,
-                    right: 8,
-                    height: 22,
-                    borderRadius: 1,
-                    fontSize: '0.72rem',
-                    fontWeight: 760,
-                    color: 'primary.dark',
-                    bgcolor: 'rgba(25, 118, 210, 0.10)',
-                    border: '1px solid rgba(25, 118, 210, 0.18)',
-                    zIndex: 2,
-                    '& .MuiChip-label': { px: 0.8 },
-                  }}
-                />
+              {gameplayLabel || deletedStatusLabel ? (
+                <Box sx={{ position: 'absolute', top: 8, right: 8, display: 'flex', gap: 0.5, zIndex: 2 }}>
+                  {gameplayLabel ? (
+                    <Chip label={gameplayLabel} size="small" variant="filled" sx={{ height: 22, borderRadius: 1, fontSize: '0.72rem', fontWeight: 760, color: 'primary.dark', bgcolor: 'rgba(25, 118, 210, 0.10)', border: '1px solid rgba(25, 118, 210, 0.18)', '& .MuiChip-label': { px: 0.8 } }} />
+                  ) : null}
+                  {deletedStatusLabel ? <Chip size="small" color="error" variant="outlined" label={deletedStatusLabel} sx={{ height: 22, borderRadius: 1, '& .MuiChip-label': { px: 0.8 } }} /> : null}
+                </Box>
               ) : null}
-              <Box sx={{ mb: 1, minWidth: 0, pr: gameplayLabel ? 5.5 : 0 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, minWidth: 0 }}>
+              <Box sx={{ mb: 1, minWidth: 0 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, minWidth: 0, pr: gameplayLabel || deletedStatusLabel ? 11 : 0 }}>
                   {isAssistant ? <AssistantIcon sx={{ fontSize: 16, color: 'text.secondary' }} /> : <GroupIcon sx={{ fontSize: 16, color: 'text.secondary' }} />}
                   <Typography variant="subtitle1" noWrap sx={{ fontWeight: 760, letterSpacing: 0 }}>
                     {chat.type === 'group' ? `${chat.name} (${chat.memberIds.length})` : chat.name}
