@@ -457,4 +457,16 @@ describe('messageBranching', () => {
 
     expect(projectActiveBranchMessages(chat, messages).map((message) => message.id)).toEqual(['user-a2']);
   });
+
+  it('does not place the old next reply before a newly revised user message', () => {
+    const messages = [
+      buildMessage({ id: 'a1', chatId: 'chat-1', type: 'user', senderId: 'user', senderName: 'User', content: 'A1', emotion: 0, timestamp: 1, metadata: { branching: { parentNodeId: null } } }),
+      buildMessage({ id: 'b1', chatId: 'chat-1', type: 'ai', senderId: 'ai-1', senderName: 'AI', content: 'B1', emotion: 0, timestamp: 2, metadata: { branching: { parentNodeId: 'a1' } } }),
+      buildMessage({ id: 'a2', chatId: 'chat-1', type: 'user', senderId: 'user', senderName: 'User', content: 'A2', emotion: 0, timestamp: 3, metadata: { branching: { parentNodeId: 'b1' } } }),
+      buildMessage({ id: 'b2', chatId: 'chat-1', type: 'ai', senderId: 'ai-1', senderName: 'AI', content: 'B2', emotion: 0, timestamp: 4, metadata: { branching: { parentNodeId: 'a2' } } }),
+      buildMessage({ id: 'a2-new', chatId: 'chat-1', type: 'user', senderId: 'user', senderName: 'User', content: 'A2 revised', emotion: 0, timestamp: 5, metadata: { branching: { parentNodeId: 'b1', revisionRootId: 'a2', revisionOfMessageId: 'a2' } } }),
+    ];
+    const chat = buildChat({ messageBranchState: { selectedRevisionByRootId: { a2: 'a2-new' }, activeChildByParentNodeId: { b1: 'a2-new' }, activeLeafNodeId: 'a2-new' } });
+    expect(projectActiveBranchMessages(chat, messages).map((message) => message.id)).toEqual(['a1', 'b1', 'a2-new']);
+  });
 });

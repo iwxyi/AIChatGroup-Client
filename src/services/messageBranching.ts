@@ -45,7 +45,7 @@ function isDeletedMessage(message: Message) {
 
 function compareMessageOrder(left: Message, right: Message) {
   if (left.timestamp !== right.timestamp) return left.timestamp - right.timestamp;
-  return left.id.localeCompare(right.id);
+  return String(left.id || '').localeCompare(String(right.id || ''));
 }
 
 function normalizeBranchState(state: MessageBranchState | null | undefined): MessageBranchState {
@@ -131,6 +131,33 @@ function buildChildrenByParent(nodes: ResolvedBranchingNode[]) {
   return map;
 }
 
+/**
+ * Render the projected branch in tree order, not raw creation/timestamp order.
+ * A revision is normally created after its old continuation, so timestamp
+ * sorting can produce `A1/B1/B2/A2-new` even when the parent graph says that
+ * `A2-new` is the next message after `B1`.
+ */
+function orderBranchNodes(nodes: ResolvedBranchingNode[]) {
+  const childrenByParent = buildChildrenByParent(nodes);
+  const available = new Set(nodes.map((node) => node.nodeId));
+  const roots = nodes
+    .filter((node) => !node.parentNodeId || !available.has(node.parentNodeId))
+    .sort((left, right) => compareMessageOrder(left.message, right.message));
+  const ordered: ResolvedBranchingNode[] = [];
+  const visited = new Set<string>();
+  const visit = (node: ResolvedBranchingNode) => {
+    if (visited.has(node.nodeId)) return;
+    visited.add(node.nodeId);
+    ordered.push(node);
+    for (const child of childrenByParent.get(node.nodeId) || []) visit(child);
+  };
+  roots.forEach(visit);
+  // Preserve partial-window nodes and malformed/cyclic leftovers without
+  // dropping them; their relative order falls back to message order.
+  nodes.slice().sort((left, right) => compareMessageOrder(left.message, right.message)).forEach(visit);
+  return ordered;
+}
+
 function logBranchProjectionDebug(payload: Record<string, unknown>) {
   logDeveloperDiagnostic('message-branch:project', payload, 'info', 'message-window');
 }
@@ -206,10 +233,8 @@ function projectActiveBranchMessagesInternal(chat: BranchableChat | null | undef
   };
   for (const nodeId of inactiveNodeIds) excludeSubtree(nodeId);
 
-  const activeMessages = nodes
-    .filter((node) => !excludedNodeIds.has(node.nodeId))
-    .map((node) => node.message)
-    .sort(compareMessageOrder);
+  const activeMessages = orderBranchNodes(nodes.filter((node) => !excludedNodeIds.has(node.nodeId)))
+    .map((node) => node.message);
   if (activeMessages.length < Math.min(messages.filter((message) => !isDeletedMessage(message)).length, 10)) {
     logBranchProjectionDebug({
       inputMessages: messages.length,
