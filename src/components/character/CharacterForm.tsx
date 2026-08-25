@@ -1245,7 +1245,7 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
   };
 
   const settingTab = (
-    <>
+    <Box sx={{ display: 'grid', gap: 1.5 }}>
       <Box sx={{ display: 'grid', gap: 1.5 }}>
         {duplicateNameWarning ? <Alert severity="warning">{duplicateNameWarning}</Alert> : null}
         <Box sx={{ display: 'grid', gridTemplateColumns: '84px minmax(0, 1fr)', gap: { xs: 1.25, sm: 1.5 }, alignItems: 'center' }}>
@@ -1744,7 +1744,7 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
           </Button>
         </Box>
       ) : null}
-    </>
+    </Box>
   );
 
   const behaviorTab = (

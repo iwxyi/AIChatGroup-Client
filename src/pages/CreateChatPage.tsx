@@ -1691,7 +1691,7 @@ export default function CreateChatPage() {
               batchGenerateMembersLabel={i18n.language.startsWith('zh') ? '生成' : 'Generate'}
             />
             {editingChat && isGroupConversation ? (
-              <SurfaceCard>
+              <SurfaceCard sx={{ mt: 2, mb: 2 }}>
                 <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5 }}>群聊视觉</Typography>
                 <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>根据群主题、成员和当前氛围生成；离开页面后仍会在后台继续。</Typography>
                 <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>

@@ -101,7 +101,7 @@ export default function ChatListPage() {
   const [batchMenuAnchor, setBatchMenuAnchor] = useState<HTMLElement | null>(null);
   const [batchDialogOpen, setBatchDialogOpen] = useState(false);
   const [batchDeleteConfirmOpen, setBatchDeleteConfirmOpen] = useState(false);
-  const [batchFields, setBatchFields] = useState({ basics: true, avatar: true, background: true });
+  const [batchFields, setBatchFields] = useState({ basics: true, avatar: true, background: false });
   const [batchMode, setBatchMode] = useState<'empty' | 'complete' | 'regenerate'>('empty');
   const [avatarRequirement, setAvatarRequirement] = useState('');
   const [backgroundRequirement, setBackgroundRequirement] = useState('');
@@ -127,7 +127,7 @@ export default function ChatListPage() {
     setHeaderBackAction(null);
     setHeaderActions(
       <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
-        {selectionMode && tab === 0 ? (
+        {selectionMode ? (
           <>
             <Tooltip title="退出多选"><IconButton aria-label="退出多选" onClick={() => { setSelectionMode(false); setSelectedChatIds([]); setBatchMenuAnchor(null); }}><CloseIcon fontSize="small" /></IconButton></Tooltip>
             <Tooltip title="批量操作"><IconButton aria-label="批量操作" onClick={(event) => setBatchMenuAnchor(event.currentTarget)}><MoreVertIcon fontSize="small" /></IconButton></Tooltip>
@@ -274,11 +274,11 @@ export default function ChatListPage() {
     return [...characters, ...deletedCharacters.filter((character) => !activeIds.has(character.id))];
   }, [characters, deletedCharacters]);
   useEffect(() => {
-    const visibleIds = new Set(visibleGroupChats.map((chat) => chat.id));
+    const visibleIds = new Set(visibleChatsWithLatestPreview.map((chat) => chat.id));
     setSelectedChatIds((ids) => ids.filter((id) => visibleIds.has(id)));
-  }, [visibleGroupChats]);
+  }, [visibleChatsWithLatestPreview]);
   const toggleChatSelection = (chatId: string) => setSelectedChatIds((ids) => ids.includes(chatId) ? ids.filter((id) => id !== chatId) : [...ids, chatId]);
-  const toggleSelectVisibleGroups = () => setSelectedChatIds((ids) => ids.length === visibleGroupChats.length ? [] : visibleGroupChats.map((chat) => chat.id));
+  const toggleSelectVisibleChats = () => setSelectedChatIds((ids) => ids.length === visibleChatsWithLatestPreview.length ? [] : visibleChatsWithLatestPreview.map((chat) => chat.id));
   const batchCounts = useMemo(() => {
     const selected = visibleGroupChats.filter((chat) => selectedChatIds.includes(chat.id));
     return { selected, basics: selected.filter((chat) => !chat.name.trim() || !chat.topic.trim()).length, avatar: selected.filter((chat) => !chat.groupVisual?.avatarUrl).length, background: selected.filter((chat) => !chat.groupVisual?.backgroundUrl).length };
@@ -290,7 +290,10 @@ export default function ChatListPage() {
       if (batchFields.avatar && (batchMode === 'regenerate' || !chat.groupVisual?.avatarUrl)) enqueueGroupVisualGeneration({ chat, members, profiles: aiProfiles, settings: avatarGeneration, language: 'zh', kind: 'avatar', requirement: avatarRequirement });
       if (batchFields.background && (batchMode === 'regenerate' || !chat.groupVisual?.backgroundUrl)) enqueueGroupVisualGeneration({ chat, members, profiles: aiProfiles, settings: avatarGeneration, language: 'zh', kind: 'background', requirement: backgroundRequirement });
     });
-    setBatchDialogOpen(false); setBatchMenuAnchor(null);
+    setBatchDialogOpen(false);
+    setBatchMenuAnchor(null);
+    setSelectedChatIds([]);
+    setSelectionMode(false);
   };
   const confirmBatchDelete = async () => {
     const ids = [...selectedChatIds];
@@ -453,14 +456,14 @@ export default function ChatListPage() {
                 chat={chat}
                 characters={charactersForChatCards}
                 selected={activeChatId === chat.id}
-                selectable={selectionMode && chat.type === 'group'}
+                selectable={selectionMode}
                 multiSelected={selectedChatIds.includes(chat.id)}
                 onToggleSelection={() => toggleChatSelection(chat.id)}
-                onLongPress={chat.type === 'group' ? () => {
+                onLongPress={() => {
                   setSelectionMode(true);
                   setSelectedChatIds((ids) => ids.includes(chat.id) ? ids : [...ids, chat.id]);
-                } : undefined}
-                onClick={() => selectionMode && chat.type === 'group' ? toggleChatSelection(chat.id) : navigate(`/chats/${chat.id}?fromTab=${tab}`)}
+                }}
+                onClick={() => selectionMode ? toggleChatSelection(chat.id) : navigate(`/chats/${chat.id}?fromTab=${tab}`)}
               />
             ))}
           </Box>
@@ -470,10 +473,10 @@ export default function ChatListPage() {
 
       {/* Delete Confirmation */}
       <Menu anchorEl={batchMenuAnchor} open={Boolean(batchMenuAnchor)} onClose={() => setBatchMenuAnchor(null)}>
-        <MenuItem onClick={toggleSelectVisibleGroups}>全选</MenuItem>
+        <MenuItem onClick={toggleSelectVisibleChats}>全选</MenuItem>
         <MenuItem disabled={!selectedChatIds.length} onClick={() => setBatchDeleteConfirmOpen(true)}>删除</MenuItem>
         <Divider />
-        <MenuItem disabled={!selectedChatIds.length} onClick={() => setBatchDialogOpen(true)}>批量补全</MenuItem>
+        <MenuItem disabled={!batchCounts.selected.length} onClick={() => setBatchDialogOpen(true)}>批量补全</MenuItem>
       </Menu>
       <Dialog open={batchDialogOpen} onClose={() => setBatchDialogOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle>批量补全群聊</DialogTitle>
@@ -506,7 +509,7 @@ export default function ChatListPage() {
       <ConfirmDialog
         open={batchDeleteConfirmOpen}
         title="删除群聊"
-        message={`确定删除选中的 ${selectedChatIds.length} 个群聊吗？`}
+        message={`确定删除选中的 ${selectedChatIds.length} 个聊天吗？`}
         onConfirm={() => void confirmBatchDelete()}
         onCancel={() => setBatchDeleteConfirmOpen(false)}
         destructive

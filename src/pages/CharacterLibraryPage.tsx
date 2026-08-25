@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLayoutHeaderActions } from '../components/layout/AppLayoutContext';
 import { Box, Button, Alert, IconButton, Menu, MenuItem, Chip, Dialog, DialogTitle, DialogContent, DialogActions, TextField, Typography, Divider, Tooltip, Checkbox, FormControlLabel, Radio, RadioGroup, FormControl, FormLabel } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import MoreIcon from '@mui/icons-material/MoreVert';
-import ClearAllIcon from '@mui/icons-material/ClearAll';
-import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 import SortIcon from '@mui/icons-material/Sort';
+import CloseIcon from '@mui/icons-material/Close';
 import { useTranslation } from 'react-i18next';
 import { useShallow } from 'zustand/react/shallow';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -149,6 +148,13 @@ function CharacterLibraryHeaderActions({
   onViewChange,
   onImport,
   onExport,
+  selectionMode,
+  selectedCount,
+  onExitSelection,
+  onSelectAll,
+  onDeleteSelected,
+  onChangeGroup,
+  onCompleteSelected,
 }: {
   customCount: number;
   sortField: CharacterSortField;
@@ -161,11 +167,19 @@ function CharacterLibraryHeaderActions({
   onViewChange: (value: CharacterLibraryView) => void;
   onImport: () => void;
   onExport: () => void;
+  selectionMode: boolean;
+  selectedCount: number;
+  onExitSelection: () => void;
+  onSelectAll: () => void;
+  onDeleteSelected: () => void;
+  onChangeGroup: () => void;
+  onCompleteSelected: () => void;
 }) {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null);
   const [sortMenuAnchorEl, setSortMenuAnchorEl] = useState<null | HTMLElement>(null);
+  const [selectionMenuAnchorEl, setSelectionMenuAnchorEl] = useState<null | HTMLElement>(null);
   const isZh = i18n.language.startsWith('zh');
   const sortFieldLabel = sortField === 'name'
     ? (isZh ? '名称' : 'Name')
@@ -176,6 +190,20 @@ function CharacterLibraryHeaderActions({
 
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+      {selectionMode ? (
+        <>
+          <Typography variant="body2" color="text.secondary" sx={{ mr: 0.25 }}>{selectedCount} {isZh ? '已选择' : 'selected'}</Typography>
+          <Tooltip title={isZh ? '退出多选' : 'Exit selection'}><IconButton size="small" onClick={onExitSelection}><CloseIcon fontSize="small" /></IconButton></Tooltip>
+          <Tooltip title={isZh ? '批量操作' : 'Batch actions'}><IconButton size="small" onClick={(event) => setSelectionMenuAnchorEl(event.currentTarget)}><MoreIcon fontSize="small" /></IconButton></Tooltip>
+          <Menu anchorEl={selectionMenuAnchorEl} open={Boolean(selectionMenuAnchorEl)} onClose={() => setSelectionMenuAnchorEl(null)}>
+            <MenuItem onClick={() => { onSelectAll(); setSelectionMenuAnchorEl(null); }}>{isZh ? '全选' : 'Select all'}</MenuItem>
+            <MenuItem disabled={selectedCount === 0} onClick={() => { onDeleteSelected(); setSelectionMenuAnchorEl(null); }}>{isZh ? '批量删除' : 'Delete selected'}</MenuItem>
+            <Divider />
+            <MenuItem disabled={selectedCount === 0} onClick={() => { onChangeGroup(); setSelectionMenuAnchorEl(null); }}>{isZh ? '更改分组' : 'Change group'}</MenuItem>
+            <MenuItem disabled={selectedCount === 0} onClick={() => { onCompleteSelected(); setSelectionMenuAnchorEl(null); }}>{isZh ? '批量补全' : 'Complete selected'}</MenuItem>
+          </Menu>
+        </>
+      ) : null}
       <Chip
         size="small"
         label={`${sortFieldLabel} · ${sortDirectionLabel}${sortGroupFirst ? ` · ${isZh ? '分组优先' : 'Group first'}` : ''}`}
@@ -347,7 +375,6 @@ export default function CharacterLibraryPage() {
   const [libraryRefreshToken, setLibraryRefreshToken] = useState(0);
   const libraryRequestIdRef = useRef(0);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [selectionMenuAnchorEl, setSelectionMenuAnchorEl] = useState<null | HTMLElement>(null);
   const groupPressTimerRef = useRef<number | null>(null);
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
     open: false,
@@ -604,16 +631,11 @@ export default function CharacterLibraryPage() {
     resetSelection();
   };
 
-  const handleSelectionMoreMenu = (event: MouseEvent<HTMLElement>) => {
-    setSelectionMenuAnchorEl(event.currentTarget);
-  };
-
   const handleSelectAllCharacters = () => {
     // 全选只作用于当前筛选结果；卡片模式还受分页影响，只选择已加载的卡片。
     const selectableCharacters = view === 'card' ? displayChars : filteredCustom;
     setSelectedIds(selectableCharacters.map((character) => character.id));
     setSelectionMode(true);
-    closeSelectionMoreMenu();
   };
 
   const isCompletionMissing = (character: AICharacter, field: CharacterCompletionField) => {
@@ -634,7 +656,6 @@ export default function CharacterLibraryPage() {
   );
 
   const openCompletionDialog = () => {
-    closeSelectionMoreMenu();
     setCompletionOpen(true);
   };
 
@@ -738,10 +759,6 @@ export default function CharacterLibraryPage() {
     setCompletionOpen(false);
     resetSelection();
     setSnackbar({ open: true, message: '已加入补全队列', severity: 'success' });
-  };
-
-  const closeSelectionMoreMenu = () => {
-    setSelectionMenuAnchorEl(null);
   };
 
   const handleStartDirectChat = async (characterId: string, characterName: string) => {
@@ -863,6 +880,13 @@ export default function CharacterLibraryPage() {
         onViewChange={setView}
         onImport={handleImport}
         onExport={handleExport}
+        selectionMode={selectionMode}
+        selectedCount={selectedIds.length}
+        onExitSelection={resetSelection}
+        onSelectAll={handleSelectAllCharacters}
+        onDeleteSelected={() => setBulkDeleteOpen(true)}
+        onChangeGroup={() => setBulkGroupDialogOpen(true)}
+        onCompleteSelected={openCompletionDialog}
       />
     );
 
@@ -872,7 +896,7 @@ export default function CharacterLibraryPage() {
       setHeaderBackAction(null);
       setHideMobileBottomNav(false);
     };
-  }, [custom.length, handleExport, handleImport, i18n.language, setHeaderActions, setHeaderBackAction, setHeaderTitle, setHideMobileBottomNav, sortDirection, sortField, sortGroupFirst, view]);
+  }, [custom.length, handleExport, handleImport, i18n.language, openCompletionDialog, resetSelection, handleSelectAllCharacters, selectedIds.length, selectionMode, setHeaderActions, setHeaderBackAction, setHeaderTitle, setHideMobileBottomNav, sortDirection, sortField, sortGroupFirst, view]);
 
   return (
     <Box sx={{ position: 'relative', containerType: 'inline-size', p: 3, pt: { xs: 1, sm: 1, md: 3 }, pb: { xs: 'calc(env(safe-area-inset-bottom, 0px) + 82px)', sm: 12 } }}>
@@ -930,34 +954,6 @@ export default function CharacterLibraryPage() {
         onGroupPointerCancel={clearGroupPressTimer}
         sx={{ mb: 2 }}
       />
-      {selectionMode ? (
-        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center', mb: 2 }}>
-          <Typography variant="body2" color="text.secondary">{selectedIds.length} {i18n.language.startsWith('zh') ? '已选择' : 'selected'}</Typography>
-          <Box sx={{ ml: 'auto', display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-            <Button size="small" variant="outlined" startIcon={<ClearAllIcon />} onClick={resetSelection}>{i18n.language.startsWith('zh') ? '取消选择' : 'Cancel'}</Button>
-            <Button size="small" color="error" variant="outlined" startIcon={<DeleteSweepIcon />} onClick={() => setBulkDeleteOpen(true)} disabled={selectedIds.length === 0}>{i18n.language.startsWith('zh') ? '批量删除' : 'Delete selected'}</Button>
-            <IconButton size="small" onClick={handleSelectionMoreMenu} disabled={!selectionMode}>
-              <MoreIcon fontSize="small" />
-            </IconButton>
-          </Box>
-          <Menu anchorEl={selectionMenuAnchorEl} open={Boolean(selectionMenuAnchorEl) && selectionMode} onClose={closeSelectionMoreMenu}>
-            <MenuItem onClick={handleSelectAllCharacters}>
-              {i18n.language.startsWith('zh') ? '全选' : 'Select all'}
-            </MenuItem>
-            <MenuItem onClick={() => {
-              closeSelectionMoreMenu();
-              setBulkGroupDialogOpen(true);
-            }}>
-              {i18n.language.startsWith('zh') ? '更改分组' : 'Change group'}
-            </MenuItem>
-            <Divider />
-            <MenuItem onClick={openCompletionDialog} disabled={selectedIds.length === 0}>
-              {i18n.language.startsWith('zh') ? '批量补全' : 'Complete selected'}
-            </MenuItem>
-          </Menu>
-        </Box>
-      ) : null}
-
       <Box sx={{ pr: 0.5 }}>
       {characterLimitReached ? (
         <Alert severity="warning" sx={{ mb: 1.5 }}>

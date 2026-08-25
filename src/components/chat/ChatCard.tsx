@@ -13,6 +13,7 @@ import { buildChatSubtitle } from './chatCardSubtitle';
 import { getChatGameplayShortLabel } from '../../services/chatGameplayPresentation';
 import { sanitizeChatLatestMessage } from '../../services/chatLatestMessage';
 import { avatarGenerationQueue, type AvatarGenerationTaskState } from '../../services/avatarGenerationQueue';
+import { getChatCompletionTaskStatus, subscribeChatCompletionQueue } from '../../services/chatCompletionQueue';
 
 interface ChatCardProps {
   chat: GroupChat;
@@ -59,7 +60,9 @@ function ChatCard({ chat, characters, onClick, onPrefetch, selected = false, sel
     onLongPress();
   };
   const [avatarTask, setAvatarTask] = useState<AvatarGenerationTaskState | null>(() => avatarGenerationQueue.getLatestTaskForTarget(`chat-avatar:${chat.id}`));
+  const [chatAvatarTaskStatus, setChatAvatarTaskStatus] = useState(() => getChatCompletionTaskStatus(chat.id, 'group-avatar'));
   useEffect(() => avatarGenerationQueue.subscribeTarget(`chat-avatar:${chat.id}`, setAvatarTask), [chat.id]);
+  useEffect(() => subscribeChatCompletionQueue(() => setChatAvatarTaskStatus(getChatCompletionTaskStatus(chat.id, 'group-avatar'))), [chat.id]);
   const resolvedLatestMessage = sanitizeChatLatestMessage(chat.latestMessage);
   const members = characters.filter((c) => chat.memberIds.includes(c.id));
   const deletedMembers = members.filter((member) => member.deletedAt != null);
@@ -104,7 +107,7 @@ function ChatCard({ chat, characters, onClick, onPrefetch, selected = false, sel
     </Avatar>
   );
   const groupAvatarUrl = chat.type === 'group' ? chat.groupVisual?.avatarUrl?.trim() : '';
-  const groupAvatarGenerating = avatarTask?.status === 'queued' || avatarTask?.status === 'running';
+  const groupAvatarGenerating = avatarTask?.status === 'queued' || avatarTask?.status === 'running' || chatAvatarTaskStatus === 'queued' || chatAvatarTaskStatus === 'running';
   const groupAvatarNode = (
     <Box sx={{ position: 'relative', width: 46, height: 46, flexShrink: 0 }}>
       <Avatar src={groupAvatarUrl || undefined} sx={{ width: 46, height: 46, bgcolor: 'primary.light', fontSize: '1.05rem' }}>
