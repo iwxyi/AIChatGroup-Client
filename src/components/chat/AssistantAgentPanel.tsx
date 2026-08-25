@@ -105,6 +105,8 @@ function LearningProgressSummary({ chat }: { chat: GroupChat }) {
   if (!learning) return null;
   const suggestion = learning.nextStepSuggestion;
   const items = learning.knowledgeItems || [];
+  const attempts = learning.attempts || [];
+  const evidence = learning.evidence || [];
   const statusLabel: Record<string, string> = { unknown: '未知', exposed: '已整理', learning: '学习中', practicing: '练习中', usable: '可使用', verified: '已核验', stale: '待复习' };
   return (
     <Box sx={{ p: 1.25, border: '1px solid', borderColor: 'primary.main', borderRadius: 1, bgcolor: 'action.selected' }}>
@@ -114,8 +116,13 @@ function LearningProgressSummary({ chat }: { chat: GroupChat }) {
       </Typography>
       <Stack direction="row" spacing={0.5} sx={{ mt: 1, flexWrap: 'wrap', rowGap: 0.5 }}>
         {items.slice(0, 12).map((item) => <Chip key={item.id} size="small" label={`${item.title} · ${statusLabel[item.status] || item.status}`} variant="outlined" />)}
-        {!items.length ? <Typography variant="caption" color="text.secondary">还没有知识点记录，可以先发送“整理知识点”。</Typography> : null}
+      {!items.length ? <Typography variant="caption" color="text.secondary">还没有知识点记录，可以先发送“整理知识点”。</Typography> : null}
       </Stack>
+      {(attempts.length || evidence.length) ? (
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75 }}>
+          已记录 {attempts.length} 次练习提交、{evidence.length} 条学习证据
+        </Typography>
+      ) : null}
       {suggestion ? (
         <Box sx={{ mt: 1, pt: 1, borderTop: '1px solid', borderColor: 'divider' }}>
           <Typography variant="caption" sx={{ fontWeight: 750, display: 'block' }}>建议下一步：{suggestion.title}</Typography>

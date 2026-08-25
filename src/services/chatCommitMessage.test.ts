@@ -258,6 +258,40 @@ describe('persistLocalFirstMessage', () => {
     expect(upserts[1]?.metadata?.withdrawal?.visiblePending).toBeUndefined();
   });
 
+  it('does not sync a commit invalidated while waiting on a reveal delay', async () => {
+    const upserts: Message[] = [];
+    let current = true;
+    await expect(persistLocalFirstMessage({
+      existingLocalMessage: {
+        id: 'local-stream-cancelled',
+        chatId: 'chat-1',
+        type: 'ai',
+        senderId: 'char-1',
+        senderName: '甲',
+        content: '流式原文',
+        emotion: 0,
+        timestamp: 333334,
+        isDeleted: false,
+        isStreaming: true,
+      },
+      message: {
+        chatId: 'chat-1',
+        type: 'ai',
+        senderId: 'char-1',
+        senderName: '甲',
+        content: '撤回后的消息',
+        metadata: { withdrawal: { withdrawn: true, originalContent: '流式原文', reason: '取消', withdrawnAt: 123 } },
+        emotion: 0,
+      },
+      upsertMessage: (message) => upserts.push(message),
+      withdrawalRevealDelayMs: 10,
+      delay: async () => { current = false; },
+      shouldContinue: () => current,
+    })).rejects.toThrow('生成已停止');
+    expect(queueMessageSyncMock).not.toHaveBeenCalled();
+    expect(upserts).toHaveLength(1);
+  });
+
   it('builds deterministic local ids for identical payload + timestamp', () => {
     const payload = {
       chatId: 'chat-1',

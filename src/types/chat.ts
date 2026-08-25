@@ -296,6 +296,36 @@ export interface LearningKnowledgeItem {
   sourceArtifactIds?: string[];
   notes?: string;
 }
+
+export type LearningEvidenceKind = 'answer' | 'code' | 'writing' | 'conversation' | 'self_report' | 'artifact';
+
+export interface LearningEvidenceRecord {
+  id: string;
+  kind: LearningEvidenceKind;
+  summary: string;
+  sourceMessageId?: string;
+  sourceArtifactId?: string;
+  knowledgeItemIds?: string[];
+  score?: number;
+  maxScore?: number;
+  feedback?: string;
+  createdAt: number;
+}
+
+export interface LearningAttemptRecord {
+  id: string;
+  artifactId?: string;
+  interactionId?: string;
+  submissionId?: string;
+  status: 'submitted' | 'graded' | 'needs_review';
+  score?: number;
+  maxScore?: number;
+  questionCount?: number;
+  answeredCount?: number;
+  feedback?: string;
+  createdAt: number;
+  gradedAt?: number;
+}
 export interface LearningScenarioState {
   goal: string;
   domain?: string;
@@ -305,6 +335,8 @@ export interface LearningScenarioState {
   teacherIds?: string[];
   studentIds?: string[];
   knowledgeItems: LearningKnowledgeItem[];
+  evidence?: LearningEvidenceRecord[];
+  attempts?: LearningAttemptRecord[];
   lastStudyAction?: 'map' | 'practice' | 'review' | 'plan' | 'note';
   lastStudyActionAt?: number;
   nextStepSuggestion?: LearningNextStepSuggestion;
@@ -816,6 +848,17 @@ export interface ChatMemberCharacterSummary {
   updatedAt: number;
 }
 
+/** Long-lived visual anchors for a group conversation. One-off generation requests are deliberately not stored here. */
+export interface GroupVisualIdentity {
+  description?: string;
+  styleHint?: string;
+  negativePrompt?: string;
+  avatarUrl?: string | null;
+  backgroundUrl?: string | null;
+  avatarSeed?: string | number | null;
+  backgroundSeed?: string | number | null;
+}
+
 export interface GroupChat {
   id: string;
   type: ConversationType;
@@ -854,6 +897,7 @@ export interface GroupChat {
   sourceMarketItemId?: string | null;
   sourceMarketItemVersion?: number | null;
   sourceMarketKind?: 'character_template' | 'chat_template' | 'bundle_template' | string | null;
+  groupVisual?: GroupVisualIdentity | null;
   memberCharacterSummaries?: ChatMemberCharacterSummary[];
   layeredMemories?: MemoryItem[];
   runtimeSeed?: {

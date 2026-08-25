@@ -18,7 +18,7 @@ import { useSchedulerStore } from '../stores/useSchedulerStore';
 import { isGenerationCancelledError } from '../services/generationCancellation';
 
 export type ConversationLoopStartBlockReason = 'direct_chat' | 'waiting_story_choice' | 'already_active';
-type ConversationLoopStartOptions = { ignoreReaderPositionOnce?: boolean; immediate?: boolean };
+type ConversationLoopStartOptions = { ignoreReaderPositionOnce?: boolean; immediate?: boolean; allowDirect?: boolean };
 const DEFAULT_CONVERSATION_LOOP_START_DELAY_MS = 100;
 
 export function getConversationLoopStartBlockReason(params: {
@@ -27,8 +27,9 @@ export function getConversationLoopStartBlockReason(params: {
   isPaused: boolean;
   isStoryChoiceBlocked: boolean;
   hasActiveLoop: boolean;
+  allowDirect?: boolean;
 }): ConversationLoopStartBlockReason | null {
-  if (params.conversationType === 'direct') return 'direct_chat';
+  if (params.conversationType === 'direct' && !params.allowDirect) return 'direct_chat';
   if (params.isStoryChoiceBlocked) return 'waiting_story_choice';
   if (params.isRunning && !params.isPaused && params.hasActiveLoop) return 'already_active';
   return null;
@@ -49,6 +50,7 @@ export function shouldStartConversationLoop(params: {
   isPaused: boolean;
   isStoryChoiceBlocked: boolean;
   hasActiveLoop: boolean;
+  allowDirect?: boolean;
 }) {
   return getConversationLoopStartBlockReason(params) === null;
 }
@@ -397,6 +399,7 @@ export function useChatRunLoop(params: {
       isPaused: current.isPausedRef.current,
       isStoryChoiceBlocked,
       hasActiveLoop,
+      allowDirect: options.allowDirect,
     });
     logDeveloperDiagnostic('story-run:start-gate', {
       chatId: conversationChat.id,
@@ -492,6 +495,12 @@ export function useChatRunLoop(params: {
     current.isPausedRef.current = true;
     current.discardStreamingMessage();
     current.clearStreamingMessageRef();
+    // The cancelled loop may still be unwinding an async commit. It no longer
+    // belongs to the active conversation branch, so manual input must not wait
+    // for its bookkeeping callbacks; the commit itself is guarded by the
+    // shouldContinue token passed through the persistence pipeline.
+    pendingCommitCountRef.current = 0;
+    pendingTurnWorkCountRef.current = 0;
     setThinkingId(null);
     current.setCurrentSpeaker(null);
     current.stop();

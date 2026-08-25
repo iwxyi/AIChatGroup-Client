@@ -82,6 +82,9 @@ export function resolveRoomCapabilities(input: RoomCapabilityInput): Record<Room
       'structured-data': 'assisted',
       assessment: 'assisted',
       'html-interactive': 'assisted',
+      // Whether audio is actually available remains controlled by configured
+      // TTS profiles. This declares that the study surface may request it.
+      media: 'assisted',
     } : {}),
     ...(agent ? { workflow: 'automatic', artifacts: 'automatic', 'structured-data': 'automatic' } : {}),
   };

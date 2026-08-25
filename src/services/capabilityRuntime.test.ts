@@ -18,6 +18,7 @@ describe('cross-play capability runtime', () => {
     const capabilities = resolveRoomCapabilities({ chat: chat() });
     expect(capabilities.knowledge.mode).toBe('assisted');
     expect(capabilities.artifacts.mode).toBe('assisted');
+    expect(capabilities.media.mode).toBe('assisted');
     expect(capabilities.workflow.mode).toBe('off');
   });
 

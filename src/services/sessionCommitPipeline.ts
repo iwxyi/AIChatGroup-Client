@@ -153,6 +153,7 @@ async function finishAppliedSessionTransition(params: {
   updateChat: (id: string, patch: Partial<GroupChat>) => Promise<void>;
   getCurrentChat?: (id: string) => GroupChat | undefined;
   getCurrentCharacters?: () => AICharacter[];
+  shouldContinue?: () => boolean;
 }) {
   const transitionWithRecall = applyRecalledMemoryActivation({
     chat: params.chat,
@@ -244,6 +245,7 @@ export async function runSessionCommitPipeline(params: {
   aiProfiles?: AIModelProfile[];
   getCurrentChat?: (id: string) => GroupChat | undefined;
   getCurrentCharacters?: () => AICharacter[];
+  shouldContinue?: () => boolean;
 }): Promise<SessionCommitPipelineResult> {
   const { persistedMessage, transition } = await runChatCommitPipeline({
     ...params,

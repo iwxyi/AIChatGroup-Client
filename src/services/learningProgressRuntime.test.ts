@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { normalizeConversation } from '../types/chat';
-import { mergeLearningKnowledgeFromArtifacts } from './learningProgressRuntime';
+import { buildLearningProgressSnapshot, mergeLearningKnowledgeFromArtifacts, recordLearningAttempt, recordLearningEvidence } from './learningProgressRuntime';
 
 const chat = normalizeConversation({
   id: 'learning-1', type: 'group', mode: 'classroom', modeConfig: {}, modeState: {},
@@ -18,5 +18,22 @@ describe('learning progress runtime', () => {
       versions: [{ id: 'v1', artifactId: 'artifact-1', sourceMessageId: 'm1', createdAt: 1, content: '# 索引基础\n## B+树\n## 覆盖索引' }],
     }]);
     expect(patch.scenarioState?.learning?.knowledgeItems.map((item) => item.title)).toEqual(['索引基础', 'B+树', '覆盖索引']);
+  });
+
+  it('records evidence and attempts without claiming mastery automatically', () => {
+    const mapped = mergeLearningKnowledgeFromArtifacts(chat, [{
+      id: 'artifact-2', chatId: chat.id, kind: 'document', title: '索引地图', currentVersionId: 'v1', sourceMessageId: 'm1', createdAt: 1, updatedAt: 1,
+      versions: [{ id: 'v1', artifactId: 'artifact-2', sourceMessageId: 'm1', createdAt: 1, content: '# B+树' }],
+    }]);
+    const mappedChat = normalizeConversation({ ...chat, ...mapped });
+    const knowledgeId = mappedChat.scenarioState?.learning?.knowledgeItems[0]?.id || '';
+    const evidencePatch = recordLearningEvidence(mappedChat, { id: 'e1', kind: 'answer', summary: '能解释 B+树叶子节点', knowledgeItemIds: [knowledgeId], createdAt: 2 });
+    const evidenceChat = normalizeConversation({ ...mappedChat, ...evidencePatch });
+    expect(evidenceChat.scenarioState?.learning?.knowledgeItems[0]?.status).toBe('practicing');
+    expect(evidenceChat.scenarioState?.learning?.evidence).toHaveLength(1);
+    const attemptPatch = recordLearningAttempt(evidenceChat, { id: 'attempt-1', status: 'graded', score: 2, maxScore: 3, createdAt: 3, gradedAt: 4 });
+    const finalChat = normalizeConversation({ ...evidenceChat, ...attemptPatch });
+    expect(finalChat.scenarioState?.learning?.attempts?.[0]?.score).toBe(2);
+    expect(buildLearningProgressSnapshot(finalChat)?.counts.practicing).toBe(1);
   });
 });

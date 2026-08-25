@@ -33,6 +33,7 @@ export async function commitGeneratedMessageTurn(params: {
   aiProfiles?: AIModelProfile[];
   getCurrentChat?: (id: string) => GroupChat | undefined;
   getCurrentCharacters?: () => AICharacter[];
+  shouldContinue?: () => boolean;
 }) {
   const segments = splitGeneratedRoundMessage(params.message);
   let workingChat = params.chat;
@@ -61,6 +62,7 @@ export async function commitGeneratedMessageTurn(params: {
       aiProfiles: params.aiProfiles,
       getCurrentChat: params.getCurrentChat,
       getCurrentCharacters: params.getCurrentCharacters,
+      shouldContinue: params.shouldContinue,
     });
     results.push(result);
     workingChat = result.nextChat;

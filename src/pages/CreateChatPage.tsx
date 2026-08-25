@@ -1,7 +1,7 @@
 import { lazy, Suspense, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useLayoutHeaderActions } from '../components/layout/AppLayoutContext';
 import {
-  Alert, Box, Typography, Button, Dialog, DialogTitle, DialogContent, DialogActions, IconButton, Menu, MenuItem, Tooltip,
+  Alert, Box, Typography, Button, Dialog, DialogTitle, DialogContent, DialogActions, IconButton, Menu, MenuItem, Tooltip, TextField,
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
@@ -62,6 +62,7 @@ import {
 } from '../services/marketImportDraft';
 import { buildBundleMarketPayload, buildChatMarketPayload, getMarketSummaryForChat, getMarketTitleForChat } from '../services/templateMarketPayload';
 import { buildOpeningTopicGuideMessage } from '../services/createChatOpening';
+import { enqueueGroupVisualGeneration, type GroupVisualKind } from '../services/groupVisualGeneration';
 
 const HotTopicDialogContainer = lazy(() => import('../components/createChat/HotTopicDialogContainer'));
 const CHAT_DRAFT_KEY = storageKey('create-chat-draft');
@@ -309,6 +310,7 @@ export default function CreateChatPage() {
   const [hotTopicOpenSignal, setHotTopicOpenSignal] = useState(0);
   const [hotTopicDialogEnabled, setHotTopicDialogEnabled] = useState(false);
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({ open: false, message: '', severity: 'success' });
+  const [groupVisualDialog, setGroupVisualDialog] = useState<{ kind: GroupVisualKind; requirement: string } | null>(null);
   const memberPressTimerRef = useRef<number | null>(null);
   const styleOverriddenRef = useRef(false);
 
@@ -745,6 +747,20 @@ export default function CreateChatPage() {
     ...characters.filter((char) => selectedMembers.includes(char.id)),
     ...marketBundleCharacterPreviews.filter((char) => selectedMembers.includes(char.id) && !characters.some((item) => item.id === char.id)),
   ];
+  const queueGroupVisualFromDialog = () => {
+    if (!editingChat || !groupVisualDialog) return;
+    enqueueGroupVisualGeneration({
+      chat: editingChat,
+      members: selectedCharacters,
+      profiles: aiProfiles,
+      settings: useSettingsStore.getState().avatarGeneration,
+      language: isZh ? 'zh' : 'en',
+      kind: groupVisualDialog.kind,
+      requirement: groupVisualDialog.requirement,
+    });
+    setGroupVisualDialog(null);
+    setSnackbar({ open: true, message: groupVisualDialog.kind === 'avatar' ? '已加入群头像生成队列' : '已加入群背景生成队列', severity: 'success' });
+  };
   const hasCustomCharacters = customCharacters.length > 0;
   const insufficientGroupCharacterCount = !editingChat && !marketImportDraft && isGroupConversation && customCharacters.length < MIN_MEMBERS;
   const canAutofill = !editingChat && !aiAutofilling && Boolean(name.trim() || topic.trim() || selectedMembers.length);
@@ -1529,6 +1545,23 @@ export default function CreateChatPage() {
         sourceMarketItemVersion: marketImportDraft?.item.payloadVersion,
         sourceMarketKind: marketImportDraft?.item.kind,
       });
+      // Keep automatic avatar generation consistent with the character setting:
+      // a newly created group gets a themed group avatar in the same background
+      // image queue, while creation itself remains fast and non-blocking.
+      if (chat.type === 'group' && useSettingsStore.getState().avatarGeneration.autoGenerateCharacterAvatar) {
+        const generationMembers = [
+          ...characters,
+          ...marketBundleCharacterPreviews.filter((character) => !characters.some((item) => item.id === character.id)),
+        ].filter((character) => chat.memberIds.includes(character.id));
+        enqueueGroupVisualGeneration({
+          chat,
+          members: generationMembers,
+          profiles: aiProfiles,
+          settings: useSettingsStore.getState().avatarGeneration,
+          language: isZh ? 'zh' : 'en',
+          kind: 'avatar',
+        });
+      }
       if (draftContext.nextMemberIds.length) {
         const memberNames = baseDraft.memberIds.map((memberId) => (
           memberId === 'user' ? 'User' : characters.find((char) => char.id === memberId)?.name || marketBundleCharacterPreviews.find((char) => creationIdMap.get(char.id) === memberId || char.id === memberId)?.name || memberId
@@ -1657,6 +1690,16 @@ export default function CreateChatPage() {
               openTopicInspirationLabel={i18n.language.startsWith('zh') ? '打开热点灵感' : 'Open topic inspiration'}
               batchGenerateMembersLabel={i18n.language.startsWith('zh') ? '生成' : 'Generate'}
             />
+            {editingChat && isGroupConversation ? (
+              <SurfaceCard>
+                <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5 }}>群聊视觉</Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>根据群主题、成员和当前氛围生成；离开页面后仍会在后台继续。</Typography>
+                <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                  <Button variant="outlined" onClick={() => setGroupVisualDialog({ kind: 'avatar', requirement: '' })}>生成群头像</Button>
+                  <Button variant="outlined" onClick={() => setGroupVisualDialog({ kind: 'background', requirement: '' })}>生成群背景</Button>
+                </Box>
+              </SurfaceCard>
+            ) : null}
             {editingChat ? (
               <SurfaceCard sx={{ borderColor: 'error.light', bgcolor: 'rgba(211, 47, 47, 0.04)' }}>
                 <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1, color: 'error.main' }}>
@@ -1999,6 +2042,16 @@ export default function CreateChatPage() {
           />
         </>
       ) : null}
+      <Dialog open={Boolean(groupVisualDialog)} onClose={() => setGroupVisualDialog(null)} fullWidth maxWidth="sm">
+        <DialogTitle>{groupVisualDialog?.kind === 'avatar' ? '生成群头像' : '生成群背景'}</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+            可补充本次偏好；它不会写入群聊长期设定。{groupVisualDialog?.kind === 'background' ? ' 背景源图为方形，界面会自动裁切适配横竖屏。' : ''}
+          </Typography>
+          <TextField autoFocus fullWidth multiline minRows={3} value={groupVisualDialog?.requirement || ''} onChange={(event) => setGroupVisualDialog((current) => current ? { ...current, requirement: event.target.value } : current)} placeholder={groupVisualDialog?.kind === 'avatar' ? '例如：暖色、旧书与咖啡的感觉' : '例如：浅色雾感、不要抢文字'} />
+        </DialogContent>
+        <DialogActions><Button onClick={() => setGroupVisualDialog(null)}>取消</Button><Button variant="contained" onClick={queueGroupVisualFromDialog}>加入队列</Button></DialogActions>
+      </Dialog>
     </Box>
   );
 }

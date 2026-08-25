@@ -856,6 +856,9 @@ export default function ChatDetailPage() {
   const composerDockRef = useRef<HTMLDivElement | null>(null);
   const pendingAppCommandChoiceRef = useRef(false);
   const assistantTitleRetryKeyRef = useRef<string | null>(null);
+  const openingLoopRef = useRef(false);
+  const openingSuppressedRef = useRef(false);
+  const openingMessageCountRef = useRef(0);
 
   useEffect(() => {
     if (!isMobile || typeof window === 'undefined') return undefined;
@@ -1701,6 +1704,33 @@ export default function ChatDetailPage() {
   });
   isManualInputPendingRef.current = isManualInputPending;
 
+  const startInitialConversationOpening = useCallback(() => {
+    if (!chat || !id || chatInteractionDisabled || isStoryRoom) return;
+    const conversationTurnCount = currentChatMessages.filter((message) => message.type === 'user' || message.type === 'ai').length;
+    if (conversationTurnCount > 0) {
+      openingMessageCountRef.current = conversationTurnCount;
+      openingSuppressedRef.current = false;
+      return;
+    }
+    if (openingMessageCountRef.current > 0) {
+      openingMessageCountRef.current = 0;
+      openingSuppressedRef.current = false;
+    }
+    if (openingSuppressedRef.current) return;
+    if (isRunning || isDirectReplyPending) return;
+    if (chat.type === 'assistant') return;
+    openingLoopRef.current = true;
+    resume();
+    startConversationLoopIfNeeded(chat, { immediate: true, allowDirect: chat.type === 'direct' });
+  }, [chat, chatInteractionDisabled, currentChatMessages, id, isDirectReplyPending, isRunning, isStoryRoom, resume, startConversationLoopIfNeeded]);
+
+  // Creation, initial loading, and clearing history all converge here: when
+  // the projected conversation becomes empty, this single entry starts the
+  // optional AI opening turn.
+  useEffect(() => {
+    startInitialConversationOpening();
+  }, [startInitialConversationOpening]);
+
   const commitPersistedManualRuntime = useCallback(async (message: Message, recentMessages: Message[]) => {
     if (!chat || !id) return;
     const [{ runPersistedSessionCommitRuntime }, { resolveSessionEngine }] = await Promise.all([
@@ -1963,7 +1993,9 @@ export default function ChatDetailPage() {
     const activeBranchMessages = projectActiveBranchMessages(nextChat, currentChatAllMessages);
     const activeTail = activeBranchMessages.at(-1);
     const activePreviewTail = getLatestChatPreviewMessage(activeBranchMessages);
-    await updateChat(id, {
+    // Branch switching is a local projection change first. Do not block the
+    // message list/scroll feedback on cloud persistence or workspace hooks.
+    void updateChat(id, {
       messageBranchState: {
         ...nextBranchState,
         activeLeafNodeId: activeTail?.metadata?.branching?.nodeId || activeTail?.id || targetNodeId,
@@ -1972,6 +2004,8 @@ export default function ChatDetailPage() {
         lastMessageAt: activePreviewTail.timestamp,
         latestMessage: activePreviewTail,
       } : {}),
+    }).catch((error) => {
+      showErrorToast(error instanceof Error ? error.message : '分支状态保存失败');
     });
     if (scrollRestoreRequest) {
       setMessageScrollRequest({
@@ -1984,7 +2018,7 @@ export default function ChatDetailPage() {
     if (cancelledRunningLoop) {
       setSnackbar({ open: true, message: '已切换分支，当前生成已停止', severity: 'success' });
     }
-  }, [cancelActiveConversationLoop, chat, currentChatAllMessages, id, setSnackbar, updateChat]);
+  }, [cancelActiveConversationLoop, chat, currentChatAllMessages, id, setSnackbar, showErrorToast, updateChat]);
 
   useEffect(() => {
     if (!chatInteractionDisabled) return;
@@ -2112,7 +2146,11 @@ export default function ChatDetailPage() {
   }, []);
 
   const handleHtmlSubmit = useCallback(async (input: AssistantHtmlInteractionPayload) => {
-    if (!chat || !id || chat.type !== 'assistant' || chatInteractionDisabled) return;
+    // Assistant HTML submissions are also the structured answer surface for
+    // learning-progress rooms. Keep the same artifact/version protocol, but
+    // allow the study room to route the submitted attempt through the shared
+    // Agent flow instead of silently ignoring the form.
+    if (!chat || !id || (chat.type !== 'assistant' && !isLearningProgressRoom) || chatInteractionDisabled) return;
     const pendingKey = `${input.artifactId}:${input.interactionId}:${input.baseVersionId}`;
     if (pendingHtmlSubmissionKeysRef.current.has(pendingKey)) return;
     pendingHtmlSubmissionKeysRef.current.add(pendingKey);
@@ -2133,6 +2171,18 @@ export default function ChatDetailPage() {
         const submittedVersion = artifact.versions.find((version) => version.id === artifact.currentVersionId);
         if (!submittedVersion || submittedVersion.stage !== 'submitted' || submittedVersion.submissionId !== submissionId) return;
         setFullscreenAssistantArtifactId((current) => current === artifact.id ? null : current);
+        if (isLearningProgressRoom) {
+          const { recordLearningAttempt } = await import('../services/learningProgressRuntime');
+          const attemptPatch = recordLearningAttempt(chat, {
+            id: submissionId,
+            artifactId: artifact.id,
+            interactionId: input.interactionId,
+            submissionId,
+            status: 'submitted',
+            createdAt: submittedAt,
+          });
+          if (Object.keys(attemptPatch).length) await updateChat(id, attemptPatch);
+        }
 
         const recentMessages = currentChatMessages;
         const userMessage = await addMessageStable({
@@ -2179,6 +2229,15 @@ export default function ChatDetailPage() {
             signal: assistantReplyAbortController.signal,
             shouldContinue: () => !assistantReplyAbortController.signal.aborted && directReplyEpochRef.current === assistantReplyEpoch,
           });
+          if (isLearningProgressRoom) {
+            const [{ mergeLearningKnowledgeFromArtifacts }, artifactStore] = await Promise.all([
+              import('../services/learningProgressRuntime'),
+              import('../stores/useAssistantArtifactStore'),
+            ]);
+            const latestChat = useChatStore.getState().chats.find((item) => item.id === id) || chat;
+            const learningPatch = mergeLearningKnowledgeFromArtifacts(latestChat, artifactStore.useAssistantArtifactStore.getState().getArtifactsForChat(id));
+            if (Object.keys(learningPatch).length) await updateChat(id, learningPatch);
+          }
         } catch (error) {
           if (!isGenerationCancelledError(error)) {
             console.error('[assistant-html:submit-error]', error);
@@ -3468,8 +3527,10 @@ export default function ChatDetailPage() {
           inset: 0,
           pointerEvents: 'none',
           backgroundImage: (theme) => theme.palette.mode === 'light'
-            ? 'repeating-linear-gradient(0deg, rgba(15,23,42,0.030) 0 1px, transparent 1px 28px), repeating-linear-gradient(90deg, rgba(15,23,42,0.024) 0 1px, transparent 1px 28px)'
+            ? `${chat.type === 'group' && chat.groupVisual?.backgroundUrl ? `linear-gradient(rgba(255,255,255,0.82), rgba(255,255,255,0.82)), url("${chat.groupVisual.backgroundUrl.replace(/"/g, '%22')}"), ` : ''}repeating-linear-gradient(0deg, rgba(15,23,42,0.030) 0 1px, transparent 1px 28px), repeating-linear-gradient(90deg, rgba(15,23,42,0.024) 0 1px, transparent 1px 28px)`
             : 'repeating-linear-gradient(0deg, rgba(226,232,240,0.030) 0 1px, transparent 1px 28px), repeating-linear-gradient(90deg, rgba(226,232,240,0.024) 0 1px, transparent 1px 28px)',
+          backgroundSize: (theme) => theme.palette.mode === 'light' && chat.type === 'group' && chat.groupVisual?.backgroundUrl ? 'auto, cover, auto, auto' : undefined,
+          backgroundPosition: (theme) => theme.palette.mode === 'light' && chat.type === 'group' && chat.groupVisual?.backgroundUrl ? 'center, center, center, center' : undefined,
         },
       }}>
         <GlassHeader
@@ -3641,14 +3702,23 @@ export default function ChatDetailPage() {
             topContent={composerTopContent}
             injectedAttachments={composerInjectedAttachments}
             onInjectedAttachmentsConsumed={() => setComposerInjectedAttachments([])}
-            isReplyPending={Boolean((chat.type === 'assistant' || chat.type === 'direct') && isDirectReplyPending)}
-            onStopReply={chat.type === 'assistant' || chat.type === 'direct' ? handleStopDirectReply : undefined}
+            isReplyPending={chat.type === 'assistant' || chat.type === 'direct'
+              ? isDirectReplyPending
+              : Boolean(isRunning && !isPaused && (thinkingId || hasPendingTurnWork()))}
+            onStopReply={chat.type === 'assistant' || chat.type === 'direct'
+              ? handleStopDirectReply
+              : () => cancelActiveConversationLoop('composer_generation_cancelled')}
             onOpenPanel={isMobile ? () => setRightPanelOpen(true) : undefined}
             disabled={chatInteractionDisabled}
             disabledReason={chatReadOnlyReason}
             onDraftActivity={(activity) => {
               userDraftActivityRef.current = activity;
               if (isStoryRoom) setHasStoryUserDraft(Boolean(activity.hasDraft));
+              if (activity.hasDraft && openingLoopRef.current) {
+                openingLoopRef.current = false;
+                openingSuppressedRef.current = true;
+                if (isRunningRef.current) cancelActiveConversationLoop('user_started_before_opening');
+              }
             }}
             onSubmitText={(submission, surface) => {
               if (shouldRouteTextAsStoryCustomDirection({

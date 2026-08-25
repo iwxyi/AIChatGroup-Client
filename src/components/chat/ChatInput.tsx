@@ -668,6 +668,7 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
                 flexShrink: 0,
                 width: 42,
                 height: 42,
+                ...(canAttachImages ? { ml: -0.75 } : {}),
                 ...(isRecording ? {
                   bgcolor: 'error.main',
                   color: 'error.contrastText',

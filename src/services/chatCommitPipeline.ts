@@ -47,6 +47,7 @@ export async function runChatCommitPipeline(params: {
   applyChatRuntimeDelta?: (id: string, delta: NonNullable<DriverMessageCommitResult['chatRuntimeDelta']>, patch?: Partial<GroupChat>) => Promise<void>;
   recordSpeak: (characterId: string) => void;
   aiProfiles?: import('../types/settings').AIModelProfile[];
+  shouldContinue?: () => boolean;
 }): Promise<ChatCommitPipelineResult> {
   const timer = createRuntimeMemoryTimer('chat-commit', {
     chatId: params.chatId,
@@ -78,6 +79,7 @@ export async function runChatCommitPipeline(params: {
       message: attachMessageToActiveBranch(params.chat, nextMessages, params.message),
       upsertMessage: params.upsertMessage,
       existingLocalMessage: params.streamingMessage,
+      shouldContinue: params.shouldContinue,
       deferLocalUpsert: false,
       localReveal: Boolean(
         params.streamingMessage

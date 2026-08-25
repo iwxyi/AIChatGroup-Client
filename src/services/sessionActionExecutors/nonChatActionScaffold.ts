@@ -6,6 +6,8 @@ import { canUseMute, canUsePrivateThreads } from '../conversationCapabilities';
 import { canActorRunSessionAction, resolveConversationActorRef } from '../memberActionPolicy';
 import { buildActionRuntimeContract } from '../sessionRuntimeContract';
 import { sanitizeStoryChoicePrompt } from '../storyChoices';
+import { recordLearningAttempt } from '../learningProgressRuntime';
+import { deriveLearningNextStep } from '../learningNextStep';
 
 function truncate(text: string, maxLength: number) {
   const normalized = text.trim();
@@ -86,6 +88,8 @@ function validateAction(action: SessionActionDefinition) {
   if ((action.type === 'ask_question' || action.type === 'question_member' || action.type === 'director_intervention') && !getPrompt(action)) return false;
   if (action.type === 'submit_evidence' && !getPayloadText(action, 'evidenceText')) return false;
   if (action.type === 'record_verdict' && !getPayloadText(action, 'verdictText')) return false;
+  if (action.type === 'submit_learning_attempt' && (!getPayloadText(action, 'artifactId') || !getPayloadText(action, 'answer'))) return false;
+  if (action.type === 'grade_learning_attempt' && !getPayloadText(action, 'attemptId')) return false;
   if (['ask_question', 'question_member', 'start_private_thread', 'wolf_vote', 'inspect_player', 'vote_player', 'mute_member', 'unmute_member'].includes(action.type) && !(action.targetIds?.length)) return false;
   return true;
 }
@@ -417,6 +421,71 @@ function handleAssignStudyTask(chat: GroupChat, action: SessionActionDefinition)
   };
 }
 
+function handleMapLearningGoal(chat: GroupChat, action: SessionActionDefinition) {
+  const goal = getPayloadText(action, 'goal') || getPrompt(action) || chat.topic || '当前学习目标';
+  const summary = `整理知识点：${truncate(goal, 48)}`;
+  const result = buildActionResult(chat, action, '整理学习目标', summary, 'study_goal_mapped', { goal });
+  return {
+    ...result,
+    chatPatch: {
+      ...result.chatPatch,
+      scenarioState: {
+        ...(chat.scenarioState || {}),
+        phase: 'learning',
+        learning: {
+          ...(chat.scenarioState?.learning || {}),
+          goal,
+          lastStudyAction: 'map',
+          knowledgeItems: chat.scenarioState?.learning?.knowledgeItems || [],
+        },
+      },
+    },
+  };
+}
+
+function handleCreateLearningPractice(chat: GroupChat, action: SessionActionDefinition) {
+  const focus = getPayloadText(action, 'focus') || getPrompt(action) || '当前薄弱项';
+  const summary = `生成学习练习：${truncate(focus, 48)}`;
+  const result = buildActionResult(chat, action, '生成学习练习', summary, 'study_practice_requested', { focus });
+  const learning = {
+    ...(chat.scenarioState?.learning || { goal: chat.topic || '当前学习目标', knowledgeItems: [] }),
+    lastStudyAction: 'practice' as const,
+  };
+  return {
+    ...result,
+    chatPatch: {
+      ...result.chatPatch,
+      scenarioState: {
+        ...(chat.scenarioState || {}),
+        phase: 'learning',
+        learning: { ...learning, nextStepSuggestion: learning.goal && learning.knowledgeItems ? deriveLearningNextStep(learning) : undefined },
+      },
+    },
+  };
+}
+
+function handleSubmitLearningAttempt(chat: GroupChat, action: SessionActionDefinition) {
+  const artifactId = getPayloadText(action, 'artifactId');
+  const answer = getPayloadText(action, 'answer') || getPrompt(action);
+  const attemptId = getPayloadText(action, 'attemptId') || `attempt-${Date.now()}`;
+  const summary = `提交学习练习：${truncate(answer, 40)}`;
+  const result = buildActionResult(chat, action, '提交学习练习', summary, 'study_attempt_submitted', { artifactId, attemptId });
+  const patch = recordLearningAttempt(chat, { id: attemptId, artifactId, status: 'submitted', feedback: answer, createdAt: Date.now() });
+  return { ...result, chatPatch: { ...result.chatPatch, ...(patch as Partial<GroupChat>) } };
+}
+
+function handleGradeLearningAttempt(chat: GroupChat, action: SessionActionDefinition) {
+  const attemptId = getPayloadText(action, 'attemptId');
+  const feedback = getPayloadText(action, 'feedback') || getPrompt(action);
+  const score = typeof action.payload?.score === 'number' ? action.payload.score : undefined;
+  const maxScore = typeof action.payload?.maxScore === 'number' ? action.payload.maxScore : undefined;
+  const existing = chat.scenarioState?.learning?.attempts?.find((attempt) => attempt.id === attemptId);
+  const attempt = { ...(existing || { id: attemptId || `attempt-${Date.now()}`, createdAt: Date.now() }), status: 'graded' as const, score, maxScore, feedback, gradedAt: Date.now() };
+  const result = buildActionResult(chat, action, '批改学习练习', `批改结果：${truncate(feedback, 48)}`, 'study_attempt_graded', { attemptId: attempt.id, score, maxScore });
+  const patch = recordLearningAttempt(chat, attempt);
+  return { ...result, chatPatch: { ...result.chatPatch, ...(patch as Partial<GroupChat>) } };
+}
+
 function handleReviewProgress(chat: GroupChat, action: SessionActionDefinition) {
   const focus = typeof action.payload?.focus === 'string' ? action.payload.focus : getPrompt(action);
   const summary = `学习复盘：${truncate(focus, 48)}`;
@@ -647,7 +716,12 @@ function getHandler(action: SessionActionDefinition) {
   if (action.type === 'choose_story_branch') return handleStoryBranch;
   if (action.type === 'advance_story_scene') return handleStoryScene;
   if (action.type === 'assign_study_task') return handleAssignStudyTask;
+  if (action.type === 'map_learning_goal') return handleMapLearningGoal;
+  if (action.type === 'create_learning_practice') return handleCreateLearningPractice;
+  if (action.type === 'submit_learning_attempt') return handleSubmitLearningAttempt;
+  if (action.type === 'grade_learning_attempt') return handleGradeLearningAttempt;
   if (action.type === 'review_progress') return handleReviewProgress;
+  if (action.type === 'review_learning_progress') return handleReviewProgress;
   if (action.type === 'assign_agent_task') return handleAssignAgentTask;
   if (action.type === 'summarize_workflow') return handleSummarizeWorkflow;
   if (action.type === 'board_move') return handleBoardMove;

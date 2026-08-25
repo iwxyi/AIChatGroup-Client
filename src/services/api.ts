@@ -989,6 +989,10 @@ class ApiClient {
     return this.request<Record<string, unknown>>('PUT', `/chats/${id}`, data);
   }
 
+  async persistGroupVisual(id: string, kind: 'avatar' | 'background', dataUrl: string) {
+    return this.request<{ url: string; groupVisual: Record<string, unknown> }>('POST', `/chats/${id}/group-visual`, { kind, dataUrl });
+  }
+
   async deleteChat(id: string) {
     return this.request<{ success: boolean }>('DELETE', `/chats/${id}`);
   }

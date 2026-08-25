@@ -481,8 +481,10 @@ export async function runSessionLoop(params: {
                 aiProfiles: Array.isArray(params.api) ? params.api : undefined,
                 getCurrentChat: params.getCurrentChat,
                 getCurrentCharacters: params.getCurrentCharacters,
+                shouldContinue: () => isActiveLoop(params),
               });
             } catch (error) {
+              if (isGenerationCancelledError(error) || !isActiveLoop(params)) return;
               params.onLoopError(error);
               if (isActiveLoop(params)) {
                 await appendRecoverableRuntimeError({

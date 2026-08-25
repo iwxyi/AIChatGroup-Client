@@ -3,6 +3,7 @@ import { resolveCommittedStreamContent } from './streamingMessageLifecycle';
 import { useMessageStore } from '../stores/useMessageStore';
 import { compactMessageMetadata } from './messageMetadataCompaction';
 import { getNextStreamingDisplayContent, STREAMING_DISPLAY_TICK_MS } from './streamingDisplayBuffer';
+import { GenerationCancelledError } from './generationCancellation';
 
 interface PersistLocalFirstMessageParams {
   message: Omit<Message, 'id' | 'timestamp' | 'isDeleted'>;
@@ -15,6 +16,7 @@ interface PersistLocalFirstMessageParams {
   localReveal?: boolean;
   localRevealTickMs?: number;
   delay?: (ms: number) => Promise<void>;
+  shouldContinue?: () => boolean;
 }
 
 interface PersistLocalFirstMessagesParams {
@@ -146,6 +148,10 @@ export function createStreamingLocalMessage(
 }
 
 export async function persistLocalFirstMessage(params: PersistLocalFirstMessageParams) {
+  const ensureCurrent = () => {
+    if (params.shouldContinue?.() === false) throw new GenerationCancelledError();
+  };
+  ensureCurrent();
   const messageContent = params.existingLocalMessage
     ? resolveCommittedStreamContent(params.message.content, params.existingLocalMessage.content)
     : params.message.content;
@@ -169,8 +175,10 @@ export async function persistLocalFirstMessage(params: PersistLocalFirstMessageP
     : createCommittedLocalMessage(messagePayload, { timestamp: params.timestamp });
   const revealMessage = buildPreWithdrawalRevealMessage(localMessage);
   if (revealMessage) {
+    ensureCurrent();
     writeMessage(params.upsertMessage, revealMessage, params.deferLocalUpsert);
     await (params.delay || delayMs)(params.withdrawalRevealDelayMs ?? 1200);
+    ensureCurrent();
   }
   if (params.localReveal && !params.existingLocalMessage && !params.deferLocalUpsert && localMessage.content) {
     await revealLocalMessage({
@@ -180,9 +188,12 @@ export async function persistLocalFirstMessage(params: PersistLocalFirstMessageP
       tickMs: params.localRevealTickMs,
     });
   } else {
+    ensureCurrent();
     writeMessage(params.upsertMessage, localMessage, params.deferLocalUpsert);
   }
+  ensureCurrent();
   queueMessageSync(localMessage);
+  ensureCurrent();
   params.onPersisted?.(localMessage);
 
   return localMessage;

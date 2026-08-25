@@ -97,7 +97,41 @@ function buildDiscussionChat() {
   });
 }
 
+function buildStudyChat() {
+  return normalizeConversation({
+    ...buildOpenChat(),
+    id: 'study-1',
+    mode: 'classroom',
+    sessionKind: { topology: 'group', family: 'study', scenarioId: 'learning-progress', surfaceProfile: 'hybrid' },
+    name: '学习进步',
+    topic: '掌握 Python 基础',
+    scenarioState: {
+      phase: 'mapping',
+      learning: { goal: '掌握 Python 基础', teachingMode: 'professional', knowledgeItems: [] },
+    },
+  });
+}
+
 describe('executeNonChatActionScaffold', () => {
+  it('executes the study engine goal-mapping, practice, and review actions', () => {
+    const chat = buildStudyChat();
+    const mapped = executeNonChatActionScaffold(chat, { type: 'map_learning_goal', payload: { goal: '掌握 Python 函数与列表' } });
+    expect(mapped?.runtimeEvents?.[0]?.eventType).toBe('study_goal_mapped');
+    expect(mapped?.chatPatch?.scenarioState?.learning?.goal).toContain('函数');
+    const practiced = executeNonChatActionScaffold(chat, { type: 'create_learning_practice', payload: { focus: '列表推导式' } });
+    expect(practiced?.runtimeEvents?.[0]?.eventType).toBe('study_practice_requested');
+    expect(practiced?.chatPatch?.scenarioState?.learning?.lastStudyAction).toBe('practice');
+    const reviewed = executeNonChatActionScaffold(chat, { type: 'review_learning_progress', payload: { focus: '最近错题' } });
+    expect(reviewed?.chatPatch?.scenarioState?.phase).toBe('review');
+    expect(reviewed?.runtimeEvents?.[0]?.eventType).toBe('study_review');
+    const submitted = executeNonChatActionScaffold(chat, { type: 'submit_learning_attempt', payload: { artifactId: 'paper-1', answer: '1.B' } });
+    expect(submitted?.runtimeEvents?.[0]?.eventType).toBe('study_attempt_submitted');
+    const attemptId = submitted?.chatPatch?.scenarioState?.learning?.attempts?.[0]?.id || '';
+    const graded = executeNonChatActionScaffold({ ...chat, scenarioState: submitted?.chatPatch?.scenarioState }, { type: 'grade_learning_attempt', payload: { attemptId, feedback: '第1题正确', score: 1, maxScore: 1 } });
+    expect(graded?.runtimeEvents?.[0]?.eventType).toBe('study_attempt_graded');
+    expect(graded?.chatPatch?.scenarioState?.learning?.attempts?.[0]?.status).toBe('graded');
+  });
+
   it('turns ask_question into interview-flavored runtime output', () => {
     const result = executeNonChatActionScaffold(buildInterviewChat(), {
       type: 'ask_question',

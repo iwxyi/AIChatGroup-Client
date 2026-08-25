@@ -45,6 +45,8 @@ function getActionSchema(conversation: GroupChat) {
     actions: [
       { type: 'map_learning_goal', label: '整理知识点', description: '把总目标拆成可学习、可复习的知识点。', visibility: 'public' as const, fields: [{ key: 'goal', label: '目标范围', type: 'textarea' as const, required: true, placeholder: goal }] },
       { type: 'create_learning_practice', label: '生成练习', description: '根据知识点和薄弱项生成资料、试卷或 HTML 练习。', visibility: 'public' as const, fields: [{ key: 'focus', label: '练习重点', type: 'textarea' as const, placeholder: '例如：只练习最近不稳定的部分' }] },
+      { type: 'submit_learning_attempt', label: '提交练习', description: '提交试卷或 HTML 练习的答案，等待批改。', visibility: 'public' as const, fields: [{ key: 'artifactId', label: '练习产物', type: 'text' as const, required: true }, { key: 'answer', label: '答案', type: 'textarea' as const, required: true }] },
+      { type: 'grade_learning_attempt', label: '批改练习', description: '根据提交内容记录分数、反馈和知识点证据。', visibility: 'public' as const, fields: [{ key: 'attemptId', label: '提交记录', type: 'text' as const, required: true }, { key: 'feedback', label: '反馈', type: 'textarea' as const }] },
       { type: 'review_learning_progress', label: '复盘学习', description: '基于学习记录总结已会、未稳和下一步。', visibility: 'public' as const, fields: [{ key: 'focus', label: '复盘重点', type: 'textarea' as const, placeholder: '例如：最近错题和下周安排' }] },
     ],
   };
@@ -61,7 +63,7 @@ export const STUDY_ENGINE: SessionEngineDefinition = {
     { key: 'world', title: '学习进步', type: 'runtime' as const, tabKey: 'world' as const },
     { key: 'actions', title: '学习动作', type: 'actions' as const, tabKey: 'world' as const },
   ],
-  getAvailableActions: () => [{ type: 'map_learning_goal' }, { type: 'create_learning_practice' }, { type: 'review_learning_progress' }],
+  getAvailableActions: () => [{ type: 'map_learning_goal' }, { type: 'create_learning_practice' }, { type: 'submit_learning_attempt' }, { type: 'grade_learning_attempt' }, { type: 'review_learning_progress' }],
   resolveTurnPolicy,
   getActionSchema: (context: SessionEngineActionContext) => mergeGovernanceActionSchema(getActionSchema(context.conversation), context),
   buildGenerationPromptContext: ({ conversation }): SessionGenerationPromptContext => {

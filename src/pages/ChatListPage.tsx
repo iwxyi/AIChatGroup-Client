@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLayoutHeaderActions } from '../components/layout/AppLayoutContext';
-import { Box, TextField, Button, InputAdornment, Stack, IconButton, Tooltip, Collapse, useMediaQuery } from '@mui/material';
+import { Box, TextField, Button, InputAdornment, Stack, IconButton, Tooltip, Collapse, useMediaQuery, Menu, MenuItem, Divider, Dialog, DialogTitle, DialogContent, DialogActions, Checkbox, FormControlLabel, Radio, RadioGroup, Typography } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import SearchIcon from '@mui/icons-material/Search';
 import CloseIcon from '@mui/icons-material/Close';
 import VerticalSplitIcon from '@mui/icons-material/VerticalSplit';
+import MoreVertIcon from '@mui/icons-material/MoreVert';
+import CheckIcon from '@mui/icons-material/Check';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useShallow } from 'zustand/react/shallow';
@@ -32,6 +34,8 @@ import { buildAssistantChatDraft } from '../services/chatDraftBuilder';
 import { getLatestChatPreviewMessage, sanitizeChatLatestMessage } from '../services/chatLatestMessage';
 import { MIN_MEMBERS } from '../constants/defaults';
 import type { AICharacter } from '../types/character';
+import { useSettingsStore } from '../stores/useSettingsStore';
+import { enqueueGroupBasicCompletion, enqueueGroupVisualGeneration } from '../services/groupVisualGeneration';
 
 const CHAT_LIST_TAB_KEY = 'chat-list-tab';
 const ASSISTANT_TAB = 3;
@@ -92,6 +96,17 @@ export default function ChatListPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deletedAssistantNotice, setDeletedAssistantNotice] = useState<{ id: string; name: string } | null>(null);
   const [assistantDeleteError, setAssistantDeleteError] = useState('');
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedChatIds, setSelectedChatIds] = useState<string[]>([]);
+  const [batchMenuAnchor, setBatchMenuAnchor] = useState<HTMLElement | null>(null);
+  const [batchDialogOpen, setBatchDialogOpen] = useState(false);
+  const [batchDeleteConfirmOpen, setBatchDeleteConfirmOpen] = useState(false);
+  const [batchFields, setBatchFields] = useState({ basics: true, avatar: true, background: true });
+  const [batchMode, setBatchMode] = useState<'empty' | 'complete' | 'regenerate'>('empty');
+  const [avatarRequirement, setAvatarRequirement] = useState('');
+  const [backgroundRequirement, setBackgroundRequirement] = useState('');
+  const aiProfiles = useSettingsStore((state) => state.aiProfiles);
+  const avatarGeneration = useSettingsStore((state) => state.avatarGeneration);
   const activeChatId = isMasterPane ? getActiveChatId(location.pathname) : null;
 
 
@@ -112,6 +127,12 @@ export default function ChatListPage() {
     setHeaderBackAction(null);
     setHeaderActions(
       <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
+        {selectionMode && tab === 0 ? (
+          <>
+            <Tooltip title="退出多选"><IconButton aria-label="退出多选" onClick={() => { setSelectionMode(false); setSelectedChatIds([]); setBatchMenuAnchor(null); }}><CloseIcon fontSize="small" /></IconButton></Tooltip>
+            <Tooltip title="批量操作"><IconButton aria-label="批量操作" onClick={(event) => setBatchMenuAnchor(event.currentTarget)}><MoreVertIcon fontSize="small" /></IconButton></Tooltip>
+          </>
+        ) : null}
         <Tooltip title={searchOpen ? '收起搜索' : t('chat.search')}>
           <IconButton
             aria-label={searchOpen ? '收起搜索' : t('chat.search')}
@@ -198,7 +219,7 @@ export default function ChatListPage() {
       setHeaderActions(null);
       setHeaderBackAction(null);
     };
-  }, [detailCollapsed, isThreeColumn, searchOpen, setHeaderActions, setHeaderBackAction, t]);
+  }, [detailCollapsed, isThreeColumn, searchOpen, selectionMode, setHeaderActions, setHeaderBackAction, t, tab]);
 
   useEffect(() => {
     markChatsWarm();
@@ -247,10 +268,42 @@ export default function ChatListPage() {
     const resolvedLatest = cachedLatest || sanitizeChatLatestMessage(chat.latestMessage);
     return resolvedLatest === chat.latestMessage ? chat : { ...chat, latestMessage: resolvedLatest };
   }), [messageWindowsByChatId, visibleChats]);
+  const visibleGroupChats = useMemo(() => visibleChatsWithLatestPreview.filter((chat) => chat.type === 'group'), [visibleChatsWithLatestPreview]);
   const charactersForChatCards = useMemo(() => {
     const activeIds = new Set(characters.map((character) => character.id));
     return [...characters, ...deletedCharacters.filter((character) => !activeIds.has(character.id))];
   }, [characters, deletedCharacters]);
+  useEffect(() => {
+    const visibleIds = new Set(visibleGroupChats.map((chat) => chat.id));
+    setSelectedChatIds((ids) => ids.filter((id) => visibleIds.has(id)));
+  }, [visibleGroupChats]);
+  const toggleChatSelection = (chatId: string) => setSelectedChatIds((ids) => ids.includes(chatId) ? ids.filter((id) => id !== chatId) : [...ids, chatId]);
+  const toggleSelectVisibleGroups = () => setSelectedChatIds((ids) => ids.length === visibleGroupChats.length ? [] : visibleGroupChats.map((chat) => chat.id));
+  const batchCounts = useMemo(() => {
+    const selected = visibleGroupChats.filter((chat) => selectedChatIds.includes(chat.id));
+    return { selected, basics: selected.filter((chat) => !chat.name.trim() || !chat.topic.trim()).length, avatar: selected.filter((chat) => !chat.groupVisual?.avatarUrl).length, background: selected.filter((chat) => !chat.groupVisual?.backgroundUrl).length };
+  }, [selectedChatIds, visibleGroupChats]);
+  const startBatchCompletion = () => {
+    batchCounts.selected.forEach((chat) => {
+      const members = charactersForChatCards.filter((character) => chat.memberIds.includes(character.id));
+      if (batchFields.basics && (batchMode === 'regenerate' || !chat.name.trim() || !chat.topic.trim())) enqueueGroupBasicCompletion({ chat, members, profiles: aiProfiles, language: 'zh', mode: batchMode });
+      if (batchFields.avatar && (batchMode === 'regenerate' || !chat.groupVisual?.avatarUrl)) enqueueGroupVisualGeneration({ chat, members, profiles: aiProfiles, settings: avatarGeneration, language: 'zh', kind: 'avatar', requirement: avatarRequirement });
+      if (batchFields.background && (batchMode === 'regenerate' || !chat.groupVisual?.backgroundUrl)) enqueueGroupVisualGeneration({ chat, members, profiles: aiProfiles, settings: avatarGeneration, language: 'zh', kind: 'background', requirement: backgroundRequirement });
+    });
+    setBatchDialogOpen(false); setBatchMenuAnchor(null);
+  };
+  const confirmBatchDelete = async () => {
+    const ids = [...selectedChatIds];
+    setBatchDeleteConfirmOpen(false);
+    try {
+      await Promise.all(ids.map((id) => deleteChat(id)));
+      setSelectedChatIds([]);
+      setSelectionMode(false);
+      setBatchMenuAnchor(null);
+    } catch (error) {
+      setAssistantDeleteError(error instanceof Error ? error.message : '批量删除群聊失败');
+    }
+  };
   const customCharacterCount = useMemo(() => characters.filter((character) => !character.isPreset && !character.deletedAt).length, [characters]);
   const [noCharactersDialogOpen, setNoCharactersDialogOpen] = useState(false);
   const [noCharactersReturnTo, setNoCharactersReturnTo] = useState('/chats/create');
@@ -400,7 +453,14 @@ export default function ChatListPage() {
                 chat={chat}
                 characters={charactersForChatCards}
                 selected={activeChatId === chat.id}
-                onClick={() => navigate(`/chats/${chat.id}?fromTab=${tab}`)}
+                selectable={selectionMode && chat.type === 'group'}
+                multiSelected={selectedChatIds.includes(chat.id)}
+                onToggleSelection={() => toggleChatSelection(chat.id)}
+                onLongPress={chat.type === 'group' ? () => {
+                  setSelectionMode(true);
+                  setSelectedChatIds((ids) => ids.includes(chat.id) ? ids : [...ids, chat.id]);
+                } : undefined}
+                onClick={() => selectionMode && chat.type === 'group' ? toggleChatSelection(chat.id) : navigate(`/chats/${chat.id}?fromTab=${tab}`)}
               />
             ))}
           </Box>
@@ -409,6 +469,29 @@ export default function ChatListPage() {
 
 
       {/* Delete Confirmation */}
+      <Menu anchorEl={batchMenuAnchor} open={Boolean(batchMenuAnchor)} onClose={() => setBatchMenuAnchor(null)}>
+        <MenuItem onClick={toggleSelectVisibleGroups}>全选</MenuItem>
+        <MenuItem disabled={!selectedChatIds.length} onClick={() => setBatchDeleteConfirmOpen(true)}>删除</MenuItem>
+        <Divider />
+        <MenuItem disabled={!selectedChatIds.length} onClick={() => setBatchDialogOpen(true)}>批量补全</MenuItem>
+      </Menu>
+      <Dialog open={batchDialogOpen} onClose={() => setBatchDialogOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle>批量补全群聊</DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={1.25}>
+            <Typography variant="body2" color="text.secondary">已选择 {batchCounts.selected.length} 个当前可见群聊</Typography>
+            <FormControlLabel control={<Checkbox checked={batchFields.basics} disabled={batchMode !== 'regenerate' && batchCounts.basics === 0} onChange={(event) => setBatchFields((fields) => ({ ...fields, basics: event.target.checked }))} />} label={`基础信息${batchMode === 'regenerate' ? '' : `（${batchCounts.basics}/${batchCounts.selected.length}）`}`} />
+            <Stack direction="row" alignItems="center" spacing={1}><FormControlLabel sx={{ m: 0, flexShrink: 0 }} control={<Checkbox checked={batchFields.avatar} disabled={batchMode !== 'regenerate' && batchCounts.avatar === 0} onChange={(event) => setBatchFields((fields) => ({ ...fields, avatar: event.target.checked }))} />} label={`群头像${batchMode === 'regenerate' ? '' : `（${batchCounts.avatar}/${batchCounts.selected.length}）`}`} /><TextField size="small" fullWidth value={avatarRequirement} onChange={(event) => setAvatarRequirement(event.target.value)} placeholder="统一要求（可选）" /></Stack>
+            <Stack direction="row" alignItems="center" spacing={1}><FormControlLabel sx={{ m: 0, flexShrink: 0 }} control={<Checkbox checked={batchFields.background} disabled={batchMode !== 'regenerate' && batchCounts.background === 0} onChange={(event) => setBatchFields((fields) => ({ ...fields, background: event.target.checked }))} />} label={`群背景${batchMode === 'regenerate' ? '' : `（${batchCounts.background}/${batchCounts.selected.length}）`}`} /><TextField size="small" fullWidth value={backgroundRequirement} onChange={(event) => setBackgroundRequirement(event.target.value)} placeholder="统一要求（可选）" /></Stack>
+            <RadioGroup row value={batchMode} onChange={(event) => setBatchMode(event.target.value as typeof batchMode)}>
+              <Tooltip title="只处理完全为空的字段，不覆盖已有内容"><FormControlLabel value="empty" control={<Radio />} label="仅空数据" /></Tooltip>
+              <Tooltip title="补足缺失内容，保留用户已填写的信息"><FormControlLabel value="complete" control={<Radio />} label="补全信息" /></Tooltip>
+              <Tooltip title="基于现有设定重新生成所选内容"><FormControlLabel value="regenerate" control={<Radio />} label="重新生成" /></Tooltip>
+            </RadioGroup>
+          </Stack>
+        </DialogContent>
+        <DialogActions><Button onClick={() => setBatchDialogOpen(false)}>取消</Button><Button variant="contained" disabled={!batchCounts.selected.length || !Object.values(batchFields).some(Boolean)} onClick={startBatchCompletion}>加入队列</Button></DialogActions>
+      </Dialog>
       <ConfirmDialog
         open={Boolean(deleteId)}
         title={t('chat.delete')}
@@ -418,6 +501,14 @@ export default function ChatListPage() {
           setDeleteId(null);
         }}
         onCancel={() => setDeleteId(null)}
+        destructive
+      />
+      <ConfirmDialog
+        open={batchDeleteConfirmOpen}
+        title="删除群聊"
+        message={`确定删除选中的 ${selectedChatIds.length} 个群聊吗？`}
+        onConfirm={() => void confirmBatchDelete()}
+        onCancel={() => setBatchDeleteConfirmOpen(false)}
         destructive
       />
 

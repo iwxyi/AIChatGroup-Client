@@ -16,4 +16,8 @@ describe('deriveLearningNextStep', () => {
     expect(next.knowledgeItems[0]).toMatchObject({ status: 'practicing', evidenceCount: 1, lastReviewedAt: 1 });
     expect(next.knowledgeItems[0].notes).toContain('仍需');
   });
+  it('stores an answer-shaped message as a bounded evidence record', () => {
+    const next = recordObservedLearningEvidence({ goal: 'x', knowledgeItems: [{ id: 'a', title: '索引', status: 'exposed' }] }, '我的答案：索引用于加速查询。', 1);
+    expect(next.evidence?.[0]).toMatchObject({ kind: 'conversation', knowledgeItemIds: ['a'], createdAt: 1 });
+  });
 });

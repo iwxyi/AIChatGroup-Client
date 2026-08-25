@@ -430,4 +430,31 @@ describe('messageBranching', () => {
     expect(revision.senderId).toBe('ai-1');
     expect(revision.senderName).toBe('AI');
   });
+
+  it('hides the original continuation when revising an earlier message', () => {
+    const messages = [
+      buildMessage({ id: 'user-a', chatId: 'chat-1', type: 'user', senderId: 'user', senderName: 'User', content: '原问题', emotion: 0, timestamp: 1 }),
+      buildMessage({ id: 'ai-b', chatId: 'chat-1', type: 'ai', senderId: 'ai-1', senderName: 'AI', content: '原回答', emotion: 0, timestamp: 2 }),
+      buildMessage({
+        id: 'user-a2',
+        chatId: 'chat-1',
+        type: 'user',
+        senderId: 'user',
+        senderName: 'User',
+        content: '修改后的问题',
+        emotion: 0,
+        timestamp: 3,
+        metadata: { branching: { parentNodeId: null, revisionRootId: 'user-a', revisionOfMessageId: 'user-a' } },
+      }),
+    ];
+    const chat = buildChat({
+      messageBranchState: {
+        selectedRevisionByRootId: { 'user-a': 'user-a2' },
+        activeChildByParentNodeId: { '': 'user-a2' },
+        activeLeafNodeId: 'user-a2',
+      },
+    });
+
+    expect(projectActiveBranchMessages(chat, messages).map((message) => message.id)).toEqual(['user-a2']);
+  });
 });

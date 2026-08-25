@@ -947,8 +947,8 @@ export const DEFAULT_DEVELOPER_UI_PREFS: DeveloperUIPrefs = {
 };
 
 export const DEFAULT_AVATAR_GENERATION_SETTINGS: AvatarGenerationSettings = {
-  autoGenerateCharacterAvatar: false,
-  preferNonPhotorealAvatar: false,
+  autoGenerateCharacterAvatar: true,
+  preferNonPhotorealAvatar: true,
 };
 
 export const DEFAULT_AI_GENERATION_SETTINGS: AIGenerationSettings = {
@@ -1160,7 +1160,7 @@ export const DEFAULT_SETTINGS: AppSettingsWithMemory = {
   defaultSpeed: 1.0,
   compactBubbleMode: false,
   compactPrivateBubbleMode: true,
-  hidePrivateChatIdentity: false,
+  hidePrivateChatIdentity: true,
   enableStreamingDisplayAnimation: true,
   showVoiceTranscript: false,
   developerMode: false,

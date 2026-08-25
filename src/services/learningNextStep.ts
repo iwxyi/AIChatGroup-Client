@@ -27,6 +27,7 @@ export function deriveLearningNextStep(learning: LearningScenarioState, now = Da
 export function recordObservedLearningEvidence(learning: LearningScenarioState, message: string, now = Date.now()): LearningScenarioState {
   const content = message.replace(/\s+/g, ' ').trim();
   if (!content || !learning.knowledgeItems.length) return learning;
+  const explicitAttempt = /(答案|作答|我写|代码|提交|选择|填空|第\s*\d+\s*题|我认为|我的回答)/i.test(content);
   const nextItems = learning.knowledgeItems.map((item) => {
     const title = item.title.trim();
     if (!title || !content.toLocaleLowerCase().includes(title.toLocaleLowerCase())) return item;
@@ -38,7 +39,11 @@ export function recordObservedLearningEvidence(learning: LearningScenarioState, 
       notes: `观察到学习者在对话中提及该知识点；仍需独立练习或核验。`,
     };
   });
-  if (nextItems.every((item, index) => item === learning.knowledgeItems[index])) return learning;
-  const nextLearning = { ...learning, knowledgeItems: nextItems, lastStudyAction: 'note' as const, lastStudyActionAt: now };
+  const changedItemIds = nextItems.filter((item, index) => item !== learning.knowledgeItems[index]).map((item) => item.id);
+  if (!changedItemIds.length && !explicitAttempt) return learning;
+  const evidence = explicitAttempt
+    ? [...(learning.evidence || []), { id: `observed-${now}-${Math.random().toString(36).slice(2, 8)}`, kind: 'conversation' as const, summary: content.slice(0, 240), knowledgeItemIds: changedItemIds, createdAt: now }].slice(-240)
+    : learning.evidence;
+  const nextLearning = { ...learning, evidence, knowledgeItems: nextItems, lastStudyAction: 'note' as const, lastStudyActionAt: now };
   return { ...nextLearning, nextStepSuggestion: deriveLearningNextStep(nextLearning, now) };
 }

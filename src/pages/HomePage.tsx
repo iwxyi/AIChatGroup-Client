@@ -48,6 +48,7 @@ import { getRegisteredSyncWorkerEntries } from '../stores/storeSyncScheduler';
 import { motion, transition } from '../styles/motion';
 import { formatAiAmount } from '../utils/aiPoints';
 import { dismissAllRichMediaGenerationErrors, dismissRichMediaGenerationError, getRecentRichMediaGenerationErrors, getRichMediaQueueSnapshot, subscribeRichMediaQueue } from '../services/richMessageMedia';
+import { dismissAllChatCompletionErrors, dismissChatCompletionError, getChatCompletionSummary, subscribeChatCompletionQueue, type ChatCompletionSummary } from '../services/chatCompletionQueue';
 
 interface HomeOverviewCard {
   label: string;
@@ -62,7 +63,7 @@ interface HomeOverviewCard {
 
 interface GenerationOverviewError {
   id: string;
-  source: 'avatar' | 'completion' | 'rich-media';
+  source: 'avatar' | 'completion' | 'chat-completion' | 'rich-media';
   title: string;
   message: string;
   createdAt: number;
@@ -479,6 +480,7 @@ export default function HomePage() {
   const user = useAuthStore((state) => state.user);
   const [avatarQueueSummary, setAvatarQueueSummary] = useState<AvatarGenerationQueueSummary>(() => avatarGenerationQueue.getSummary());
   const [characterCompletionSummary, setCharacterCompletionSummary] = useState<CharacterCompletionSummary>(() => getCharacterCompletionSummary());
+  const [chatCompletionSummary, setChatCompletionSummary] = useState<ChatCompletionSummary>(() => getChatCompletionSummary());
   const [generationErrorsDialogOpen, setGenerationErrorsDialogOpen] = useState(false);
   const [selectedGenerationError, setSelectedGenerationError] = useState<GenerationOverviewError | null>(null);
   const previousLoginIdentityRef = useRef<string | null | undefined>(undefined);
@@ -516,6 +518,7 @@ export default function HomePage() {
     if (previousLoginIdentityRef.current !== undefined && currentLoginIdentity && currentLoginIdentity !== previousLoginIdentityRef.current) {
       avatarGenerationQueue.dismissAllErrors();
       dismissAllCharacterCompletionErrors();
+      dismissAllChatCompletionErrors();
       dismissAllRichMediaGenerationErrors();
       setSelectedGenerationError(null);
       setGenerationErrorsDialogOpen(false);
@@ -526,12 +529,14 @@ export default function HomePage() {
   const generationErrors = useMemo<GenerationOverviewError[]>(() => [
     ...avatarQueueSummary.recentErrors.map((error) => ({ ...error, source: 'avatar' as const })),
     ...characterCompletionSummary.recentErrors.map((error) => ({ ...error, source: 'completion' as const })),
+    ...chatCompletionSummary.recentErrors.map((error) => ({ ...error, source: 'chat-completion' as const })),
     ...getRecentRichMediaGenerationErrors().map((error) => ({ ...error, source: 'rich-media' as const })),
-  ].sort((a, b) => b.createdAt - a.createdAt), [avatarQueueSummary.recentErrors, characterCompletionSummary.recentErrors, richMediaQueue]);
+  ].sort((a, b) => b.createdAt - a.createdAt), [avatarQueueSummary.recentErrors, characterCompletionSummary.recentErrors, chatCompletionSummary.recentErrors, richMediaQueue]);
   const recentGenerationErrors = generationErrors.slice(0, 3);
   const dismissGenerationError = (error: GenerationOverviewError) => {
     if (error.source === 'avatar') avatarGenerationQueue.dismissError(error.id);
     else if (error.source === 'completion') dismissCharacterCompletionError(error.id);
+    else if (error.source === 'chat-completion') dismissChatCompletionError(error.id);
     else dismissRichMediaGenerationError(error.id);
     if (selectedGenerationError?.source === error.source && selectedGenerationError.id === error.id) setSelectedGenerationError(null);
   };
@@ -539,6 +544,7 @@ export default function HomePage() {
     const unsubscribe = subscribeCharacterCompletionQueue(setCharacterCompletionSummary);
     return () => { unsubscribe(); };
   }, []);
+  useEffect(() => subscribeChatCompletionQueue(setChatCompletionSummary), []);
 
   useEffect(() => {
     const timer = window.setInterval(() => setCalendarNow(Date.now()), 60_000);
@@ -654,6 +660,7 @@ export default function HomePage() {
   const needsOwnCharacter = characters.length > 0 && customCharacters.length === 0;
   const hasActiveAvatarTasks = avatarQueueSummary.active > 0;
   const hasActiveCharacterCompletions = characterCompletionSummary.text.active > 0 || characterCompletionSummary.image.active > 0;
+  const hasActiveChatCompletions = chatCompletionSummary.text.active > 0 || chatCompletionSummary.image.active > 0;
   const hasActiveImageCompletions = characterCompletionSummary.image.active > 0;
   const knownMessages = useMemo(() => [
     ...recentActiveMessages,
@@ -854,6 +861,12 @@ export default function HomePage() {
       color: 'primary.main',
       onOpen: () => navigate('/characters'),
       attention: true,
+    }] : []),
+    ...(hasActiveChatCompletions ? [{
+      label: `正在处理：${chatCompletionSummary.image.current || chatCompletionSummary.text.current || '群聊视觉'}`,
+      value: `${chatCompletionSummary.text.completed + chatCompletionSummary.image.completed}/${chatCompletionSummary.text.total + chatCompletionSummary.image.total}`
+        + (chatCompletionSummary.text.failed + chatCompletionSummary.image.failed > 0 ? ` · 失败 ${chatCompletionSummary.text.failed + chatCompletionSummary.image.failed}` : ''),
+      icon: <AutoAwesomeIcon />, color: 'primary.main', onOpen: () => navigate('/chats'), attention: true,
     }] : []),
     ...(hasActiveImageCompletions ? [{
       label: `正在生成：${characterCompletionSummary.image.current || avatarQueueSummary.current || '图片'}`,

@@ -16,7 +16,7 @@ function buildChat() {
 describe('study progress engine', () => {
   it('uses learning-progress defaults and exposes learning actions', () => {
     expect(STUDY_ENGINE.createInitialConfig()).toMatchObject({ scenarioId: 'learning-progress', sessionFamily: 'study' });
-    expect(STUDY_ENGINE.getAvailableActions?.().map((action) => action.type)).toEqual(['map_learning_goal', 'create_learning_practice', 'review_learning_progress']);
+    expect(STUDY_ENGINE.getAvailableActions?.().map((action) => action.type)).toEqual(['map_learning_goal', 'create_learning_practice', 'submit_learning_attempt', 'grade_learning_attempt', 'review_learning_progress']);
   });
 
   it('keeps teacher and student roles distinct in the group container', () => {

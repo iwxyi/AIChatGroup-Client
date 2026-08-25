@@ -3249,6 +3249,17 @@ async function generateNonDuplicateResponse(params: {
     lastStoryEvents = generated.storyEvents || null;
     lastStoryChoices = generated.storyChoices || null;
     lastStreamedFallbackUsed = Boolean(generated.streamedFallbackUsed);
+    // Some reasoning models can consume the completion budget without
+    // emitting visible text (especially for media or artifact-heavy study
+    // requests). Retry with an explicit concise-output contract instead of
+    // issuing the same request three times and eventually surfacing an empty
+    // generation error.
+    if (!normalizeForComparison(generated.fullNarrativeResponse || generated.fullResponse)) {
+      if (attempt < 2) {
+        prompt = `${buildEmptyContentRetryPrompt(params.systemPrompt)}\n- The previous attempt may have exhausted its reasoning budget before visible output. Reply concisely without reasoning aloud, and preserve any requested artifact or media decision in the supported structured format.`;
+        continue;
+      }
+    }
     const storyProtocolIssue = isStoryReader && narrativeRuntime ? validateStoryReaderGeneration({
       chat: params.chat,
       parsedEnvelope: generated.parsedEnvelope,
