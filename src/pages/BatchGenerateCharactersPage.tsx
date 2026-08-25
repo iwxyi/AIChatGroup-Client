@@ -276,7 +276,7 @@ async function processCharacterBatch(params: {
       allCreatedCharacters.push(...createdCharacters);
       if (useSettingsStore.getState().avatarGeneration.autoGenerateCharacterAvatar) {
         try {
-          enqueueAvatarGenerationForCharacters(
+          await enqueueAvatarGenerationForCharacters(
             createdCharacters.map((character) => ({
               id: character.id,
               name: character.name,
@@ -286,6 +286,8 @@ async function processCharacterBatch(params: {
               expertise: character.expertise || [],
               personality: character.personality,
               speechProfile: character.speechProfile,
+              coreProfile: character.coreProfile,
+              visualIdentity: character.visualIdentity,
             })),
             useSettingsStore.getState().aiProfiles,
             params.language,

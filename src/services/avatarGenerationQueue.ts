@@ -8,6 +8,7 @@ export type AvatarGenerationStatus = 'queued' | 'running' | 'succeeded' | 'faile
 
 export interface AvatarGenerationTaskState {
   id: string;
+  createdAt: number;
   targetKey: string;
   status: AvatarGenerationStatus;
   error: string | null;
@@ -35,6 +36,14 @@ export interface AvatarGenerationQueueSummary {
   running: number;
   active: number;
   current?: string;
+  recentErrors: AvatarGenerationRecentError[];
+}
+
+export interface AvatarGenerationRecentError {
+  id: string;
+  title: string;
+  message: string;
+  createdAt: number;
 }
 
 class AvatarGenerationQueueService {
@@ -44,6 +53,7 @@ class AvatarGenerationQueueService {
   private listenersByTarget = new Map<string, Set<TaskListener>>();
   private summaryListeners = new Set<QueueSummaryListener>();
   private latestTaskIdByTarget = new Map<string, string>();
+  private dismissedErrorIds = new Set<string>();
   private runningTaskId: string | null = null;
 
   enqueue(profile: AIModelProfile, prompt: string, options: { targetKey: string; characterId?: string | null; negativePrompt?: string; seed?: string | number | null; description?: string }) {
@@ -55,6 +65,7 @@ class AvatarGenerationQueueService {
     const id = `avatar-task-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const task: AvatarGenerationTask = {
       id,
+      createdAt: Date.now(),
       targetKey: options.targetKey,
       characterId: options.characterId || null,
       prompt,
@@ -123,7 +134,25 @@ class AvatarGenerationQueueService {
       running,
       active: queued + running,
       current: this.runningTaskId ? this.tasks.get(this.runningTaskId)?.description : undefined,
+      recentErrors: [...this.tasks.values()]
+        .filter((task) => task.status === 'failed' && task.error && !this.dismissedErrorIds.has(task.id))
+        .map((task) => ({ id: task.id, title: task.description || '图片生成', message: task.error || '图片生成失败', createdAt: task.createdAt }))
+        .sort((a, b) => b.createdAt - a.createdAt),
     };
+  }
+
+  dismissError(taskId: string) {
+    this.dismissedErrorIds.add(taskId);
+    const summary = this.getSummary();
+    this.summaryListeners.forEach((listener) => listener(summary));
+  }
+
+  dismissAllErrors() {
+    this.tasks.forEach((task) => {
+      if (task.status === 'failed') this.dismissedErrorIds.add(task.id);
+    });
+    const summary = this.getSummary();
+    this.summaryListeners.forEach((listener) => listener(summary));
   }
 
   subscribeSummary(listener: QueueSummaryListener) {
@@ -251,6 +280,7 @@ class AvatarGenerationQueueService {
     if (!task) return null;
     return {
       id: task.id,
+      createdAt: task.createdAt,
       targetKey: task.targetKey,
       status: task.status,
       error: task.error,

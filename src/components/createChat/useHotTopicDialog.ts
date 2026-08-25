@@ -406,7 +406,7 @@ export function useHotTopicDialog(params: {
         createdIds.push(...createdCharacters.map((character) => character.id));
         if (params.autoGenerateCharacterAvatar) {
           try {
-            enqueueAvatarGenerationForCharacters(
+            await enqueueAvatarGenerationForCharacters(
               createdCharacters.map((character) => ({
                 id: character.id,
                 name: character.name,
@@ -416,6 +416,8 @@ export function useHotTopicDialog(params: {
                 expertise: character.expertise || [],
                 personality: character.personality,
                 speechProfile: character.speechProfile,
+                coreProfile: character.coreProfile,
+                visualIdentity: character.visualIdentity,
               })),
               params.aiProfiles,
               isZh ? 'zh' : 'en',

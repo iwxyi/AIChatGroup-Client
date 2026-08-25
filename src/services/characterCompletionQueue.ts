@@ -10,17 +10,27 @@ export interface CharacterCompletionTask {
   label: string;
   status: CharacterCompletionStatus;
   error?: string;
+  warning?: string;
 }
 
 export interface CharacterCompletionSummary {
-  text: { total: number; completed: number; failed: number; active: number; current?: string };
-  image: { total: number; completed: number; failed: number; active: number; current?: string };
+  text: { total: number; completed: number; failed: number; warnings: number; active: number; current?: string };
+  image: { total: number; completed: number; failed: number; warnings: number; active: number; current?: string };
+  recentErrors: CharacterCompletionRecentError[];
 }
 
-type Runner = () => Promise<void>;
+export interface CharacterCompletionRecentError {
+  id: string;
+  title: string;
+  message: string;
+  createdAt: number;
+}
+
+type Runner = () => Promise<void | { warning?: string }>;
 const queues: Record<CharacterCompletionKind, Array<{ task: CharacterCompletionTask; run: Runner }>> = { text: [], image: [] };
 const running: Record<CharacterCompletionKind, boolean> = { text: false, image: false };
 const allTasks = new Map<string, CharacterCompletionTask>();
+const dismissedErrorIds = new Set<string>();
 const listeners = new Set<(summary: CharacterCompletionSummary) => void>();
 
 function summaryFor(kind: CharacterCompletionKind) {
@@ -30,13 +40,33 @@ function summaryFor(kind: CharacterCompletionKind) {
     total: tasks.length,
     completed: tasks.filter((task) => task.status === 'succeeded').length,
     failed: tasks.filter((task) => task.status === 'failed').length,
+    warnings: tasks.filter((task) => Boolean(task.warning)).length,
     active: tasks.filter((task) => task.status === 'queued' || task.status === 'running').length,
     current: active ? `${active.characterName} · ${active.label}` : undefined,
   };
 }
 
 export function getCharacterCompletionSummary(): CharacterCompletionSummary {
-  return { text: summaryFor('text'), image: summaryFor('image') };
+  return {
+    text: summaryFor('text'),
+    image: summaryFor('image'),
+    recentErrors: [...allTasks.values()]
+      .filter((task) => task.status === 'failed' && task.error && !dismissedErrorIds.has(task.id))
+      .map((task) => ({ id: task.id, title: `${task.characterName || '未命名角色'} · ${task.label}`, message: task.error || '生成失败', createdAt: Number(task.id.match(/character-completion-(\d+)/)?.[1] || 0) }))
+      .sort((a, b) => b.createdAt - a.createdAt),
+  };
+}
+
+export function dismissCharacterCompletionError(id: string) {
+  dismissedErrorIds.add(id);
+  publish();
+}
+
+export function dismissAllCharacterCompletionErrors() {
+  [...allTasks.values()].forEach((task) => {
+    if (task.status === 'failed') dismissedErrorIds.add(task.id);
+  });
+  publish();
 }
 
 export function getCharacterCompletionTaskStatus(characterId: string, field: string): CharacterCompletionStatus | null {
@@ -65,7 +95,8 @@ async function pump(kind: CharacterCompletionKind) {
   entry.task.status = 'running';
   publish();
   try {
-    await entry.run();
+    const result = await entry.run();
+    if (result?.warning) entry.task.warning = result.warning;
     entry.task.status = 'succeeded';
   } catch (error) {
     entry.task.status = 'failed';

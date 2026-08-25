@@ -253,7 +253,7 @@ export default function CharacterEditorPage() {
               }
               if (settings.avatarGeneration.autoGenerateCharacterAvatar && data.generatedByAI) {
                 try {
-                  enqueueAvatarGenerationForCharacter(created, settings.aiProfiles, i18n.language.startsWith('zh') ? 'zh' : 'en', settings.avatarGeneration);
+                  await enqueueAvatarGenerationForCharacter(created, settings.aiProfiles, i18n.language.startsWith('zh') ? 'zh' : 'en', settings.avatarGeneration);
                 } catch (error) {
                   console.error('[character-editor:auto-avatar:error]', error);
                 }

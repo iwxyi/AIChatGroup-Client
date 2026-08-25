@@ -33,9 +33,24 @@ export interface CharacterVisualIdentityDraftInput {
   speakingStyle?: string;
   expertise?: string[];
   group?: string | null;
+  personality?: Partial<PersonalityParams>;
+  coreProfile?: Partial<CharacterCoreProfile>;
+  visualIdentity?: GeneratedCharacterProfile['visualIdentity'];
 }
 
-export function buildCharacterVisualImagePrompt(input: CharacterVisualIdentityDraftInput & { visualIdentity?: GeneratedCharacterProfile['visualIdentity'] }, language: 'zh' | 'en') {
+export interface CharacterVisualGenerationPlan {
+  prompt: string;
+  negativePrompt: string;
+  fallbackUsed: boolean;
+}
+
+function characterVisualGlobalNegativePrompt(language: 'zh' | 'en') {
+  return language === 'zh'
+    ? '文字、水印、logo、多人、重复人物、额外肢体、畸形手部、主体遮挡、塑料皮肤、蜡像质感、过度磨皮、僵硬摆拍、无来源高光、背景与人物光线不一致、通用棚拍、廉价特效'
+    : 'text, watermark, logo, multiple people, duplicate subject, extra limbs, malformed hands, obscured subject, plastic skin, waxy texture, excessive retouching, stiff posing, unmotivated highlights, inconsistent lighting, generic studio portrait, cheap visual effects';
+}
+
+export function buildFallbackCharacterVisualImagePrompt(input: CharacterVisualIdentityDraftInput, language: 'zh' | 'en') {
   const visual = input.visualIdentity || {};
   return [
     language === 'zh' ? `为聊天角色“${input.name.trim() || '未命名角色'}”生成一张标志性形象图。` : `Generate an iconic character image for the chat character "${input.name.trim() || 'Unnamed character'}".`,
@@ -44,10 +59,61 @@ export function buildCharacterVisualImagePrompt(input: CharacterVisualIdentityDr
     input.speakingStyle?.trim() ? (language === 'zh' ? `表达气质：${input.speakingStyle.trim()}` : `Speaking vibe: ${input.speakingStyle.trim()}`) : '',
     visual.styleHint?.trim() ? (language === 'zh' ? `风格：${visual.styleHint.trim()}` : `Style: ${visual.styleHint.trim()}`) : '',
     language === 'zh'
-      ? '画面要求：以一个最能概括角色的标志性瞬间来构图，而不是普通证件照或日常站姿。让角色处于与身份、欲望、能力或气质强相关的动作、场景与光影中：例如神话人物施展法器、病弱诗人倚窗、将军战阵冲锋、程序员深夜办公、都市人物在符合其身份的空间行动。必须保留清晰可辨的脸部、发型、体型、常见穿搭与标志性道具；单人主体、半身或全身、动态但构图稳定、人物不被遮挡。不要文字、水印、多人、通用棚拍、呆板正面站姿或与人设无关的背景。'
-      : 'Composition requirements: build around one iconic narrative moment that best captures the character, never a generic ID portrait or casual standing pose. Put the character in an action, setting, and lighting situation tied directly to their identity, desire, ability, or temperament: a mythic hero wielding a signature weapon, a frail poet by a window, a general charging through battle, a programmer working late, or an urban figure acting in a space that expresses their status. Keep face, hair, body type, familiar outfit, and signature props clearly recognizable; one subject, half or full body, dynamic yet stable composition, unobscured character. No text, watermark, multiple people, generic studio portrait, stiff front-facing pose, or unrelated background.',
-    visual.negativePrompt?.trim() ? (language === 'zh' ? `避免：${visual.negativePrompt.trim()}` : `Avoid: ${visual.negativePrompt.trim()}`) : '',
+      ? '以一个和身份、欲望、能力或气质直接相关的标志性瞬间构图；单人主体，脸部、发型、服装轮廓和标志性道具清晰，环境与光影服务于人物。'
+      : 'Compose one iconic moment directly tied to identity, desire, ability, or temperament; one clear subject with recognizable face, hair, silhouette, signature props, and character-serving environment and lighting.',
   ].filter(Boolean).join('\n');
+}
+
+// 保留旧导出，供外部兼容；所有新形象图入口应改用 generateCharacterVisualGenerationPlan。
+export const buildCharacterVisualImagePrompt = buildFallbackCharacterVisualImagePrompt;
+
+function visualDirectorSource(input: CharacterVisualIdentityDraftInput, language: 'zh' | 'en') {
+  const visual = input.visualIdentity || {};
+  const expertise = (input.expertise || []).filter(Boolean).join(language === 'zh' ? '、' : ', ');
+  const values = (input.coreProfile?.values || input.coreProfile?.valuePriority || []).filter(Boolean).join(language === 'zh' ? '、' : ', ');
+  return [
+    language === 'zh' ? `角色：${input.name.trim() || '未命名角色'}` : `Character: ${input.name.trim() || 'Unnamed character'}`,
+    visual.description?.trim() ? (language === 'zh' ? `稳定视觉档案：${visual.description.trim()}` : `Stable visual identity: ${visual.description.trim()}`) : '',
+    visual.styleHint?.trim() ? (language === 'zh' ? `长期艺术方向：${visual.styleHint.trim()}` : `Long-term art direction: ${visual.styleHint.trim()}`) : '',
+    input.group?.trim() ? (language === 'zh' ? `世界/主题：${input.group.trim()}` : `World/theme: ${input.group.trim()}`) : '',
+    input.background?.trim() ? (language === 'zh' ? `角色经历：${input.background.trim()}` : `Background: ${input.background.trim()}`) : '',
+    input.speakingStyle?.trim() ? (language === 'zh' ? `表达气质：${input.speakingStyle.trim()}` : `Speaking vibe: ${input.speakingStyle.trim()}`) : '',
+    expertise ? (language === 'zh' ? `专长：${expertise}` : `Expertise: ${expertise}`) : '',
+    values ? (language === 'zh' ? `价值取向：${values}` : `Values: ${values}`) : '',
+  ].filter(Boolean).join('\n');
+}
+
+function normalizeVisualPlan(value: unknown): Omit<CharacterVisualGenerationPlan, 'fallbackUsed'> | null {
+  if (!value || typeof value !== 'object') return null;
+  const raw = value as Record<string, unknown>;
+  const prompt = typeof raw.prompt === 'string' ? raw.prompt.trim() : '';
+  const negativePrompt = typeof raw.negativePrompt === 'string' ? raw.negativePrompt.trim() : '';
+  if (prompt.length < 80 || prompt.length > 1800) return null;
+  return { prompt, negativePrompt };
+}
+
+export async function generateCharacterVisualGenerationPlan(config: APIConfig, input: CharacterVisualIdentityDraftInput, language: 'zh' | 'en'): Promise<CharacterVisualGenerationPlan> {
+  const source = visualDirectorSource(input, language);
+  const system = language === 'zh'
+    ? '你是角色形象图的视觉导演。只返回严格 JSON：{"prompt":"...","negativePrompt":"..."}。prompt 必须是精简、可直接交给图片模型的中文提示词，约 180-350 字。先确保稳定外观锚点，再选择一个标志性瞬间、一个心理神态重点、少量服化道细节、一个构图和一组有明确来源的光影。允许与角色匹配的艺术夸张，但不能堆砌特效。现实或现代角色可选择电影感写实：自然皮肤、发丝、织物、真实重心、合理阴影；不要塑料或棚拍 AI 人像。幻想角色可选择更合适的媒介。细节冲突时牺牲环境，不牺牲人物识别。'
+    : 'You are a visual director for character identity images. Return strict JSON only: {"prompt":"...","negativePrompt":"..."}. prompt must be a compact, image-ready English prompt, about 120-220 tokens. Prioritize stable appearance anchors, then choose one iconic moment, one psychological micro-expression, a few wardrobe/prop details, one composition, and one lighting relationship with a clear source. Allow character-driven artistic exaggeration without effect clutter. For realistic modern characters, use cinematic realism with natural skin, hair, fabric, believable weight and coherent shadows; avoid plastic, studio-like AI portraits. If details conflict, sacrifice environment before character recognition.';
+  const request = async (repair = false) => {
+    const content = await generateResponse(config, system, [{ role: 'user', content: repair
+      ? `${source}\n\n上次输出不符合 JSON 或提示词长度。请重新输出仅含 prompt 和 negativePrompt 的合法 JSON。`
+      : `${source}\n\n请为这一次角色形象图做视觉导演，并输出最终精简提示词。` }], undefined, { maxTokens: 900, aiUsage: { type: 'character_visual_identity', label: '设计角色形象图', scope: 'character' } });
+    return normalizeVisualPlan(parseGeneratedJsonPayload<unknown>(content));
+  };
+  const plan = await request() || await request(true);
+  if (!plan) throw new Error(language === 'zh' ? '视觉导演未返回有效的形象图方案，请稍后重试。' : 'The visual director did not return a valid image plan. Please try again.');
+  return { ...plan, negativePrompt: [characterVisualGlobalNegativePrompt(language), input.visualIdentity?.negativePrompt?.trim(), plan.negativePrompt].filter(Boolean).join(language === 'zh' ? '；' : '; '), fallbackUsed: false };
+}
+
+export function buildFallbackCharacterVisualGenerationPlan(input: CharacterVisualIdentityDraftInput, language: 'zh' | 'en'): CharacterVisualGenerationPlan {
+  return {
+    prompt: buildFallbackCharacterVisualImagePrompt(input, language),
+    negativePrompt: [characterVisualGlobalNegativePrompt(language), input.visualIdentity?.negativePrompt?.trim()].filter(Boolean).join(language === 'zh' ? '；' : '; '),
+    fallbackUsed: true,
+  };
 }
 
 export interface CharacterVoiceProfileDraftInput {
@@ -351,7 +417,7 @@ function extractJsonBlock(content: string) {
   return trimmed;
 }
 
-function parseGeneratedJsonPayload<T>(content: string): T {
+export function parseGeneratedJsonPayload<T>(content: string): T {
   const candidates = [content.trim(), extractJsonBlock(content)];
   for (const candidate of candidates) {
     try {

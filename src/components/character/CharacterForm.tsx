@@ -42,7 +42,7 @@ import type { AICharacter, PersonalityParams, CharacterBehaviorParams, Character
 import { getCharacterGroupList, normalizeCharacterGroup, normalizeCharacterModelProfileIds, getDuplicateCharacterNameKeys, getDuplicateCharacterWarningText, hasDuplicateCharacterName } from '../../types/character';
 import type { BubbleStyleDefinition } from '../../types/bubbleStyle';
 import { DEFAULT_PERSONALITY, DEFAULT_CHARACTER_BEHAVIOR, DEFAULT_CHARACTER_MEMORY, DEFAULT_CHARACTER_INTERVENTION, DEFAULT_CORE_PROFILE } from '../../types/character';
-import { buildCharacterVisualImagePrompt, generateCharacterProfile, generateCharacterVisualIdentityDraft, generateCharacterVoiceProfileDraft } from '../../services/characterGenerator';
+import { buildFallbackCharacterVisualGenerationPlan, generateCharacterProfile, generateCharacterVisualGenerationPlan, generateCharacterVisualIdentityDraft, generateCharacterVoiceProfileDraft } from '../../services/characterGenerator';
 import { useSettingsStore } from '../../stores/useSettingsStore';
 import { useCharacterStore } from '../../stores/useCharacterStore';
 import { useCharacterArtifactStore, type CharacterArtifactEntry } from '../../stores/useCharacterArtifactStore';
@@ -396,6 +396,7 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
   const [visualImageTaskId, setVisualImageTaskId] = useState<string | null>(null);
   const [visualImageTaskStatus, setVisualImageTaskStatus] = useState<AvatarGenerationStatus | null>(null);
   const [visualImageTaskError, setVisualImageTaskError] = useState<string | null>(null);
+  const [visualImagePlanWarning, setVisualImagePlanWarning] = useState<string | null>(null);
   const [visualAssets, setVisualAssets] = useState<CharacterVisualReferenceImage[]>(() => dedupeVisualAssets(initial?.visualIdentity?.referenceImages || []));
   const visualAssetInputRef = useRef<HTMLInputElement | null>(null);
   const visualAssetsRef = useRef<CharacterVisualReferenceImage[]>(dedupeVisualAssets(initial?.visualIdentity?.referenceImages || []));
@@ -810,7 +811,7 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
     }
   };
 
-  const handleAvatarAutoGenerate = () => {
+  const handleAvatarAutoGenerate = async () => {
     if (avatarTaskId) {
       avatarGenerationQueue.cancel(avatarTaskId);
       return;
@@ -825,19 +826,27 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
 
     setAvatarTaskError(null);
     setAvatarTaskStatus('queued');
-    setAvatarTaskId(enqueueAvatarGenerationForCharacter({
-      id: initial?.id || 'draft-character',
-      name,
-      background,
-      speakingStyle,
-      expertise,
-      group,
-      personality,
-      speechProfile,
-    }, settings.aiProfiles, i18n.language.startsWith('zh') ? 'zh' : 'en', settings.avatarGeneration, {
-      targetKey: avatarTaskTargetKey,
-      characterId: initial?.id || null,
-    }) || null);
+    try {
+      const taskId = await enqueueAvatarGenerationForCharacter({
+        id: initial?.id || 'draft-character',
+        name,
+        background,
+        speakingStyle,
+        expertise,
+        group,
+        personality,
+        speechProfile,
+        coreProfile,
+        visualIdentity,
+      }, settings.aiProfiles, i18n.language.startsWith('zh') ? 'zh' : 'en', settings.avatarGeneration, {
+        targetKey: avatarTaskTargetKey,
+        characterId: initial?.id || null,
+      });
+      setAvatarTaskId(taskId);
+    } catch (error) {
+      setAvatarTaskStatus('failed');
+      setAvatarTaskError(error instanceof Error ? error.message : String(error));
+    }
   };
 
   const syncVisualIdentityReferenceImages = (assets: CharacterVisualReferenceImage[], overrides?: Partial<CharacterVisualIdentity>) => {
@@ -942,18 +951,18 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
       setVisualImageTaskError(i18n.language.startsWith('zh') ? '请先配置默认图片模型' : 'Configure a default image model first.');
       return;
     }
+    const language = i18n.language.startsWith('zh') ? 'zh' : 'en';
+    const textProfile = settings.aiProfiles.find((profile) => profile.id === modelProfileIds.text)
+      || getPreferredAIProfile(settings.aiProfiles, 'text')
+      || settings.aiProfiles.find((profile) => isAIProfileUsable(profile));
+    const fallbackReasons: string[] = [];
+    setVisualImageTaskError(null);
+    setVisualImagePlanWarning(null);
     let nextVisualIdentity = visualIdentity;
     if (!visualAssets.length && (!visualIdentity.description?.trim() || !visualIdentity.styleHint?.trim() || !visualIdentity.negativePrompt?.trim())) {
-      const textModelProfileId = modelProfileIds.text || null;
-      const textProfile = settings.aiProfiles.find((profile) => profile.id === textModelProfileId)
-        || getPreferredAIProfile(settings.aiProfiles, 'text')
-        || settings.aiProfiles.find((profile) => isAIProfileUsable(profile));
       if (!isAIProfileUsable(textProfile)) {
-        setVisualImageTaskStatus('failed');
-        setVisualImageTaskError(getGenerateNoKeyError(i18n.language));
-        return;
-      }
-      try {
+        fallbackReasons.push(getGenerateNoKeyError(i18n.language));
+      } else try {
         const draft = await generateCharacterVisualIdentityDraft(textProfile, {
           name,
           background,
@@ -970,17 +979,30 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
         };
         setVisualIdentity(nextVisualIdentity);
       } catch (error) {
-        setVisualImageTaskStatus('failed');
-        setVisualImageTaskError(error instanceof Error ? error.message : String(error));
-        return;
+        fallbackReasons.push(error instanceof Error ? error.message : String(error));
       }
     }
-    const prompt = buildCharacterVisualImagePrompt({ name, background, speakingStyle, expertise, group, visualIdentity: nextVisualIdentity }, i18n.language.startsWith('zh') ? 'zh' : 'en');
-    setVisualImageTaskError(null);
+    const directorInput = { name, background, speakingStyle, expertise, group, personality, coreProfile, visualIdentity: nextVisualIdentity };
+    let visualPlan = buildFallbackCharacterVisualGenerationPlan(directorInput, language);
+    if (!isAIProfileUsable(textProfile)) {
+      fallbackReasons.push(getGenerateNoKeyError(i18n.language));
+    } else {
+      try {
+        visualPlan = await generateCharacterVisualGenerationPlan(textProfile, directorInput, language);
+      } catch (error) {
+        fallbackReasons.push(error instanceof Error ? error.message : String(error));
+      }
+    }
+    if (visualPlan.fallbackUsed) {
+      const reason = [...new Set(fallbackReasons.filter(Boolean))].join('；');
+      setVisualImagePlanWarning(i18n.language.startsWith('zh')
+        ? `视觉方案生成失败，已使用基础模板继续生成。${reason ? `原因：${reason}` : ''}`
+        : `Visual-plan generation failed. Continuing with the base template.${reason ? ` Reason: ${reason}` : ''}`);
+    }
     setVisualImageTaskStatus('queued');
-    setVisualImageTaskId(avatarGenerationQueue.enqueue(imageProfile, prompt, {
+    setVisualImageTaskId(avatarGenerationQueue.enqueue(imageProfile, visualPlan.prompt, {
       targetKey: visualImageTargetKey,
-      negativePrompt: nextVisualIdentity.negativePrompt,
+      negativePrompt: visualPlan.negativePrompt,
       seed: nextVisualIdentity.seed,
     }) || null);
   };
@@ -1479,6 +1501,7 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
               {visualImageTaskStatus === 'queued' || visualImageTaskStatus === 'running' ? (
                 <Alert severity="info">{i18n.language.startsWith('zh') ? '正在生成形象图...' : 'Generating visual identity image...'}</Alert>
               ) : null}
+              {visualImagePlanWarning ? <Alert severity="warning">{visualImagePlanWarning}</Alert> : null}
               {visualImageTaskError ? <Alert severity="error">{visualImageTaskError}</Alert> : null}
 
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap' }}>
@@ -1800,7 +1823,10 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
 
   const regenerateBubbleLabel = i18n.language.startsWith('zh') ? 'AI生成' : 'AI generate';
 
-  const avatarGenerateLabel = avatarTaskId
+  const avatarPlanResolving = !avatarTaskId && avatarTaskStatus === 'queued';
+  const avatarGenerateLabel = avatarPlanResolving
+    ? (i18n.language.startsWith('zh') ? '设计头像中' : 'Designing avatar')
+    : avatarTaskId
     ? (avatarTaskStatus === 'running'
         ? (i18n.language.startsWith('zh') ? '正在生成' : 'Generating')
         : (i18n.language.startsWith('zh') ? '等待生成' : 'Queued'))
@@ -1912,7 +1938,7 @@ export default function CharacterForm({ initial, existingNames = [], saveError =
                 variant="outlined"
                 startIcon={<AutoAwesomeIcon />}
                 onClick={handleAvatarAutoGenerate}
-                disabled={!avatarTaskId && !canGenerateAvatar}
+                disabled={avatarPlanResolving || (!avatarTaskId && !canGenerateAvatar)}
                 sx={{ whiteSpace: 'nowrap' }}
               >
                 {avatarGenerateLabel}

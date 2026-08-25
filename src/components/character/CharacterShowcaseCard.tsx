@@ -138,6 +138,7 @@ export default function CharacterShowcaseCard({ character, onEdit, onDelete, onS
   const [visualGenerationStatus, setVisualGenerationStatus] = useState<AvatarGenerationStatus | null>(null);
   const [avatarGenerationStatus, setAvatarGenerationStatus] = useState<AvatarGenerationStatus | null>(null);
   const [visualCompletionStatus, setVisualCompletionStatus] = useState<CharacterCompletionStatus | null>(null);
+  const [avatarCompletionStatus, setAvatarCompletionStatus] = useState<CharacterCompletionStatus | null>(null);
   const [generatedVisualUrl, setGeneratedVisualUrl] = useState<string | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const descriptionRef = useRef<HTMLDivElement | null>(null);
@@ -148,7 +149,8 @@ export default function CharacterShowcaseCard({ character, onEdit, onDelete, onS
   const visualSrc = generatedVisualUrl || (visualImage && isImageAvatar(visualImage.url) ? resolveSafeAvatarSrc(visualImage.url) : null);
   const visualGenerating = visualGenerationStatus === 'queued' || visualGenerationStatus === 'running'
     || visualCompletionStatus === 'queued' || visualCompletionStatus === 'running';
-  const avatarGenerating = avatarGenerationStatus === 'queued' || avatarGenerationStatus === 'running';
+  const avatarGenerating = avatarGenerationStatus === 'queued' || avatarGenerationStatus === 'running'
+    || avatarCompletionStatus === 'queued' || avatarCompletionStatus === 'running';
   const expertise = formatExpertiseList(Array.isArray(character.expertise) ? character.expertise : [], i18n.language).slice(0, 3);
   const background = typeof character.background === 'string' ? character.background.trim() : '';
   const speakingStyle = typeof character.speakingStyle === 'string' ? character.speakingStyle.trim() : '';
@@ -180,7 +182,10 @@ export default function CharacterShowcaseCard({ character, onEdit, onDelete, onS
   }, [description]);
 
   useEffect(() => {
-    const updateCompletionStatus = () => setVisualCompletionStatus(getCharacterCompletionTaskStatus(character.id, 'visual'));
+    const updateCompletionStatus = () => {
+      setVisualCompletionStatus(getCharacterCompletionTaskStatus(character.id, 'visual'));
+      setAvatarCompletionStatus(getCharacterCompletionTaskStatus(character.id, 'avatar'));
+    };
     updateCompletionStatus();
     const unsubscribeCompletion = subscribeCharacterCompletionQueue(updateCompletionStatus);
     const unsubscribeImage = avatarGenerationQueue.subscribeTarget(`character-visual:${character.id}`, (state) => {

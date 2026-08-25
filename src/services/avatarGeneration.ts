@@ -1,7 +1,10 @@
 import type { AICharacter } from '../types/character';
-import type { AIModelProfile, AvatarGenerationSettings } from '../types/settings';
+import type { AIModelProfile, APIConfig, AvatarGenerationSettings } from '../types/settings';
 import { getPreferredAIProfile, isAIProfileUsable } from '../types/settings';
 import { avatarGenerationQueue } from './avatarGenerationQueue';
+import { generateResponse } from './aiClient';
+import { parseGeneratedJsonPayload } from './characterGenerator';
+import { notifyDiagnosticToast } from './diagnostics';
 
 export interface AvatarPromptCharacterInput {
   id: string;
@@ -13,6 +16,13 @@ export interface AvatarPromptCharacterInput {
   personality?: Partial<Record<'openness' | 'extroversion' | 'agreeableness' | 'neuroticism' | 'humor' | 'creativity' | 'assertiveness' | 'empathy', number>>;
   speechProfile?: AICharacter['speechProfile'];
   coreProfile?: AICharacter['coreProfile'];
+  visualIdentity?: AICharacter['visualIdentity'];
+}
+
+interface AvatarGenerationPlan {
+  prompt: string;
+  negativePrompt: string;
+  fallbackUsed: boolean;
 }
 
 function describePersonality(character: AvatarPromptCharacterInput, language: 'zh' | 'en') {
@@ -130,42 +140,118 @@ export function buildAvatarPrompt(character: AvatarPromptCharacterInput, languag
     character.background?.trim() ? (language === 'zh' ? `背景设定：${character.background.trim()}` : `Background: ${character.background.trim()}`) : '',
     buildAvatarStyleDirectives(character, language, settings),
     language === 'zh'
-      ? '构图要求：单主体，适合头像使用，正方形构图，突出面部和上半身或最有代表性的视觉主体，画面干净，不要文字，不要水印。'
-      : 'Composition requirements: single subject, suitable for avatar use, square composition, focus on face and upper body or the most representative visual subject, clean image, no text, no watermark.',
+      ? '构图要求：单主体、正方形头像。脸部或最具识别性的主体占画面中心 45% 以上，眼神和轮廓清晰，前景明亮、背景简洁且与主体有明度区分；缩小到 40px 仍可辨认。不要远景、多人、复杂场景、大片黑色阴影、文字或水印。'
+      : 'Composition requirements: one subject in a square avatar. The face or most recognizable subject fills the central 45%+ of the frame, with clear eyes and silhouette, a bright foreground, and a simple background separated by value contrast. It must remain recognizable at 40px. No distant shot, multiple people, busy scenery, large dark shadows, text, or watermark.',
   ].filter(Boolean).join('\n');
+}
+
+function avatarNegativePrompt(language: 'zh' | 'en') {
+  return language === 'zh'
+    ? '文字、水印、logo、多人、远景、小脸、主体过小、复杂背景、大片黑影、逆光剪影、脸部遮挡、模糊五官、额外肢体、畸形手部、塑料皮肤、蜡像感、廉价证件照、通用棚拍 AI 人像'
+    : 'text, watermark, logo, multiple people, distant shot, tiny face, undersized subject, busy background, large dark shadows, backlit silhouette, obscured face, blurred facial features, extra limbs, malformed hands, plastic skin, waxy texture, cheap ID photo, generic studio AI portrait';
+}
+
+function avatarDirectorSource(character: AvatarPromptCharacterInput, language: 'zh' | 'en', settings: AvatarGenerationSettings) {
+  const visual = character.visualIdentity || {};
+  return [
+    language === 'zh' ? `角色：${character.name.trim() || '未命名角色'}` : `Character: ${character.name.trim() || 'Unnamed character'}`,
+    visual.description?.trim() ? (language === 'zh' ? `稳定外观：${visual.description.trim()}` : `Stable appearance: ${visual.description.trim()}`) : '',
+    visual.styleHint?.trim() ? (language === 'zh' ? `长期视觉风格：${visual.styleHint.trim()}` : `Long-term visual direction: ${visual.styleHint.trim()}`) : '',
+    character.background?.trim() ? (language === 'zh' ? `角色背景：${character.background.trim()}` : `Background: ${character.background.trim()}`) : '',
+    buildAvatarStyleDirectives(character, language, settings),
+  ].filter(Boolean).join('\n');
+}
+
+function normalizeAvatarPlan(value: unknown): Omit<AvatarGenerationPlan, 'fallbackUsed'> | null {
+  if (!value || typeof value !== 'object') return null;
+  const raw = value as Record<string, unknown>;
+  const prompt = typeof raw.prompt === 'string' ? raw.prompt.trim() : '';
+  const negativePrompt = typeof raw.negativePrompt === 'string' ? raw.negativePrompt.trim() : '';
+  if (prompt.length < 70 || prompt.length > 1300) return null;
+  return { prompt, negativePrompt };
+}
+
+export function buildFallbackAvatarGenerationPlan(character: AvatarPromptCharacterInput, language: 'zh' | 'en', settings: AvatarGenerationSettings): AvatarGenerationPlan {
+  return {
+    prompt: buildAvatarPrompt(character, language, settings),
+    negativePrompt: [avatarNegativePrompt(language), character.visualIdentity?.negativePrompt?.trim()].filter(Boolean).join(language === 'zh' ? '；' : '; '),
+    fallbackUsed: true,
+  };
+}
+
+export async function generateAvatarGenerationPlan(config: APIConfig, character: AvatarPromptCharacterInput, language: 'zh' | 'en', settings: AvatarGenerationSettings): Promise<AvatarGenerationPlan> {
+  const source = avatarDirectorSource(character, language, settings);
+  const system = language === 'zh'
+    ? `你是聊天头像的视觉导演。只返回严格 JSON：{"prompt":"...","negativePrompt":"..."}。prompt 必须是精简、可直接交给图片模型的中文提示词，约 120-260 字。头像的第一目标是缩小到 40px 后仍能识别：只选一个主体，使用面部或最具识别性的核心物件做近景/半身构图，主体占中心大面积；眼神、轮廓、主色块和主体与背景的明度分离必须清楚。先遵守稳定外观与全局非写实偏好，再从角色性格、兴趣和对外形象中选择一种风格、一处微表情和少量可识别细节。非写实不等于杂乱；不得使用远景、多人、复杂场景、大片暗部、泛滥特效或文字。`
+    : `You are a visual director for chat avatars. Return strict JSON only: {"prompt":"...","negativePrompt":"..."}. The prompt must be a compact image-ready English prompt, about 90-170 tokens. The primary goal is recognition at 40px: choose one subject, use a close or bust composition around the face or one unmistakable symbolic subject, and let it occupy most of the center. Eyes, silhouette, major color block, and value separation from the background must be clear. Follow stable appearance and the global non-photoreal preference first, then choose one style, micro-expression, and a few recognizable details from personality, interests, and public persona. Non-photoreal must not become cluttered. Never use distant shots, multiple people, busy scenery, large dark areas, excessive effects, or text.`;
+  const request = async (repair = false) => {
+    const content = await generateResponse(config, system, [{ role: 'user', content: repair
+      ? `${source}\n\n上次输出不符合 JSON 或提示词长度。请重新输出仅含 prompt 和 negativePrompt 的合法 JSON。`
+      : `${source}\n\n请设计本次头像，并输出最终精简提示词。` }], undefined, { maxTokens: 700, aiUsage: { type: 'character_visual_identity', label: '设计角色头像', scope: 'character' } });
+    return normalizeAvatarPlan(parseGeneratedJsonPayload<unknown>(content));
+  };
+  const plan = await request() || await request(true);
+  if (!plan) throw new Error(language === 'zh' ? '头像视觉导演未返回有效方案，请稍后重试。' : 'The avatar visual director did not return a valid plan. Please try again.');
+  return { ...plan, negativePrompt: [avatarNegativePrompt(language), character.visualIdentity?.negativePrompt?.trim(), plan.negativePrompt].filter(Boolean).join(language === 'zh' ? '；' : '; '), fallbackUsed: false };
 }
 
 export function canAutoGenerateAvatarDraft(input: { name?: string; background?: string; expertise?: string[]; speakingStyle?: string }) {
   return Boolean(input.name?.trim() || input.background?.trim() || input.speakingStyle?.trim() || input.expertise?.length);
 }
 
-export function enqueueAvatarGenerationForCharacter(
+export async function enqueueAvatarGenerationForCharacter(
   character: AvatarPromptCharacterInput,
   aiProfiles: AIModelProfile[],
   language: 'zh' | 'en',
   settings: AvatarGenerationSettings,
   options?: { targetKey?: string; characterId?: string | null },
-) {
+): Promise<string> {
   const imageProfile = getPreferredAIProfile(aiProfiles, 'image');
   if (!isAIProfileUsable(imageProfile)) {
     throw new Error(language === 'zh' ? '请先配置可用的默认图片模型' : 'Configure an available default image model first.');
   }
+  const textProfile = getPreferredAIProfile(aiProfiles, 'text');
+  let plan = buildFallbackAvatarGenerationPlan(character, language, settings);
+  let fallbackReason: string | null = null;
+  if (!isAIProfileUsable(textProfile)) {
+    fallbackReason = language === 'zh' ? '请先配置文本 AI 模型' : 'Configure a text AI model first.';
+  } else {
+    try {
+      plan = await generateAvatarGenerationPlan(textProfile, character, language, settings);
+    } catch (error) {
+      fallbackReason = error instanceof Error ? error.message : String(error);
+    }
+  }
+  if (plan.fallbackUsed) {
+    notifyDiagnosticToast({
+      message: language === 'zh'
+        ? `头像视觉方案生成失败，已使用基础模板继续生成。原因：${fallbackReason || '未返回有效方案'}`
+        : `Avatar visual-plan generation failed. Continuing with the base template. Reason: ${fallbackReason || 'No valid plan returned.'}`,
+      severity: 'warning',
+      location: 'avatar-generation:visual-plan',
+    });
+  }
   return avatarGenerationQueue.enqueue(
     imageProfile,
-    buildAvatarPrompt(character, language, settings),
+    plan.prompt,
     {
       targetKey: options?.targetKey || `character:${character.id}`,
       characterId: options?.characterId ?? character.id,
-      description: `${character.name.trim() || '未命名角色'} · 头像`,
+      description: `${character.name.trim() || '未命名角色'} · 头像${plan.fallbackUsed ? '（基础模板）' : ''}`,
+      negativePrompt: plan.negativePrompt,
     },
   );
 }
 
-export function enqueueAvatarGenerationForCharacters(
+export async function enqueueAvatarGenerationForCharacters(
   characters: AvatarPromptCharacterInput[],
   aiProfiles: AIModelProfile[],
   language: 'zh' | 'en',
   settings: AvatarGenerationSettings,
-) {
-  return characters.map((character) => enqueueAvatarGenerationForCharacter(character, aiProfiles, language, settings));
+): Promise<string[]> {
+  const taskIds: string[] = [];
+  for (const character of characters) {
+    taskIds.push(await enqueueAvatarGenerationForCharacter(character, aiProfiles, language, settings));
+  }
+  return taskIds;
 }

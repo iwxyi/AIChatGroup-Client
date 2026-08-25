@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
-import { Alert, Box, Typography, Button, Divider, IconButton, Chip } from '@mui/material';
+import { Alert, Box, Typography, Button, Divider, IconButton, Chip, Dialog, DialogTitle, DialogContent } from '@mui/material';
 import type { Theme } from '@mui/material/styles';
 import AddIcon from '@mui/icons-material/Add';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
@@ -13,6 +13,7 @@ import MenuBookIcon from '@mui/icons-material/MenuBook';
 import PersonIcon from '@mui/icons-material/Person';
 import SettingsSuggestIcon from '@mui/icons-material/SettingsSuggest';
 import SyncProblemIcon from '@mui/icons-material/SyncProblem';
+import CloseIcon from '@mui/icons-material/Close';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useShallow } from 'zustand/react/shallow';
@@ -33,7 +34,7 @@ import SectionHeader from '../components/common/SectionHeader';
 import HomeCommandLauncher from '../features/homeCommand/HomeCommandLauncher';
 import { MIN_MEMBERS } from '../constants/defaults';
 import { avatarGenerationQueue, type AvatarGenerationQueueSummary } from '../services/avatarGenerationQueue';
-import { getCharacterCompletionSummary, subscribeCharacterCompletionQueue, type CharacterCompletionSummary } from '../services/characterCompletionQueue';
+import { dismissAllCharacterCompletionErrors, dismissCharacterCompletionError, getCharacterCompletionSummary, subscribeCharacterCompletionQueue, type CharacterCompletionSummary } from '../services/characterCompletionQueue';
 import type { HomeCompanionshipSnapshot } from '../services/companionshipProjection';
 import { shouldShowCompanionshipStatusHints } from '../services/companionshipStatusVisibility';
 import { isCloudSyncEnabled } from '../services/cloudSyncPreference';
@@ -46,7 +47,7 @@ import { formatInAppNotificationWindow, notificationAlertSeverity, useInAppNotif
 import { getRegisteredSyncWorkerEntries } from '../stores/storeSyncScheduler';
 import { motion, transition } from '../styles/motion';
 import { formatAiAmount } from '../utils/aiPoints';
-import { getRichMediaQueueSnapshot, subscribeRichMediaQueue } from '../services/richMessageMedia';
+import { dismissAllRichMediaGenerationErrors, dismissRichMediaGenerationError, getRecentRichMediaGenerationErrors, getRichMediaQueueSnapshot, subscribeRichMediaQueue } from '../services/richMessageMedia';
 
 interface HomeOverviewCard {
   label: string;
@@ -57,6 +58,14 @@ interface HomeOverviewCard {
   onCreate?: () => void | Promise<void>;
   createLabel?: string;
   attention?: boolean;
+}
+
+interface GenerationOverviewError {
+  id: string;
+  source: 'avatar' | 'completion' | 'rich-media';
+  title: string;
+  message: string;
+  createdAt: number;
 }
 
 const AI_POINT_PLACEHOLDER_VALUE = '--';
@@ -470,6 +479,9 @@ export default function HomePage() {
   const user = useAuthStore((state) => state.user);
   const [avatarQueueSummary, setAvatarQueueSummary] = useState<AvatarGenerationQueueSummary>(() => avatarGenerationQueue.getSummary());
   const [characterCompletionSummary, setCharacterCompletionSummary] = useState<CharacterCompletionSummary>(() => getCharacterCompletionSummary());
+  const [generationErrorsDialogOpen, setGenerationErrorsDialogOpen] = useState(false);
+  const [selectedGenerationError, setSelectedGenerationError] = useState<GenerationOverviewError | null>(null);
+  const previousLoginIdentityRef = useRef<string | null | undefined>(undefined);
   const [cloudSyncEnabled, setCloudSyncEnabledState] = useState(() => isCloudSyncEnabled());
   const [workerEntries, setWorkerEntries] = useState(() => getRegisteredSyncWorkerEntries());
   const [aiPointBalance, setAiPointBalance] = useState<number | null | undefined>(undefined);
@@ -498,6 +510,31 @@ export default function HomePage() {
     const unsubscribe = avatarGenerationQueue.subscribeSummary(setAvatarQueueSummary);
     return () => { unsubscribe(); };
   }, []);
+
+  useEffect(() => {
+    const currentLoginIdentity = isLoggedIn ? String(user?.id || user?.email || 'authenticated') : null;
+    if (previousLoginIdentityRef.current !== undefined && currentLoginIdentity && currentLoginIdentity !== previousLoginIdentityRef.current) {
+      avatarGenerationQueue.dismissAllErrors();
+      dismissAllCharacterCompletionErrors();
+      dismissAllRichMediaGenerationErrors();
+      setSelectedGenerationError(null);
+      setGenerationErrorsDialogOpen(false);
+    }
+    previousLoginIdentityRef.current = currentLoginIdentity;
+  }, [isLoggedIn, user?.email, user?.id]);
+
+  const generationErrors = useMemo<GenerationOverviewError[]>(() => [
+    ...avatarQueueSummary.recentErrors.map((error) => ({ ...error, source: 'avatar' as const })),
+    ...characterCompletionSummary.recentErrors.map((error) => ({ ...error, source: 'completion' as const })),
+    ...getRecentRichMediaGenerationErrors().map((error) => ({ ...error, source: 'rich-media' as const })),
+  ].sort((a, b) => b.createdAt - a.createdAt), [avatarQueueSummary.recentErrors, characterCompletionSummary.recentErrors, richMediaQueue]);
+  const recentGenerationErrors = generationErrors.slice(0, 3);
+  const dismissGenerationError = (error: GenerationOverviewError) => {
+    if (error.source === 'avatar') avatarGenerationQueue.dismissError(error.id);
+    else if (error.source === 'completion') dismissCharacterCompletionError(error.id);
+    else dismissRichMediaGenerationError(error.id);
+    if (selectedGenerationError?.source === error.source && selectedGenerationError.id === error.id) setSelectedGenerationError(null);
+  };
   useEffect(() => {
     const unsubscribe = subscribeCharacterCompletionQueue(setCharacterCompletionSummary);
     return () => { unsubscribe(); };
@@ -809,6 +846,9 @@ export default function HomePage() {
       value: `${characterCompletionSummary.text.completed + characterCompletionSummary.image.completed}/${characterCompletionSummary.text.total + characterCompletionSummary.image.total}`
         + (characterCompletionSummary.text.failed + characterCompletionSummary.image.failed > 0
           ? ` · 失败 ${characterCompletionSummary.text.failed + characterCompletionSummary.image.failed}`
+          : '')
+        + (characterCompletionSummary.text.warnings + characterCompletionSummary.image.warnings > 0
+          ? ` · 降级 ${characterCompletionSummary.text.warnings + characterCompletionSummary.image.warnings}`
           : ''),
       icon: <AutoAwesomeIcon />,
       color: 'primary.main',
@@ -818,7 +858,8 @@ export default function HomePage() {
     ...(hasActiveImageCompletions ? [{
       label: `正在生成：${characterCompletionSummary.image.current || avatarQueueSummary.current || '图片'}`,
       value: `${characterCompletionSummary.image.completed}/${characterCompletionSummary.image.total}`
-        + (characterCompletionSummary.image.failed > 0 ? ` · 失败 ${characterCompletionSummary.image.failed}` : ''),
+        + (characterCompletionSummary.image.failed > 0 ? ` · 失败 ${characterCompletionSummary.image.failed}` : '')
+        + (characterCompletionSummary.image.warnings > 0 ? ` · 基础模板 ${characterCompletionSummary.image.warnings}` : ''),
       icon: <AutoAwesomeIcon />,
       color: 'secondary.main',
       onOpen: () => navigate('/characters'),
@@ -956,7 +997,50 @@ export default function HomePage() {
               </Box>
             ))}
           </Box>
+          {recentGenerationErrors.length ? (
+            <Box sx={{ mt: 2, pt: 1.75, borderTop: '1px solid', borderColor: 'divider', display: 'grid', gap: 0.8 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+                <Typography variant="subtitle2" sx={{ fontWeight: 760 }}>最近生成错误</Typography>
+                {generationErrors.length > 3 ? <Button size="small" onClick={() => setGenerationErrorsDialogOpen(true)}>查看全部</Button> : null}
+              </Box>
+              {recentGenerationErrors.map((error) => (
+                <Box
+                  key={`${error.source}:${error.id}`}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setSelectedGenerationError(error)}
+                  onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedGenerationError(error); } }}
+                  sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, px: 1.1, py: 0.9, border: '1px solid', borderColor: 'error.main', borderRadius: 1, bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(211,47,47,0.045)' : 'rgba(255,112,112,0.08)', cursor: 'pointer', '&:hover': { bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(211,47,47,0.075)' : 'rgba(255,112,112,0.12)' } }}
+                >
+                  <Box sx={{ minWidth: 0, flex: 1 }}>
+                    <Typography variant="caption" color="error.main" sx={{ display: 'block', fontWeight: 720, mb: 0.2 }}>{error.title}</Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ overflow: 'hidden', display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: { xs: 3, md: 1 }, overflowWrap: 'anywhere' }}>{error.message}</Typography>
+                  </Box>
+                  <IconButton size="small" aria-label="关闭此错误提示" onClick={(event) => { event.stopPropagation(); dismissGenerationError(error); }} sx={{ mt: -0.35, mr: -0.35 }}><CloseIcon fontSize="small" /></IconButton>
+                </Box>
+              ))}
+            </Box>
+          ) : null}
         </SurfaceCard>
+
+        <Dialog open={Boolean(selectedGenerationError)} onClose={() => setSelectedGenerationError(null)} fullWidth maxWidth="sm">
+          <DialogTitle sx={{ pr: 6 }}>{selectedGenerationError?.title || '生成错误'}<IconButton aria-label="关闭" onClick={() => setSelectedGenerationError(null)} sx={{ position: 'absolute', right: 12, top: 12 }}><CloseIcon /></IconButton></DialogTitle>
+          <DialogContent dividers><Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{selectedGenerationError?.message}</Typography></DialogContent>
+        </Dialog>
+
+        <Dialog open={generationErrorsDialogOpen} onClose={() => setGenerationErrorsDialogOpen(false)} fullWidth maxWidth="md">
+          <DialogTitle>全部生成错误</DialogTitle>
+          <DialogContent dividers sx={{ display: 'grid', gap: 1 }}>
+            {generationErrors.map((error) => (
+              <SurfaceCard key={`${error.source}:${error.id}`} sx={{ borderColor: 'error.main', bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(211,47,47,0.035)' : 'rgba(255,112,112,0.06)' }} contentSx={{ p: 1.35 }}>
+                <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
+                  <Box sx={{ minWidth: 0, flex: 1 }}><Typography variant="subtitle2" color="error.main" sx={{ fontWeight: 760 }}>{error.title}</Typography><Typography variant="body2" sx={{ mt: 0.5, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{error.message}</Typography></Box>
+                  <IconButton size="small" aria-label="关闭此错误提示" onClick={() => dismissGenerationError(error)}><CloseIcon fontSize="small" /></IconButton>
+                </Box>
+              </SurfaceCard>
+            ))}
+          </DialogContent>
+        </Dialog>
 
         <HomeCommandLauncher />
 

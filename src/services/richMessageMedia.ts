@@ -133,6 +133,13 @@ export type RichMediaQueueSnapshotEntry = {
   total: number;
 };
 
+export interface RichMediaGenerationError {
+  id: string;
+  title: string;
+  message: string;
+  createdAt: number;
+}
+
 type RichMediaQueueEntry = {
   id: string;
   messageId: string;
@@ -155,6 +162,8 @@ const activeRichMediaQueueEntriesById = new Map<string, RichMediaQueueEntry>();
 const richMediaQueueListeners = new Set<() => void>();
 let runningRichMediaQueueEntry: RichMediaQueueEntry | null = null;
 let richMediaQueueSnapshotCache: RichMediaQueueSnapshotEntry[] = [];
+const richMediaGenerationErrors = new Map<string, RichMediaGenerationError>();
+const dismissedRichMediaGenerationErrorIds = new Set<string>();
 
 function rememberRichMediaMessage(message: Message) {
   latestRichMediaMessageById.set(message.id, message);
@@ -201,6 +210,22 @@ export function subscribeRichMediaQueue(listener: () => void) {
   return () => richMediaQueueListeners.delete(listener);
 }
 
+export function getRecentRichMediaGenerationErrors() {
+  return [...richMediaGenerationErrors.values()]
+    .filter((error) => !dismissedRichMediaGenerationErrorIds.has(error.id))
+    .sort((a, b) => b.createdAt - a.createdAt);
+}
+
+export function dismissRichMediaGenerationError(id: string) {
+  dismissedRichMediaGenerationErrorIds.add(id);
+  publishRichMediaQueueSnapshot();
+}
+
+export function dismissAllRichMediaGenerationErrors() {
+  richMediaGenerationErrors.forEach((_, id) => dismissedRichMediaGenerationErrorIds.add(id));
+  publishRichMediaQueueSnapshot();
+}
+
 export function resetRichMediaQueueForTests() {
   if (!import.meta.env?.MODE?.includes('test')) return;
   pendingRichMediaQueue.splice(0, pendingRichMediaQueue.length);
@@ -208,6 +233,8 @@ export function resetRichMediaQueueForTests() {
   runningRichMediaQueueEntry = null;
   richMediaQueueSnapshotCache = [];
   latestRichMediaMessageById.clear();
+  richMediaGenerationErrors.clear();
+  dismissedRichMediaGenerationErrorIds.clear();
   publishRichMediaQueueSnapshot();
 }
 
@@ -529,12 +556,20 @@ async function runRichMediaQueueEntry(entry: RichMediaQueueEntry) {
         senderId: workingMessage.senderId,
       },
     });
+    const errorText = toMediaGenerationErrorText(error, attachment.kind);
+    richMediaGenerationErrors.set(entry.id, {
+      id: entry.id,
+      title: attachment.kind === 'image' ? '聊天图片生成' : '聊天语音生成',
+      message: errorText,
+      createdAt: Date.now(),
+    });
+    publishRichMediaQueueSnapshot();
     updateRichMediaMessage({
       message: workingMessage,
       attachmentId: attachment.id,
       patch: {
         status: 'failed',
-        error: toMediaGenerationErrorText(error, attachment.kind),
+        error: errorText,
         generationJobId,
       },
       upsertMessage: entry.upsertMessage,

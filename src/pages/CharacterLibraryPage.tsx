@@ -26,7 +26,7 @@ import { usePaneLayout } from '../components/layout/PaneLayoutContext';
 import { canDeleteCharacterGroup, getCharacterGroupList, getCharactersInGroup, normalizeCharacter, normalizeCharacterGroup, normalizeCharacterName, getDuplicateCharacterBannerText, getDuplicateCharacterCount, getDuplicateCharacters } from '../types/character';
 import { enqueueAvatarGenerationForCharacter } from '../services/avatarGeneration';
 import { avatarGenerationQueue } from '../services/avatarGenerationQueue';
-import { buildCharacterVisualImagePrompt, generateCharacterProfileDraft, generateCharacterVisualIdentityDraft, generateCharacterVoiceProfileDraft } from '../services/characterGenerator';
+import { buildFallbackCharacterVisualGenerationPlan, generateCharacterProfileDraft, generateCharacterVisualGenerationPlan, generateCharacterVisualIdentityDraft, generateCharacterVoiceProfileDraft } from '../services/characterGenerator';
 import { assignGeneratedVoiceProfile } from '../services/speechVoiceAssignment';
 import { enqueueCharacterCompletionTask, type CharacterCompletionKind } from '../services/characterCompletionQueue';
 import { isImageAvatar } from '../utils/avatar';
@@ -35,6 +35,7 @@ import { getPreferredAIProfile, isAIProfileUsable } from '../types/settings';
 import { useChatStore } from '../stores/useChatStore';
 import { buildDirectChatDraft } from '../services/chatDraftBuilder';
 import { api, type BillingMembershipResponse, type VipEntitlementInfo } from '../services/api';
+import { notifyDiagnosticToast } from '../services/diagnostics';
 import type { AICharacter } from '../types/character';
 import { readPersistentUiValue, writePersistentUiValue } from '../utils/persistentUiState';
 import { buildListGridSx } from '../styles/interaction';
@@ -679,30 +680,56 @@ export default function CharacterLibraryPage() {
           if (field === 'visual') {
             const current = useCharacterStore.getState().characters.find((item) => item.id === character.id) || character;
             let visualIdentity = current.visualIdentity || {};
+            const language = i18n.language.startsWith('zh') ? 'zh' : 'en';
+            const textProfile = getPreferredAIProfile(aiProfiles, 'text');
+            let fallbackReason: string | null = null;
             if (!visualIdentity.description?.trim() || completionMode !== 'empty') {
-              const profile = getPreferredAIProfile(aiProfiles, 'text');
-              if (!isAIProfileUsable(profile)) throw new Error('请先配置文本 AI 模型');
-              const draft = await generateCharacterVisualIdentityDraft(profile, { name: current.name, background: current.background, speakingStyle: current.speakingStyle, expertise: current.expertise, group: current.group }, i18n.language.startsWith('zh') ? 'zh' : 'en');
-              visualIdentity = completionMode === 'regenerate'
-                ? { ...visualIdentity, ...draft }
-                : { ...visualIdentity, description: visualIdentity.description?.trim() || draft.description, styleHint: visualIdentity.styleHint?.trim() || draft.styleHint, negativePrompt: visualIdentity.negativePrompt?.trim() || draft.negativePrompt, seed: visualIdentity.seed ?? draft.seed };
-              await useCharacterStore.getState().updateCharacter(current.id, { visualIdentity });
+              if (!isAIProfileUsable(textProfile)) {
+                fallbackReason = '请先配置文本 AI 模型';
+              } else {
+                try {
+                  const draft = await generateCharacterVisualIdentityDraft(textProfile, { name: current.name, background: current.background, speakingStyle: current.speakingStyle, expertise: current.expertise, group: current.group }, language);
+                  visualIdentity = completionMode === 'regenerate'
+                    ? { ...visualIdentity, ...draft }
+                    : { ...visualIdentity, description: visualIdentity.description?.trim() || draft.description, styleHint: visualIdentity.styleHint?.trim() || draft.styleHint, negativePrompt: visualIdentity.negativePrompt?.trim() || draft.negativePrompt, seed: visualIdentity.seed ?? draft.seed };
+                  await useCharacterStore.getState().updateCharacter(current.id, { visualIdentity });
+                } catch (error) {
+                  fallbackReason = error instanceof Error ? error.message : String(error);
+                }
+              }
             }
             const imageProfile = getPreferredAIProfile(aiProfiles, 'image');
             if (!isAIProfileUsable(imageProfile)) throw new Error('请先配置图片 AI 模型');
-            const taskId = avatarGenerationQueue.enqueue(imageProfile, buildCharacterVisualImagePrompt({ name: current.name, background: current.background, speakingStyle: current.speakingStyle, expertise: current.expertise, group: current.group, visualIdentity }, i18n.language.startsWith('zh') ? 'zh' : 'en'), { targetKey: `character-visual:${current.id}`, characterId: null, description: `${current.name.trim() || '未命名角色'} · 形象图`, negativePrompt: visualIdentity.negativePrompt, seed: visualIdentity.seed });
+            const directorInput = { name: current.name, background: current.background, speakingStyle: current.speakingStyle, expertise: current.expertise, group: current.group, personality: current.personality, coreProfile: current.coreProfile, visualIdentity };
+            let visualPlan = buildFallbackCharacterVisualGenerationPlan(directorInput, language);
+            if (!fallbackReason && isAIProfileUsable(textProfile)) {
+              try {
+                visualPlan = await generateCharacterVisualGenerationPlan(textProfile, directorInput, language);
+              } catch (error) {
+                fallbackReason = error instanceof Error ? error.message : String(error);
+              }
+            } else if (!fallbackReason) {
+              fallbackReason = '请先配置文本 AI 模型';
+            }
+            const fallbackWarning = visualPlan.fallbackUsed
+              ? `视觉方案生成失败，已使用基础模板。原因：${fallbackReason || '未返回有效方案'}`
+              : null;
+            if (fallbackWarning) {
+              notifyDiagnosticToast({ message: fallbackWarning, severity: 'warning', location: 'character-library:visual-plan' });
+            }
+            const taskId = avatarGenerationQueue.enqueue(imageProfile, visualPlan.prompt, { targetKey: `character-visual:${current.id}`, characterId: null, description: `${current.name.trim() || '未命名角色'} · 形象图${visualPlan.fallbackUsed ? '（基础模板）' : ''}`, negativePrompt: visualPlan.negativePrompt, seed: visualIdentity.seed });
             const state = await avatarGenerationQueue.waitForTask(taskId);
             if (!state.imageDataUrl) throw new Error('图片生成未返回图像');
             const asset = await api.createCharacterVisualAsset(current.id, { dataUrl: state.imageDataUrl, label: '形象图', source: 'generated', isPrimary: true });
             // 视觉资产由独立接口持久化，重新加载详情，避免同一资产同时出现在
             // visual_identity 和 character_visual_assets 中而显示重复。
             await useCharacterStore.getState().loadCharacters();
-            return;
+            return fallbackWarning ? { warning: fallbackWarning } : undefined;
           }
           if (field === 'avatar') {
             const imageProfile = getPreferredAIProfile(aiProfiles, 'image');
             if (!isAIProfileUsable(imageProfile)) throw new Error('请先配置图片 AI 模型');
-            const taskId = enqueueAvatarGenerationForCharacter({ id: character.id, name: character.name, background: character.background, speakingStyle: character.speakingStyle, expertise: character.expertise, group: character.group, personality: character.personality, speechProfile: character.speechProfile, coreProfile: character.coreProfile }, aiProfiles, i18n.language.startsWith('zh') ? 'zh' : 'en', avatarGeneration, { targetKey: `character:${character.id}`, characterId: character.id });
+            const taskId = await enqueueAvatarGenerationForCharacter({ id: character.id, name: character.name, background: character.background, speakingStyle: character.speakingStyle, expertise: character.expertise, group: character.group, personality: character.personality, speechProfile: character.speechProfile, coreProfile: character.coreProfile, visualIdentity: character.visualIdentity }, aiProfiles, i18n.language.startsWith('zh') ? 'zh' : 'en', avatarGeneration, { targetKey: `character:${character.id}`, characterId: character.id });
             await avatarGenerationQueue.waitForTask(taskId);
           }
         },
