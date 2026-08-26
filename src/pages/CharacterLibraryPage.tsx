@@ -179,7 +179,6 @@ function CharacterLibraryHeaderActions({
   const navigate = useNavigate();
   const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null);
   const [sortMenuAnchorEl, setSortMenuAnchorEl] = useState<null | HTMLElement>(null);
-  const [selectionMenuAnchorEl, setSelectionMenuAnchorEl] = useState<null | HTMLElement>(null);
   const isZh = i18n.language.startsWith('zh');
   const sortFieldLabel = sortField === 'name'
     ? (isZh ? '名称' : 'Name')
@@ -194,22 +193,14 @@ function CharacterLibraryHeaderActions({
         <>
           <Typography variant="body2" color="text.secondary" sx={{ mr: 0.25 }}>{selectedCount} {isZh ? '已选择' : 'selected'}</Typography>
           <Tooltip title={isZh ? '退出多选' : 'Exit selection'}><IconButton size="small" onClick={onExitSelection}><CloseIcon fontSize="small" /></IconButton></Tooltip>
-          <Tooltip title={isZh ? '批量操作' : 'Batch actions'}><IconButton size="small" onClick={(event) => setSelectionMenuAnchorEl(event.currentTarget)}><MoreIcon fontSize="small" /></IconButton></Tooltip>
-          <Menu anchorEl={selectionMenuAnchorEl} open={Boolean(selectionMenuAnchorEl)} onClose={() => setSelectionMenuAnchorEl(null)}>
-            <MenuItem onClick={() => { onSelectAll(); setSelectionMenuAnchorEl(null); }}>{isZh ? '全选' : 'Select all'}</MenuItem>
-            <MenuItem disabled={selectedCount === 0} onClick={() => { onDeleteSelected(); setSelectionMenuAnchorEl(null); }}>{isZh ? '批量删除' : 'Delete selected'}</MenuItem>
-            <Divider />
-            <MenuItem disabled={selectedCount === 0} onClick={() => { onChangeGroup(); setSelectionMenuAnchorEl(null); }}>{isZh ? '更改分组' : 'Change group'}</MenuItem>
-            <MenuItem disabled={selectedCount === 0} onClick={() => { onCompleteSelected(); setSelectionMenuAnchorEl(null); }}>{isZh ? '批量补全' : 'Complete selected'}</MenuItem>
-          </Menu>
         </>
       ) : null}
-      <Chip
+      {!selectionMode ? <Chip
         size="small"
         label={`${sortFieldLabel} · ${sortDirectionLabel}${sortGroupFirst ? ` · ${isZh ? '分组优先' : 'Group first'}` : ''}`}
         sx={{ display: { xs: 'none', md: 'inline-flex' } }}
-      />
-      <Tooltip title={isZh ? '排序' : 'Sort'}>
+      /> : null}
+      {!selectionMode ? <Tooltip title={isZh ? '排序' : 'Sort'}>
         <IconButton
           onClick={(event) => {
             setSortMenuAnchorEl(event.currentTarget);
@@ -238,8 +229,8 @@ function CharacterLibraryHeaderActions({
         >
           <SortIcon fontSize="small" />
         </IconButton>
-      </Tooltip>
-      <Menu
+      </Tooltip> : null}
+      {!selectionMode ? <Menu
         anchorEl={sortMenuAnchorEl}
         open={Boolean(sortMenuAnchorEl)}
         onClose={() => setSortMenuAnchorEl(null)}
@@ -268,14 +259,11 @@ function CharacterLibraryHeaderActions({
         <MenuItem selected={view === 'card'} onClick={() => { onViewChange('card'); setSortMenuAnchorEl(null); }}>
           <MenuCheck selected={view === 'card'} />{isZh ? '卡片视图' : 'Card view'}
         </MenuItem>
-      </Menu>
+      </Menu> : null}
       <Tooltip title={isZh ? '更多' : 'More'}>
         <IconButton
           aria-label={isZh ? '更多' : 'More'}
-          onClick={(event) => {
-            setMenuAnchorEl(event.currentTarget);
-            setSortMenuAnchorEl(null);
-          }}
+          onClick={(event) => { setMenuAnchorEl(event.currentTarget); setSortMenuAnchorEl(null); }}
           sx={{
             width: 40,
             height: 40,
@@ -300,6 +288,13 @@ function CharacterLibraryHeaderActions({
         </IconButton>
       </Tooltip>
       <Menu anchorEl={menuAnchorEl} open={Boolean(menuAnchorEl)} onClose={() => setMenuAnchorEl(null)}>
+        {selectionMode ? <>
+          <MenuItem onClick={() => { onSelectAll(); setMenuAnchorEl(null); }}>{isZh ? '全选' : 'Select all'}</MenuItem>
+          <MenuItem disabled={selectedCount === 0} onClick={() => { onDeleteSelected(); setMenuAnchorEl(null); }}>{isZh ? '批量删除' : 'Delete selected'}</MenuItem>
+          <Divider />
+          <MenuItem disabled={selectedCount === 0} onClick={() => { onChangeGroup(); setMenuAnchorEl(null); }}>{isZh ? '更改分组' : 'Change group'}</MenuItem>
+          <MenuItem disabled={selectedCount === 0} onClick={() => { onCompleteSelected(); setMenuAnchorEl(null); }}>{isZh ? '批量补全' : 'Complete selected'}</MenuItem>
+        </> : <>
         <MenuItem onClick={() => {
           setMenuAnchorEl(null);
           navigate('/characters/batch-generate');
@@ -318,6 +313,7 @@ function CharacterLibraryHeaderActions({
         }} disabled={customCount === 0}>
           {t('character.exportAll')}
         </MenuItem>
+        </>}
       </Menu>
     </Box>
   );
@@ -890,13 +886,14 @@ export default function CharacterLibraryPage() {
       />
     );
 
-    return () => {
-      setHeaderActions(null);
-      setHeaderTitle(null);
-      setHeaderBackAction(null);
-      setHideMobileBottomNav(false);
-    };
-  }, [custom.length, handleExport, handleImport, i18n.language, openCompletionDialog, resetSelection, handleSelectAllCharacters, selectedIds.length, selectionMode, setHeaderActions, setHeaderBackAction, setHeaderTitle, setHideMobileBottomNav, sortDirection, sortField, sortGroupFirst, view]);
+  }, [custom.length, i18n.language, selectedIds.length, selectionMode, sortDirection, sortField, sortGroupFirst, view]);
+
+  useEffect(() => () => {
+    setHeaderActions(null);
+    setHeaderTitle(null);
+    setHeaderBackAction(null);
+    setHideMobileBottomNav(false);
+  }, [setHeaderActions, setHeaderTitle, setHeaderBackAction, setHideMobileBottomNav]);
 
   return (
     <Box sx={{ position: 'relative', containerType: 'inline-size', p: 3, pt: { xs: 1, sm: 1, md: 3 }, pb: { xs: 'calc(env(safe-area-inset-bottom, 0px) + 82px)', sm: 12 } }}>

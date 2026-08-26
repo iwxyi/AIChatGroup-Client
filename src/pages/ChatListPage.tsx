@@ -201,7 +201,7 @@ export default function ChatListPage() {
             <IconButton key={`default-menu-${menuModeTransitionKey}`} aria-label="更多" onClick={(event) => setStyleMenuAnchor(event.currentTarget)} sx={menuHeaderButtonSx}><MoreVertIcon className="chat-list-menu-mode-icon" fontSize="small" /></IconButton>
           </Tooltip>
         ) : null}
-        <Tooltip title={searchOpen ? '收起搜索' : t('chat.search')}>
+        {!selectionMode ? <Tooltip title={searchOpen ? '收起搜索' : t('chat.search')}>
           <IconButton
             aria-label={searchOpen ? '收起搜索' : t('chat.search')}
             color={searchOpen ? 'primary' : 'default'}
@@ -241,7 +241,7 @@ export default function ChatListPage() {
           >
             {searchOpen ? <CloseIcon fontSize="small" /> : <SearchIcon fontSize="small" />}
           </IconButton>
-        </Tooltip>
+        </Tooltip> : null}
         {isThreeColumn ? (
           <Tooltip title={detailCollapsed ? '显示分栏' : '隐藏分栏'}>
             <IconButton
@@ -557,7 +557,7 @@ export default function ChatListPage() {
         <MenuItem onClick={toggleSelectVisibleChats}>全选</MenuItem>
         <MenuItem disabled={!selectedChatIds.length} onClick={() => setBatchDeleteConfirmOpen(true)}>删除</MenuItem>
         <Divider />
-        <MenuItem disabled={!batchCounts.selected.length} onClick={() => setBatchDialogOpen(true)}>批量补全</MenuItem>
+        <MenuItem disabled={!batchCounts.selected.length} onClick={() => { setBatchMenuAnchor(null); setBatchDialogOpen(true); }}>批量补全</MenuItem>
       </Menu>
       <HoverSubmenuMenu
         anchorEl={styleMenuAnchor}
