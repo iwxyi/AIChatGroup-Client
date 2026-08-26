@@ -836,6 +836,7 @@ export default function ChatDetailPage() {
   const [keyboardInset, setKeyboardInset] = useState(0);
   const [composerInjectedAttachments, setComposerInjectedAttachments] = useState<MessageAttachment[]>([]);
   const [isDirectReplyPending, setIsDirectReplyPending] = useState(false);
+  const [readOnlyEmphasis, setReadOnlyEmphasis] = useState(true);
 
   const loopTokenRef = useRef<string | null>(null);
   const isRunningRef = useRef(false);
@@ -2131,6 +2132,16 @@ export default function ChatDetailPage() {
     setIsStoryGenerationCancelled(false);
     setIsExplicitContinuationScrollFollowSuspended(false);
   }, [id, isStoryRoom]);
+
+  useEffect(() => {
+    if (!chatInteractionDisabled) {
+      setReadOnlyEmphasis(false);
+      return undefined;
+    }
+    setReadOnlyEmphasis(true);
+    const timer = window.setTimeout(() => setReadOnlyEmphasis(false), 3000);
+    return () => window.clearTimeout(timer);
+  }, [chatInteractionDisabled, id, chatReadOnlyReason]);
 
   const handleOpenAssistantArtifact = useCallback((artifactId: string) => {
     setSelectedAssistantArtifactId(artifactId);
@@ -3668,13 +3679,22 @@ export default function ChatDetailPage() {
               p: { xs: 0.85, sm: 1 },
               borderRadius: 3,
               border: '1px solid',
-              borderColor: (theme) => theme.palette.mode === 'light' ? 'rgba(180,132,42,0.22)' : 'rgba(230,190,92,0.20)',
-              bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,251,240,0.72)' : 'rgba(35,30,20,0.58)',
+              borderColor: (theme) => readOnlyEmphasis
+                ? (theme.palette.mode === 'light' ? 'rgba(180,132,42,0.42)' : 'rgba(230,190,92,0.38)')
+                : (theme.palette.mode === 'light' ? 'rgba(180,132,42,0.22)' : 'rgba(230,190,92,0.20)'),
+              bgcolor: (theme) => readOnlyEmphasis
+                ? (theme.palette.mode === 'light' ? 'rgba(255,248,225,0.88)' : 'rgba(48,39,22,0.72)')
+                : (theme.palette.mode === 'light' ? 'rgba(255,251,240,0.72)' : 'rgba(35,30,20,0.58)'),
               backdropFilter: (theme) => theme.palette.mode === 'light' ? 'blur(24px) saturate(1.10)' : 'blur(22px) saturate(1.04)',
               WebkitBackdropFilter: (theme) => theme.palette.mode === 'light' ? 'blur(24px) saturate(1.10)' : 'blur(22px) saturate(1.04)',
-              boxShadow: (theme) => theme.palette.mode === 'light'
-                ? '0 18px 42px rgba(15,23,42,0.12), 0 1px 0 rgba(255,255,255,0.72) inset'
-                : '0 18px 44px rgba(0,0,0,0.30), 0 1px 0 rgba(255,255,255,0.10) inset',
+              boxShadow: (theme) => readOnlyEmphasis
+                ? (theme.palette.mode === 'light'
+                  ? '0 18px 42px rgba(148,96,12,0.16), 0 1px 0 rgba(255,255,255,0.78) inset'
+                  : '0 18px 44px rgba(0,0,0,0.34), 0 1px 0 rgba(255,255,255,0.12) inset')
+                : (theme.palette.mode === 'light'
+                  ? '0 18px 42px rgba(15,23,42,0.12), 0 1px 0 rgba(255,255,255,0.72) inset'
+                  : '0 18px 44px rgba(0,0,0,0.30), 0 1px 0 rgba(255,255,255,0.10) inset'),
+              transition: 'border-color 900ms ease, background-color 900ms ease, box-shadow 900ms ease',
             }}>
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.75, minHeight: 28, textAlign: 'center', flexWrap: 'wrap' }}>
                 <Typography variant="body2" sx={{ fontWeight: 600, lineHeight: 1.4, overflowWrap: 'anywhere' }}>
