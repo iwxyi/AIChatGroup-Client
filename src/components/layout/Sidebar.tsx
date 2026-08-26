@@ -321,9 +321,10 @@ export default function Sidebar({ collapsed }: SidebarProps) {
         contain: 'layout paint',
         isolation: 'isolate',
         transform: 'translateZ(0)',
-        bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.72)' : 'rgba(10,10,15,0.78)',
-        backdropFilter: 'blur(24px) saturate(1.12)',
-        WebkitBackdropFilter: 'blur(24px) saturate(1.12)',
+        // Avoid sampling the entire page on every nav hover animation. A
+        // stable translucent surface keeps the same visual hierarchy without
+        // the backdrop-filter repaint flicker on Chromium.
+        bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.92)' : 'rgba(10,10,15,0.92)',
         borderRight: 1,
         borderColor: (theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.08)' : 'rgba(226,232,240,0.09)',
       }}
