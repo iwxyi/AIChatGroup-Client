@@ -3648,25 +3648,41 @@ export default function ChatDetailPage() {
         {chatInteractionDisabled ? (
           <Box sx={{
             position: 'absolute',
-            left: 12,
-            right: 12,
-            bottom: 'calc(env(safe-area-inset-bottom, 0px) + 18px)',
+            left: 0,
+            right: 0,
+            bottom: 0,
             zIndex: 3,
-            p: 1.25,
-            borderRadius: 1.5,
-            border: '1px solid',
-            borderColor: 'divider',
-            bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.9)' : 'rgba(18,18,24,0.82)',
-            backdropFilter: 'blur(18px)',
-            WebkitBackdropFilter: 'blur(18px)',
-            boxShadow: 2,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            px: { xs: 1.5, sm: 2.5, md: 3 },
+            pt: 1,
+            pb: 'calc(env(safe-area-inset-bottom, 0px) + 14px)',
+            pointerEvents: 'none',
+            '& > *': { pointerEvents: 'auto' },
           }}>
-            <Typography variant="body2" sx={{ fontWeight: 600 }}>{chatReadOnlyReason}</Typography>
-            <Typography variant="caption" color="text.secondary">
-              {isRemoteDeletedChat
-                ? '当前仅保留本地只读历史；已停止自动生成和新消息提交。'
-                : '当前仅可查看历史消息；修复或恢复角色后才能继续聊天。'}
-            </Typography>
+            <Box sx={{
+              width: '100%',
+              maxWidth: 760,
+              mx: 'auto',
+              p: { xs: 0.85, sm: 1 },
+              borderRadius: 3,
+              border: '1px solid',
+              borderColor: (theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.10)' : 'rgba(226,232,240,0.12)',
+              bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.64)' : 'rgba(13,15,22,0.50)',
+              backdropFilter: (theme) => theme.palette.mode === 'light' ? 'blur(24px) saturate(1.10)' : 'blur(22px) saturate(1.04)',
+              WebkitBackdropFilter: (theme) => theme.palette.mode === 'light' ? 'blur(24px) saturate(1.10)' : 'blur(22px) saturate(1.04)',
+              boxShadow: (theme) => theme.palette.mode === 'light'
+                ? '0 18px 42px rgba(15,23,42,0.12), 0 1px 0 rgba(255,255,255,0.72) inset'
+                : '0 18px 44px rgba(0,0,0,0.30), 0 1px 0 rgba(255,255,255,0.10) inset',
+            }}>
+              <Typography variant="body2" sx={{ fontWeight: 600 }}>{chatReadOnlyReason}</Typography>
+              <Typography variant="caption" color="text.secondary">
+                {isRemoteDeletedChat
+                  ? '当前仅保留本地只读历史；已停止自动生成和新消息提交。'
+                  : '当前仅可查看历史消息；修复或恢复角色后才能继续聊天。'}
+              </Typography>
+            </Box>
           </Box>
         ) : <Box
           ref={composerDockRef}
