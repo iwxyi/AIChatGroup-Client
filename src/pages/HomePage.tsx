@@ -339,6 +339,18 @@ function buildStatIconSx(color: string) {
   };
 }
 
+function buildGridSx() {
+  return {
+    display: 'grid',
+    gridTemplateColumns: {
+      xs: '1fr',
+      sm: 'repeat(2, minmax(0, 1fr))',
+      lg: 'repeat(3, minmax(0, 1fr))',
+    },
+    gap: 1.5,
+  };
+}
+
 function projectArtifactHomeState(state: ArtifactStoreSnapshotLike): ArtifactHomeState {
   return {
     jobs: state.jobs.map((job) => ({
