@@ -972,6 +972,17 @@ export const useMessageStore = create<MessageStore>()(
         if (!shouldSkipCloudSync()) messageSyncScheduler.schedule(flushPendingOperations, 100);
         if (options?.aroundTimestamp !== undefined) {
           await get().loadMessages(chatId, { limit: options.limit, aroundTimestamp: options.aroundTimestamp });
+          // A stale reading position can legitimately point outside the
+          // retained message range (for example after a cloud restore). Do
+          // not leave the detail page blank in that case; fall back to the
+          // latest window so the conversation remains discoverable.
+          if (!get().messageWindowsByChatId[chatId]?.messages?.length) {
+            logMessageWindowDebug('open-around-empty-fallback-tail', {
+              chatId,
+              aroundTimestamp: options.aroundTimestamp,
+            });
+            await get().loadMessages(chatId, { limit: options.limit, resetWindow: true });
+          }
           return;
         }
         if (options?.resetWindow) {

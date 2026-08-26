@@ -1710,7 +1710,10 @@ export default function ChatDetailPage() {
   isManualInputPendingRef.current = isManualInputPending;
 
   const startInitialConversationOpening = useCallback(() => {
-    if (!chat || !id || chatInteractionDisabled || isStoryRoom) return;
+    // Do not infer an empty/new conversation while the detail bootstrap or
+    // message window is still being restored. Existing rooms otherwise race
+    // the remote load and can incorrectly start a fresh opening turn.
+    if (!chat || !id || chatInteractionDisabled || isStoryRoom || !detailBootstrapComplete || isLoading) return;
     const conversationTurnCount = currentChatMessages.filter((message) => message.type === 'user' || message.type === 'ai').length;
     if (conversationTurnCount > 0) {
       openingMessageCountRef.current = conversationTurnCount;
@@ -1727,7 +1730,7 @@ export default function ChatDetailPage() {
     openingLoopRef.current = true;
     resume();
     startConversationLoopIfNeeded(chat, { immediate: true, allowDirect: chat.type === 'direct' });
-  }, [chat, chatInteractionDisabled, currentChatMessages, id, isDirectReplyPending, isRunning, isStoryRoom, resume, startConversationLoopIfNeeded]);
+  }, [chat, chatInteractionDisabled, currentChatMessages, detailBootstrapComplete, id, isDirectReplyPending, isLoading, isRunning, isStoryRoom, resume, startConversationLoopIfNeeded]);
 
   // Creation, initial loading, and clearing history all converge here: when
   // the projected conversation becomes empty, this single entry starts the
