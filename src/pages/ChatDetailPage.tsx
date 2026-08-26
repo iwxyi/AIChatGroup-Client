@@ -3661,33 +3661,34 @@ export default function ChatDetailPage() {
             pointerEvents: 'none',
             '& > *': { pointerEvents: 'auto' },
           }}>
-            <Box sx={{
+            <Box role="status" sx={{
               width: '100%',
               maxWidth: 760,
               mx: 'auto',
               p: { xs: 0.85, sm: 1 },
               borderRadius: 3,
               border: '1px solid',
-              borderColor: (theme) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.10)' : 'rgba(226,232,240,0.12)',
-              bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.64)' : 'rgba(13,15,22,0.50)',
+              borderColor: (theme) => theme.palette.mode === 'light' ? 'rgba(180,132,42,0.22)' : 'rgba(230,190,92,0.20)',
+              bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,251,240,0.72)' : 'rgba(35,30,20,0.58)',
               backdropFilter: (theme) => theme.palette.mode === 'light' ? 'blur(24px) saturate(1.10)' : 'blur(22px) saturate(1.04)',
               WebkitBackdropFilter: (theme) => theme.palette.mode === 'light' ? 'blur(24px) saturate(1.10)' : 'blur(22px) saturate(1.04)',
               boxShadow: (theme) => theme.palette.mode === 'light'
                 ? '0 18px 42px rgba(15,23,42,0.12), 0 1px 0 rgba(255,255,255,0.72) inset'
                 : '0 18px 44px rgba(0,0,0,0.30), 0 1px 0 rgba(255,255,255,0.10) inset',
             }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.75, minHeight: 28, textAlign: 'center' }}>
-                <Typography variant="body2" sx={{ fontWeight: 600, lineHeight: 1.4 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.75, minHeight: 28, textAlign: 'center', flexWrap: 'wrap' }}>
+                <Typography variant="body2" sx={{ fontWeight: 600, lineHeight: 1.4, overflowWrap: 'anywhere' }}>
                   {chatReadOnlyReason}
                 </Typography>
                 <Tooltip
                   arrow
                   enterDelay={450}
+                  describeChild
                   title={isRemoteDeletedChat
                     ? '当前仅保留本地只读历史；已停止自动生成和新消息提交。'
                     : '当前仅可查看历史消息；修复或恢复角色后才能继续聊天。'}
                 >
-                  <HelpOutlineIcon sx={{ fontSize: 17, color: 'text.secondary', flexShrink: 0 }} />
+                  <HelpOutlineIcon aria-label="查看只读状态说明" sx={{ fontSize: 17, color: 'text.secondary', flexShrink: 0 }} />
                 </Tooltip>
               </Box>
             </Box>
