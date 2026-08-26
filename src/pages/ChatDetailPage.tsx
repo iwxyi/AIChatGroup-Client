@@ -2990,7 +2990,7 @@ export default function ChatDetailPage() {
           }}
         >
           {storyBranchSuggestionContent}
-        </Box>}
+        </Box> : null}
       </Collapse>
       <Collapse
         in={Boolean(pendingAppCommand)}
