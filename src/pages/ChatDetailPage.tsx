@@ -2943,8 +2943,8 @@ export default function ChatDetailPage() {
       ) : null}
     </Box>
   ) : null;
-  const messageListBottomInset = isRemoteDeletedChat
-    ? { xs: '24px', sm: '24px' }
+  const messageListBottomInset = chatInteractionDisabled
+    ? { xs: '104px', sm: '92px' }
     : composerDockHeight > 0
       ? { xs: `${composerDockHeight + 12 + keyboardInset}px`, sm: `${composerDockHeight + 12}px` }
       : { xs: 'calc(112px + env(safe-area-inset-bottom, 0px))', sm: '104px' };
@@ -3594,27 +3594,6 @@ export default function ChatDetailPage() {
             </>
           )}
         />
-        {chatInteractionDisabled ? (
-          <Box sx={{
-            position: 'absolute',
-            left: 12,
-            right: 12,
-            top: isSplitDetailPane ? 68 : 'calc(80px + env(safe-area-inset-top, 0px))',
-            zIndex: 3,
-            p: 1.25,
-            borderRadius: 1,
-            bgcolor: 'warning.light',
-            color: 'warning.contrastText',
-            boxShadow: 2,
-          }}>
-            <Typography variant="body2" sx={{ fontWeight: 600 }}>{chatReadOnlyReason}</Typography>
-            <Typography variant="caption">
-              {isRemoteDeletedChat
-                ? '当前仅保留本地只读历史；已停止自动生成和新消息提交。'
-                : '当前仅可查看历史消息；修复或恢复角色后才能继续聊天。'}
-            </Typography>
-          </Box>
-        ) : null}
         {storyTailStatusBar}
         <Box sx={{ position: 'absolute', inset: 0, overflow: 'hidden', zIndex: 1 }}>
           {shouldDelayStoryMessageListForRestore ? null : <MessageList
@@ -3666,7 +3645,30 @@ export default function ChatDetailPage() {
             readOnly={chatInteractionDisabled}
           />}
         </Box>
-        {!chatInteractionDisabled ? <Box
+        {chatInteractionDisabled ? (
+          <Box sx={{
+            position: 'absolute',
+            left: 12,
+            right: 12,
+            bottom: 'calc(env(safe-area-inset-bottom, 0px) + 18px)',
+            zIndex: 3,
+            p: 1.25,
+            borderRadius: 1.5,
+            border: '1px solid',
+            borderColor: 'divider',
+            bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.9)' : 'rgba(18,18,24,0.82)',
+            backdropFilter: 'blur(18px)',
+            WebkitBackdropFilter: 'blur(18px)',
+            boxShadow: 2,
+          }}>
+            <Typography variant="body2" sx={{ fontWeight: 600 }}>{chatReadOnlyReason}</Typography>
+            <Typography variant="caption" color="text.secondary">
+              {isRemoteDeletedChat
+                ? '当前仅保留本地只读历史；已停止自动生成和新消息提交。'
+                : '当前仅可查看历史消息；修复或恢复角色后才能继续聊天。'}
+            </Typography>
+          </Box>
+        ) : <Box
           ref={composerDockRef}
           sx={{
             position: 'absolute',
