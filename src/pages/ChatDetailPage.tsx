@@ -3662,26 +3662,7 @@ export default function ChatDetailPage() {
             readOnly={chatInteractionDisabled}
           />}
         </Box>
-        {chatInteractionDisabled ? (
-          <Box sx={{
-            position: 'absolute',
-            left: 12,
-            right: 12,
-            bottom: 'calc(env(safe-area-inset-bottom, 0px) + 18px)',
-            zIndex: 3,
-            p: 1.25,
-            borderRadius: 1.5,
-            border: '1px solid',
-            borderColor: 'divider',
-            bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.78)' : 'rgba(18,18,24,0.72)',
-            backdropFilter: 'blur(18px)',
-            WebkitBackdropFilter: 'blur(18px)',
-            boxShadow: 2,
-          }}>
-            <Typography variant="body2" sx={{ fontWeight: 600 }}>{chatReadOnlyReason}</Typography>
-            <Typography variant="caption" color="text.secondary">当前仅保留历史记录，可查看或删除，不能继续发送和生成。</Typography>
-          </Box>
-        ) : <Box
+        {!chatInteractionDisabled ? <Box
           ref={composerDockRef}
           sx={{
             position: 'absolute',
