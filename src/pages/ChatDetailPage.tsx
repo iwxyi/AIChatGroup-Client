@@ -3594,7 +3594,7 @@ export default function ChatDetailPage() {
             </>
           )}
         />
-        {isRemoteDeletedChat ? (
+        {chatInteractionDisabled ? (
           <Box sx={{
             position: 'absolute',
             left: 12,
@@ -3607,8 +3607,12 @@ export default function ChatDetailPage() {
             color: 'warning.contrastText',
             boxShadow: 2,
           }}>
-            <Typography variant="body2" sx={{ fontWeight: 600 }}>此会话已在其他设备删除</Typography>
-            <Typography variant="caption">当前仅保留本地只读历史；已停止自动生成和新消息提交。</Typography>
+            <Typography variant="body2" sx={{ fontWeight: 600 }}>{chatReadOnlyReason}</Typography>
+            <Typography variant="caption">
+              {isRemoteDeletedChat
+                ? '当前仅保留本地只读历史；已停止自动生成和新消息提交。'
+                : '当前仅可查看历史消息；修复或恢复角色后才能继续聊天。'}
+            </Typography>
           </Box>
         ) : null}
         {storyTailStatusBar}
