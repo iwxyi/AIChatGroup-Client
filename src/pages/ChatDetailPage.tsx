@@ -3097,7 +3097,7 @@ export default function ChatDetailPage() {
               </Box>
             );
           })()}
-        </Box>}
+        </Box> : null}
       </Collapse>
     </Stack>
   ) : null;
