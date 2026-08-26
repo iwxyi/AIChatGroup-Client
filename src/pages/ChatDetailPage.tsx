@@ -3739,7 +3739,7 @@ export default function ChatDetailPage() {
               return normalizeAndRunSurfaceIntent(surface, submission);
             }}
           />
-        </Box>}
+        </Box> : null}
       </Box>
 
       {isAssistantChat && fullscreenAssistantArtifactId ? (
