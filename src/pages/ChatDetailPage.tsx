@@ -2990,7 +2990,7 @@ export default function ChatDetailPage() {
           }}
         >
           {storyBranchSuggestionContent}
-        </Box> : null}
+        </Box>}
       </Collapse>
       <Collapse
         in={Boolean(pendingAppCommand)}
@@ -3097,7 +3097,7 @@ export default function ChatDetailPage() {
               </Box>
             );
           })()}
-        </Box> : null}
+        </Box>}
       </Collapse>
     </Stack>
   ) : null;
@@ -3757,7 +3757,7 @@ export default function ChatDetailPage() {
               return normalizeAndRunSurfaceIntent(surface, submission);
             }}
           />
-        </Box> : null}
+        </Box>}
       </Box>
 
       {isAssistantChat && fullscreenAssistantArtifactId ? (
