@@ -316,6 +316,11 @@ export default function Sidebar({ collapsed }: SidebarProps) {
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
+        // Keep nav icon hover animation repaints inside the sidebar layer;
+        // otherwise the backdrop-filter can invalidate the whole app surface.
+        contain: 'layout paint',
+        isolation: 'isolate',
+        transform: 'translateZ(0)',
         bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.72)' : 'rgba(10,10,15,0.78)',
         backdropFilter: 'blur(24px) saturate(1.12)',
         WebkitBackdropFilter: 'blur(24px) saturate(1.12)',

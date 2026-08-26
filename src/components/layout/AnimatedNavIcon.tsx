@@ -30,6 +30,8 @@ const iconSx: SystemStyleObject<Theme> = {
   height: 'var(--nav-icon-size)',
   color: 'inherit',
   pointerEvents: 'none',
+  contain: 'layout paint',
+  willChange: 'transform',
   '--nav-icon-accent': (theme) => theme.palette.primary.main,
   '& svg': {
     display: 'block',
