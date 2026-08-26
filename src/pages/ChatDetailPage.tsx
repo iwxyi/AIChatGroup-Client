@@ -3676,7 +3676,7 @@ export default function ChatDetailPage() {
                 ? '0 18px 42px rgba(15,23,42,0.12), 0 1px 0 rgba(255,255,255,0.72) inset'
                 : '0 18px 44px rgba(0,0,0,0.30), 0 1px 0 rgba(255,255,255,0.10) inset',
             }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, minHeight: 28 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.75, minHeight: 28, textAlign: 'center' }}>
                 <Typography variant="body2" sx={{ fontWeight: 600, lineHeight: 1.4 }}>
                   {chatReadOnlyReason}
                 </Typography>
