@@ -432,12 +432,31 @@ function compactChatRuntimeFieldsForPersistence<T extends Partial<GroupChat>>(ch
   };
 }
 
+function compactGroupVisualForCloud(value: unknown): GroupChat['groupVisual'] {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) return null;
+  const visual = value as Record<string, unknown>;
+  const avatarUrl = typeof visual.avatarUrl === 'string' && visual.avatarUrl.trim() ? visual.avatarUrl.trim() : null;
+  const backgroundUrl = typeof visual.backgroundUrl === 'string' && visual.backgroundUrl.trim() ? visual.backgroundUrl.trim() : null;
+  const rawOpacity = visual.backgroundOpacity;
+  const backgroundOpacity = typeof rawOpacity === 'number' && Number.isFinite(rawOpacity)
+    ? Math.min(0.4, Math.max(0.05, rawOpacity))
+    : null;
+  return {
+    ...(avatarUrl ? { avatarUrl } : {}),
+    ...(backgroundUrl ? { backgroundUrl } : {}),
+    ...(backgroundUrl && backgroundOpacity != null ? { backgroundOpacity } : {}),
+  };
+}
+
 function compactChatPatchForCloud(patch: PendingChatOperation['patch']) {
   if (!patch || typeof patch !== 'object') return {};
   const nextPatch = compactChatRuntimeFieldsForPersistence({ ...patch } as Partial<GroupChat>) as Record<string, unknown>;
   delete nextPatch.updatedAt;
   delete nextPatch.lastMessageAt;
   delete nextPatch.runtimeDetailHydratedAt;
+  if (Object.prototype.hasOwnProperty.call(nextPatch, 'groupVisual')) {
+    nextPatch.groupVisual = compactGroupVisualForCloud(nextPatch.groupVisual);
+  }
   return nextPatch;
 }
 

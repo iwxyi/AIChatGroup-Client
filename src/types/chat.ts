@@ -848,15 +848,12 @@ export interface ChatMemberCharacterSummary {
   updatedAt: number;
 }
 
-/** Long-lived visual anchors for a group conversation. One-off generation requests are deliberately not stored here. */
+/** Long-lived visual resources for a group conversation. Generation prompts and candidate metadata are never stored here. */
 export interface GroupVisualIdentity {
-  description?: string;
-  styleHint?: string;
-  negativePrompt?: string;
   avatarUrl?: string | null;
   backgroundUrl?: string | null;
-  avatarSeed?: string | number | null;
-  backgroundSeed?: string | number | null;
+  /** Opacity of the background image after the readable chat-surface veil is applied. */
+  backgroundOpacity?: number | null;
 }
 
 export interface GroupChat {

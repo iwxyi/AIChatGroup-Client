@@ -876,6 +876,11 @@ const baseTheme: ThemeOptions = {
       },
     },
     MuiTooltip: {
+      defaultProps: {
+        // MUI 桌面端默认 enterDelay 为 0；应用统一采用短暂停留后显示。
+        enterDelay: 450,
+        enterNextDelay: 0,
+      },
       styleOverrides: {
         tooltip: {
           borderRadius: 12,

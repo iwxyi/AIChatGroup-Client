@@ -21,6 +21,7 @@ import { useAuthStore } from '../stores/useAuthStore';
 import { useChatStore } from '../stores/useChatStore';
 import { useCharacterStore } from '../stores/useCharacterStore';
 import { useSettingsStore } from '../stores/useSettingsStore';
+import { readPersistentUiValue } from '../utils/persistentUiState';
 import { useMessageStore } from '../stores/useMessageStore';
 import type { SyncScopeSnapshot } from '../stores/syncScopeMetadata';
 import { hasUsableDefaultTextAI } from '../types/settings';
@@ -338,18 +339,6 @@ function buildStatIconSx(color: string) {
   };
 }
 
-function buildGridSx(columns?: { xs: string; sm: string; lg?: string; xl?: string }) {
-  return {
-    display: 'grid',
-    gridTemplateColumns: columns || {
-      xs: '1fr',
-      sm: 'repeat(2, minmax(0, 1fr))',
-      lg: 'repeat(3, minmax(0, 1fr))',
-    },
-    gap: 1.5,
-  };
-}
-
 function projectArtifactHomeState(state: ArtifactStoreSnapshotLike): ArtifactHomeState {
   return {
     jobs: state.jobs.map((job) => ({
@@ -605,6 +594,7 @@ export default function HomePage() {
       : `当前只有 ${customCharacters.length} 个AI角色，群聊至少需要 ${noCharactersRequiredCount} 个AI角色。请再创建 ${noCharactersRequiredCount - customCharacters.length} 个角色，或根据主题批量生成。`
     : '创建单聊前，需要先在角色库中创建至少一个AI角色。也可以根据主题或故事批量生成角色。';
   const recentChatsTitle = '最近会话';
+  const homeChatDisplayMode = readPersistentUiValue('chat-list-style', { displayMode: 'card' }, (value): value is { displayMode: 'list' | 'card' } => Boolean(value && typeof value === 'object' && ((value as { displayMode?: unknown }).displayMode === 'list' || (value as { displayMode?: unknown }).displayMode === 'card'))).displayMode;
   const recentChatsActionTab = recentChats[0] ? resolveChatListTab(recentChats[0]) : 0;
   const needsAIModelSetup = !hasUsableDefaultTextAI(aiProfiles);
   const needsLogin = authMode === 'local' || !isLoggedIn;
@@ -1159,9 +1149,9 @@ export default function HomePage() {
               action={<Button variant="outlined" onClick={() => openCreateChatWithCharacterGuard('/chats/create')}>{t('chat.create')}</Button>}
             />
           ) : (
-            <Box sx={buildGridSx()}>
-              {recentChats.map((chat) => (
-                <ChatCard key={chat.id} chat={chat} characters={characters} onClick={() => openChatFromHome(chat)} />
+            <Box sx={homeChatDisplayMode === 'list' ? { display: 'grid', gridTemplateColumns: '1fr', gap: 0 } : buildGridSx()}>
+              {recentChats.map((chat, index) => (
+                <ChatCard key={chat.id} chat={chat} characters={characters} displayMode={homeChatDisplayMode} compactCard={homeChatDisplayMode === 'card'} showListDivider={homeChatDisplayMode === 'list' && index < recentChats.length - 1} onClick={() => openChatFromHome(chat)} />
               ))}
             </Box>
           )}

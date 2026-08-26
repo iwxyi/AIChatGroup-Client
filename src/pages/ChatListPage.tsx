@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLayoutHeaderActions } from '../components/layout/AppLayoutContext';
 import { Box, TextField, Button, InputAdornment, Stack, IconButton, Tooltip, Collapse, useMediaQuery, Menu, MenuItem, Divider, Dialog, DialogTitle, DialogContent, DialogActions, Checkbox, FormControlLabel, Radio, RadioGroup, Typography } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
@@ -20,6 +20,7 @@ import NoCharactersDialog from '../components/common/NoCharactersDialog';
 import ListSkeletonGrid from '../components/common/ListSkeletonGrid';
 import ConfirmDialog from '../components/common/ConfirmDialog';
 import AppSnackbar from '../components/common/AppSnackbar';
+import HoverSubmenuMenu from '../components/common/HoverSubmenuMenu';
 import FloatingSegmentedTabs from '../components/common/FloatingSegmentedTabs';
 import { buildFloatingTabContainerSx } from '../components/common/FloatingSegmentedTabs.styles';
 import AnimatedTabContent from '../components/common/AnimatedTabContent';
@@ -38,9 +39,29 @@ import { useSettingsStore } from '../stores/useSettingsStore';
 import { enqueueGroupBasicCompletion, enqueueGroupVisualGeneration } from '../services/groupVisualGeneration';
 
 const CHAT_LIST_TAB_KEY = 'chat-list-tab';
+const CHAT_LIST_STYLE_KEY = 'chat-list-style';
 const ASSISTANT_TAB = 3;
 const CHAT_LIST_TAB_ORDER = [ASSISTANT_TAB, 0, 1, 2] as const;
 const isChatListTab = (value: unknown): value is number => Number.isInteger(value) && Number(value) >= 0 && Number(value) <= ASSISTANT_TAB;
+type ChatListDisplayMode = 'list' | 'card';
+type ChatListSortField = 'time' | 'name' | 'members';
+type ChatListStylePreferences = {
+  displayMode: ChatListDisplayMode;
+  autoColumns: boolean;
+  themeRendering: boolean;
+  backgroundRendering: boolean;
+  sortField: ChatListSortField;
+  sortDirection: 'asc' | 'desc';
+};
+const DEFAULT_CHAT_LIST_STYLE: ChatListStylePreferences = { displayMode: 'card', autoColumns: true, themeRendering: false, backgroundRendering: false, sortField: 'time', sortDirection: 'desc' };
+function isChatListStylePreferences(value: unknown): value is ChatListStylePreferences {
+  if (!value || typeof value !== 'object') return false;
+  const item = value as Record<string, unknown>;
+  return (item.displayMode === 'list' || item.displayMode === 'card')
+    && typeof item.autoColumns === 'boolean' && typeof item.themeRendering === 'boolean' && typeof item.backgroundRendering === 'boolean'
+    && (item.sortField === 'time' || item.sortField === 'name' || item.sortField === 'members')
+    && (item.sortDirection === 'asc' || item.sortDirection === 'desc');
+}
 
 type ChatListLocationState = {
   deletedAssistantChat?: {
@@ -97,8 +118,12 @@ export default function ChatListPage() {
   const [deletedAssistantNotice, setDeletedAssistantNotice] = useState<{ id: string; name: string } | null>(null);
   const [assistantDeleteError, setAssistantDeleteError] = useState('');
   const [selectionMode, setSelectionMode] = useState(false);
+  const previousSelectionModeRef = useRef(selectionMode);
+  const [menuModeTransitionKey, setMenuModeTransitionKey] = useState(0);
   const [selectedChatIds, setSelectedChatIds] = useState<string[]>([]);
   const [batchMenuAnchor, setBatchMenuAnchor] = useState<HTMLElement | null>(null);
+  const [styleMenuAnchor, setStyleMenuAnchor] = useState<HTMLElement | null>(null);
+  const [chatListStyle, setChatListStyle] = useState<ChatListStylePreferences>(() => readPersistentUiValue(CHAT_LIST_STYLE_KEY, DEFAULT_CHAT_LIST_STYLE, isChatListStylePreferences));
   const [batchDialogOpen, setBatchDialogOpen] = useState(false);
   const [batchDeleteConfirmOpen, setBatchDeleteConfirmOpen] = useState(false);
   const [batchFields, setBatchFields] = useState({ basics: true, avatar: true, background: false });
@@ -108,6 +133,43 @@ export default function ChatListPage() {
   const aiProfiles = useSettingsStore((state) => state.aiProfiles);
   const avatarGeneration = useSettingsStore((state) => state.avatarGeneration);
   const activeChatId = isMasterPane ? getActiveChatId(location.pathname) : null;
+  const menuModeAnimationSx = {
+    '@keyframes chatListMenuModeSpin': {
+      from: { transform: 'rotate(0deg)' },
+      to: { transform: 'rotate(360deg)' },
+    },
+    '& .chat-list-menu-mode-icon': {
+      animation: menuModeTransitionKey > 0 ? 'chatListMenuModeSpin 380ms cubic-bezier(0.22, 1, 0.36, 1)' : 'none',
+    },
+  };
+  const menuHeaderButtonSx = {
+    ...menuModeAnimationSx,
+    width: 40,
+    height: 40,
+    borderRadius: 1,
+    border: '1px solid',
+    borderColor: 'transparent',
+    bgcolor: 'transparent',
+    '&:hover': {
+      borderColor: (theme: { palette: { mode: string } }) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.08)' : 'rgba(226,232,240,0.10)',
+      bgcolor: (theme: { palette: { mode: string } }) => theme.palette.mode === 'light' ? 'rgba(15,23,42,0.035)' : 'rgba(226,232,240,0.06)',
+    },
+  };
+
+  useEffect(() => {
+    if (previousSelectionModeRef.current !== selectionMode) {
+      previousSelectionModeRef.current = selectionMode;
+      setMenuModeTransitionKey((value) => value + 1);
+    }
+  }, [selectionMode]);
+
+  const updateChatListStyle = (patch: Partial<ChatListStylePreferences>) => {
+    setChatListStyle((current) => {
+      const next = { ...current, ...patch };
+      writePersistentUiValue(CHAT_LIST_STYLE_KEY, next);
+      return next;
+    });
+  };
 
 
   useEffect(() => {
@@ -129,9 +191,15 @@ export default function ChatListPage() {
       <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
         {selectionMode ? (
           <>
-            <Tooltip title="退出多选"><IconButton aria-label="退出多选" onClick={() => { setSelectionMode(false); setSelectedChatIds([]); setBatchMenuAnchor(null); }}><CloseIcon fontSize="small" /></IconButton></Tooltip>
-            <Tooltip title="批量操作"><IconButton aria-label="批量操作" onClick={(event) => setBatchMenuAnchor(event.currentTarget)}><MoreVertIcon fontSize="small" /></IconButton></Tooltip>
+            <Typography variant="body2" color="text.secondary" sx={{ mr: 0.5, whiteSpace: 'nowrap', fontWeight: 650 }}>已选 {selectedChatIds.length}</Typography>
+            <Tooltip title="退出多选"><IconButton aria-label="退出多选" onClick={() => { setSelectionMode(false); setSelectedChatIds([]); setBatchMenuAnchor(null); }} sx={{ width: 40, height: 40, borderRadius: 1 }}><CloseIcon fontSize="small" /></IconButton></Tooltip>
+            <Tooltip title="批量操作"><IconButton key={`batch-menu-${menuModeTransitionKey}`} aria-label="批量操作" onClick={(event) => setBatchMenuAnchor(event.currentTarget)} sx={menuHeaderButtonSx}><MoreVertIcon className="chat-list-menu-mode-icon" fontSize="small" /></IconButton></Tooltip>
           </>
+        ) : null}
+        {!selectionMode ? (
+          <Tooltip title="更多">
+            <IconButton key={`default-menu-${menuModeTransitionKey}`} aria-label="更多" onClick={(event) => setStyleMenuAnchor(event.currentTarget)} sx={menuHeaderButtonSx}><MoreVertIcon className="chat-list-menu-mode-icon" fontSize="small" /></IconButton>
+          </Tooltip>
         ) : null}
         <Tooltip title={searchOpen ? '收起搜索' : t('chat.search')}>
           <IconButton
@@ -219,7 +287,7 @@ export default function ChatListPage() {
       setHeaderActions(null);
       setHeaderBackAction(null);
     };
-  }, [detailCollapsed, isThreeColumn, searchOpen, selectionMode, setHeaderActions, setHeaderBackAction, t, tab]);
+  }, [detailCollapsed, isThreeColumn, searchOpen, selectionMode, menuModeTransitionKey, setHeaderActions, setHeaderBackAction, t, tab, chatListStyle]);
 
   useEffect(() => {
     markChatsWarm();
@@ -268,21 +336,24 @@ export default function ChatListPage() {
     const resolvedLatest = cachedLatest || sanitizeChatLatestMessage(chat.latestMessage);
     return resolvedLatest === chat.latestMessage ? chat : { ...chat, latestMessage: resolvedLatest };
   }), [messageWindowsByChatId, visibleChats]);
-  const visibleGroupChats = useMemo(() => visibleChatsWithLatestPreview.filter((chat) => chat.type === 'group'), [visibleChatsWithLatestPreview]);
+  const sortedVisibleChats = useMemo(() => [...visibleChatsWithLatestPreview].sort((left, right) => {
+    const value = chatListStyle.sortField === 'name'
+      ? left.name.localeCompare(right.name, 'zh-Hans-CN')
+      : chatListStyle.sortField === 'members'
+        ? left.memberIds.length - right.memberIds.length
+        : left.lastMessageAt - right.lastMessageAt;
+    return chatListStyle.sortDirection === 'asc' ? value : -value;
+  }), [chatListStyle.sortDirection, chatListStyle.sortField, visibleChatsWithLatestPreview]);
   const charactersForChatCards = useMemo(() => {
     const activeIds = new Set(characters.map((character) => character.id));
     return [...characters, ...deletedCharacters.filter((character) => !activeIds.has(character.id))];
   }, [characters, deletedCharacters]);
-  useEffect(() => {
-    const visibleIds = new Set(visibleChatsWithLatestPreview.map((chat) => chat.id));
-    setSelectedChatIds((ids) => ids.filter((id) => visibleIds.has(id)));
-  }, [visibleChatsWithLatestPreview]);
   const toggleChatSelection = (chatId: string) => setSelectedChatIds((ids) => ids.includes(chatId) ? ids.filter((id) => id !== chatId) : [...ids, chatId]);
-  const toggleSelectVisibleChats = () => setSelectedChatIds((ids) => ids.length === visibleChatsWithLatestPreview.length ? [] : visibleChatsWithLatestPreview.map((chat) => chat.id));
+  const toggleSelectVisibleChats = () => setSelectedChatIds((ids) => ids.length === sortedVisibleChats.length ? [] : sortedVisibleChats.map((chat) => chat.id));
   const batchCounts = useMemo(() => {
-    const selected = visibleGroupChats.filter((chat) => selectedChatIds.includes(chat.id));
+    const selected = chats.filter((chat) => chat.type === 'group' && !chat.deletedAt && selectedChatIds.includes(chat.id));
     return { selected, basics: selected.filter((chat) => !chat.name.trim() || !chat.topic.trim()).length, avatar: selected.filter((chat) => !chat.groupVisual?.avatarUrl).length, background: selected.filter((chat) => !chat.groupVisual?.backgroundUrl).length };
-  }, [selectedChatIds, visibleGroupChats]);
+  }, [chats, selectedChatIds]);
   const startBatchCompletion = () => {
     batchCounts.selected.forEach((chat) => {
       const members = charactersForChatCards.filter((character) => chat.memberIds.includes(character.id));
@@ -423,7 +494,7 @@ export default function ChatListPage() {
       <AnimatedTabContent value={tab} direction={tabTransitionDirection}>
         {isLoading && chats.length === 0 ? (
           <ListSkeletonGrid />
-        ) : visibleChatsWithLatestPreview.length === 0 ? (
+        ) : sortedVisibleChats.length === 0 ? (
           <EmptyState
             variant="plain"
             message={emptyMessage}
@@ -447,10 +518,14 @@ export default function ChatListPage() {
         ) : (
           <Box
             sx={{
-              ...buildListGridSx(),
+              ...(chatListStyle.displayMode === 'list'
+                ? { display: 'grid', gridTemplateColumns: '1fr', gap: 0, alignItems: 'stretch' }
+                : chatListStyle.autoColumns
+                  ? buildListGridSx()
+                  : { display: 'grid', gridTemplateColumns: '1fr', gap: 1.5, alignItems: 'stretch' }),
             }}
           >
-            {visibleChatsWithLatestPreview.map((chat) => (
+            {sortedVisibleChats.map((chat, index) => (
               <ChatCard
                 key={chat.id}
                 chat={chat}
@@ -458,7 +533,13 @@ export default function ChatListPage() {
                 selected={activeChatId === chat.id}
                 selectable={selectionMode}
                 multiSelected={selectedChatIds.includes(chat.id)}
+                displayMode={chatListStyle.displayMode}
+                cardThemeRendering={chatListStyle.themeRendering}
+                cardBackgroundRendering={chatListStyle.backgroundRendering}
+                showListDivider={chatListStyle.displayMode === 'list' && index < sortedVisibleChats.length - 1}
                 onToggleSelection={() => toggleChatSelection(chat.id)}
+                onMemberClick={(member) => navigate(`/characters/${member.id}/edit?returnTo=${encodeURIComponent(location.pathname + location.search)}`)}
+                onAvatarClick={chat.type === 'group' ? () => navigate(`/chats/${chat.id}/edit`) : undefined}
                 onLongPress={() => {
                   setSelectionMode(true);
                   setSelectedChatIds((ids) => ids.includes(chat.id) ? ids : [...ids, chat.id]);
@@ -478,14 +559,48 @@ export default function ChatListPage() {
         <Divider />
         <MenuItem disabled={!batchCounts.selected.length} onClick={() => setBatchDialogOpen(true)}>批量补全</MenuItem>
       </Menu>
+      <HoverSubmenuMenu
+        anchorEl={styleMenuAnchor}
+        open={Boolean(styleMenuAnchor)}
+        onClose={() => setStyleMenuAnchor(null)}
+        items={[{
+          id: 'style', label: '样式', submenu: <>
+        <MenuItem selected={chatListStyle.displayMode === 'list'} onClick={() => { updateChatListStyle({ displayMode: 'list' }); setStyleMenuAnchor(null); }}>
+          <Box component="span" sx={{ width: 24, display: 'inline-flex', justifyContent: 'center' }}>{chatListStyle.displayMode === 'list' ? <CheckIcon fontSize="small" /> : null}</Box>列表
+        </MenuItem>
+        <MenuItem selected={chatListStyle.displayMode === 'card'} onClick={() => { updateChatListStyle({ displayMode: 'card' }); setStyleMenuAnchor(null); }}>
+          <Box component="span" sx={{ width: 24, display: 'inline-flex', justifyContent: 'center' }}>{chatListStyle.displayMode === 'card' ? <CheckIcon fontSize="small" /> : null}</Box>卡片
+        </MenuItem>
+        <Divider />
+        <MenuItem disabled={chatListStyle.displayMode !== 'card'} onClick={() => updateChatListStyle({ autoColumns: !chatListStyle.autoColumns })}>
+          <Checkbox checked={chatListStyle.autoColumns} disabled={chatListStyle.displayMode !== 'card'} size="small" sx={{ p: 0, mr: 1 }} />自适应列数
+        </MenuItem>
+        <MenuItem onClick={() => updateChatListStyle({ themeRendering: !chatListStyle.themeRendering })}>
+          <Checkbox checked={chatListStyle.themeRendering} size="small" sx={{ p: 0, mr: 1 }} />主题色渲染
+        </MenuItem>
+        <MenuItem onClick={() => updateChatListStyle({ backgroundRendering: !chatListStyle.backgroundRendering })}>
+          <Checkbox checked={chatListStyle.backgroundRendering} size="small" sx={{ p: 0, mr: 1 }} />背景图渲染
+        </MenuItem>
+          </>,
+        }, {
+          id: 'sort', label: '排序', submenu: <>
+        <MenuItem selected={chatListStyle.sortField === 'time'} onClick={() => { updateChatListStyle({ sortField: 'time' }); setStyleMenuAnchor(null); }}><Box component="span" sx={{ width: 24, display: 'inline-flex', justifyContent: 'center' }}>{chatListStyle.sortField === 'time' ? <CheckIcon fontSize="small" /> : null}</Box>按时间</MenuItem>
+        <MenuItem selected={chatListStyle.sortField === 'name'} onClick={() => { updateChatListStyle({ sortField: 'name' }); setStyleMenuAnchor(null); }}><Box component="span" sx={{ width: 24, display: 'inline-flex', justifyContent: 'center' }}>{chatListStyle.sortField === 'name' ? <CheckIcon fontSize="small" /> : null}</Box>按名称</MenuItem>
+        <MenuItem selected={chatListStyle.sortField === 'members'} onClick={() => { updateChatListStyle({ sortField: 'members' }); setStyleMenuAnchor(null); }}><Box component="span" sx={{ width: 24, display: 'inline-flex', justifyContent: 'center' }}>{chatListStyle.sortField === 'members' ? <CheckIcon fontSize="small" /> : null}</Box>按成员数</MenuItem>
+        <Divider />
+        <MenuItem selected={chatListStyle.sortDirection === 'asc'} onClick={() => { updateChatListStyle({ sortDirection: 'asc' }); setStyleMenuAnchor(null); }}><Box component="span" sx={{ width: 24, display: 'inline-flex', justifyContent: 'center' }}>{chatListStyle.sortDirection === 'asc' ? <CheckIcon fontSize="small" /> : null}</Box>正序</MenuItem>
+        <MenuItem selected={chatListStyle.sortDirection === 'desc'} onClick={() => { updateChatListStyle({ sortDirection: 'desc' }); setStyleMenuAnchor(null); }}><Box component="span" sx={{ width: 24, display: 'inline-flex', justifyContent: 'center' }}>{chatListStyle.sortDirection === 'desc' ? <CheckIcon fontSize="small" /> : null}</Box>逆序</MenuItem>
+          </>,
+        }]}
+      />
       <Dialog open={batchDialogOpen} onClose={() => setBatchDialogOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle>批量补全群聊</DialogTitle>
         <DialogContent dividers>
           <Stack spacing={1.25}>
             <Typography variant="body2" color="text.secondary">已选择 {batchCounts.selected.length} 个当前可见群聊</Typography>
             <FormControlLabel control={<Checkbox checked={batchFields.basics} disabled={batchMode !== 'regenerate' && batchCounts.basics === 0} onChange={(event) => setBatchFields((fields) => ({ ...fields, basics: event.target.checked }))} />} label={`基础信息${batchMode === 'regenerate' ? '' : `（${batchCounts.basics}/${batchCounts.selected.length}）`}`} />
-            <Stack direction="row" alignItems="center" spacing={1}><FormControlLabel sx={{ m: 0, flexShrink: 0 }} control={<Checkbox checked={batchFields.avatar} disabled={batchMode !== 'regenerate' && batchCounts.avatar === 0} onChange={(event) => setBatchFields((fields) => ({ ...fields, avatar: event.target.checked }))} />} label={`群头像${batchMode === 'regenerate' ? '' : `（${batchCounts.avatar}/${batchCounts.selected.length}）`}`} /><TextField size="small" fullWidth value={avatarRequirement} onChange={(event) => setAvatarRequirement(event.target.value)} placeholder="统一要求（可选）" /></Stack>
-            <Stack direction="row" alignItems="center" spacing={1}><FormControlLabel sx={{ m: 0, flexShrink: 0 }} control={<Checkbox checked={batchFields.background} disabled={batchMode !== 'regenerate' && batchCounts.background === 0} onChange={(event) => setBatchFields((fields) => ({ ...fields, background: event.target.checked }))} />} label={`群背景${batchMode === 'regenerate' ? '' : `（${batchCounts.background}/${batchCounts.selected.length}）`}`} /><TextField size="small" fullWidth value={backgroundRequirement} onChange={(event) => setBackgroundRequirement(event.target.value)} placeholder="统一要求（可选）" /></Stack>
+            <Stack direction="row" sx={{ alignItems: 'center' }} spacing={1}><FormControlLabel sx={{ m: 0, flexShrink: 0 }} control={<Checkbox checked={batchFields.avatar} disabled={batchMode !== 'regenerate' && batchCounts.avatar === 0} onChange={(event) => setBatchFields((fields) => ({ ...fields, avatar: event.target.checked }))} />} label={`群头像${batchMode === 'regenerate' ? '' : `（${batchCounts.avatar}/${batchCounts.selected.length}）`}`} /><TextField size="small" fullWidth value={avatarRequirement} onChange={(event) => setAvatarRequirement(event.target.value)} placeholder="统一要求（可选）" /></Stack>
+            <Stack direction="row" sx={{ alignItems: 'center' }} spacing={1}><FormControlLabel sx={{ m: 0, flexShrink: 0 }} control={<Checkbox checked={batchFields.background} disabled={batchMode !== 'regenerate' && batchCounts.background === 0} onChange={(event) => setBatchFields((fields) => ({ ...fields, background: event.target.checked }))} />} label={`群背景${batchMode === 'regenerate' ? '' : `（${batchCounts.background}/${batchCounts.selected.length}）`}`} /><TextField size="small" fullWidth value={backgroundRequirement} onChange={(event) => setBackgroundRequirement(event.target.value)} placeholder="统一要求（可选）" /></Stack>
             <RadioGroup row value={batchMode} onChange={(event) => setBatchMode(event.target.value as typeof batchMode)}>
               <Tooltip title="只处理完全为空的字段，不覆盖已有内容"><FormControlLabel value="empty" control={<Radio />} label="仅空数据" /></Tooltip>
               <Tooltip title="补足缺失内容，保留用户已填写的信息"><FormControlLabel value="complete" control={<Radio />} label="补全信息" /></Tooltip>

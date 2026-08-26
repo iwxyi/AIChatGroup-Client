@@ -1,13 +1,14 @@
 import { lazy, Suspense, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useLayoutHeaderActions } from '../components/layout/AppLayoutContext';
 import {
-  Alert, Box, Typography, Button, Dialog, DialogTitle, DialogContent, DialogActions, IconButton, Menu, MenuItem, Tooltip, TextField,
+  Alert, Box, Typography, Button, Dialog, DialogTitle, DialogContent, DialogActions, IconButton, Menu, MenuItem, Tooltip, TextField, Collapse, Slider,
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import SaveIcon from '@mui/icons-material/Save';
 import ForumIcon from '@mui/icons-material/Forum';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useShallow } from 'zustand/react/shallow';
@@ -63,6 +64,7 @@ import {
 import { buildBundleMarketPayload, buildChatMarketPayload, getMarketSummaryForChat, getMarketTitleForChat } from '../services/templateMarketPayload';
 import { buildOpeningTopicGuideMessage } from '../services/createChatOpening';
 import { enqueueGroupVisualGeneration, type GroupVisualKind } from '../services/groupVisualGeneration';
+import { prepareAvatarUploadDataUrl } from '../utils/avatarUpload';
 
 const HotTopicDialogContainer = lazy(() => import('../components/createChat/HotTopicDialogContainer'));
 const CHAT_DRAFT_KEY = storageKey('create-chat-draft');
@@ -311,6 +313,10 @@ export default function CreateChatPage() {
   const [hotTopicDialogEnabled, setHotTopicDialogEnabled] = useState(false);
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({ open: false, message: '', severity: 'success' });
   const [groupVisualDialog, setGroupVisualDialog] = useState<{ kind: GroupVisualKind; requirement: string } | null>(null);
+  const [groupVisualExpanded, setGroupVisualExpanded] = useState(false);
+  const [groupBackgroundOpacityDraft, setGroupBackgroundOpacityDraft] = useState(0.16);
+  const groupVisualUploadRefs = useRef<Record<GroupVisualKind, HTMLInputElement | null>>({ avatar: null, background: null });
+  const [unavailableGroupVisualUrls, setUnavailableGroupVisualUrls] = useState<Record<string, true>>({});
   const memberPressTimerRef = useRef<number | null>(null);
   const styleOverriddenRef = useRef(false);
 
@@ -320,6 +326,10 @@ export default function CreateChatPage() {
   const conversationKind = editingChat?.type === 'assistant' ? 'group' : editingChat?.type || 'group';
   const isGroupConversation = conversationKind === 'group';
   const showManagementTab = !editingChat;
+
+  useEffect(() => {
+    setGroupBackgroundOpacityDraft(Math.min(0.4, Math.max(0.05, Number(editingChat?.groupVisual?.backgroundOpacity ?? 0.16))));
+  }, [editingChat?.id, editingChat?.groupVisual?.backgroundOpacity, editingChat?.groupVisual?.backgroundUrl]);
   const showDirectorTab = !editingChat || isGroupConversation;
   const showGameplayTab = !editingChat || isGroupConversation;
   const managementTabIndex = showGameplayTab ? 2 : 1;
@@ -759,7 +769,36 @@ export default function CreateChatPage() {
       requirement: groupVisualDialog.requirement,
     });
     setGroupVisualDialog(null);
-    setSnackbar({ open: true, message: groupVisualDialog.kind === 'avatar' ? '已加入群头像生成队列' : '已加入群背景生成队列', severity: 'success' });
+    setSnackbar({ open: true, message: groupVisualDialog.kind === 'avatar' ? '已加入群头像生成队列' : '已加入聊天背景生成队列', severity: 'success' });
+  };
+  const handleGroupVisualUpload = async (kind: GroupVisualKind, file?: File | null) => {
+    if (!editingChat || !file) return;
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(new Error('读取图片失败'));
+        reader.readAsDataURL(file);
+      });
+      const prepared = await prepareAvatarUploadDataUrl(dataUrl, { maxSize: 1536, quality: 0.9 });
+      let url = prepared;
+      if (authMode === 'cloud') {
+        const asset = await api.createMediaAsset({ chatId: editingChat.id, messageId: `group-visual-${editingChat.id}`, attachmentId: `${kind}-uploaded-${Date.now()}`, kind: 'image', dataUrl: prepared });
+        url = asset.url;
+      }
+      const current = editingChat.groupVisual || {};
+      await updateChat(editingChat.id, {
+        groupVisual: {
+          ...current,
+          ...(kind === 'avatar' ? { avatarUrl: url } : { backgroundUrl: url, backgroundOpacity: current.backgroundOpacity ?? 0.16 }),
+        },
+      });
+    } catch (error) {
+      setSnackbar({ open: true, message: error instanceof Error ? error.message : String(error), severity: 'error' });
+    } finally {
+      const input = groupVisualUploadRefs.current[kind];
+      if (input) input.value = '';
+    }
   };
   const hasCustomCharacters = customCharacters.length > 0;
   const insufficientGroupCharacterCount = !editingChat && !marketImportDraft && isGroupConversation && customCharacters.length < MIN_MEMBERS;
@@ -1690,14 +1729,61 @@ export default function CreateChatPage() {
               openTopicInspirationLabel={i18n.language.startsWith('zh') ? '打开热点灵感' : 'Open topic inspiration'}
               batchGenerateMembersLabel={i18n.language.startsWith('zh') ? '生成' : 'Generate'}
             />
-            {editingChat && isGroupConversation ? (
+            {editingChat && conversationKind !== 'assistant' ? (
               <SurfaceCard sx={{ mt: 2, mb: 2 }}>
-                <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5 }}>群聊视觉</Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>根据群主题、成员和当前氛围生成；离开页面后仍会在后台继续。</Typography>
-                <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                  <Button variant="outlined" onClick={() => setGroupVisualDialog({ kind: 'avatar', requirement: '' })}>生成群头像</Button>
-                  <Button variant="outlined" onClick={() => setGroupVisualDialog({ kind: 'background', requirement: '' })}>生成群背景</Button>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>{isGroupConversation ? '头像和背景' : '聊天背景'}</Typography>
+                  <IconButton size="small" aria-label={groupVisualExpanded ? '收起头像和背景' : '展开头像和背景'} onClick={() => setGroupVisualExpanded((current) => !current)} sx={{ transform: groupVisualExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 180ms ease' }}>
+                    <ExpandMoreIcon fontSize="small" />
+                  </IconButton>
                 </Box>
+                <Collapse in={groupVisualExpanded} timeout={180} unmountOnExit>
+                <Box sx={{ display: 'grid', gap: 1, mt: 1.25 }}>
+                  {(isGroupConversation ? (['avatar', 'background'] as const) : (['background'] as const)).map((kind) => {
+                    const visual = editingChat.groupVisual || {};
+                    const url = kind === 'avatar' ? visual.avatarUrl : visual.backgroundUrl;
+                    const label = kind === 'avatar' ? '群头像' : '聊天背景';
+                    return (
+                      <Box key={kind} sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+                        <Box sx={{ position: 'relative', width: 76, height: 76, flexShrink: 0, overflow: 'hidden', borderRadius: 1.25, bgcolor: 'action.hover', border: '1px solid', borderColor: 'divider' }}>
+                          {url && !unavailableGroupVisualUrls[url]
+                            ? <Box component="img" src={url} alt={label} onError={() => setUnavailableGroupVisualUrls((current) => ({ ...current, [url]: true }))} sx={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', opacity: kind === 'background' ? groupBackgroundOpacityDraft : 1, transition: 'opacity 80ms linear' }} />
+                            : <Typography variant="caption" color="text.secondary" sx={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center' }}>{url ? '图片不可用' : '未设置'}</Typography>}
+                        </Box>
+                        <Box sx={{ display: 'grid', gap: 0.5, minWidth: 0 }}>
+                          <Typography variant="body2" sx={{ fontWeight: 600 }}>{label}</Typography>
+                          <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap' }}>
+                          <input ref={(node) => { groupVisualUploadRefs.current[kind] = node; }} hidden type="file" accept="image/*" onChange={(event) => void handleGroupVisualUpload(kind, event.target.files?.[0])} />
+                          <Button size="small" variant="outlined" onClick={() => groupVisualUploadRefs.current[kind]?.click()}>上传</Button>
+                          <Button size="small" variant="outlined" onClick={() => setGroupVisualDialog({ kind, requirement: '' })}>生成</Button>
+                          </Box>
+                          {kind === 'background' ? (
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: { xs: '100%', sm: 210 } }}>
+                              <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>透明度</Typography>
+                              <Slider
+                                size="small"
+                                min={0.05}
+                                max={0.4}
+                                step={0.01}
+                                value={groupBackgroundOpacityDraft}
+                                valueLabelDisplay="auto"
+                                valueLabelFormat={(value) => `${Math.round(Number(value) * 100)}%`}
+                                onChange={(_, value) => {
+                                  setGroupBackgroundOpacityDraft(Array.isArray(value) ? value[0] : value);
+                                }}
+                                onChangeCommitted={(_, value) => {
+                                  const nextOpacity = Array.isArray(value) ? value[0] : value;
+                                  void updateChat(editingChat.id, { groupVisual: { ...visual, backgroundOpacity: nextOpacity } });
+                                }}
+                              />
+                            </Box>
+                          ) : null}
+                        </Box>
+                      </Box>
+                    );
+                  })}
+                </Box>
+                </Collapse>
               </SurfaceCard>
             ) : null}
             {editingChat ? (
@@ -2043,10 +2129,10 @@ export default function CreateChatPage() {
         </>
       ) : null}
       <Dialog open={Boolean(groupVisualDialog)} onClose={() => setGroupVisualDialog(null)} fullWidth maxWidth="sm">
-        <DialogTitle>{groupVisualDialog?.kind === 'avatar' ? '生成群头像' : '生成群背景'}</DialogTitle>
+        <DialogTitle>{groupVisualDialog?.kind === 'avatar' ? '生成群头像' : '生成聊天背景'}</DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-            可补充本次偏好；它不会写入群聊长期设定。{groupVisualDialog?.kind === 'background' ? ' 背景源图为方形，界面会自动裁切适配横竖屏。' : ''}
+            可补充本次偏好；它不会写入聊天长期设定。{groupVisualDialog?.kind === 'background' ? ' 背景源图为方形，界面会自动裁切适配横竖屏。' : ''}
           </Typography>
           <TextField autoFocus fullWidth multiline minRows={3} value={groupVisualDialog?.requirement || ''} onChange={(event) => setGroupVisualDialog((current) => current ? { ...current, requirement: event.target.value } : current)} placeholder={groupVisualDialog?.kind === 'avatar' ? '例如：暖色、旧书与咖啡的感觉' : '例如：浅色雾感、不要抢文字'} />
         </DialogContent>
