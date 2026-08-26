@@ -3676,12 +3676,20 @@ export default function ChatDetailPage() {
                 ? '0 18px 42px rgba(15,23,42,0.12), 0 1px 0 rgba(255,255,255,0.72) inset'
                 : '0 18px 44px rgba(0,0,0,0.30), 0 1px 0 rgba(255,255,255,0.10) inset',
             }}>
-              <Typography variant="body2" sx={{ fontWeight: 600 }}>{chatReadOnlyReason}</Typography>
-              <Typography variant="caption" color="text.secondary">
-                {isRemoteDeletedChat
-                  ? '当前仅保留本地只读历史；已停止自动生成和新消息提交。'
-                  : '当前仅可查看历史消息；修复或恢复角色后才能继续聊天。'}
-              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, minHeight: 28 }}>
+                <Typography variant="body2" sx={{ fontWeight: 600, lineHeight: 1.4 }}>
+                  {chatReadOnlyReason}
+                </Typography>
+                <Tooltip
+                  arrow
+                  enterDelay={450}
+                  title={isRemoteDeletedChat
+                    ? '当前仅保留本地只读历史；已停止自动生成和新消息提交。'
+                    : '当前仅可查看历史消息；修复或恢复角色后才能继续聊天。'}
+                >
+                  <HelpOutlineIcon sx={{ fontSize: 17, color: 'text.secondary', flexShrink: 0 }} />
+                </Tooltip>
+              </Box>
             </Box>
           </Box>
         ) : <Box
