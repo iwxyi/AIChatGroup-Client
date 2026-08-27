@@ -20,6 +20,7 @@ interface User {
   aiProxyEntitled?: boolean;
   agentEntitled?: boolean;
   aiSearchEntitled?: boolean;
+  alapiDoutuEnabled?: boolean;
   marketAccessEntitled?: boolean;
   marketUploadEntitled?: boolean;
   chatShareEntitled?: boolean;

@@ -105,20 +105,22 @@ function isAbortError(error: unknown) {
     : error instanceof Error && (error.name === 'AbortError' || /aborted/i.test(error.message));
 }
 
-type GenerativeAttachmentKind = Extract<MessageAttachmentKind, 'image' | 'audio'>;
+type GenerativeAttachmentKind = Extract<MessageAttachmentKind, 'image' | 'audio' | 'sticker'>;
 type GenerativeAttachment = MessageAttachment & { kind: GenerativeAttachmentKind };
 
 function isGenerativeAttachment(attachment: MessageAttachment): attachment is GenerativeAttachment {
-  return attachment.kind === 'image' || attachment.kind === 'audio';
+  return attachment.kind === 'image' || attachment.kind === 'audio' || attachment.kind === 'sticker';
 }
 
 function toMediaGenerationErrorText(error: unknown, kind: GenerativeAttachmentKind) {
   if (isAbortError(error)) {
     if (kind === 'audio') return '语音生成超时，请稍后重试。';
+    if (kind === 'sticker') return '表情包搜索超时，请稍后重试。';
     return '图片生成超时，请稍后重试。';
   }
   if (error instanceof Error) return error.message;
   if (kind === 'audio') return String(error || '语音生成失败');
+  if (kind === 'sticker') return String(error || '表情包搜索失败');
   return String(error || '图片生成失败');
 }
 
@@ -420,6 +422,16 @@ async function runRichMediaQueueEntry(entry: RichMediaQueueEntry) {
   });
 
   try {
+    if (attachment.kind === 'sticker') {
+      const result = await api.searchDoutu(attachment.promptText || attachment.altText, { chatId: workingMessage.chatId, messageId: workingMessage.serverId || workingMessage.id });
+      const latestAttachment = getLatestRichMediaMessage(messageId, workingMessage).metadata?.attachments?.find((item) => item.id === attachment.id);
+      if (latestAttachment?.generationJobId !== generationJobId) return;
+      workingMessage = updateRichMediaMessage({ message: workingMessage, attachmentId: attachment.id, patch: {
+        status: 'ready', url: result.imageUrl, mimeType: /\.gif(?:$|[?#])/i.test(result.imageUrl) ? 'image/gif' : 'image/*', generationJobId,
+      }, upsertMessage: entry.upsertMessage });
+      rememberRichMediaMessage(workingMessage);
+      return;
+    }
     if (attachment.kind === 'image') {
       const profile = findGenerationProfile(entry.aiProfiles, 'image', entry.character?.modelProfileIds?.image);
       if (!profile || !attachment.promptText) throw new Error('图片模型未配置');

@@ -347,7 +347,7 @@ export function MessageContent({ message, onRetryMedia, onOpenImage, onOpenPromp
   const hasInlineAttachments = visibleContentParts.some((part) => part.kind === 'attachment');
   const usedAttachmentIds = new Set<string>();
   const renderAttachment = (attachment: MessageAttachment, captionOverride?: string) => {
-    if (attachment.kind === 'image') {
+    if (attachment.kind === 'image' || attachment.kind === 'sticker') {
       const canRetryAttachment = attachment.status === 'failed' || attachment.status === 'queued' || attachment.status === 'generating' || (attachment.status === 'ready' && !attachment.url);
       if (attachment.status === 'ready' && attachment.url) {
         return (

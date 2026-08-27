@@ -351,6 +351,7 @@ export function buildInlineInteractionContract(params: {
   mediaCapabilities?: {
     image: boolean;
     audio: boolean;
+    sticker?: boolean;
   };
   mediaRequested?: boolean;
   webSearchEnabled?: boolean;
@@ -359,7 +360,7 @@ export function buildInlineInteractionContract(params: {
   const isStoryReader = params.chat.sessionKind?.scenarioId === 'story-reader';
   const isAnalysisRoom = resolveSessionFamilyKey(params.chat) === 'analysis';
   const mediaCapabilities = params.mediaCapabilities || { image: false, audio: false };
-  const shouldIncludeMediaDecision = Boolean(!isStoryReader && (mediaCapabilities.image || mediaCapabilities.audio));
+  const shouldIncludeMediaDecision = Boolean(!isStoryReader && (mediaCapabilities.image || mediaCapabilities.audio || mediaCapabilities.sticker));
   const transcriptScope = buildRecentTranscriptScope(params.recentMessages);
   const imageReferenceRegistry = shouldIncludeMediaDecision && mediaCapabilities.image
     ? buildImageReferenceRegistry(params.recentMessages)
@@ -368,8 +369,13 @@ export function buildInlineInteractionContract(params: {
     .map((event) => `- ${event.eventKind}${event.title ? ` / ${event.title}` : ''}${event.activityType ? ` / ${event.activityType}` : ''}: ${event.summary}`)
     .join('\n');
 
+  const mediaExampleFields = [
+    mediaCapabilities.image ? `"images": [{"shouldGenerate": false, "reason": "只有当这条消息确实需要视觉补充时才为 true", "prompt": null, "altText": null, "aspectRatio": null, "imageSize": null, "targetImageIds": [], "referenceImageIds": [], "styleImageIds": []}]` : '',
+    mediaCapabilities.audio ? `"audio": {"shouldGenerate": false, "reason": "只有当这条消息特别适合语音播放时才为 true", "text": null, "voiceProfileId": null}` : '',
+    mediaCapabilities.sticker ? `"sticker": {"shouldSend": false, "keyword": null, "altText": null}` : '',
+  ].filter(Boolean);
   const mediaExample = shouldIncludeMediaDecision
-    ? `,\n  "mediaDecision": {${mediaCapabilities.image ? `\n    "images": [{\n      "shouldGenerate": false,\n      "reason": "只有当这条消息确实需要视觉补充时才为 true",\n      "prompt": null,\n      "altText": null,\n      "aspectRatio": null,\n      "imageSize": null,\n      "targetImageIds": [],\n      "referenceImageIds": [],\n      "styleImageIds": []\n    }]` : ''}${mediaCapabilities.image && mediaCapabilities.audio ? ',' : ''}${mediaCapabilities.audio ? `\n    "audio": {\n      "shouldGenerate": false,\n      "reason": "只有当这条消息特别适合语音播放时才为 true",\n      "text": null,\n      "voiceProfileId": null\n    }` : ''}\n  }`
+    ? `,\n  "mediaDecision": {${mediaExampleFields.map((field) => `\n    ${field}`).join(',')}\n  }`
     : '';
   const deliberationExample = isAnalysisRoom
     ? `,\n  "deliberationArtifacts": {"claims":[{"text":"从本条可见回复中抽取的论点","stance":"review","reason":"这条可见回复为什么支持该论点","confidence":0.8}]}`
@@ -378,7 +384,7 @@ export function buildInlineInteractionContract(params: {
     ? ', "toolRequest": null'
     : '';
   const mediaCapabilityInstruction = shouldIncludeMediaDecision
-    ? `\n\nAvailable delivery capabilities for this turn: ${mediaCapabilities.image ? 'image generation' : ''}${mediaCapabilities.image && mediaCapabilities.audio ? ' + ' : ''}${mediaCapabilities.audio ? 'voice synthesis' : ''}. These are real runtime capabilities. When the user asks for mixed delivery, submit mediaDecision in the relevant messages[] item instead of claiming the media cannot be sent.\n`
+    ? `\n\nAvailable delivery capabilities for this turn: ${[mediaCapabilities.image ? 'image generation' : '', mediaCapabilities.audio ? 'voice synthesis' : '', mediaCapabilities.sticker ? 'keyword meme sticker search' : ''].filter(Boolean).join(' + ')}. These are real runtime capabilities. When the user explicitly asks for a meme/sticker, set mediaDecision.sticker.shouldSend=true and use a short concrete search keyword; do not use it for ordinary image requests.\n`
     : '';
 
   const intentionalRepeatRules = `\n\nRules for intentionalRepeat:

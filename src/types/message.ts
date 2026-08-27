@@ -88,6 +88,11 @@ export interface MediaGenerationDecision {
     pitch?: number;
     style?: string;
   } | null;
+  sticker?: {
+    shouldSend: boolean;
+    keyword?: string;
+    altText?: string;
+  } | null;
 }
 
 export interface MessagePresenceUpdate {

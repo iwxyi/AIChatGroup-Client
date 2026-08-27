@@ -22,6 +22,7 @@ export interface AuthUserResponse {
   aiProxyEntitled?: boolean;
   agentEntitled?: boolean;
   aiSearchEntitled?: boolean;
+  alapiDoutuEnabled?: boolean;
   marketAccessEntitled?: boolean;
   marketUploadEntitled?: boolean;
   chatShareEntitled?: boolean;
@@ -123,6 +124,13 @@ export interface AiSearchResponse {
   pointCost: number;
   balanceAfter?: number | null;
   results: AiSearchResultItem[];
+}
+
+export interface AlapiDoutuResponse {
+  keyword: string;
+  imageUrl: string;
+  pointCost: number;
+  balanceAfter?: number | null;
 }
 
 export interface ChatRecordSearchResponse {
@@ -658,6 +666,10 @@ class ApiClient {
       source: options?.source,
       resourceId: options?.resourceId,
     });
+  }
+
+  async searchDoutu(keyword: string, options?: { chatId?: string; messageId?: string }) {
+    return this.request<AlapiDoutuResponse>('POST', '/alapi/doutu', { keyword, chatId: options?.chatId, messageId: options?.messageId });
   }
 
   async searchChatRecords(query: string, options?: { limit?: number; offset?: number; chatTypePreference?: 'group' | 'direct' | 'assistant' | 'any'; sortBy?: 'relevance' | 'time_desc' | 'time_asc'; speakerQuery?: string }) {

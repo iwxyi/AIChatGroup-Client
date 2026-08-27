@@ -31,6 +31,7 @@ const CATEGORY_TABS = [
   { value: 'sms', label: '短信' },
   { value: 'email', label: '邮箱' },
   { value: 'search', label: '搜索' },
+  { value: 'other', label: '其余接口' },
   { value: 'tts', label: '文字转语音 TTS' },
   { value: 'stt', label: '语音转文字 STT' },
 ] as const;
@@ -70,6 +71,7 @@ const PROVIDER_POPULARITY: Record<string, number> = {
   'email:awsses': 50,
   'email:console': 90,
   'search:bocha': 10,
+  'other:alapi': 10,
   'tts:minimax': 10,
   'tts:volcengine': 20,
   'tts:openai': 30,
@@ -338,6 +340,11 @@ const FIELD_DEFS: Record<string, FieldDef[]> = {
     { key: 'pointCost', label: '单次搜索扣点', type: 'number' },
     { key: 'apiKey', label: 'API Key', secret: true, required: true },
   ],
+  'other:alapi': [
+    { key: 'apiKey', label: 'API Key', secret: true, required: true },
+    { key: 'doutuEnabled', label: '启用表情包搜索', type: 'boolean' },
+    { key: 'doutuPointCost', label: '表情包搜索单次扣点（P）', type: 'number' },
+  ],
 };
 
 function integrationKey(item: Record<string, unknown>) {
@@ -508,6 +515,8 @@ export default function AdminPlatformPage() {
   }, [visibleItems]);
   const selected = useMemo(() => items.find((item) => integrationKey(item) === selectedKey) || null, [items, selectedKey]);
   const selectedCapabilities = useMemo(() => integrationCapabilities(selected), [selected]);
+  const isAlapi = selected?.category === 'other' && selected?.providerCode === 'alapi';
+  const alapiDoutuCallCount = Number((selected?.usage as Record<string, unknown> | undefined)?.doutuCallCount || 0);
   const fields = selected
     ? [
       ...(FIELD_DEFS[integrationKey(selected)] || []),
@@ -888,7 +897,7 @@ export default function AdminPlatformPage() {
                   </Alert>
                 );
               })() : null}
-              {fields.length ? fields.map((field) => (
+              {fields.filter((field) => !isAlapi || (field.key !== 'doutuEnabled' && field.key !== 'doutuPointCost')).length ? fields.filter((field) => !isAlapi || (field.key !== 'doutuEnabled' && field.key !== 'doutuPointCost')).map((field) => (
                 field.key === 'defaultVoice' && String(selected.category || '') === 'tts' ? (
                   <Stack key={field.key} direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ alignItems: { sm: 'flex-start' } }}>
                     <Autocomplete
@@ -987,6 +996,48 @@ export default function AdminPlatformPage() {
                   );
                 })()
               )) : <Alert severity="info">该服务商暂无额外配置项。</Alert>}
+              {isAlapi ? (
+                <Stack spacing={0.75}>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>功能配置</Typography>
+                  <AdminTableFrame minWidth={560}>
+                    <Table size="small">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>功能</TableCell>
+                          <TableCell>开关</TableCell>
+                          <TableCell>单次扣点</TableCell>
+                          <TableCell align="right">调用总次数</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        <TableRow>
+                          <TableCell>表情包搜索</TableCell>
+                          <TableCell>
+                            <Switch
+                              size="small"
+                              checked={Boolean(editor.doutuEnabled)}
+                              onChange={(event) => setEditor((prev) => ({ ...prev, doutuEnabled: event.target.checked }))}
+                              inputProps={{ 'aria-label': '启用表情包搜索' }}
+                            />
+                          </TableCell>
+                          <TableCell sx={{ minWidth: 148 }}>
+                            <TextField
+                              size="small"
+                              type="number"
+                              value={String(editor.doutuPointCost ?? '')}
+                              onChange={(event) => setEditor((prev) => ({ ...prev, doutuPointCost: event.target.value }))}
+                              inputProps={{ min: 0, step: 0.01 }}
+                              InputProps={{ endAdornment: <Typography variant="caption">P</Typography> }}
+                            />
+                          </TableCell>
+                          <TableCell align="right">{Number.isFinite(alapiDoutuCallCount) ? alapiDoutuCallCount.toLocaleString('zh-CN') : 0}</TableCell>
+                        </TableRow>
+                      </TableBody>
+                    </Table>
+                  </AdminTableFrame>
+                  <Typography variant="caption" color="text.secondary">仅成功返回可用图片的搜索会计入次数；保存后立即生效。</Typography>
+                </Stack>
+              ) : null}
               <Stack spacing={1}>
                 <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>连接测试</Typography>
                 {selected.category === 'payment' ? (

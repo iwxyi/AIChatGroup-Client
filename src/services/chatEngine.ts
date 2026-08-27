@@ -52,6 +52,7 @@ import { sanitizeUserFacingText } from './displayTextSanitizer';
 import { enhanceImagePrompt } from './imagePromptComposer';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { api, ApiError, type AiSearchResultItem } from './api';
+import { useAuthStore } from '../stores/useAuthStore';
 import { getPromptSpeakerLabel, getPromptTurnTypeLabel, isHumanDirectedMessage } from './chatMessageSemantics';
 
 export interface GeneratedRoundMessage extends Omit<Message, 'id' | 'timestamp' | 'isDeleted'> {
@@ -2313,6 +2314,7 @@ function buildMediaCapabilities(character: AICharacter, profiles?: AIModelProfil
     // Learning listening material may use the configured TTS default even when
     // the teacher character has no personal voice assignment.
     audio: Boolean(audioProfile),
+    sticker: useAuthStore.getState().authMode === 'cloud' && useAuthStore.getState().user?.alapiDoutuEnabled === true,
   };
 }
 
@@ -2335,7 +2337,7 @@ function createAttachmentId(kind: string, now: number, seedParts: Array<string |
   return `${kind}-${now}-${seed}`;
 }
 
-function normalizeMediaDecision(decision: MediaGenerationDecision | null | undefined, capabilities: { image: boolean; audio: boolean }, content: string) {
+function normalizeMediaDecision(decision: MediaGenerationDecision | null | undefined, capabilities: { image: boolean; audio: boolean; sticker?: boolean }, content: string) {
   const normalized: MediaGenerationDecision = {};
   const requestedImages = Array.isArray(decision?.images) ? decision.images : decision?.image ? [decision.image] : [];
   const images = capabilities.image ? requestedImages
@@ -2374,7 +2376,10 @@ function normalizeMediaDecision(decision: MediaGenerationDecision | null | undef
       style: decision.audio.style || undefined,
     };
   }
-  return normalized.images?.length || normalized.audio ? normalized : null;
+  if (capabilities.sticker && decision?.sticker?.shouldSend) {
+    normalized.sticker = { shouldSend: true, keyword: decision.sticker.keyword || content, altText: decision.sticker.altText || '表情包' };
+  }
+  return normalized.images?.length || normalized.audio || normalized.sticker ? normalized : null;
 }
 
 function latestUserReferenceImages(messages: Message[]) {
@@ -2429,7 +2434,7 @@ function selectedDecisionReferenceImages(decision: MediaGenerationDecision['imag
 
 function buildMessageMetadata(params: {
   decision: MediaGenerationDecision | null | undefined;
-  capabilities: { image: boolean; audio: boolean };
+  capabilities: { image: boolean; audio: boolean; sticker?: boolean };
   content: string;
   activeMessages?: Message[];
   runtimeDecision?: MessageMetadata['runtimeDecision'];
@@ -2497,6 +2502,13 @@ function buildMessageMetadata(params: {
       ttsStyle: decision.audio.style,
       createdAt: now,
       updatedAt: now,
+    });
+  }
+  if (decision?.sticker?.shouldSend) {
+    const keyword = decision.sticker.keyword || params.content;
+    attachments.push({
+      id: createAttachmentId('sticker', now, [keyword, params.content]), kind: 'sticker', status: 'queued',
+      altText: decision.sticker.altText || '表情包', promptText: keyword, createdAt: now, updatedAt: now,
     });
   }
   return {
