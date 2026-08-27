@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef, useState } from 'react';
-import { Card, CardContent, CardActionArea, Box, Typography, Avatar, AvatarGroup, Chip, Checkbox, CircularProgress, Tooltip } from '@mui/material';
+import { Card, CardContent, CardActionArea, Box, Typography, Avatar, Chip, Checkbox, CircularProgress, Tooltip } from '@mui/material';
 import { isImageAvatar } from '../../utils/avatar';
 import DirectIcon from '@mui/icons-material/ChatBubbleOutlined';
 import GroupIcon from '@mui/icons-material/Groups';
@@ -15,6 +15,7 @@ import { sanitizeChatLatestMessage } from '../../services/chatLatestMessage';
 import { avatarGenerationQueue, type AvatarGenerationTaskState } from '../../services/avatarGenerationQueue';
 import { getChatCompletionTaskStatus, subscribeChatCompletionQueue } from '../../services/chatCompletionQueue';
 import { useImageResourceAvailability } from '../../hooks/useImageResourceAvailability';
+import { buildAvatarDirectHoverSx, buildCardAvatarHoverMotionSx } from '../../styles/avatarHoverMotion';
 
 interface ChatCardProps {
   chat: GroupChat;
@@ -26,7 +27,7 @@ interface ChatCardProps {
   multiSelected?: boolean;
   onToggleSelection?: () => void;
   onMemberClick?: (member: AICharacter) => void;
-  onAvatarClick?: () => void;
+  onAvatarClick?: (memberId?: string) => void;
   onLongPress?: () => void;
   displayMode?: 'list' | 'card';
   compactCard?: boolean;
@@ -133,25 +134,12 @@ function ChatCard({ chat, characters, onClick, onPrefetch, selected = false, sel
   const isAiDirect = chat.type === 'ai_direct';
   const isDirect = isUserDirect || isAiDirect;
   const directMembers = isAiDirect ? members.slice(0, 2) : members.slice(0, 1);
-  const directMember = isUserDirect ? directMembers[0] : null;
+  const directMember = directMembers[0] || null;
   const directDisplayName = directMember?.name || chat.name;
   const aiDirectDisplayName = directMembers.map((member) => member.name).join(' × ') || chat.name;
   const subtitle = buildChatSubtitle(chat, members, resolvedLatestMessage);
   const gameplayLabel = getChatGameplayShortLabel(chat);
-  const directAvatarNode = isAiDirect && directMembers.length ? (
-    <AvatarGroup max={2} total={directMembers.length} sx={{ flexShrink: 0, '& .MuiAvatar-root': { width: 46, height: 46, fontSize: '1.05rem', borderColor: 'background.paper' } }}>
-      {directMembers.map((member) => (
-      <Avatar
-          key={member.id}
-          src={isImageAvatar(member.avatar) ? member.avatar : undefined}
-          slotProps={{ img: CHAT_CARD_AVATAR_IMG_PROPS }}
-          sx={{ bgcolor: 'primary.light' }}
-        >
-          {isImageAvatar(member.avatar) ? undefined : member.avatar}
-        </Avatar>
-      ))}
-    </AvatarGroup>
-  ) : directMember ? (
+  const directAvatarContent = directMember ? (
     <Avatar
       src={isImageAvatar(directMember.avatar) ? directMember.avatar : undefined}
       slotProps={{ img: CHAT_CARD_AVATAR_IMG_PROPS }}
@@ -163,6 +151,68 @@ function ChatCard({ chat, characters, onClick, onPrefetch, selected = false, sel
     <Avatar sx={{ width: 46, height: 46, fontSize: '1.05rem', bgcolor: 'primary.light', flexShrink: 0 }}>
       <DirectIcon sx={{ fontSize: 18 }} />
     </Avatar>
+  );
+  const directAvatarNode = isAiDirect && directMembers.length > 1 ? (
+    <Box sx={{ display: 'flex', alignItems: 'center', width: { xs: 76, sm: 82 }, maxWidth: '100%', flexShrink: 0, overflow: 'visible' }}>
+      {directMembers.map((member) => (
+        <Box
+          key={member.id}
+          className="chat-card-avatar-hit"
+          role={onAvatarClick ? 'button' : undefined}
+          tabIndex={onAvatarClick ? 0 : undefined}
+          aria-label={onAvatarClick ? `编辑${member.name || '角色'}` : undefined}
+          onKeyDown={(event) => {
+            if (onAvatarClick && (event.key === 'Enter' || event.key === ' ')) {
+              event.preventDefault();
+              event.stopPropagation();
+              onAvatarClick(member.id);
+            }
+          }}
+          onClick={(event) => { event.stopPropagation(); onAvatarClick?.(member.id); }}
+          sx={{
+            width: 46,
+            height: 46,
+            flex: '0 0 46px',
+            ml: member.id === directMembers[0]?.id ? 0 : { xs: '-16px', sm: '-10px' },
+            position: 'relative',
+            zIndex: member.id === directMembers[0]?.id ? 1 : 2,
+            cursor: onAvatarClick ? 'pointer' : 'default',
+            borderRadius: '50%',
+            ...(onAvatarClick ? buildAvatarDirectHoverSx() : undefined),
+          }}
+        >
+          <Avatar src={isImageAvatar(member.avatar) ? member.avatar : undefined} slotProps={{ img: CHAT_CARD_AVATAR_IMG_PROPS }} sx={{ width: 46, height: 46, fontSize: '1.05rem', bgcolor: 'primary.light' }}>
+            {isImageAvatar(member.avatar) ? undefined : member.avatar}
+          </Avatar>
+        </Box>
+      ))}
+    </Box>
+  ) : (
+    <Box
+      className="chat-card-avatar-hit"
+      role={onAvatarClick ? 'button' : undefined}
+      tabIndex={onAvatarClick ? 0 : undefined}
+      aria-label={onAvatarClick ? `编辑${directDisplayName}` : undefined}
+      onKeyDown={(event) => {
+        if (onAvatarClick && (event.key === 'Enter' || event.key === ' ')) {
+          event.preventDefault();
+          event.stopPropagation();
+          onAvatarClick();
+        }
+      }}
+      onClick={(event) => { event.stopPropagation(); onAvatarClick?.(); }}
+      sx={{
+        position: 'relative',
+        width: 46,
+        height: 46,
+        flexShrink: 0,
+        cursor: onAvatarClick ? 'pointer' : 'default',
+        borderRadius: '50%',
+        ...(onAvatarClick ? buildAvatarDirectHoverSx() : undefined),
+      }}
+    >
+      {directAvatarContent}
+    </Box>
   );
   const groupAvatarUrl = chat.type === 'group' ? chat.groupVisual?.avatarUrl?.trim() : '';
   const requestedCardBackgroundUrl = cardBackgroundRendering ? chat.groupVisual?.backgroundUrl?.trim() : '';
@@ -179,7 +229,7 @@ function ChatCard({ chat, characters, onClick, onPrefetch, selected = false, sel
   useEffect(() => setGroupAvatarUnavailable(false), [groupAvatarUrl]);
   const groupAvatarGenerating = avatarTask?.status === 'queued' || avatarTask?.status === 'running' || chatAvatarTaskStatus === 'queued' || chatAvatarTaskStatus === 'running';
   const groupAvatarNode = (
-    <Box className="chat-card-avatar-hit" role={onAvatarClick ? 'button' : undefined} tabIndex={onAvatarClick ? 0 : undefined} aria-label={onAvatarClick ? `编辑${chat.name}` : undefined} onKeyDown={(event) => { if (onAvatarClick && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onAvatarClick(); } }} onClick={(event) => { event.stopPropagation(); onAvatarClick?.(); }} sx={{ position: 'relative', width: 46, height: 46, flexShrink: 0, cursor: onAvatarClick ? 'pointer' : 'default', borderRadius: '50%', transition: 'transform 420ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 420ms cubic-bezier(0.16, 1, 0.3, 1)', '&:hover': onAvatarClick ? { transform: 'translateY(-2px) scale(1.1)', boxShadow: '0 5px 12px rgba(15,23,42,0.2)' } : undefined }}>
+    <Box className="chat-card-avatar-hit" role={onAvatarClick ? 'button' : undefined} tabIndex={onAvatarClick ? 0 : undefined} aria-label={onAvatarClick ? `编辑${chat.name}` : undefined} onKeyDown={(event) => { if (onAvatarClick && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onAvatarClick(); } }} onClick={(event) => { event.stopPropagation(); onAvatarClick?.(); }} sx={{ position: 'relative', width: 46, height: 46, flexShrink: 0, cursor: onAvatarClick ? 'pointer' : 'default', borderRadius: '50%', ...(onAvatarClick ? buildAvatarDirectHoverSx() : undefined) }}>
       <Avatar
         src={groupAvatarUrl && !groupAvatarUnavailable ? groupAvatarUrl : undefined}
         slotProps={{ img: { ...CHAT_CARD_AVATAR_IMG_PROPS, onError: () => setGroupAvatarUnavailable(true) } }}
@@ -205,20 +255,8 @@ function ChatCard({ chat, characters, onClick, onPrefetch, selected = false, sel
         boxSizing: 'border-box',
         height: isList ? 'auto' : '100%',
         overflow: 'visible',
-        '& .chat-card-primary-avatar': {
-          transform: 'translateY(0) scale(1) rotate(0deg)',
-          transformOrigin: '50% 58%',
-          transition: 'transform 520ms cubic-bezier(0.16, 1, 0.3, 1), filter 520ms cubic-bezier(0.16, 1, 0.3, 1)',
-          willChange: 'transform',
-        },
-        '&:hover .chat-card-primary-avatar': {
-          transform: 'translateY(-2px) scale(1.065) rotate(1.8deg)',
-          filter: 'saturate(1.06) drop-shadow(0 5px 8px rgba(15,23,42,0.18))',
-        },
+        ...buildCardAvatarHoverMotionSx('.chat-card-primary-avatar'),
         '&::before, &::after': { borderRadius: 'inherit' },
-        '@media (prefers-reduced-motion: reduce)': {
-          '& .chat-card-primary-avatar': { transition: 'none' },
-        },
         ...(isList ? {
           borderRadius: 1.25,
           borderWidth: 0,

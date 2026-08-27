@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
-import { Alert, Box, Typography, Button, Divider, IconButton, Chip, Dialog, DialogTitle, DialogContent } from '@mui/material';
+import { Alert, Avatar, Box, Typography, Button, ButtonBase, CardActionArea, IconButton, Chip, Dialog, DialogTitle, DialogContent } from '@mui/material';
 import type { Theme } from '@mui/material/styles';
 import AddIcon from '@mui/icons-material/Add';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
@@ -50,6 +50,8 @@ import { motion, transition } from '../styles/motion';
 import { formatAiAmount } from '../utils/aiPoints';
 import { dismissAllRichMediaGenerationErrors, dismissRichMediaGenerationError, getRecentRichMediaGenerationErrors, getRichMediaQueueSnapshot, subscribeRichMediaQueue } from '../services/richMessageMedia';
 import { dismissAllChatCompletionErrors, dismissChatCompletionError, getChatCompletionSummary, subscribeChatCompletionQueue, type ChatCompletionSummary } from '../services/chatCompletionQueue';
+import { isImageAvatar } from '../utils/avatar';
+import { buildCardAvatarHoverMotionSx } from '../styles/avatarHoverMotion';
 
 interface HomeOverviewCard {
   label: string;
@@ -493,13 +495,21 @@ export default function HomePage() {
   const [calendarNow, setCalendarNow] = useState(() => Date.now());
   const richMediaQueue = useSyncExternalStore(subscribeRichMediaQueue, getRichMediaQueueSnapshot, getRichMediaQueueSnapshot);
   const inAppNotifications = useInAppNotificationStore((state) => state.items);
-  const recentChats = useMemo(() => chats.slice(0, 10), [chats]);
+  // Persisted local chat summaries render immediately; cloud prefetch below
+  // only merges fresher data and may update this ordering afterwards.
+  const recentChats = useMemo(() => chats
+    .slice()
+    .sort((left, right) => (
+      Number(right.lastMessageAt || right.updatedAt || right.createdAt || 0)
+      - Number(left.lastMessageAt || left.updatedAt || left.createdAt || 0)
+    ))
+    .slice(0, 10), [chats]);
   const recentChatIds = useMemo(() => new Set(recentChats.map((chat) => chat.id)), [recentChats]);
   const recentActiveMessages = useMessageStore(useShallow((state) => (
-    state.messages.filter((message) => recentChatIds.has(message.chatId)).slice(-60)
+    state.messages.filter((message) => recentChatIds.has(message.chatId)).slice(-30)
   )));
   const recentWindowMessages = useMessageStore(useShallow((state) => (
-    recentChats.flatMap((chat) => (state.messageWindowsByChatId[chat.id]?.messages || []).slice(-20))
+    recentChats.flatMap((chat) => (state.messageWindowsByChatId[chat.id]?.messages || []).slice(-3))
   )));
 
   useEffect(() => {
@@ -582,6 +592,23 @@ export default function HomePage() {
   }, []);
 
   const customCharacters = characters.filter((character) => !character.isPreset && !character.deletedAt);
+  const recentCharacters = useMemo(() => {
+    const recentChatActivityByMemberId = new Map<string, number>();
+    recentChats.forEach((chat) => {
+      const activityAt = Number(chat.lastMessageAt || chat.updatedAt || chat.createdAt || 0);
+      chat.memberIds.forEach((memberId) => {
+        recentChatActivityByMemberId.set(memberId, Math.max(recentChatActivityByMemberId.get(memberId) || 0, activityAt));
+      });
+    });
+    return characters
+      .filter((character) => !character.deletedAt)
+      .slice()
+      .sort((left, right) => (
+        Math.max(Number(right.updatedAt || 0), recentChatActivityByMemberId.get(right.id) || 0)
+        - Math.max(Number(left.updatedAt || 0), recentChatActivityByMemberId.get(left.id) || 0)
+      ))
+      .slice(0, 12);
+  }, [characters, recentChats]);
   const [noCharactersDialogOpen, setNoCharactersDialogOpen] = useState(false);
   const [noCharactersReturnTo, setNoCharactersReturnTo] = useState('/chats/create');
   const [noCharactersRequiredCount, setNoCharactersRequiredCount] = useState(MIN_MEMBERS);
@@ -987,27 +1014,43 @@ export default function HomePage() {
                 <SurfaceCard
                   sx={stat.attention ? buildAttentionCardSx() : buildStatCardSx()}
                   contentSx={buildStatContentSx()}
-                  onClick={stat.onOpen}
-                  aria-label={`${stat.label}快捷入口`}
                 >
-                  {stat.onCreate ? (
-                    <IconButton
-                      size="small"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        stat.onCreate?.();
-                      }}
-                      aria-label={stat.createLabel}
-                      sx={buildCreateButtonSx()}
-                    >
-                      <AddIcon fontSize="small" />
-                    </IconButton>
-                  ) : null}
-                  <Box sx={buildStatCenterSx()}>
-                    <Box sx={buildStatIconSx(stat.color)}>{stat.icon}</Box>
-                    <Typography variant="h5" sx={buildStatValueSx()}>{stat.value}</Typography>
-                    <Typography variant="body2" sx={buildStatLabelSx()}><span>{stat.label}</span></Typography>
-                  </Box>
+                  <CardActionArea
+                    component="div"
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`${stat.label}快捷入口`}
+                    onClick={stat.onOpen}
+                    sx={{
+                      width: '100%',
+                      minHeight: 'inherit',
+                      height: '100%',
+                      position: 'relative',
+                      borderRadius: 'inherit',
+                      // 加号故意越出卡片边缘；仅把水波纹自身裁切在卡片内部。
+                      overflow: 'visible',
+                      '& .MuiTouchRipple-root': { borderRadius: 'inherit', overflow: 'hidden' },
+                    }}
+                  >
+                    {stat.onCreate ? (
+                      <IconButton
+                        size="small"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          stat.onCreate?.();
+                        }}
+                        aria-label={stat.createLabel}
+                        sx={buildCreateButtonSx()}
+                      >
+                        <AddIcon fontSize="small" />
+                      </IconButton>
+                    ) : null}
+                    <Box sx={buildStatCenterSx()}>
+                      <Box sx={buildStatIconSx(stat.color)}>{stat.icon}</Box>
+                      <Typography variant="h5" sx={buildStatValueSx()}>{stat.value}</Typography>
+                      <Typography variant="body2" sx={buildStatLabelSx()}><span>{stat.label}</span></Typography>
+                    </Box>
+                  </CardActionArea>
                 </SurfaceCard>
               </Box>
             ))}
@@ -1117,7 +1160,107 @@ export default function HomePage() {
           </SurfaceCard>
         ) : null}
 
-        <Divider />
+        {recentCharacters.length ? (
+          <SurfaceCard>
+            <SectionHeader title="最近角色" action={<Button size="small" variant="outlined" onClick={() => navigate('/characters')}>查看全部</Button>} />
+            <Box
+              onWheel={(event) => {
+                if (Math.abs(event.deltaX) >= Math.abs(event.deltaY) || event.deltaY === 0) return;
+                const rail = event.currentTarget;
+                const maxScrollLeft = Math.max(0, rail.scrollWidth - rail.clientWidth);
+                const atLeadingEdge = rail.scrollLeft <= 1;
+                const atTrailingEdge = rail.scrollLeft >= maxScrollLeft - 1;
+                if (!maxScrollLeft || (event.deltaY < 0 && atLeadingEdge) || (event.deltaY > 0 && atTrailingEdge)) return;
+                event.preventDefault();
+                rail.scrollLeft = Math.min(maxScrollLeft, Math.max(0, rail.scrollLeft + event.deltaY));
+              }}
+              sx={{
+                display: 'flex',
+                gap: 1,
+                mt: 1.25,
+                overflowX: 'auto',
+                overflowY: 'hidden',
+                pb: 0.5,
+                mx: { xs: -0.25, sm: 0 },
+                px: { xs: 0.25, sm: 0 },
+                scrollSnapType: 'x proximity',
+                scrollbarWidth: 'thin',
+                overscrollBehaviorX: 'contain',
+                '&::-webkit-scrollbar': { height: 6 },
+                '&::-webkit-scrollbar-thumb': { borderRadius: 999, bgcolor: 'action.disabledBackground' },
+              }}
+            >
+              {recentCharacters.map((character) => (
+                <ButtonBase
+                  key={character.id}
+                  component="div"
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`编辑角色${character.name}`}
+                  onClick={() => navigate(`/characters/${character.id}/edit?returnTo=${encodeURIComponent('/')}`)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      navigate(`/characters/${character.id}/edit?returnTo=${encodeURIComponent('/')}`);
+                    }
+                  }}
+                  sx={{
+                    flex: '0 0 86px',
+                    minWidth: 0,
+                    display: 'grid',
+                    justifyItems: 'center',
+                    gap: 0.65,
+                    px: 0.45,
+                    py: 0.25,
+                    borderRadius: 2,
+                    cursor: 'pointer',
+                    scrollSnapAlign: 'start',
+                    position: 'relative',
+                    overflow: 'hidden',
+                    transition: transition(['background-color'], motion.durations.base, motion.softOut),
+                    '&::after': {
+                      content: '""',
+                      position: 'absolute',
+                      left: 20,
+                      right: 20,
+                      bottom: 0,
+                      height: 1.5,
+                      borderRadius: 999,
+                      bgcolor: 'primary.main',
+                      opacity: 0,
+                      transform: 'scaleX(0.45)',
+                      transition: transition(['opacity', 'transform'], motion.durations.base, motion.softOut),
+                    },
+                    ...buildCardAvatarHoverMotionSx('.home-recent-character-avatar-motion'),
+                    '&:hover': {
+                      bgcolor: 'action.hover',
+                      '&::after': { opacity: 0.72, transform: 'scaleX(1)' },
+                    },
+                    '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 2 },
+                  }}
+                >
+                  <Box className="home-recent-character-avatar-motion" sx={{ display: 'flex', borderRadius: '50%' }}>
+                    <Avatar
+                      src={isImageAvatar(character.avatar) ? character.avatar : undefined}
+                      slotProps={{ img: { loading: 'lazy' } }}
+                      sx={{ width: 54, height: 54, bgcolor: 'primary.light', fontSize: '1.15rem' }}
+                    >
+                      {isImageAvatar(character.avatar) ? undefined : (character.avatar?.trim() || character.name.slice(0, 1))}
+                    </Avatar>
+                  </Box>
+                  <Typography variant="caption" noWrap sx={{ width: '100%', textAlign: 'center', fontWeight: 650, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {character.name}
+                  </Typography>
+                  {character.group ? (
+                    <Typography variant="caption" noWrap color="text.secondary" sx={{ width: '100%', mt: -0.55, textAlign: 'center', fontSize: '0.68rem', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {character.group}
+                    </Typography>
+                  ) : null}
+                </ButtonBase>
+              ))}
+            </Box>
+          </SurfaceCard>
+        ) : null}
 
         <SurfaceCard>
           <SectionHeader title={recentChatsTitle} action={<Button size="small" variant="outlined" onClick={() => navigate(`/chats?tab=${recentChatsActionTab}`)}>查看全部</Button>} />
@@ -1163,11 +1306,25 @@ export default function HomePage() {
           ) : (
             <Box sx={homeChatDisplayMode === 'list' ? { display: 'grid', gridTemplateColumns: '1fr', gap: 0 } : buildGridSx()}>
               {recentChats.map((chat, index) => (
-                <ChatCard key={chat.id} chat={chat} characters={characters} displayMode={homeChatDisplayMode} compactCard={homeChatDisplayMode === 'card'} showListDivider={homeChatDisplayMode === 'list' && index < recentChats.length - 1} onClick={() => openChatFromHome(chat)} />
+                <ChatCard
+                  key={chat.id}
+                  chat={chat}
+                  characters={characters}
+                  displayMode={homeChatDisplayMode}
+                  compactCard={homeChatDisplayMode === 'card'}
+                  showListDivider={homeChatDisplayMode === 'list' && index < recentChats.length - 1}
+                  onClick={() => openChatFromHome(chat)}
+                  onAvatarClick={chat.type === 'group'
+                    ? () => navigate(`/chats/${chat.id}/edit`)
+                    : chat.memberIds[0]
+                      ? (memberId) => navigate(`/characters/${memberId || chat.memberIds[0]}/edit?returnTo=${encodeURIComponent('/')}`)
+                      : undefined}
+                />
               ))}
             </Box>
           )}
         </SurfaceCard>
+
       </PageSection>
       <NoCharactersDialog
         open={noCharactersDialogOpen}

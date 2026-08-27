@@ -424,6 +424,7 @@ export default function CharacterLibraryPage() {
   useEffect(() => { writePersistentUiValue(CHARACTER_COMPLETION_MODE_KEY, completionMode); }, [completionMode]);
 
   useEffect(() => {
+    libraryLoadQueuedRef.current = false;
     setVisibleCharacterCount(CHARACTER_LIBRARY_INITIAL_RENDER_COUNT);
     setLibraryPage(1);
     setLibraryItems([]);
@@ -507,6 +508,7 @@ export default function CharacterLibraryPage() {
   );
   const hasMoreCharacters = view === 'card' ? libraryItems.length < libraryTotal : visibleDisplayChars.length < displayChars.length;
   const characterLoadMoreRef = useRef<HTMLDivElement | null>(null);
+  const libraryLoadQueuedRef = useRef(false);
   const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const selectedCustomCharacters = useMemo(
     () => custom
@@ -517,6 +519,7 @@ export default function CharacterLibraryPage() {
 
   useEffect(() => {
     if (view !== 'card') {
+      libraryLoadQueuedRef.current = false;
       setLibraryLoading(false);
       return;
     }
@@ -526,6 +529,7 @@ export default function CharacterLibraryPage() {
       const pageItems = localItems.slice(start, start + CHARACTER_LIBRARY_PAGE_SIZE);
       setLibraryItems((current) => mergeCharacterLibraryPage(current, pageItems, libraryPage === 1));
       setLibraryTotal(localItems.length);
+      libraryLoadQueuedRef.current = false;
       setLibraryLoading(false);
       return;
     }
@@ -546,7 +550,10 @@ export default function CharacterLibraryPage() {
     }).catch(() => {
       if (libraryRequestIdRef.current === requestId) setLibraryItems((current) => libraryPage === 1 ? [] : current);
     }).finally(() => {
-      if (libraryRequestIdRef.current === requestId) setLibraryLoading(false);
+      if (libraryRequestIdRef.current === requestId) {
+        libraryLoadQueuedRef.current = false;
+        setLibraryLoading(false);
+      }
     });
   }, [authMode, filteredCustom, isLoggedIn, libraryPage, libraryRefreshToken, selectedGroup, sortDirection, sortField, sortGroupFirst, view]);
 
@@ -564,7 +571,13 @@ export default function CharacterLibraryPage() {
     const observer = new IntersectionObserver((entries) => {
       if (!entries[0]?.isIntersecting) return;
       if (view === 'card') {
-        if (!libraryLoading) setLibraryPage((current) => current + 1);
+        // IntersectionObserver may fire repeatedly before the async request
+        // flips libraryLoading; gate it so one viewport crossing queues only
+        // one page instead of rapidly loading the entire library into memory.
+        if (!libraryLoading && !libraryLoadQueuedRef.current) {
+          libraryLoadQueuedRef.current = true;
+          setLibraryPage((current) => current + 1);
+        }
       } else {
         setVisibleCharacterCount((current) => Math.min(current + CHARACTER_LIBRARY_RENDER_BATCH_SIZE, displayChars.length));
       }
@@ -974,7 +987,7 @@ export default function CharacterLibraryPage() {
           sx={{
             ...(view === 'list' ? buildListGridSx() : {
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 220px), 1fr))',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 196px), 1fr))',
               gap: 1.5,
             }),
             alignItems: 'stretch',

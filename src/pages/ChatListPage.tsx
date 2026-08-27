@@ -196,11 +196,6 @@ export default function ChatListPage() {
             <Tooltip title="批量操作"><IconButton key={`batch-menu-${menuModeTransitionKey}`} aria-label="批量操作" onClick={(event) => setBatchMenuAnchor(event.currentTarget)} sx={menuHeaderButtonSx}><MoreVertIcon className="chat-list-menu-mode-icon" fontSize="small" /></IconButton></Tooltip>
           </>
         ) : null}
-        {!selectionMode ? (
-          <Tooltip title="更多">
-            <IconButton key={`default-menu-${menuModeTransitionKey}`} aria-label="更多" onClick={(event) => setStyleMenuAnchor(event.currentTarget)} sx={menuHeaderButtonSx}><MoreVertIcon className="chat-list-menu-mode-icon" fontSize="small" /></IconButton>
-          </Tooltip>
-        ) : null}
         {!selectionMode ? <Tooltip title={searchOpen ? '收起搜索' : t('chat.search')}>
           <IconButton
             aria-label={searchOpen ? '收起搜索' : t('chat.search')}
@@ -242,6 +237,11 @@ export default function ChatListPage() {
             {searchOpen ? <CloseIcon fontSize="small" /> : <SearchIcon fontSize="small" />}
           </IconButton>
         </Tooltip> : null}
+        {!selectionMode ? (
+          <Tooltip title="更多">
+            <IconButton key={`default-menu-${menuModeTransitionKey}`} aria-label="更多" onClick={(event) => setStyleMenuAnchor(event.currentTarget)} sx={menuHeaderButtonSx}><MoreVertIcon className="chat-list-menu-mode-icon" fontSize="small" /></IconButton>
+          </Tooltip>
+        ) : null}
         {isThreeColumn ? (
           <Tooltip title={detailCollapsed ? '显示分栏' : '隐藏分栏'}>
             <IconButton
@@ -539,7 +539,11 @@ export default function ChatListPage() {
                 showListDivider={chatListStyle.displayMode === 'list' && index < sortedVisibleChats.length - 1}
                 onToggleSelection={() => toggleChatSelection(chat.id)}
                 onMemberClick={(member) => navigate(`/characters/${member.id}/edit?returnTo=${encodeURIComponent(location.pathname + location.search)}`)}
-                onAvatarClick={chat.type === 'group' ? () => navigate(`/chats/${chat.id}/edit`) : undefined}
+                onAvatarClick={chat.type === 'group'
+                  ? () => navigate(`/chats/${chat.id}/edit`)
+                  : chat.memberIds[0]
+                    ? (memberId) => navigate(`/characters/${memberId || chat.memberIds[0]}/edit?returnTo=${encodeURIComponent(location.pathname + location.search)}`)
+                    : undefined}
                 onLongPress={() => {
                   setSelectionMode(true);
                   setSelectedChatIds((ids) => ids.includes(chat.id) ? ids : [...ids, chat.id]);

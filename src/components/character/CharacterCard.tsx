@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next';
 import { formatExpertiseList } from '../../utils/expertise';
 import { motion, transition } from '../../styles/motion';
 import { buildInteractiveSurfaceSx, buildSelectionRailSx } from '../../styles/interaction';
+import { buildCardAvatarHoverMotionSx } from '../../styles/avatarHoverMotion';
 
 interface CharacterCardProps {
   character: AICharacter;
@@ -107,6 +108,7 @@ export default function CharacterCard({ character, onEdit, onDelete, onStartDire
         contentVisibility: 'auto',
         containIntrinsicSize: '132px',
         overflow: 'hidden',
+        ...buildCardAvatarHoverMotionSx('.character-card-avatar'),
         '&::before': {
           ...buildSelectionRailSx(Boolean(selected)),
         },
@@ -169,6 +171,7 @@ export default function CharacterCard({ character, onEdit, onDelete, onStartDire
           <CardContent sx={{ p: 2, pr: (onEdit || onDelete) ? 6 : 2, height: '100%', '&:last-child': { pb: 2 } }}>
             <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5 }}>
               <Avatar
+                className="character-card-avatar"
                 src={isImageAvatar(character.avatar) ? resolveSafeAvatarSrc(character.avatar) : undefined}
                 slotProps={{ img: { onError: () => rememberFailedAvatarUrl(character.avatar), loading: 'lazy', decoding: 'async' } }}
                 sx={{ width: 48, height: 48, fontSize: '1.5rem', bgcolor: 'primary.light' }}>

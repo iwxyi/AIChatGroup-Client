@@ -11,13 +11,16 @@ import { motion, reducedMotionSx, transition } from '../../styles/motion';
 import { useTranslation } from 'react-i18next';
 import { avatarGenerationQueue, type AvatarGenerationStatus } from '../../services/avatarGenerationQueue';
 import { getCharacterCompletionTaskStatus, subscribeCharacterCompletionQueue, type CharacterCompletionStatus } from '../../services/characterCompletionQueue';
+import { buildCardAvatarHoverMotionSx, buildCardAvatarReducedMotionSx } from '../../styles/avatarHoverMotion';
 
-const SHOWCASE_HEADER_HEIGHT = 52;
+const SHOWCASE_HEADER_HEIGHT = 48;
 
 const visualGlassSurfaceSx = {
-  backdropFilter: 'blur(12px) saturate(1.04)',
-  WebkitBackdropFilter: 'blur(12px) saturate(1.04)',
-  bgcolor: (theme: { palette: { mode: string } }) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.88)' : 'rgba(12,16,24,0.90)',
+  // Neutral veil first, blur second: the image should support the surface,
+  // never tint the text area into a muddy colour.
+  backdropFilter: 'blur(14px) saturate(1.02)',
+  WebkitBackdropFilter: 'blur(14px) saturate(1.02)',
+  bgcolor: (theme: { palette: { mode: string } }) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.93)' : 'rgba(12,16,24,0.92)',
 };
 
 interface CharacterShowcaseCardProps {
@@ -111,7 +114,16 @@ function VisualPlaceholder({ name }: { name: string }) {
           '38%': { opacity: 0.58, transform: 'scaleX(1)' },
           '68%': { opacity: 0.42, transform: 'scaleX(0.54)' },
         },
-        ...reducedMotionSx,
+        '@media (prefers-reduced-motion: reduce)': {
+          transition: 'none',
+          animation: 'none',
+          transform: 'none',
+          ...buildCardAvatarReducedMotionSx('.character-showcase-avatar'),
+          '& .character-showcase-visual, & .character-showcase-focus': {
+            transition: 'none !important',
+            transform: 'none !important',
+          },
+        },
       }}
     >
       <svg viewBox="0 0 180 220" fill="none" aria-hidden="true">
@@ -245,6 +257,7 @@ export default function CharacterShowcaseCard({ character, onEdit, onDelete, onS
         borderColor: (theme) => theme.palette.mode === 'light' ? 'rgba(49,90,156,0.14)' : 'rgba(160,180,220,0.16)',
         bgcolor: 'background.paper',
         transition: transition(['box-shadow', 'border-color'], motion.durations.fast, motion.softOut),
+        ...buildCardAvatarHoverMotionSx('.character-showcase-avatar'),
         '@media (hover: hover)': {
           '&:hover': {
             borderColor: (theme) => theme.palette.mode === 'light' ? 'rgba(49,90,156,0.28)' : 'rgba(160,180,220,0.30)',
@@ -326,10 +339,11 @@ export default function CharacterShowcaseCard({ character, onEdit, onDelete, onS
         >
           <Box sx={{ position: 'relative', display: 'flex', flexDirection: 'column', width: '100%', overflow: 'hidden', bgcolor: (theme) => theme.palette.mode === 'light' ? 'rgba(49,90,156,0.04)' : 'rgba(120,156,220,0.07)' }}>
             <Box sx={{ position: 'relative', flex: `0 0 ${SHOWCASE_HEADER_HEIGHT}px`, zIndex: 2, display: 'flex', alignItems: 'center', gap: 1, px: 1.25, py: 0.5, pr: (onEdit || onDelete) ? 5 : 1.25, overflow: 'hidden', borderBottom: '1px solid', borderColor: (theme) => theme.palette.mode === 'light' ? 'rgba(49,90,156,0.12)' : 'rgba(160,180,220,0.14)', ...visualGlassSurfaceSx, boxShadow: 'none', textShadow: (theme) => theme.palette.mode === 'light' ? '0 1px 2px rgba(255,255,255,0.64)' : '0 1px 2px rgba(0,0,0,0.48)' }}>
-              {visualSrc ? <Box component="img" src={visualSrc} aria-hidden="true" loading="lazy" decoding="async" sx={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top', opacity: 0.18, filter: 'blur(6px) saturate(1.06)', transform: 'scaleY(-1) scale(1.06)' }} /> : null}
+              {visualSrc ? <Box component="img" src={visualSrc} aria-hidden="true" loading="lazy" decoding="async" sx={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top', opacity: 0.11, filter: 'blur(8px) saturate(0.78)', transform: 'scaleY(-1) scale(1.06)' }} /> : null}
               <Box sx={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
               <Box sx={{ position: 'relative', width: 34, height: 34, flexShrink: 0 }}>
                 <Avatar
+                  className="character-showcase-avatar"
                   src={isImageAvatar(character.avatar) ? resolveSafeAvatarSrc(character.avatar) : undefined}
                   slotProps={{ img: { onError: () => rememberFailedAvatarUrl(character.avatar), loading: 'lazy', decoding: 'async' } }}
                   sx={{ width: 34, height: 34, fontSize: '1rem', bgcolor: 'primary.light' }}
@@ -399,7 +413,7 @@ export default function CharacterShowcaseCard({ character, onEdit, onDelete, onS
               ) : null}
             </Box>
             <Box sx={{ position: 'relative', zIndex: 2, flexShrink: 0, overflow: 'hidden', px: 1.25, pt: 1.1, pb: 1.1, color: (theme) => theme.palette.mode === 'light' ? 'text.primary' : 'common.white', ...visualGlassSurfaceSx, borderTop: '1px solid', borderColor: (theme) => theme.palette.mode === 'light' ? 'rgba(255,255,255,0.34)' : 'rgba(255,255,255,0.12)', boxShadow: 'none' }}>
-              {visualSrc ? <Box component="img" src={visualSrc} aria-hidden="true" loading="lazy" decoding="async" sx={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center bottom', opacity: 0.18, filter: 'blur(6px) saturate(1.06)', transform: 'scaleY(-1) scale(1.06)' }} /> : null}
+              {visualSrc ? <Box component="img" src={visualSrc} aria-hidden="true" loading="lazy" decoding="async" sx={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center bottom', opacity: 0.11, filter: 'blur(8px) saturate(0.78)', transform: 'scaleY(-1) scale(1.06)' }} /> : null}
               <Box sx={{ position: 'relative', zIndex: 1 }}>
               <Box>
                 <Typography ref={descriptionRef} variant="body2" color="text.secondary" sx={{ display: '-webkit-box', minHeight: '4.2em', overflow: 'hidden', WebkitBoxOrient: 'vertical', WebkitLineClamp: 3, lineHeight: 1.45, fontSize: '0.82rem' }}>
