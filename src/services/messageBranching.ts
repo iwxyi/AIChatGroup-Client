@@ -340,6 +340,30 @@ function projectActiveBranchMessagesInternal(chat: BranchableChat | null | undef
       }, 'warn', 'message-window');
     }
   }
+  if (nodes.length > 8 && activeMessages.length < Math.ceil(nodes.length * 0.7)) {
+    const diagnosticKey = `${nodes.length}:${activeMessages.length}:${inactiveNodeIds.size}:${excludedNodeIds.size}`;
+    if (!collapsedProjectionDiagnostics.has(`shrink:${diagnosticKey}`)) {
+      collapsedProjectionDiagnostics.add(`shrink:${diagnosticKey}`);
+      logDeveloperDiagnostic('message-branch:projection-shrink', {
+        inputMessages: messages.length,
+        resolvedNodes: nodes.length,
+        projectedMessages: activeMessages.length,
+        inactiveNodes: inactiveNodeIds.size,
+        excludedNodes: excludedNodeIds.size,
+        revisionGroups: Array.from(revisionGroups.entries()).map(([rootId, group]) => ({
+          rootId: diagnosticNodeKey(rootId),
+          nodes: group.map((node) => ({
+            id: diagnosticNodeKey(node.nodeId),
+            parent: diagnosticNodeKey(node.parentNodeId),
+            explicitParent: node.parentNodeExplicit,
+            revisionOf: diagnosticNodeKey(node.revisionOfMessageId),
+          })),
+        })).slice(0, 12),
+        projectedSample: activeMessages.slice(0, 12).map((message) => diagnosticNodeKey(message.clientKey || message.id)),
+        excludedSample: Array.from(excludedNodeIds).slice(0, 12).map(diagnosticNodeKey),
+      }, 'warn', 'message-window');
+    }
+  }
   if (messages.some((message) => !isDeletedMessage(message)) && activeMessages.length === 0) {
     const diagnosticKey = `${nodes.length}:${inactiveNodeIds.size}:${excludedNodeIds.size}:${Array.from(excludedNodeIds).slice(0, 3).join(',')}`;
     if (!emptyProjectionDiagnostics.has(diagnosticKey)) {
