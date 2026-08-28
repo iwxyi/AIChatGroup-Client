@@ -6,6 +6,8 @@ export interface ResolvedBranchingNode {
   message: Message;
   nodeId: string;
   parentNodeId: string | null;
+  /** Whether parentNodeId came from persisted branching metadata. */
+  parentNodeExplicit: boolean;
   revisionRootId: string;
   revisionOfMessageId: string | null;
 }
@@ -85,6 +87,7 @@ function resolveBranchingNode(message: Message, parentNodeId: string | null): Re
     parentNodeId: branching && Object.prototype.hasOwnProperty.call(branching, 'parentNodeId')
       ? (typeof branching.parentNodeId === 'string' && branching.parentNodeId.trim() ? branching.parentNodeId.trim() : null)
       : parentNodeId,
+    parentNodeExplicit: Boolean(branching && Object.prototype.hasOwnProperty.call(branching, 'parentNodeId')),
     revisionRootId: typeof branching?.revisionRootId === 'string' && branching.revisionRootId.trim()
       ? branching.revisionRootId.trim()
       : stableMessageId,
@@ -103,11 +106,12 @@ export function resolveMessageBranchNodes(messages: Message[]) {
   let previousNodeId: string | null = null;
   for (const message of visibleMessages) {
     const branching = getBranchingMetadata(message);
-    const explicitParent = branching && Object.prototype.hasOwnProperty.call(branching, 'parentNodeId');
+    const explicitParent = Boolean(branching && Object.prototype.hasOwnProperty.call(branching, 'parentNodeId'));
     const node = resolveBranchingNode(message, previousNodeId);
     rawNodes.push({
       ...node,
       parentNodeId: explicitParent ? node.parentNodeId : previousNodeId,
+      parentNodeExplicit: explicitParent,
     });
     previousNodeId = node.nodeId;
   }
@@ -279,7 +283,14 @@ function projectActiveBranchMessagesInternal(chat: BranchableChat | null | undef
   const excludeSubtree = (nodeId: string) => {
     if (excludedNodeIds.has(nodeId)) return;
     excludedNodeIds.add(nodeId);
-    for (const child of childrenByParent.get(nodeId) || []) excludeSubtree(child.nodeId);
+    // Only persisted branch links are safe to recurse through. Legacy/plain
+    // messages have a locally inferred parent based on the retained window;
+    // when an older page is prepended that inference can change and would
+    // otherwise make an unrelated tail disappear as part of an inactive
+    // branch subtree.
+    for (const child of childrenByParent.get(nodeId) || []) {
+      if (child.parentNodeExplicit) excludeSubtree(child.nodeId);
+    }
   };
   for (const nodeId of inactiveNodeIds) excludeSubtree(nodeId);
 
@@ -328,7 +339,7 @@ export function attachMessageToActiveBranch<T extends { metadata?: MessageMetada
   if (!isMessageBranchingEnabled(chat)) return message;
   if (message.metadata?.branching?.parentNodeId !== undefined) return message;
   const nodes = resolveMessageBranchNodes(activeMessages);
-  const activeLeafId = chat.messageBranchState?.activeLeafNodeId;
+  const activeLeafId = chat?.messageBranchState?.activeLeafNodeId;
   const tailNode = (activeLeafId
     ? nodes.find((node) => node.nodeId === activeLeafId || node.message.id === activeLeafId || node.message.clientKey === activeLeafId)
     : null) || getActiveBranchTailNode(chat, activeMessages);

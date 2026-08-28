@@ -134,7 +134,7 @@ describe('messageBranching', () => {
     const messages = [
       buildMessage({ id: 'm-a', chatId: 'chat-1', type: 'user', senderId: 'user', senderName: 'User', content: 'A', emotion: 0, timestamp: 1 }),
       buildMessage({ id: 'm-b', chatId: 'chat-1', type: 'ai', senderId: 'ai-1', senderName: 'AI', content: 'B', emotion: 0, timestamp: 2 }),
-      buildMessage({ id: 'm-c', chatId: 'chat-1', type: 'ai', senderId: 'ai-1', senderName: 'AI', content: 'C', emotion: 0, timestamp: 3 }),
+      buildMessage({ id: 'm-c', chatId: 'chat-1', type: 'ai', senderId: 'ai-1', senderName: 'AI', content: 'C', emotion: 0, timestamp: 3, metadata: { branching: { parentNodeId: 'm-b' } } }),
       buildMessage({
         id: 'm-b2',
         chatId: 'chat-1',
@@ -186,7 +186,7 @@ describe('messageBranching', () => {
     const messages = [
       buildMessage({ id: 'm-a', chatId: 'chat-1', type: 'user', senderId: 'user', senderName: 'User', content: 'A', emotion: 0, timestamp: 1 }),
       buildMessage({ id: 'm-b', chatId: 'chat-1', type: 'ai', senderId: 'ai-1', senderName: 'AI', content: 'B', emotion: 0, timestamp: 2 }),
-      buildMessage({ id: 'm-c', chatId: 'chat-1', type: 'ai', senderId: 'ai-1', senderName: 'AI', content: 'C', emotion: 0, timestamp: 3 }),
+      buildMessage({ id: 'm-c', chatId: 'chat-1', type: 'ai', senderId: 'ai-1', senderName: 'AI', content: 'C', emotion: 0, timestamp: 3, metadata: { branching: { parentNodeId: 'm-b' } } }),
       buildMessage({
         id: 'm-b2',
         chatId: 'chat-1',
@@ -382,6 +382,29 @@ describe('messageBranching', () => {
     expect(projectActiveBranchMessages(chat, messages).map((message) => message.id)).toEqual(['m-a', 'm-b2', 'm-c', 'm-d']);
   });
 
+  it('does not reclassify plain tail messages when an older page restores a branch parent', () => {
+    const chat = buildChat({
+      messageBranchState: {
+        selectedRevisionByRootId: { 'm-b': 'm-b2' },
+        activeChildByParentNodeId: { 'm-a': 'm-b2', 'm-b2': 'm-d' },
+      },
+    });
+    const plainTail = buildMessage({ id: 'm-c', chatId: 'chat-1', type: 'ai', senderId: 'ai-1', senderName: 'AI', content: '尾部', emotion: 0, timestamp: 3 });
+    const original = buildMessage({ id: 'm-b', chatId: 'chat-1', type: 'ai', senderId: 'ai-1', senderName: 'AI', content: '旧分支', emotion: 0, timestamp: 2, metadata: { branching: { parentNodeId: 'm-a' } } });
+    const revision = buildMessage({ id: 'm-b2', chatId: 'chat-1', type: 'ai', senderId: 'ai-1', senderName: 'AI', content: '新分支', emotion: 0, timestamp: 4, metadata: { branching: { parentNodeId: 'm-a', revisionRootId: 'm-b', revisionOfMessageId: 'm-b' } } });
+    const next = buildMessage({ id: 'm-d', chatId: 'chat-1', type: 'ai', senderId: 'ai-1', senderName: 'AI', content: '新分支回复', emotion: 0, timestamp: 5, metadata: { branching: { parentNodeId: 'm-b2' } } });
+    const beforeOlderPage = projectActiveBranchMessages(chat, [plainTail, revision, next]);
+    const afterOlderPage = projectActiveBranchMessages(chat, [
+      buildMessage({ id: 'm-a', chatId: 'chat-1', type: 'user', senderId: 'user', senderName: 'User', content: '问题', emotion: 0, timestamp: 1 }),
+      original,
+      plainTail,
+      revision,
+      next,
+    ]);
+    expect(beforeOlderPage.map((message) => message.id)).toContain('m-c');
+    expect(afterOlderPage.map((message) => message.id)).toContain('m-c');
+  });
+
   it('restores nested descendant revision selections when switching back to a parent branch', () => {
     const messages = [
       buildMessage({ id: 'm-a', chatId: 'chat-1', type: 'user', senderId: 'user', senderName: 'User', content: 'A', emotion: 0, timestamp: 1 }),
@@ -439,7 +462,7 @@ describe('messageBranching', () => {
         activeChildByParentNodeId: { 'm-a': 'm-b2', 'm-b2': 'm-d2' },
       },
     });
-    expect(projectActiveBranchMessages(restoredParentChat, messages).map((message) => message.id)).toEqual(['m-a', 'm-b2', 'm-d2', 'm-e']);
+    expect(projectActiveBranchMessages(restoredParentChat, messages).map((message) => message.id)).toEqual(['m-a', 'm-b2', 'm-d2', 'm-e', 'm-c']);
   });
 
   it('creates a revision draft with immutable branch metadata', () => {
@@ -476,7 +499,7 @@ describe('messageBranching', () => {
   it('hides the original continuation when revising an earlier message', () => {
     const messages = [
       buildMessage({ id: 'user-a', chatId: 'chat-1', type: 'user', senderId: 'user', senderName: 'User', content: '原问题', emotion: 0, timestamp: 1 }),
-      buildMessage({ id: 'ai-b', chatId: 'chat-1', type: 'ai', senderId: 'ai-1', senderName: 'AI', content: '原回答', emotion: 0, timestamp: 2 }),
+      buildMessage({ id: 'ai-b', chatId: 'chat-1', type: 'ai', senderId: 'ai-1', senderName: 'AI', content: '原回答', emotion: 0, timestamp: 2, metadata: { branching: { parentNodeId: 'user-a' } } }),
       buildMessage({
         id: 'user-a2',
         chatId: 'chat-1',
