@@ -361,6 +361,15 @@ function projectActiveBranchMessagesInternal(chat: BranchableChat | null | undef
         })).slice(0, 12),
         projectedSample: activeMessages.slice(0, 12).map((message) => diagnosticNodeKey(message.clientKey || message.id)),
         excludedSample: Array.from(excludedNodeIds).slice(0, 12).map(diagnosticNodeKey),
+        revisionGroupsJson: JSON.stringify(Array.from(revisionGroups.entries()).map(([rootId, group]) => ({
+          rootId: diagnosticNodeKey(rootId),
+          nodes: group.map((node) => ({
+            id: diagnosticNodeKey(node.nodeId),
+            parent: diagnosticNodeKey(node.parentNodeId),
+            explicitParent: node.parentNodeExplicit,
+            revisionOf: diagnosticNodeKey(node.revisionOfMessageId),
+          })),
+        })).slice(0, 12)),
       }, 'warn', 'message-window');
     }
   }
