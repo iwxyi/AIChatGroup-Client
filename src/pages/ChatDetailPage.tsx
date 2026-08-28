@@ -1157,9 +1157,9 @@ export default function ChatDetailPage() {
     [characters, speakAsCharacterId]
   );
   const isStoryRoom = chat?.sessionKind?.scenarioId === 'story-reader';
-  const isStudyRoom = chat?.sessionKind?.family === 'study' || chat?.sessionKind?.scenarioId === 'learning-progress' || chat?.sessionKind?.scenarioId === 'ielts-coach';
+  const isStudyRoom = Boolean(chat && hasRoomCapability(chat, 'knowledge'));
   const isAssistantChat = chat?.type === 'assistant';
-  const isLearningProgressRoom = chat?.mode === 'classroom' || chat?.sessionKind?.family === 'study' || chat?.sessionKind?.scenarioId === 'learning-progress' || chat?.sessionKind?.scenarioId === 'ielts-coach';
+  const isLearningProgressRoom = Boolean(chat && hasRoomCapability(chat, 'html-interactive'));
   useEffect(() => {
     if (!id || !isAssistantChat) {
       setPendingAppCommand(null);
@@ -2470,7 +2470,7 @@ export default function ChatDetailPage() {
         return;
       }
       await commitPersistedManualRuntime(userMessage, recentMessagesWithUser);
-      const isLearningProgressRoom = chat.mode === 'classroom' || chat.sessionKind?.family === 'study' || chat.sessionKind?.scenarioId === 'learning-progress' || chat.sessionKind?.scenarioId === 'ielts-coach';
+      const isLearningProgressRoom = hasRoomCapability(chat, 'html-interactive');
       if (isLearningProgressRoom) setIsDirectReplyPending(true);
       // Learning rooms use the semantic assistant planner for every turn.
       // The planner decides from the requested outcome whether this is a

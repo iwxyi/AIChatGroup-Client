@@ -30,6 +30,14 @@ describe('cross-play capability runtime', () => {
     expect(capabilities.memory.mode).toBe('assisted');
   });
 
+  it('derives study artifact capabilities from the classroom mode even when session metadata is stale', () => {
+    const capabilities = resolveRoomCapabilities({
+      chat: chat({ mode: 'classroom', sessionKind: { topology: 'group', family: 'conversation', scenarioId: 'open-chat', surfaceProfile: 'text' } }),
+    });
+    expect(capabilities['html-interactive'].mode).toBe('assisted');
+    expect(capabilities.artifacts.mode).toBe('assisted');
+  });
+
   it('gates optional tools by entitlement', () => {
     const capabilities = resolveRoomCapabilities({ chat: chat(), templateCapabilities: { 'web-search': 'assisted' }, entitlements: { webSearch: false } });
     expect(capabilities['web-search'].mode).toBe('off');

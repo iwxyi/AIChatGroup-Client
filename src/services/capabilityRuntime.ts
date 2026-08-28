@@ -69,7 +69,7 @@ function descriptor(id: RoomCapabilityId, mode: RoomCapabilityMode, reason: Room
 export function resolveRoomCapabilities(input: RoomCapabilityInput): Record<RoomCapabilityId, RoomCapabilityDescriptor> {
   const family = familyOf(input.chat.sessionKind);
   const scenarioId = input.chat.sessionKind?.scenarioId || '';
-  const study = family === 'study' || STUDY_SCENARIOS.has(scenarioId);
+  const study = family === 'study' || input.chat.mode === 'classroom' || STUDY_SCENARIOS.has(scenarioId);
   const agent = family === 'agent' || input.chat.mode === 'agent_workflow';
   const legacyConversation: ConversationCapabilityProfile = resolveConversationCapabilities(input.chat);
   const defaults: Partial<Record<RoomCapabilityId, RoomCapabilityMode>> = {
