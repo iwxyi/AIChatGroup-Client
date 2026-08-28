@@ -462,7 +462,7 @@ describe('messageBranching', () => {
         activeChildByParentNodeId: { 'm-a': 'm-b2', 'm-b2': 'm-d2' },
       },
     });
-    expect(projectActiveBranchMessages(restoredParentChat, messages).map((message) => message.id)).toEqual(['m-a', 'm-b2', 'm-d2', 'm-e', 'm-c']);
+    expect(projectActiveBranchMessages(restoredParentChat, messages).map((message) => message.id)).toEqual(['m-a', 'm-b2', 'm-c', 'm-d2', 'm-e']);
   });
 
   it('creates a revision draft with immutable branch metadata', () => {
@@ -533,5 +533,17 @@ describe('messageBranching', () => {
     ];
     const chat = buildChat({ messageBranchState: { selectedRevisionByRootId: { a2: 'a2-new' }, activeChildByParentNodeId: { b1: 'a2-new' }, activeLeafNodeId: 'a2-new' } });
     expect(projectActiveBranchMessages(chat, messages).map((message) => message.id)).toEqual(['a1', 'b1', 'a2-new']);
+  });
+
+  it('orders an unannotated old next reply after a newly revised message', () => {
+    const messages = [
+      buildMessage({ id: 'a1', chatId: 'chat-1', type: 'user', senderId: 'user', senderName: 'User', content: 'A1', emotion: 0, timestamp: 1 }),
+      buildMessage({ id: 'a2', chatId: 'chat-1', type: 'user', senderId: 'user', senderName: 'User', content: 'A2', emotion: 0, timestamp: 2 }),
+      buildMessage({ id: 'b2', chatId: 'chat-1', type: 'ai', senderId: 'ai-1', senderName: 'AI', content: '旧回复', emotion: 0, timestamp: 3 }),
+      buildMessage({ id: 'a2-new', chatId: 'chat-1', type: 'user', senderId: 'user', senderName: 'User', content: 'A2 revised', emotion: 0, timestamp: 4, metadata: { branching: { parentNodeId: 'a1', revisionRootId: 'a2', revisionOfMessageId: 'a2' } } }),
+    ];
+    const chat = buildChat({ messageBranchState: { selectedRevisionByRootId: { a2: 'a2-new' }, activeChildByParentNodeId: { a1: 'a2-new' }, activeLeafNodeId: 'a2-new' } });
+    const ids = projectActiveBranchMessages(chat, messages).map((message) => message.id);
+    expect(ids.indexOf('a2-new')).toBeLessThan(ids.indexOf('b2'));
   });
 });

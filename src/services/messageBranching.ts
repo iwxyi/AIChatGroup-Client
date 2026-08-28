@@ -268,6 +268,7 @@ function projectActiveBranchMessagesInternal(chat: BranchableChat | null | undef
   }
 
   const inactiveNodeIds = new Set<string>();
+  const replacementParentByInactiveNodeId = new Map<string, string>();
   for (const [revisionRootId, rawGroup] of revisionGroups.entries()) {
     const group = Array.from(new Map(rawGroup.map((node) => [node.nodeId, node])).values())
       .sort((left, right) => compareMessageOrder(left.message, right.message));
@@ -275,7 +276,10 @@ function projectActiveBranchMessagesInternal(chat: BranchableChat | null | undef
     const parentNodeId = group.find((node) => node.parentNodeId)?.parentNodeId || null;
     const selectedNodeId = resolveSelectedChildId(normalizedChat, parentNodeId, revisionRootId, group);
     for (const node of group) {
-      if (node.nodeId !== selectedNodeId) inactiveNodeIds.add(node.nodeId);
+      if (node.nodeId !== selectedNodeId) {
+        inactiveNodeIds.add(node.nodeId);
+        replacementParentByInactiveNodeId.set(node.nodeId, selectedNodeId);
+      }
     }
   }
 
@@ -294,7 +298,21 @@ function projectActiveBranchMessagesInternal(chat: BranchableChat | null | undef
   };
   for (const nodeId of inactiveNodeIds) excludeSubtree(nodeId);
 
-  let activeMessages = orderBranchNodes(nodes.filter((node) => !excludedNodeIds.has(node.nodeId)))
+  const projectedNodes = nodes
+    .filter((node) => !excludedNodeIds.has(node.nodeId))
+    .map((node) => {
+      // Older conversations may contain plain continuation messages without
+      // persisted branch metadata. If their inferred parent belongs to an
+      // inactive revision, keep them visible but place them after the
+      // selected revision instead of letting timestamp ordering put them
+      // before the edited message.
+      if (!node.parentNodeExplicit && node.parentNodeId) {
+        const replacementParent = replacementParentByInactiveNodeId.get(node.parentNodeId);
+        if (replacementParent) return { ...node, parentNodeId: replacementParent };
+      }
+      return node;
+    });
+  let activeMessages = orderBranchNodes(projectedNodes)
     .map((node) => node.message);
   if (messages.some((message) => !isDeletedMessage(message)) && activeMessages.length === 0) {
     const diagnosticKey = `${nodes.length}:${inactiveNodeIds.size}:${excludedNodeIds.size}:${Array.from(excludedNodeIds).slice(0, 3).join(',')}`;
