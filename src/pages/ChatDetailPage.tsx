@@ -2472,25 +2472,13 @@ export default function ChatDetailPage() {
       await commitPersistedManualRuntime(userMessage, recentMessagesWithUser);
       const isLearningProgressRoom = chat.mode === 'classroom' || chat.sessionKind?.family === 'study' || chat.sessionKind?.scenarioId === 'learning-progress' || chat.sessionKind?.scenarioId === 'ielts-coach';
       if (isLearningProgressRoom) setIsDirectReplyPending(true);
-      const directArtifactRequest = /知识点|知识地图|学习资料|资料清单|试卷|练习题|错题|学习记录|复习计划|html|网页|交互页面|可作答.*页面|json|csv/i.test(content);
-      // A study-room assistant may have already accepted an artifact request
-      // and asked one or more narrowing questions. Short confirmations such
-      // as “都给我，不要问了” must continue that pending artifact intent;
-      // otherwise the dispatcher falls back to ordinary chat and only emits
-      // a promise without creating the HTML artifact.
-      const lastAssistantPromise = recentMessagesWithUser
-        .slice()
-        .reverse()
-        .find((message) => message.type === 'ai' && message.timestamp < userMessage.timestamp && /html|网页|页面|出题|试卷|练习/i.test(message.content));
-      const confirmsPendingArtifact = Boolean(
-        lastAssistantPromise
-        && /都给我|不要问|直接|就这样|开始吧|生成吧|做吧|收到|好的|可以/i.test(content),
-      );
-      const learningArtifactRequest = directArtifactRequest || confirmsPendingArtifact;
-      if (isLearningProgressRoom && learningArtifactRequest) {
+      // Learning rooms use the semantic assistant planner for every turn.
+      // The planner decides from the requested outcome whether this is a
+      // normal answer, a knowledge/data update, a worksheet, or an interactive
+      // HTML artifact. The UI must not guess that intent from keywords.
+      if (isLearningProgressRoom) {
         void Promise.all([import('../services/assistantChatFlow'), import('../stores/useAssistantArtifactStore'), import('../services/learningProgressRuntime')]).then(async ([{ runAssistantChatReplyFlow }, artifactStore, { mergeLearningKnowledgeFromArtifacts }]) => {
           const teacher = characters.find((character) => chat.memberIds.includes(character.id));
-          const forceHtmlArtifact = /html|网页|交互页面|可作答.*页面/i.test(content) || Boolean(lastAssistantPromise && /html|网页|页面/i.test(lastAssistantPromise.content));
           await runAssistantChatReplyFlow({
           api,
           aiProfiles,
@@ -2502,7 +2490,6 @@ export default function ChatDetailPage() {
           upsertMessage: upsertMessageStable,
           updateChat,
           replySender: teacher ? { id: teacher.id, name: teacher.name } : undefined,
-          forceArtifact: forceHtmlArtifact,
           });
           const latestChat = useChatStore.getState().chats.find((item) => item.id === id) || chat;
           const learningPatch = mergeLearningKnowledgeFromArtifacts(latestChat, artifactStore.useAssistantArtifactStore.getState().getArtifactsForChat(id));
