@@ -586,6 +586,21 @@ export default function MessageList({
     storyChoiceMessageId,
     storyChoiceOptions,
   }), [developerMode, eventRenderFlags, messages, storyChoiceMessageId, storyChoiceOptions]);
+  useEffect(() => {
+    if (!messages.length && !renderItems.length) return;
+    logDeveloperDiagnostic('message-pagination:render-state', {
+      messageCount: messages.length,
+      renderItemCount: renderItems.length,
+      firstTimestamp: messages[0]?.timestamp || null,
+      lastTimestamp: messages.at(-1)?.timestamp || null,
+      firstRenderKey: renderItems[0]?.key || null,
+      lastRenderKey: renderItems.at(-1)?.key || null,
+      isLoadingOlder,
+      isLoadingNewer,
+      hasMoreOlder: hasMore,
+      hasMoreNewer,
+    }, messages.length <= 2 && renderItems.length <= 2 ? 'warn' : 'info', 'message-window');
+  }, [hasMore, hasMoreNewer, isLoadingNewer, isLoadingOlder, messages, renderItems]);
   const chatAppearance = useSettingsStore((state) => state.chatAppearance);
   const customBubbleStyles = useSettingsStore((state) => state.customBubbleStyles);
   const storyRevealMode = chatAppearance.storyReader.revealMode;

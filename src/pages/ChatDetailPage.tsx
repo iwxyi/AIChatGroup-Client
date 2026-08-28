@@ -1076,6 +1076,7 @@ export default function ChatDetailPage() {
     };
   }, [aiProfiles, characters, currentChatMessages, queuedRichMediaSignature, upsertMessage]);
   const messageWindowDebugSignatureRef = useRef('');
+  const pageStateDebugSignatureRef = useRef('');
   useEffect(() => {
     if (!id || typeof console === 'undefined') return;
     const signature = [
@@ -1098,6 +1099,42 @@ export default function ChatDetailPage() {
       isLoading,
     }, 'debug', 'message-window');
   }, [authMode, currentChatMessages.length, id, isLoading, messages.length, rawCurrentMessageWindow?.activeLimit, rawCurrentMessageWindow?.messages?.length]);
+  useEffect(() => {
+    if (!id) return;
+    const branchState = chat?.messageBranchState;
+    const signature = [
+      id,
+      messages.filter((message) => message.chatId === id).length,
+      rawCurrentMessageWindow?.messages?.length || 0,
+      rawCurrentMessageWindow?.activeLimit || 0,
+      currentChatAllMessages.length,
+      currentChatMessages.length,
+      currentChatMessages[0]?.timestamp || 0,
+      currentChatMessages.at(-1)?.timestamp || 0,
+      Object.keys(branchState?.selectedRevisionByRootId || {}).length,
+      Object.keys(branchState?.activeChildByParentNodeId || {}).length,
+      hasMore,
+      hasMoreNewer,
+      isLoading,
+    ].join('|');
+    if (pageStateDebugSignatureRef.current === signature) return;
+    pageStateDebugSignatureRef.current = signature;
+    logDeveloperDiagnostic('message-pagination:page-state', {
+      chatId: id,
+      activeStoreMessages: messages.filter((message) => message.chatId === id).length,
+      cachedMessages: rawCurrentMessageWindow?.messages?.length || 0,
+      cachedActiveLimit: rawCurrentMessageWindow?.activeLimit || null,
+      mergedMessages: currentChatAllMessages.length,
+      projectedMessages: currentChatMessages.length,
+      projectedRange: currentChatMessages.length ? [currentChatMessages[0]?.timestamp, currentChatMessages.at(-1)?.timestamp] : null,
+      selectedRevisionCount: Object.keys(branchState?.selectedRevisionByRootId || {}).length,
+      activeChildCount: Object.keys(branchState?.activeChildByParentNodeId || {}).length,
+      activeLeafNodeId: branchState?.activeLeafNodeId ? String(branchState.activeLeafNodeId).slice(-12) : null,
+      hasMoreOlder: hasMore,
+      hasMoreNewer,
+      isLoading,
+    }, currentChatMessages.length <= 2 && currentChatAllMessages.length > 2 ? 'warn' : 'info', 'message-window');
+  }, [chat?.messageBranchState, currentChatAllMessages.length, currentChatMessages, hasMore, hasMoreNewer, id, isLoading, messages, rawCurrentMessageWindow?.activeLimit, rawCurrentMessageWindow?.messages?.length]);
   const branchTopologySignature = useMemo(
     () => buildBranchTopologySignature(currentChatAllMessages),
     [currentChatAllMessages],
