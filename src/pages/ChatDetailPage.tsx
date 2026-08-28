@@ -3241,14 +3241,16 @@ export default function ChatDetailPage() {
 
   const handleLoadNewerMessages = useCallback(async () => {
     if (!id || loadingMoreRef.current || !hasMoreNewer || currentChatMessages.length === 0) return;
-    // Branch projection order is not a reliable pagination cursor (runtime
-    // events and revision trees can place an older node at the rendered tail).
-    // Use the retained message window's chronological maximum instead.
-    const latestTimestamp = rawCurrentMessageWindow?.messages.reduce(
+    // After prepending an older page, the retained cache contains both the
+    // visible older page and the newer page that was displaced from the
+    // active window. The cursor must come from the visible active window;
+    // using the cache maximum would ask for messages after the cache tail and
+    // make the displaced newer messages impossible to restore.
+    const latestTimestamp = currentChatMessages.reduce(
       (latest, message) => Math.max(latest, Number(message.timestamp || 0)),
       0,
-    ) || currentChatMessages.reduce((latest, message) => Math.max(latest, Number(message.timestamp || 0)), 0);
-    if (latestTimestamp === undefined) return;
+    );
+    if (!latestTimestamp) return;
     loadingMoreRef.current = true;
     try {
       await loadMessages(id, { append: true, after: latestTimestamp, limit: CHAT_MESSAGE_WINDOW_SIZE });
