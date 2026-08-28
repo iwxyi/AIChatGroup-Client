@@ -111,9 +111,9 @@ function LearningProgressSummary({ chat }: { chat: GroupChat }) {
   const statusLabel: Record<string, string> = { unknown: '未知', exposed: '已整理', learning: '学习中', practicing: '练习中', usable: '可使用', verified: '已核验', stale: '待复习' };
   return (
     <Box sx={{ p: 1.25, border: '1px solid', borderColor: 'primary.main', borderRadius: 1, bgcolor: 'action.selected' }}>
-      <Typography variant="body2" sx={{ fontWeight: 800 }}>学习进步</Typography>
+      <Typography variant="body2" sx={{ fontWeight: 800 }}>学习进度</Typography>
       <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.35, lineHeight: 1.55 }}>
-        总目标：{learning.goal || chat.topic || '未设置'}
+        目标：{learning.goal || chat.topic || '未设置'}
       </Typography>
       <Stack direction="row" spacing={0.5} sx={{ mt: 1, flexWrap: 'wrap', rowGap: 0.5 }}>
         {items.slice(0, 12).map((item) => <Chip key={item.id} size="small" label={`${item.title} · ${statusLabel[item.status] || item.status}`} variant="outlined" />)}
@@ -1122,14 +1122,15 @@ export default function AssistantAgentPanel({
   onHtmlSubmit,
 }: AssistantAgentPanelProps) {
   const capabilities = chat.modeState.assistantCapabilities || {};
-  const agentEnabled = Boolean(capabilities.agent);
+  const isStudyRoom = Boolean(chat.scenarioState?.learning || chat.sessionKind?.family === 'study' || chat.sessionKind?.scenarioId === 'learning-progress' || chat.sessionKind?.scenarioId === 'ielts-coach');
+  const agentEnabled = isStudyRoom || Boolean(capabilities.agent);
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, height: '100%', minHeight: 0 }}>
       <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', pr: { xs: 0.25, md: 0.5 }, ...buildScrollableRegionSx() }}>
         <Stack spacing={2}>
           <LearningProgressSummary chat={chat} />
-          <Box
+          {!isStudyRoom ? <Box
             sx={{
               p: 1.25,
               border: '1px solid',
@@ -1154,7 +1155,7 @@ export default function AssistantAgentPanel({
                 slotProps={{ input: { 'aria-label': '开启 Agent 能力' } }}
               />
             </Stack>
-          </Box>
+          </Box> : null}
           {agentEnabled ? (
             <>
               <AssistantLocalWorkspaceFiles chatId={chat.id} />
