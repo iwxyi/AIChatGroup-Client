@@ -1391,6 +1391,27 @@ describe('useMessageStore', () => {
     expect(state.isLoadingNewer).toBe(false);
   });
 
+  it('restores newer messages from the retained local window after loading older messages', async () => {
+    localStorage.setItem(storageKey('auth-mode'), 'local');
+    const { useMessageStore } = await import('./useMessageStore');
+    const chatId = 'chat-local-window';
+    const older = Array.from({ length: 40 }, (_, index) => buildMessage(index + 1, chatId));
+    const newer = Array.from({ length: 40 }, (_, index) => buildMessage(index + 41, chatId));
+    useMessageStore.setState({
+      messages: older,
+      messageWindowsByChatId: {
+        [chatId]: { messages: [...older, ...newer], lastSyncedAt: Date.now(), updatedAt: 80, activeLimit: 40 },
+      },
+      pendingOperations: [], activeChatId: chatId, isLoading: false, isLoadingOlder: false,
+      isLoadingNewer: false, hasMore: true, hasMoreNewer: true,
+    });
+    await useMessageStore.getState().loadMessages(chatId, { append: true, after: 40, limit: 40 });
+    const state = useMessageStore.getState();
+    expect(state.messages[0]?.id).toBe('message-1');
+    expect(state.messages.at(-1)?.id).toBe('message-80');
+    expect(state.hasMoreNewer).toBe(false);
+  });
+
   it('stops newer pagination after an empty cloud page even when cached messages have later timestamps', async () => {
     localStorage.setItem(storageKey('auth-mode'), 'cloud');
     const { useMessageStore } = await import('./useMessageStore');

@@ -200,7 +200,12 @@ function canLoadNewerFromWindow(window: CachedMessageWindow | undefined, activeM
   const latestActive = activeMessages.filter((message) => !message.isDeleted)
     .reduce<number | undefined>((latest, message) => latest === undefined ? message.timestamp : Math.max(latest, message.timestamp), undefined);
   if (latestActive !== undefined && cachedMessages.some((message) => !message.isDeleted && message.timestamp > latestActive)) return true;
-  if (shouldSkipCloudSync()) return false;
+  // Local mode still keeps a larger retained window than the active render
+  // window. After prepending older messages, newer messages may be displaced
+  // into that local cache and must be restorable without a cloud request.
+  if (shouldSkipCloudSync()) {
+    return latestActive !== undefined && cachedMessages.some((message) => !message.isDeleted && message.timestamp > latestActive);
+  }
   if (!activeMessages.length) return false;
   return !window?.remoteNewerExhausted;
 }
