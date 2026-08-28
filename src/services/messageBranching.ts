@@ -35,6 +35,12 @@ const DISABLED_MODES = new Set([
   'board_game',
 ]);
 const emptyProjectionDiagnostics = new Set<string>();
+const collapsedProjectionDiagnostics = new Set<string>();
+
+function diagnosticNodeKey(value: string | null | undefined) {
+  if (!value) return null;
+  return value.length <= 12 ? value : value.slice(-12);
+}
 
 type BranchableChat = Pick<GroupChat, 'sessionKind' | 'messageBranchState'> & Partial<Pick<GroupChat, 'mode'>>;
 
@@ -314,6 +320,26 @@ function projectActiveBranchMessagesInternal(chat: BranchableChat | null | undef
     });
   let activeMessages = orderBranchNodes(projectedNodes)
     .map((node) => node.message);
+  if (nodes.length > 2 && activeMessages.length <= 2) {
+    const diagnosticKey = `${nodes.length}:${activeMessages.length}:${inactiveNodeIds.size}:${excludedNodeIds.size}:${activeMessages.map((message) => diagnosticNodeKey(message.clientKey || message.id)).join(',')}`;
+    if (!collapsedProjectionDiagnostics.has(diagnosticKey)) {
+      collapsedProjectionDiagnostics.add(diagnosticKey);
+      logDeveloperDiagnostic('message-branch:projection-collapse', {
+        inputMessages: messages.length,
+        resolvedNodes: nodes.length,
+        projectedMessages: activeMessages.length,
+        inactiveNodes: inactiveNodeIds.size,
+        excludedNodes: excludedNodeIds.size,
+        revisionGroups: revisionGroups.size,
+        projectedSample: activeMessages.map((message) => diagnosticNodeKey(message.clientKey || message.id)),
+        inactiveSample: Array.from(inactiveNodeIds).slice(0, 5).map(diagnosticNodeKey),
+        excludedSample: Array.from(excludedNodeIds).slice(0, 5).map(diagnosticNodeKey),
+        selectedRevisionCount: Object.keys(normalizedChat?.messageBranchState?.selectedRevisionByRootId || {}).length,
+        activeChildCount: Object.keys(normalizedChat?.messageBranchState?.activeChildByParentNodeId || {}).length,
+        activeLeaf: diagnosticNodeKey(normalizedChat?.messageBranchState?.activeLeafNodeId),
+      }, 'warn', 'message-window');
+    }
+  }
   if (messages.some((message) => !isDeletedMessage(message)) && activeMessages.length === 0) {
     const diagnosticKey = `${nodes.length}:${inactiveNodeIds.size}:${excludedNodeIds.size}:${Array.from(excludedNodeIds).slice(0, 3).join(',')}`;
     if (!emptyProjectionDiagnostics.has(diagnosticKey)) {

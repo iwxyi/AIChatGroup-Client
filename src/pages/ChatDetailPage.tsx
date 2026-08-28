@@ -3230,13 +3230,45 @@ export default function ChatDetailPage() {
 
   const handleLoadOlderMessages = useCallback(async () => {
     if (!id || loadingMoreRef.current || !hasMore || currentChatMessages.length === 0) return;
+    logDeveloperDiagnostic('message-pagination:request', {
+      chatId: id,
+      direction: 'older',
+      cursor: currentChatMessages[0].timestamp,
+      projectedMessages: currentChatMessages.length,
+      mergedMessages: currentChatAllMessages.length,
+      activeStoreMessages: messages.filter((message) => message.chatId === id).length,
+      cachedMessages: rawCurrentMessageWindow?.messages?.length || 0,
+      activeLimit: rawCurrentMessageWindow?.activeLimit || null,
+      hasMoreOlder: hasMore,
+      hasMoreNewer,
+    }, 'info', 'message-window');
     loadingMoreRef.current = true;
     try {
       await loadMessages(id, { append: true, before: currentChatMessages[0].timestamp, limit: CHAT_MESSAGE_WINDOW_SIZE });
+      const messageState = useMessageStore.getState();
+      const latestChat = useChatStore.getState().chats.find((item) => item.id === id) || chat;
+      const activeMessages = messageState.messages.filter((message) => message.chatId === id);
+      const cachedWindow = messageState.messageWindowsByChatId[id];
+      const mergedMessages = projectMergedChatMessages({ chatId: id, activeMessages, cachedWindow });
+      const projectedMessages = latestChat && isMessageBranchingEnabled(latestChat)
+        ? projectActiveBranchMessages(latestChat, mergedMessages)
+        : mergedMessages;
+      logDeveloperDiagnostic('message-pagination:result', {
+        chatId: id,
+        direction: 'older',
+        activeStoreMessages: activeMessages.length,
+        cachedMessages: cachedWindow?.messages?.length || 0,
+        activeLimit: cachedWindow?.activeLimit || null,
+        mergedMessages: mergedMessages.length,
+        projectedMessages: projectedMessages.length,
+        projectedRange: projectedMessages.length ? [projectedMessages[0]?.timestamp, projectedMessages.at(-1)?.timestamp] : null,
+        hasMoreOlder: messageState.hasMore,
+        hasMoreNewer: messageState.hasMoreNewer,
+      }, projectedMessages.length <= 2 && mergedMessages.length > 2 ? 'warn' : 'info', 'message-window');
     } finally {
       loadingMoreRef.current = false;
     }
-  }, [currentChatMessages, hasMore, id, loadMessages]);
+  }, [chat, currentChatAllMessages.length, currentChatMessages, hasMore, hasMoreNewer, id, loadMessages, messages, rawCurrentMessageWindow]);
 
   const handleLoadNewerMessages = useCallback(async () => {
     if (!id || loadingMoreRef.current || !hasMoreNewer || currentChatMessages.length === 0) return;
@@ -3250,13 +3282,45 @@ export default function ChatDetailPage() {
       0,
     );
     if (!latestTimestamp) return;
+    logDeveloperDiagnostic('message-pagination:request', {
+      chatId: id,
+      direction: 'newer',
+      cursor: latestTimestamp,
+      projectedMessages: currentChatMessages.length,
+      mergedMessages: currentChatAllMessages.length,
+      activeStoreMessages: messages.filter((message) => message.chatId === id).length,
+      cachedMessages: rawCurrentMessageWindow?.messages?.length || 0,
+      activeLimit: rawCurrentMessageWindow?.activeLimit || null,
+      hasMoreOlder: hasMore,
+      hasMoreNewer,
+    }, 'info', 'message-window');
     loadingMoreRef.current = true;
     try {
       await loadMessages(id, { append: true, after: latestTimestamp, limit: CHAT_MESSAGE_WINDOW_SIZE });
+      const messageState = useMessageStore.getState();
+      const latestChat = useChatStore.getState().chats.find((item) => item.id === id) || chat;
+      const activeMessages = messageState.messages.filter((message) => message.chatId === id);
+      const cachedWindow = messageState.messageWindowsByChatId[id];
+      const mergedMessages = projectMergedChatMessages({ chatId: id, activeMessages, cachedWindow });
+      const projectedMessages = latestChat && isMessageBranchingEnabled(latestChat)
+        ? projectActiveBranchMessages(latestChat, mergedMessages)
+        : mergedMessages;
+      logDeveloperDiagnostic('message-pagination:result', {
+        chatId: id,
+        direction: 'newer',
+        activeStoreMessages: activeMessages.length,
+        cachedMessages: cachedWindow?.messages?.length || 0,
+        activeLimit: cachedWindow?.activeLimit || null,
+        mergedMessages: mergedMessages.length,
+        projectedMessages: projectedMessages.length,
+        projectedRange: projectedMessages.length ? [projectedMessages[0]?.timestamp, projectedMessages.at(-1)?.timestamp] : null,
+        hasMoreOlder: messageState.hasMore,
+        hasMoreNewer: messageState.hasMoreNewer,
+      }, projectedMessages.length <= 2 && mergedMessages.length > 2 ? 'warn' : 'info', 'message-window');
     } finally {
       loadingMoreRef.current = false;
     }
-  }, [currentChatMessages, hasMoreNewer, id, loadMessages, rawCurrentMessageWindow]);
+  }, [chat, currentChatAllMessages.length, currentChatMessages, hasMore, hasMoreNewer, id, loadMessages, messages, rawCurrentMessageWindow]);
 
   const handleNearTop = useCallback(() => {
     void handleLoadOlderMessages();

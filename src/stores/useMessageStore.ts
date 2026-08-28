@@ -1250,6 +1250,29 @@ export const useMessageStore = create<MessageStore>()(
               remoteExhausted,
               remoteNewerExhausted,
             });
+            if (isAppend) {
+              const activeTimestamps = nextActiveMessages.map((message) => Number(message.timestamp || 0)).filter(Boolean);
+              const cacheTimestamps = trimmed.map((message) => Number(message.timestamp || 0)).filter(Boolean);
+              logDeveloperDiagnostic('message-pagination:store-merge', {
+                chatId,
+                direction: isAppendNewer ? 'newer' : 'older',
+                requestedBefore: options?.before ?? null,
+                requestedAfter: options?.after ?? null,
+                fetchedMessages: normalizedFetched.length,
+                cacheBefore: current.length,
+                cacheAfter: trimmed.length,
+                activeBefore: activeCurrent.length,
+                activeAfter: nextActiveMessages.length,
+                activeRange: activeTimestamps.length ? [Math.min(...activeTimestamps), Math.max(...activeTimestamps)] : null,
+                cacheRange: cacheTimestamps.length ? [Math.min(...cacheTimestamps), Math.max(...cacheTimestamps)] : null,
+                activeLimit: nextCache[chatId]?.activeLimit || null,
+                addedMessages,
+                hasMoreOlder: nextHasMore,
+                hasMoreNewer: nextHasMoreNewer,
+                remoteExhausted,
+                remoteNewerExhausted,
+              }, nextActiveMessages.length <= 2 && trimmed.length > 2 ? 'warn' : 'info', 'message-window');
+            }
             if (!isAppend && !options?.before && !options?.after && !isAroundWindow) {
               messageSyncScopes.markChecked(messageWindowScope(chatId), {
                 cursor: changeProbe?.cursor,
