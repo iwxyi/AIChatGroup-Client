@@ -16,6 +16,7 @@ import { useCharacterStore } from '../stores/useCharacterStore';
 import { useMessageStore } from '../stores/useMessageStore';
 import { useSchedulerStore } from '../stores/useSchedulerStore';
 import { isGenerationCancelledError } from '../services/generationCancellation';
+import { runSessionLoop as runChatLoop } from '../services/sessionRunner';
 
 export type ConversationLoopStartBlockReason = 'direct_chat' | 'waiting_story_choice' | 'already_active';
 type ConversationLoopStartOptions = { ignoreReaderPositionOnce?: boolean; immediate?: boolean; allowDirect?: boolean };
@@ -142,8 +143,7 @@ export function useChatRunLoop(params: {
     }
     activeRunLoopTokenRef.current = loopId;
     const moduleLoadStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
-    const [{ runChatLoop }, { loadSessionEngine }] = await Promise.all([
-      import('../services/chatLoopRunner'),
+    const [{ loadSessionEngine }] = await Promise.all([
       import('../services/sessionEngineLoader'),
     ]);
     const sessionEngine = await loadSessionEngine(loopChat);

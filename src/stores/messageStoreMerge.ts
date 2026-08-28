@@ -15,9 +15,16 @@ export interface CachedMessageWindow {
 }
 
 export function normalizeMessage(message: Message): Message {
+  const rawSync = message.metadata && typeof message.metadata === 'object' && !Array.isArray(message.metadata)
+    ? (message.metadata as Record<string, unknown>).sync
+    : null;
+  const persistedClientKey = rawSync && typeof rawSync === 'object' && !Array.isArray(rawSync)
+    && typeof (rawSync as Record<string, unknown>).clientKey === 'string'
+    ? (rawSync as Record<string, unknown>).clientKey as string
+    : undefined;
   return {
     id: message.id,
-    clientKey: message.clientKey,
+    clientKey: message.clientKey || persistedClientKey,
     serverId: message.serverId,
     chatId: message.chatId,
     type: message.type,

@@ -38,6 +38,7 @@ import type { LocalWorkspaceFileEntry } from '../../services/localWorkspaceServi
 import AssistantHtmlFrame, { type AssistantHtmlInteractionPayload } from '../../features/assistantHtml/AssistantHtmlFrame';
 import AssistantHtmlStaticFrame from '../../features/assistantHtml/AssistantHtmlStaticFrame';
 import { getAssistantArtifactDataPreview } from '../../services/assistantArtifactData';
+import { CopyTextDialog } from '../common/CopyTextDialog';
 
 interface AssistantAgentPanelProps {
   chat: GroupChat;
@@ -580,6 +581,7 @@ function AssistantArtifactList({
   const [fullscreenId, setFullscreenId] = useState<string | null>(null);
   const [fullscreenVersionId, setFullscreenVersionId] = useState<string | null>(null);
   const [pendingFullscreenVersionId, setPendingFullscreenVersionId] = useState<string | null>(null);
+  const [copyFallback, setCopyFallback] = useState<{ label: string; value: string } | null>(null);
   const fullscreenZoomRef = useRef<ReactZoomPanPinchRef | null>(null);
 
   useEffect(() => {
@@ -730,7 +732,7 @@ function AssistantArtifactList({
         </>
       ) : null}
       <Tooltip title="复制当前版本">
-        <IconButton size="small" onClick={(event) => { event.stopPropagation(); void copyTextToClipboard(getAssistantArtifactCurrentContent(item)); }}>
+        <IconButton size="small" onClick={async (event) => { event.stopPropagation(); const value = getAssistantArtifactCurrentContent(item); if (!(await copyTextToClipboard(value))) setCopyFallback({ label: item.title, value }); }}>
           <ContentCopyOutlinedIcon fontSize="small" />
         </IconButton>
       </Tooltip>
@@ -970,7 +972,7 @@ function AssistantArtifactList({
                     </IconButton>
                   </>
                 ) : null}
-                <IconButton onClick={() => void copyTextToClipboard(getArtifactVersionContent(fullscreenVersion))}>
+                <IconButton onClick={async () => { const value = getArtifactVersionContent(fullscreenVersion); if (!(await copyTextToClipboard(value))) setCopyFallback({ label: fullscreenItem?.title || '产物内容', value }); }}>
                   <ContentCopyOutlinedIcon />
                 </IconButton>
                 <IconButton onClick={() => downloadArtifact(fullscreenItem, getArtifactVersionContent(fullscreenVersion))}>
@@ -1106,6 +1108,7 @@ function AssistantArtifactList({
           </>
         ) : null}
       </Dialog>
+      <CopyTextDialog open={Boolean(copyFallback)} label={copyFallback?.label} value={copyFallback?.value || ''} onClose={() => setCopyFallback(null)} />
     </Stack>
   );
 }

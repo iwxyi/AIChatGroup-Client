@@ -361,6 +361,37 @@ export async function runSessionLoop(params: {
         analysisRunPolicy: analysisRunPolicy.trace,
         elapsedMs: Number((nowMs() - turnStartedAt).toFixed(2)),
       }, 'debug', 'chat-run');
+      if (!loopDecision.canRun || !loopDecision.runChat) {
+        console.warn('[chat-run:turn-blocked-reason]', JSON.stringify({
+          chatId: params.chatId,
+          canRun: loopDecision.canRun,
+          runChat: loopDecision.runChat,
+          actionFirst: loopDecision.actionFirst,
+          rawRunChat: rawLoopDecision.runChat,
+          rawRunAction: rawLoopDecision.runAction,
+          latestType: currentMessages.at(-1)?.type || null,
+          latestSenderId: currentMessages.at(-1)?.senderId || null,
+          phase: currentChat.scenarioState?.phase || null,
+        }));
+        logDeveloperDiagnostic('chat-run:turn-blocked', {
+          chatId: params.chatId,
+          loopId: params.loopId,
+          messageCount: currentMessages.length,
+          latestMessage: currentMessages.at(-1) ? {
+            type: currentMessages.at(-1)?.type,
+            senderId: currentMessages.at(-1)?.senderId,
+          } : null,
+          canRun: loopDecision.canRun,
+          runChat: loopDecision.runChat,
+          actionFirst: loopDecision.actionFirst,
+          rawRunChat: rawLoopDecision.runChat,
+          rawRunAction: rawLoopDecision.runAction,
+          analysisStopReason: analysisRunPolicy.trace?.stopReason || null,
+          rawDecision: rawLoopDecision,
+          loopDecision,
+          phase: currentChat.scenarioState?.phase || null,
+        }, 'warn', 'chat-run');
+      }
 
       if (loopDecision.canRun && loopDecision.actionFirst) {
         const handled = await maybeRunNonChatAction(engine, currentChat, params.updateChat, params.appendEventMessage, random);
@@ -399,6 +430,13 @@ export async function runSessionLoop(params: {
       }
 
       markSessionLoop(params.loopId, { phase: 'running_round' });
+      logDeveloperDiagnostic('chat-run:request-dispatch', {
+        chatId: params.chatId,
+        loopId: params.loopId,
+        messageCount: currentMessages.length,
+        characterCount: effectiveCharacters.length,
+        speakerIds: effectiveCharacters.map((character) => character.id),
+      }, 'info', 'chat-run');
       const roundStartedAt = nowMs();
       logDeveloperDiagnostic('chat-run:round-start', {
         chatId: params.chatId,
@@ -535,6 +573,13 @@ export async function runSessionLoop(params: {
         loopId: params.loopId,
         elapsedMs: Number((nowMs() - turnStartedAt).toFixed(2)),
       }, 'info', 'chat-run');
+
+      // Study rooms are strictly learner-triggered: one user message unlocks
+      // one teacher turn. Pause immediately after the turn so a stale message
+      // snapshot cannot launch a duplicate second generation.
+      if (resolveSessionFamilyKey(currentChat) === 'study') {
+        params.pauseLoop?.();
+      }
 
       if (params.isRunning() && !params.isPaused() && shouldWaitAfterSessionTick()) {
         markSessionLoop(params.loopId, { phase: 'sleeping' });

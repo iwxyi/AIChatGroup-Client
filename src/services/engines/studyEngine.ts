@@ -12,7 +12,9 @@ const STUDY_PHASES = [
 function resolveTurnPolicy(context: { messages: Message[] }) {
   const latestVisible = context.messages
     .filter((message) => !message.isDeleted && message.type !== 'system' && message.type !== 'event')
-    .at(-1);
+    .reduce<Message | undefined>((latest, message) => (
+      !latest || message.timestamp > latest.timestamp ? message : latest
+    ), undefined);
   // Learning rooms are learner-triggered: one user turn unlocks one teacher
   // response, then the room waits for the next learner message.
   return {

@@ -65,6 +65,7 @@ import { getLatestChatPreviewMessage } from '../services/chatLatestMessage';
 import { projectMergedChatMessages } from '../services/currentChatMessages';
 import { resolveSessionFamilyKey } from '../services/sessionEngineKeys';
 import { isAssistantArtifactCloudSyncEnabled, setAssistantArtifactCloudSyncEnabled } from '../services/assistantArtifactCloudSyncPreference';
+import { hasRoomCapability } from '../services/capabilityRuntime';
 import { useAssistantArtifactStore } from '../stores/useAssistantArtifactStore';
 import type { AssistantHtmlInteractionPayload } from '../features/assistantHtml/AssistantHtmlFrame';
 import { writeAssistantAgentDefaultEnabled } from '../services/assistantAgentPreference';
@@ -1158,7 +1159,7 @@ export default function ChatDetailPage() {
   const isStoryRoom = chat?.sessionKind?.scenarioId === 'story-reader';
   const isStudyRoom = chat?.sessionKind?.family === 'study' || chat?.sessionKind?.scenarioId === 'learning-progress' || chat?.sessionKind?.scenarioId === 'ielts-coach';
   const isAssistantChat = chat?.type === 'assistant';
-  const isLearningProgressRoom = chat?.sessionKind?.family === 'study' || chat?.sessionKind?.scenarioId === 'learning-progress' || chat?.sessionKind?.scenarioId === 'ielts-coach';
+  const isLearningProgressRoom = chat?.mode === 'classroom' || chat?.sessionKind?.family === 'study' || chat?.sessionKind?.scenarioId === 'learning-progress' || chat?.sessionKind?.scenarioId === 'ielts-coach';
   useEffect(() => {
     if (!id || !isAssistantChat) {
       setPendingAppCommand(null);
@@ -1523,7 +1524,10 @@ export default function ChatDetailPage() {
   useEffect(() => {
     isRunningRef.current = isRunning;
     isPausedRef.current = isPaused;
-  }, [isPaused, isRunning]);
+    if (isRunning && isDirectReplyPending && chat?.mode === 'classroom') {
+      setIsDirectReplyPending(false);
+    }
+  }, [chat?.mode, isDirectReplyPending, isPaused, isRunning]);
 
   useEffect(() => {
     isStoryReaderAtTailRef.current = isStoryReaderAtTail;
@@ -1785,6 +1789,7 @@ export default function ChatDetailPage() {
     directReplyAbortRef.current?.abort();
     const directReplyEpoch = directReplyEpochRef.current + 1;
     directReplyEpochRef.current = directReplyEpoch;
+    if (chat.mode === 'classroom') setIsDirectReplyPending(true);
 
     await enqueueManualInput(async () => {
       const cancelledRunningLoop = isRunningRef.current;
@@ -1942,7 +1947,16 @@ export default function ChatDetailPage() {
           }
         })();
       } else if (createdRevision.type === 'user' || createdRevision.type === 'god') {
-        await commitPersistedManualRuntime(createdRevision, activeMessagesAfterRevision);
+        try {
+          await commitPersistedManualRuntime(createdRevision, activeMessagesAfterRevision);
+        } catch (error) {
+          // Runtime persistence (especially cloud sync) must not prevent the
+          // local branch from continuing to the next AI turn.
+          logDeveloperDiagnostic('chat-branch:runtime-commit-failed', {
+            chatId: id,
+            error: error instanceof Error ? error.message : String(error),
+          }, 'warn', 'chat-run');
+        }
         if (chat.type === 'ai_direct') {
           const { applyAiDirectFeedback } = await import('../services/directSessionRuntime');
           await applyAiDirectFeedback({
@@ -1959,7 +1973,48 @@ export default function ChatDetailPage() {
       if (cancelledRunningLoop) {
         setSnackbar({ open: true, message: '已切换到新分支，当前生成已重启', severity: 'success' });
       }
-      if (chat.type !== 'direct' && chat.type !== 'assistant') startConversationLoopIfNeeded(nextChat, { immediate: true });
+      const learningHtmlRevisionRequest = (chat.mode === 'classroom'
+        || chat.sessionKind?.family === 'study'
+        || chat.sessionKind?.scenarioId === 'learning-progress'
+        || chat.sessionKind?.scenarioId === 'ielts-coach')
+        && /html|网页|交互页面|可作答.*页面/i.test(trimmedContent)
+        && createdRevision.type === 'user';
+      if (learningHtmlRevisionRequest) {
+        const teacher = characters.find((character) => chat.memberIds.includes(character.id));
+        void import('../services/assistantChatFlow').then(({ runAssistantChatReplyFlow }) => runAssistantChatReplyFlow({
+          api,
+          aiProfiles,
+          chat: nextChat,
+          chatId: id,
+          currentMessages: activeMessagesAfterRevision,
+          selectedArtifactId: selectedAssistantArtifactId,
+          timestamp: createdRevision.timestamp + 1,
+          upsertMessage: upsertMessageStable,
+          updateChat,
+          replySender: teacher ? { id: teacher.id, name: teacher.name } : undefined,
+          forceArtifact: true,
+          shouldContinue: () => directReplyEpochRef.current === directReplyEpoch,
+        })).catch((error) => showErrorToast(error instanceof Error ? error.message : String(error)))
+          .finally(() => setIsDirectReplyPending(false));
+      }
+      if (!learningHtmlRevisionRequest && chat.type !== 'direct' && chat.type !== 'assistant') {
+        const startStateMessages = projectActiveBranchMessages(nextChat, useMessageStore.getState().messages.filter((message) => message.chatId === id));
+        logDeveloperDiagnostic('chat-branch:ai-start-state', {
+          chatId: id,
+          createdRevisionId: createdRevision.id,
+          createdRevisionType: createdRevision.type,
+          projectedCount: startStateMessages.length,
+          projectedTailType: startStateMessages.at(-1)?.type || null,
+          projectedTailId: startStateMessages.at(-1)?.id || null,
+        }, 'info', 'chat-run');
+        const startBlockReason = startConversationLoopIfNeeded(nextChat, { immediate: true });
+        if (startBlockReason) {
+          logDeveloperDiagnostic('chat-branch:ai-start-blocked', {
+            chatId: id,
+            reason: startBlockReason,
+          }, 'warn', 'chat-run');
+        }
+      }
     });
   }, [addAnchoredMessage, aiProfiles, api, appendEventMessage, appendEventMessageStable, appendEventMessagesStable, appendLocalInterceptionHint, applyChatRuntimeDelta, cancelActiveConversationLoop, characters, chat, chatInteractionDisabled, chatReadOnlyReason, chats, commitPersistedManualRuntime, currentChatAllMessages, enqueueManualInput, getNextMessageTimestamp, id, recordSpeak, selectedAssistantArtifactId, setSnackbar, showErrorToast, startConversationLoopIfNeeded, updateCharacter, updateCharacters, updateChat, upsertMessageStable]);
 
@@ -1971,9 +2026,20 @@ export default function ChatDetailPage() {
     if (cancelledRunningLoop) cancelActiveConversationLoop('message_revision_switched');
     const scrollRestoreRequest = captureMessageListScrollRequest('branch-switch', sourceMessage.id);
     const group = getBranchRevisionGroup(currentChatAllMessages, sourceMessage.id);
-    const currentIndex = group.findIndex((message) => message.id === sourceMessage.id);
+    const sourceKeys = new Set([sourceMessage.id, sourceMessage.clientKey, sourceMessage.serverId].filter(Boolean));
+    const currentIndex = group.findIndex((message) => [message.id, message.clientKey, message.serverId].some((key) => key && sourceKeys.has(key)));
     const target = group[currentIndex + direction];
-    if (!target) return;
+    if (!target) {
+      logDeveloperDiagnostic('chat-branch:switch-missing-target', {
+        chatId: id,
+        direction,
+        sourceId: sourceMessage.id,
+        sourceClientKey: sourceMessage.clientKey || null,
+        groupSize: group.length,
+        currentIndex,
+      }, 'warn', 'message-window');
+      return;
+    }
     const targetNode = resolveMessageBranchNodes(currentChatAllMessages)
       .find((node) => node.message.id === target.id || node.nodeId === target.id);
     if (!targetNode) return;
@@ -2040,10 +2106,13 @@ export default function ChatDetailPage() {
 
   useEffect(() => {
     if (id) {
-      if (!chat) {
+      // Message history is independently addressable by chat id. Do not block
+      // loading it while the chat summary/detail is still restoring or the
+      // cloud detail request is temporarily unavailable.
+      if (isStoryRoom && !chat) {
         logDeveloperDiagnostic('chat-detail:open-window:blocked', {
           chatId: id,
-          reason: 'chat-not-loaded',
+          reason: 'story-chat-not-loaded',
           chatsInStore: chats.length,
           chatsLoading,
           detailBootstrapComplete,
@@ -2149,8 +2218,9 @@ export default function ChatDetailPage() {
   }, [setRightPanelOpen]);
 
   const handleOpenAssistantHtmlFullscreen = useCallback((artifactId: string) => {
+    logDeveloperDiagnostic('html-artifact:open-request', { chatId: id, artifactId, capability: chat ? hasRoomCapability(chat, 'html-interactive') : false }, 'info', 'chat-window');
     setFullscreenAssistantArtifactId(artifactId);
-  }, []);
+  }, [chat, id]);
 
   const handleCloseAssistantHtmlFullscreen = useCallback(() => {
     setFullscreenAssistantArtifactId(null);
@@ -2400,10 +2470,14 @@ export default function ChatDetailPage() {
         return;
       }
       await commitPersistedManualRuntime(userMessage, recentMessagesWithUser);
-      const isLearningProgressRoom = chat.sessionKind?.family === 'study' || chat.sessionKind?.scenarioId === 'learning-progress' || chat.sessionKind?.scenarioId === 'ielts-coach';
+      const isLearningProgressRoom = chat.mode === 'classroom' || chat.sessionKind?.family === 'study' || chat.sessionKind?.scenarioId === 'learning-progress' || chat.sessionKind?.scenarioId === 'ielts-coach';
+      if (isLearningProgressRoom) setIsDirectReplyPending(true);
       const learningArtifactRequest = /知识点|知识地图|学习资料|资料清单|试卷|练习题|错题|学习记录|复习计划|html|json|csv/i.test(content);
       if (isLearningProgressRoom && learningArtifactRequest) {
+        console.info('[learning-artifact:dispatch]', { chatId: id, forceHtml: /html|网页|交互页面|可作答.*页面/i.test(content) });
         void Promise.all([import('../services/assistantChatFlow'), import('../stores/useAssistantArtifactStore'), import('../services/learningProgressRuntime')]).then(async ([{ runAssistantChatReplyFlow }, artifactStore, { mergeLearningKnowledgeFromArtifacts }]) => {
+          const teacher = characters.find((character) => chat.memberIds.includes(character.id));
+          const forceHtmlArtifact = /html|网页|交互页面|可作答.*页面/i.test(content);
           await runAssistantChatReplyFlow({
           api,
           aiProfiles,
@@ -2414,11 +2488,15 @@ export default function ChatDetailPage() {
           timestamp: userMessage.timestamp + 1,
           upsertMessage: upsertMessageStable,
           updateChat,
+          replySender: teacher ? { id: teacher.id, name: teacher.name } : undefined,
+          forceArtifact: forceHtmlArtifact,
           });
+          console.info('[learning-artifact:completed]', { chatId: id, artifactCount: artifactStore.useAssistantArtifactStore.getState().getArtifactsForChat(id).length });
           const latestChat = useChatStore.getState().chats.find((item) => item.id === id) || chat;
           const learningPatch = mergeLearningKnowledgeFromArtifacts(latestChat, artifactStore.useAssistantArtifactStore.getState().getArtifactsForChat(id));
           if (Object.keys(learningPatch).length) await updateChat(id, learningPatch);
         }).catch((error) => showErrorToast(error instanceof Error ? error.message : String(error)));
+        return;
       }
       if (chat.type === 'ai_direct') {
         startConversationLoopIfNeeded(chat);
@@ -2426,7 +2504,8 @@ export default function ChatDetailPage() {
         await applyAiDirectFeedback({ chat, chats, characters, content, updateCharacter, updateChat, appendEventMessage });
         return;
       }
-      startConversationLoopIfNeeded(chat);
+      const startBlockReason = startConversationLoopIfNeeded(chat);
+      if (isLearningProgressRoom && startBlockReason) setIsDirectReplyPending(false);
     });
   }, [addMessageStable, aiProfiles, api, appendEventMessage, appendEventMessageStable, appendEventMessagesStable, appendLocalInterceptionHint, applyChatRuntimeDelta, characters, chat, chatInteractionDisabled, chatReadOnlyReason, chats, commitPersistedManualRuntime, currentChatMessages, currentUser?.nickname, enqueueManualInput, getNextMessageTimestamp, id, recordSpeak, selectedAssistantArtifactId, setSnackbar, showErrorToast, startConversationLoopIfNeeded, updateCharacter, updateCharacters, updateChat, upsertMessageStable]);
 
@@ -3162,7 +3241,13 @@ export default function ChatDetailPage() {
 
   const handleLoadNewerMessages = useCallback(async () => {
     if (!id || loadingMoreRef.current || !hasMoreNewer || currentChatMessages.length === 0) return;
-    const latestTimestamp = currentChatMessages.at(-1)?.timestamp;
+    // Branch projection order is not a reliable pagination cursor (runtime
+    // events and revision trees can place an older node at the rendered tail).
+    // Use the retained message window's chronological maximum instead.
+    const latestTimestamp = rawCurrentMessageWindow?.messages.reduce(
+      (latest, message) => Math.max(latest, Number(message.timestamp || 0)),
+      0,
+    ) || currentChatMessages.reduce((latest, message) => Math.max(latest, Number(message.timestamp || 0)), 0);
     if (latestTimestamp === undefined) return;
     loadingMoreRef.current = true;
     try {
@@ -3170,7 +3255,7 @@ export default function ChatDetailPage() {
     } finally {
       loadingMoreRef.current = false;
     }
-  }, [currentChatMessages, hasMoreNewer, id, loadMessages]);
+  }, [currentChatMessages, hasMoreNewer, id, loadMessages, rawCurrentMessageWindow]);
 
   const handleNearTop = useCallback(() => {
     void handleLoadOlderMessages();
@@ -3622,7 +3707,7 @@ export default function ChatDetailPage() {
             onAddImagesToReference={handleAddImagesToReference}
             onCharacterAvatarClick={openCharacterPreview}
             onOpenArtifact={isAssistantChat || isLearningProgressRoom ? handleOpenAssistantArtifact : undefined}
-            onOpenHtmlFullscreen={isAssistantChat || isLearningProgressRoom ? handleOpenAssistantHtmlFullscreen : undefined}
+            onOpenHtmlFullscreen={chat && (isAssistantChat || hasRoomCapability(chat, 'html-interactive')) ? handleOpenAssistantHtmlFullscreen : undefined}
             onHtmlAutosave={(isAssistantChat || isLearningProgressRoom) && !chatInteractionDisabled ? handleHtmlAutosave : undefined}
             onHtmlSubmit={(isAssistantChat || isLearningProgressRoom) && !chatInteractionDisabled ? handleHtmlSubmit : undefined}
             selfMemberId={effectiveAiDirectPerspectiveMemberId}
@@ -3726,6 +3811,9 @@ export default function ChatDetailPage() {
             speakAsCharacterName={effectiveSpeakAsChar?.name}
             onCloseSpeakAs={effectiveSpeakAsChar && chat.type !== 'ai_direct' ? () => setSpeakAsCharacter(null) : undefined}
             sendingLabel="等待角色发言结束"
+            composerState={isDirectReplyPending
+              ? { phase: isRunning ? 'generating' : 'queued', label: isRunning ? 'AI 正在生成…' : '正在处理请求…', canSend: false, canDraft: true, canCancel: true }
+              : { phase: 'idle', canSend: true, canDraft: true, canCancel: false }}
             hideSpeakAsChip={chat.type === 'ai_direct'}
             inputCapabilities={effectiveTextInputCapabilities}
             inputCapabilityWarning={effectiveTextInputCapabilityWarning}
@@ -3735,7 +3823,8 @@ export default function ChatDetailPage() {
             onInjectedAttachmentsConsumed={() => setComposerInjectedAttachments([])}
             isReplyPending={chat.type === 'assistant' || chat.type === 'direct'
               ? isDirectReplyPending
-              : Boolean(isRunning && !isPaused && (thinkingId || hasPendingTurnWork()))}
+              : Boolean((isRunning && !isPaused && (thinkingId || hasPendingTurnWork()))
+                || (chat.mode === 'classroom' && isDirectReplyPending))}
             onStopReply={chat.type === 'assistant' || chat.type === 'direct'
               ? handleStopDirectReply
               : () => cancelActiveConversationLoop('composer_generation_cancelled')}
@@ -3780,7 +3869,7 @@ export default function ChatDetailPage() {
         </Box>}
       </Box>
 
-      {isAssistantChat && fullscreenAssistantArtifactId ? (
+      {(isAssistantChat || (chat && hasRoomCapability(chat, 'html-interactive'))) && fullscreenAssistantArtifactId ? (
         <Suspense fallback={null}>
           <AssistantHtmlFullscreenDialog
             artifactId={fullscreenAssistantArtifactId}

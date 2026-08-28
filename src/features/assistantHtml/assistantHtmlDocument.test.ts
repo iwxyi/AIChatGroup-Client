@@ -16,6 +16,63 @@ function build(displayMode: 'light' | 'dark') {
 }
 
 describe('assistant HTML viewer display mode', () => {
+  it('preserves authored interaction scripts and runs the bridge before them', () => {
+    const document = buildAssistantHtmlDocument({
+      html: '<button class="choice">A</button><div id="result"></div><script>document.querySelector(".choice")?.addEventListener("click",()=>{document.querySelector("#result").textContent="选中"});</script>',
+      manifest,
+      channelToken: 'script-channel',
+      artifactId: 'artifact-script',
+      versionId: 'version-script',
+    });
+    expect(document).toContain('addEventListener("click"');
+    const bridgeIndex = document.indexOf('parent.postMessage');
+    const authoredIndex = document.lastIndexOf('addEventListener("click"');
+    expect(bridgeIndex).toBeLessThan(authoredIndex);
+    expect(document).toContain('nonce="script-channel"');
+  });
+
+  it('does not confuse ordinary function declarations with the Function constructor', () => {
+    const document = buildAssistantHtmlDocument({
+      html: `<button class="section-btn" data-section="writing">写作</button>
+        <div id="recommendation" class="hidden"></div>
+        <script>(function(){
+          function selectSection(section) {
+            document.querySelector('#recommendation').textContent = section;
+            document.querySelector('#recommendation').classList.remove('hidden');
+          }
+          document.querySelector('.section-btn').addEventListener('click', function(){ selectSection(this.dataset.section); });
+        })();</script>`,
+      manifest,
+      channelToken: 'function-channel',
+      artifactId: 'artifact-function',
+      versionId: 'version-function',
+    });
+    expect(document).toContain('function selectSection(section)');
+    expect(document).toContain("classList.remove('hidden')");
+  });
+
+  it('still rejects the dynamic Function constructor', () => {
+    const document = buildAssistantHtmlDocument({
+      html: '<script>const run = new Function("return 1"); run();</script>',
+      manifest,
+      channelToken: 'constructor-channel',
+      artifactId: 'artifact-constructor',
+      versionId: 'version-constructor',
+    });
+    expect(document).not.toContain('new Function');
+  });
+
+  it('preserves safe inline button handlers for authored quizzes', () => {
+    const document = buildAssistantHtmlDocument({
+      html: '<button onclick="this.textContent=\'已选择\'">选择</button>',
+      manifest,
+      channelToken: 'handler-channel',
+      artifactId: 'artifact-handler',
+      versionId: 'version-handler',
+    });
+    expect(document).toContain('onclick="this.textContent=\'已选择\'"');
+  });
+
   it('uses static professional conversion for legacy HTML in dark mode', () => {
     const document = build('dark');
     expect(document).toContain('.card{background:#111318;color:#dce0e3}');

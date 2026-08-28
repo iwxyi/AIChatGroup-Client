@@ -44,7 +44,7 @@ describe('assistant HTML safety', () => {
     expect(document).toContain("action==='submit'");
   });
 
-  it('disables form controls when rendering a historical read-only version', () => {
+  it('keeps authored controls usable while preventing bridge writes in a historical read-only version', () => {
     const document = buildAssistantHtmlDocument({
       html: '<form><input name="answer"><button data-pneumata-action="submit">提交</button></form>',
       manifest,
@@ -55,7 +55,8 @@ describe('assistant HTML safety', () => {
     });
 
     expect(document).toContain('"readOnly":true');
-    expect(document).toContain("node.disabled=true");
+    expect(document).not.toContain("node.disabled=true");
+    expect(document).toContain('if(config.readOnly)return');
   });
 
   it('validates and normalizes declared submission fields', () => {

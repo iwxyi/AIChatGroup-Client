@@ -9,6 +9,7 @@ import { GenerationCancelledError } from './generationCancellation';
 import { attachMessageToActiveBranch } from './messageBranching';
 import { useChatStore } from '../stores/useChatStore';
 import { api, ApiError, type AiSearchResultItem } from './api';
+import { resolveRoomCapabilities } from './capabilityRuntime';
 
 const MAX_ASSISTANT_HISTORY = 24;
 const MAX_ASSISTANT_TITLE_CONTEXT = 12;
@@ -154,11 +155,16 @@ function buildAppCommandRecentMessages(messages: Message[]) {
 }
 
 function isAssistantAgentArtifactEnabled(chat: GroupChat) {
+  const roomCapability = resolveRoomCapabilities({ chat }).artifacts;
+  if (roomCapability.mode !== 'off') return true;
   return Boolean(chat.modeState.assistantCapabilities?.agent && chat.modeState.assistantCapabilities?.artifacts);
 }
 
 function isLearningProgressChat(chat: GroupChat) {
-  return chat.sessionKind?.family === 'study' || chat.sessionKind?.scenarioId === 'learning-progress' || chat.sessionKind?.scenarioId === 'ielts-coach';
+  return chat.mode === 'classroom'
+    || chat.sessionKind?.family === 'study'
+    || chat.sessionKind?.scenarioId === 'learning-progress'
+    || chat.sessionKind?.scenarioId === 'ielts-coach';
 }
 
 function isAssistantAgentSearchEnabled(chat: GroupChat) {
@@ -416,6 +422,8 @@ async function persistAssistantArtifactsFromReply(params: {
   inputCapabilities: AIModelInputCapabilities;
   aiProfiles: AIModelProfile[];
   signal?: AbortSignal;
+  replySender?: { id: string; name: string };
+  forceArtifact?: boolean;
 }) {
   if (!isAssistantAgentArtifactEnabled(params.chat)) return null;
   const [
@@ -461,6 +469,7 @@ async function persistAssistantArtifactsFromReply(params: {
       } : {}),
     },
     signal: params.signal,
+    forceArtifact: params.forceArtifact,
   });
   const selectedLocalFilePaths = (selectedLocalWorkspaceFilePaths.length
     ? selectedLocalWorkspaceFilePaths.map((path) => ({ directoryId: defaultLocalWorkspaceDirectory?.id || '', path }))
@@ -478,6 +487,7 @@ async function persistAssistantArtifactsFromReply(params: {
       content: '我找到了你要处理的本地文件引用，但这些文件当前不可读、不是文本类型，或超过了安全读取限制。请换成文本文件，或缩小文件范围后再试。',
       timestamp: params.timestamp,
       upsertMessage: params.upsertMessage,
+      replySender: params.replySender,
     });
     await params.updateChat(params.chatId, {
       lastMessageAt: assistantMessage.timestamp,
@@ -504,6 +514,7 @@ async function persistAssistantArtifactsFromReply(params: {
       content,
       timestamp: params.timestamp,
       upsertMessage: params.upsertMessage,
+      replySender: params.replySender,
     });
     await params.updateChat(params.chatId, {
       lastMessageAt: assistantMessage.timestamp,
@@ -548,6 +559,7 @@ async function persistAssistantArtifactsFromReply(params: {
       content,
       timestamp: params.timestamp,
       upsertMessage: params.upsertMessage,
+      replySender: params.replySender,
     });
     await params.updateChat(params.chatId, {
       lastMessageAt: assistantMessage.timestamp,
@@ -616,6 +628,7 @@ async function persistAssistantArtifactsFromReply(params: {
       } : undefined,
       timestamp: params.timestamp,
       upsertMessage: params.upsertMessage,
+      replySender: params.replySender,
     });
     if (attachments.length) {
       void processAssistantMediaAttachments({
@@ -685,6 +698,7 @@ async function persistAssistantArtifactsFromReply(params: {
     content,
     timestamp: params.timestamp,
     upsertMessage: params.upsertMessage,
+    replySender: params.replySender,
   });
   await params.updateChat(params.chatId, {
     lastMessageAt: assistantMessage.timestamp,
@@ -703,6 +717,9 @@ function artifactFenceLanguage(patch: AssistantAgentPatchSet['patches'][number])
 }
 
 function formatPatchForBubble(patch: AssistantAgentPatchSet['patches'][number]) {
+  if (patch.kind === 'html') {
+    return `\n\n已生成可交互学习页面「${patch.title}」，可直接打开作答。`;
+  }
   if (patch.kind === 'table' || patch.kind === 'json') {
     const fileCount = patch.files?.length || 0;
     const contentSize = patch.content.length + (patch.files || []).reduce((total, file) => total + file.content.length, 0);
@@ -793,12 +810,13 @@ async function persistAssistantFinalMessage(params: {
   metadata?: Partial<MessageMetadata>;
   timestamp?: number;
   upsertMessage: (message: Message) => void;
+  replySender?: { id: string; name: string };
 }) {
   const assistantDraft: Omit<Message, 'id' | 'timestamp' | 'isDeleted'> = {
     chatId: params.chatId,
     type: 'ai',
-    senderId: 'assistant',
-    senderName: '助手',
+    senderId: params.replySender?.id || 'assistant',
+    senderName: params.replySender?.name || '助手',
     content: params.content,
     emotion: 0,
     metadata: {
@@ -1049,6 +1067,8 @@ export async function runAssistantChatReplyFlow(params: {
   updateChat: (id: string, patch: Partial<GroupChat>) => Promise<void>;
   signal?: AbortSignal;
   shouldContinue?: () => boolean;
+  replySender?: { id: string; name: string };
+  forceArtifact?: boolean;
 }) {
   ensureAssistantReplyStillCurrent(params);
   const { api: resolvedApi, inputCapabilities } = resolveTextProfile(params.api, params.aiProfiles);
@@ -1112,8 +1132,31 @@ export async function runAssistantChatReplyFlow(params: {
         inputCapabilities,
         aiProfiles: params.aiProfiles,
         signal: params.signal,
+        replySender: params.replySender,
+        forceArtifact: params.forceArtifact,
       });
       if (agentResult?.message) {
+        // Artifact replies are committed outside the normal session runner.
+        // Advance the branch cursor explicitly, otherwise the next message is
+        // attached to the pre-artifact user node and the projection can prune
+        // the entire continuation as an inactive subtree.
+        const branching = agentResult.message.metadata?.branching;
+        const nodeId = branching?.nodeId || agentResult.message.clientKey || agentResult.message.id;
+        const parentNodeId = branching?.parentNodeId || null;
+        const latestChat = useChatStore.getState().chats.find((item) => item.id === params.chatId) || params.chat;
+        await params.updateChat(params.chatId, {
+          messageBranchState: {
+            ...(latestChat.messageBranchState || {}),
+            activeLeafNodeId: nodeId,
+            ...(parentNodeId ? {
+              activeChildByParentNodeId: {
+                ...(latestChat.messageBranchState?.activeChildByParentNodeId || {}),
+                [parentNodeId]: nodeId,
+              },
+            } : {}),
+            updatedAt: Date.now(),
+          },
+        });
         void maybeGenerateAssistantChatTitle({
           api: resolvedApi,
           chat: params.chat,
@@ -1128,8 +1171,8 @@ export async function runAssistantChatReplyFlow(params: {
   const assistantDraft: Omit<Message, 'id' | 'timestamp' | 'isDeleted'> = {
     chatId: params.chatId,
     type: 'ai',
-    senderId: 'assistant',
-    senderName: '助手',
+    senderId: params.replySender?.id || 'assistant',
+    senderName: params.replySender?.name || '助手',
     content: '',
     emotion: 0,
     metadata: {

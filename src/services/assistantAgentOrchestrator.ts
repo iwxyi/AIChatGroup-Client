@@ -781,6 +781,8 @@ export async function planAssistantAgentChange(params: {
     updatedAt?: number;
   }>;
   signal?: AbortSignal;
+  /** Force an artifact response for a caller (for example a learning room HTML request). */
+  forceArtifact?: boolean;
 }) {
   const htmlSubmission = params.userMessage.metadata?.assistantHtmlSubmission;
   const submittedArtifact = htmlSubmission
@@ -846,7 +848,18 @@ export async function planAssistantAgentChange(params: {
       },
     },
   );
-  return normalizePlan(safeJsonParse(raw), params.existingArtifacts, params.localWorkspaceFileRegistry);
+  const plan = normalizePlan(safeJsonParse(raw), params.existingArtifacts, params.localWorkspaceFileRegistry);
+  if (params.forceArtifact && (plan.intent === 'chat' || plan.intent === 'clarify')) {
+    return {
+      ...plan,
+      intent: 'create' as const,
+      responseExperience: 'structured_input' as const,
+      operations: plan.operations.length ? plan.operations : [{ kind: 'create' as const, instruction: '根据用户请求创建可交互的 HTML 学习产物。' }],
+      confidence: Math.max(plan.confidence || 0, 0.8),
+      rationale: `${plan.rationale || ''} caller_forced_artifact`.trim(),
+    } satisfies AssistantAgentChangePlan;
+  }
+  return plan;
 }
 
 export async function writeAssistantAgentPatchSet(params: {

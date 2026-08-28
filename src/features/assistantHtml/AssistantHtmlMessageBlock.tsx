@@ -3,6 +3,7 @@ import type { Message } from '../../types/message';
 import type { AssistantArtifactItem } from '../../types/assistantArtifact';
 import { useAssistantArtifactStore } from '../../stores/useAssistantArtifactStore';
 import AssistantHtmlFrame, { type AssistantHtmlInteractionPayload } from './AssistantHtmlFrame';
+import { logDeveloperDiagnostic } from '../../services/developerDiagnostics';
 
 type ArtifactRef = NonNullable<NonNullable<NonNullable<Message['metadata']>['assistant']>['artifacts']>[number];
 
@@ -29,7 +30,8 @@ export default function AssistantHtmlMessageBlock({ artifactRef, onAutosave, onS
   const version = resolveInlineVersion(artifact, artifactRef);
   const manifest = version?.htmlRuntime;
   if (!version || !manifest) return null;
-  const interactive = artifactRef.presentation !== 'fullscreen_html'
+  const interactive = Boolean(manifest.submission)
+    && artifactRef.presentation !== 'fullscreen_html'
     && (manifest.presentation === 'inline' || manifest.presentation === 'both');
   const readOnly = version.id !== artifact.currentVersionId && version.stage !== 'autosave';
   if (interactive) {
@@ -55,10 +57,14 @@ export default function AssistantHtmlMessageBlock({ artifactRef, onAutosave, onS
     <Box
       role={onOpenFullscreen ? 'button' : undefined}
       tabIndex={onOpenFullscreen ? 0 : undefined}
-      onClick={() => onOpenFullscreen?.(artifact.id)}
+      onClick={() => {
+        logDeveloperDiagnostic('html-artifact:click', { artifactId: artifact.id, hasOpenHandler: Boolean(onOpenFullscreen), presentation: artifactRef.presentation || null }, 'info', 'chat-window');
+        onOpenFullscreen?.(artifact.id);
+      }}
       onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault();
+          logDeveloperDiagnostic('html-artifact:keyboard-open', { artifactId: artifact.id, hasOpenHandler: Boolean(onOpenFullscreen) }, 'info', 'chat-window');
           onOpenFullscreen?.(artifact.id);
         }
       }}
@@ -75,7 +81,7 @@ export default function AssistantHtmlMessageBlock({ artifactRef, onAutosave, onS
       }}
     >
       <Box sx={{ pointerEvents: 'none' }}>
-        <AssistantHtmlFrame artifactId={artifact.id} version={version} manifest={previewManifest} inline readOnly onOpenFullscreen={() => onOpenFullscreen?.(artifact.id)} />
+        <AssistantHtmlFrame artifactId={artifact.id} version={version} manifest={previewManifest} inline readOnly interactive={false} onOpenFullscreen={() => onOpenFullscreen?.(artifact.id)} />
       </Box>
     </Box>
   );

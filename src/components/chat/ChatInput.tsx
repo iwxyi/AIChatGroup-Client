@@ -13,6 +13,7 @@ import type { MessageAttachment } from '../../types/message';
 import type { AIModelInputCapabilities } from '../../types/settings';
 import { buildImageAttachmentHoverInfo } from '../../services/messageAttachmentHoverInfo';
 import { normalizeInputCapabilities } from '../../types/settings';
+import type { ComposerState } from '../../types/composerState';
 import { useSettingsStore } from '../../stores/useSettingsStore';
 import { transcribeSpeech, usesManagedSpeechProfile } from '../../services/speech';
 import { transcribeAudioWithAdapter } from '../../services/aiGenerationAdapter';
@@ -38,6 +39,7 @@ interface ChatInputProps {
   onStopReply?: () => void;
   disabled?: boolean;
   disabledReason?: string;
+  composerState?: ComposerState;
 }
 
 function getMobilePanelTravelDistance() {
@@ -87,7 +89,7 @@ function getMicrophoneSupportError() {
   return '当前浏览器不支持麦克风输入，请检查浏览器权限或更换浏览器';
 }
 
-export default function ChatInput({ mode, characterName, onSend, onClose, placeholderOverride, sendingLabel, hideSpeakAsChip, onSendError, onOpenPanel, onDraftActivity, inputCapabilities, inputCapabilityWarning, autoFocus, topContent, injectedAttachments, onInjectedAttachmentsConsumed, isReplyPending = false, onStopReply, disabled = false, disabledReason }: ChatInputProps) {
+export default function ChatInput({ mode, characterName, onSend, onClose, placeholderOverride, sendingLabel, hideSpeakAsChip, onSendError, onOpenPanel, onDraftActivity, inputCapabilities, inputCapabilityWarning, autoFocus, topContent, injectedAttachments, onInjectedAttachmentsConsumed, isReplyPending = false, onStopReply, disabled = false, disabledReason, composerState }: ChatInputProps) {
   const [text, setText] = useState('');
   const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
   const [isSending, setIsSending] = useState(false);
@@ -105,7 +107,9 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
   const maxAttachments = capabilities.multiImageInput ? capabilities.maxAttachments : 1;
   const acceptMimeTypes = capabilities.supportedMimeTypes.join(',');
   const hasDraftContent = Boolean(text.trim() || attachments.length > 0);
-  const showStopReply = Boolean(isReplyPending && onStopReply);
+  const effectivePending = Boolean(isReplyPending || (composerState && composerState.phase !== 'idle' && composerState.phase !== 'error'));
+  const showStopReply = Boolean(effectivePending && composerState?.canCancel !== false && onStopReply);
+  const effectiveDisabled = disabled || composerState?.canSend === false;
   const panelHandleDragRef = useRef<{ startY: number; latestY: number; moved: boolean; lastDirection: 'up' | 'down' | null } | null>(null);
   const textInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -701,7 +705,7 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
             publishDraftActivity(text, false);
           }}
           inputRef={textInputRef}
-          disabled={disabled}
+          disabled={effectiveDisabled && composerState?.canDraft !== true}
           sx={{
             '& .MuiOutlinedInput-root': {
               borderRadius: 2.25,
@@ -713,7 +717,7 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
             },
           }}
         />
-        <Tooltip title={showStopReply ? '停止回答' : isSending ? (sendingLabel || '发送中') : ''} disableHoverListener={!showStopReply && !isSending} arrow>
+        <Tooltip title={showStopReply ? '停止当前处理' : effectivePending ? (composerState?.label || '处理中') : isSending ? (sendingLabel || '发送中') : ''} disableHoverListener={!showStopReply && !effectivePending && !isSending} arrow>
           <span>
             <IconButton
               color="primary"
@@ -726,7 +730,7 @@ export default function ChatInput({ mode, characterName, onSend, onClose, placeh
                 void handleSend();
               }}
               onMouseDown={(event) => event.preventDefault()}
-              disabled={disabled || (!hasDraftContent && !showStopReply) || isSending}
+              disabled={effectiveDisabled || (!hasDraftContent && !showStopReply) || isSending}
               sx={{
                 flexShrink: 0,
                 width: 42,

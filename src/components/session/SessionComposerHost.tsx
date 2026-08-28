@@ -6,6 +6,7 @@ import type { SessionBoardComposerSubmission, SessionFormComposerSubmission, Ses
 import type { UserDraftActivity } from '../../services/userInputBuffer';
 import type { MessageAttachment } from '../../types/message';
 import type { AIModelInputCapabilities } from '../../types/settings';
+import type { ComposerState } from '../../types/composerState';
 
 interface SessionComposerHostProps {
   surfaces: SessionInputSurfaceDefinition[];
@@ -29,6 +30,7 @@ interface SessionComposerHostProps {
   onStopReply?: () => void;
   disabled?: boolean;
   disabledReason?: string;
+  composerState?: ComposerState;
 }
 
 function buildInitialFieldState(surfaces: SessionInputSurfaceDefinition[]) {
@@ -40,7 +42,7 @@ function buildInitialFieldState(surfaces: SessionInputSurfaceDefinition[]) {
   ) as Record<string, Record<string, string>>;
 }
 
-export default function SessionComposerHost({ surfaces, onSubmitText, onSubmitForm, onSubmitBoard, speakAsCharacterName, onCloseSpeakAs, sendingLabel, hideSpeakAsChip, onSendError, onOpenPanel, onDraftActivity, inputCapabilities, inputCapabilityWarning, autoFocus, topContent, injectedAttachments, onInjectedAttachmentsConsumed, isReplyPending, onStopReply, disabled = false, disabledReason }: SessionComposerHostProps) {
+export default function SessionComposerHost({ surfaces, onSubmitText, onSubmitForm, onSubmitBoard, speakAsCharacterName, onCloseSpeakAs, sendingLabel, hideSpeakAsChip, onSendError, onOpenPanel, onDraftActivity, inputCapabilities, inputCapabilityWarning, autoFocus, topContent, injectedAttachments, onInjectedAttachmentsConsumed, isReplyPending, onStopReply, disabled = false, disabledReason, composerState }: SessionComposerHostProps) {
   const primarySurface = surfaces.find((surface) => surface.type === 'text') || surfaces[0];
   const secondarySurfaces = surfaces.filter((surface) => surface !== primarySurface && (surface.type === 'board' || surface.type === 'form' || surface.type === 'hybrid'));
   const [fieldState, setFieldState] = useState<Record<string, Record<string, string>>>(() => buildInitialFieldState(surfaces));
@@ -166,6 +168,7 @@ export default function SessionComposerHost({ surfaces, onSubmitText, onSubmitFo
           onStopReply={onStopReply}
           disabled={disabled}
           disabledReason={disabledReason}
+          composerState={composerState}
         />
       ) : (() => {
         const mode = speakAsCharacterName
@@ -200,6 +203,7 @@ export default function SessionComposerHost({ surfaces, onSubmitText, onSubmitFo
             onStopReply={onStopReply}
             disabled={disabled}
             disabledReason={disabledReason}
+            composerState={composerState}
           />
         );
       })()}

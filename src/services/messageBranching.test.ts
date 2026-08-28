@@ -47,6 +47,48 @@ function buildMessage(overrides: Partial<Message> & Pick<Message, 'id' | 'chatId
 }
 
 describe('messageBranching', () => {
+  it('keeps synced messages connected through local client keys', () => {
+    const chat = buildChat({ messageBranchState: { enabled: true } });
+    const messages = [
+      buildMessage({ id: 'server-root', chatId: 'chat-1', type: 'user', senderId: 'user', senderName: '我', content: 'root', emotion: 0, timestamp: 1, clientKey: 'local-root' }),
+      buildMessage({ id: 'server-reply', chatId: 'chat-1', type: 'ai', senderId: 'char', senderName: '角色', content: 'reply', emotion: 0, timestamp: 2, clientKey: 'local-reply', metadata: { branching: { parentNodeId: 'local-root' } } }),
+    ];
+    expect(projectActiveBranchMessages(chat, messages).map((item) => item.id)).toEqual(['server-root', 'server-reply']);
+  });
+  it('normalizes persisted branch selections that still reference server ids', () => {
+    const messages = [
+      buildMessage({ id: 'server-root', serverId: 'server-root', chatId: 'chat-1', type: 'user', senderId: 'user', senderName: '我', content: 'old', emotion: 0, timestamp: 1, clientKey: 'local-root' }),
+      buildMessage({ id: 'server-revision', serverId: 'server-revision', chatId: 'chat-1', type: 'user', senderId: 'user', senderName: '我', content: 'new', emotion: 0, timestamp: 2, clientKey: 'local-revision', metadata: { branching: { parentNodeId: 'local-parent', revisionRootId: 'server-root', revisionOfMessageId: 'server-root' } } }),
+    ];
+    const chat = buildChat({ messageBranchState: { enabled: true, selectedRevisionByRootId: { 'server-root': 'server-revision' } } });
+    expect(projectActiveBranchMessages(chat, messages).map((message) => message.id)).toEqual(['server-revision']);
+  });
+
+  it('keeps a selected revision when its common parent is outside a partial message window', () => {
+    const messages = [
+      buildMessage({ id: 'old', chatId: 'chat-1', type: 'user', senderId: 'user', senderName: '我', content: '旧问题', emotion: 0, timestamp: 2, metadata: { branching: { parentNodeId: 'missing-parent' } } }),
+      buildMessage({ id: 'old-child', chatId: 'chat-1', type: 'ai', senderId: 'ai', senderName: '老师', content: '旧回复', emotion: 0, timestamp: 3, metadata: { branching: { parentNodeId: 'old' } } }),
+      buildMessage({ id: 'revision', chatId: 'chat-1', type: 'user', senderId: 'user', senderName: '我', content: '新问题', emotion: 0, timestamp: 4, metadata: { branching: { parentNodeId: 'missing-parent', revisionRootId: 'old', revisionOfMessageId: 'old' } } }),
+      buildMessage({ id: 'revision-child', chatId: 'chat-1', type: 'ai', senderId: 'ai', senderName: '老师', content: '新回复', emotion: 0, timestamp: 5, metadata: { branching: { parentNodeId: 'revision' } } }),
+    ];
+    const chat = buildChat({ messageBranchState: {
+      enabled: true,
+      selectedRevisionByRootId: { old: 'revision' },
+      activeChildByParentNodeId: { 'missing-parent': 'revision' },
+    } });
+
+    expect(projectActiveBranchMessages(chat, messages).map((message) => message.id)).toEqual(['revision', 'revision-child']);
+  });
+
+  it('repairs revision parents when the original node is identified by revisionOfMessageId', () => {
+    const messages = [
+      buildMessage({ id: 'parent', chatId: 'chat-1', type: 'user', senderId: 'user', senderName: '我', content: '父', emotion: 0, timestamp: 1 }),
+      buildMessage({ id: 'revision', chatId: 'chat-1', type: 'user', senderId: 'user', senderName: '我', content: '修订', emotion: 0, timestamp: 3, metadata: { branching: { parentNodeId: 'missing', revisionRootId: 'missing-root', revisionOfMessageId: 'parent' } } }),
+      buildMessage({ id: 'reply', chatId: 'chat-1', type: 'ai', senderId: 'ai', senderName: '老师', content: '回复', emotion: 0, timestamp: 4, metadata: { branching: { parentNodeId: 'revision' } } }),
+    ];
+    const chat = buildChat({ messageBranchState: { enabled: true, selectedRevisionByRootId: { parent: 'revision' } } });
+    expect(projectActiveBranchMessages(chat, messages).map((message) => message.id)).toEqual(['parent', 'revision', 'reply']);
+  });
   it('enables branching by default except explicitly disabled stateful modes', () => {
     expect(isMessageBranchingEnabled(buildChat())).toBe(true);
     expect(isMessageBranchingEnabled(buildChat({

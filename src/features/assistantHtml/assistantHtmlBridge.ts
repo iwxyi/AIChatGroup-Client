@@ -1,4 +1,4 @@
-export type AssistantHtmlBridgeEventType = 'ready' | 'resize' | 'autosave' | 'submit' | 'open_fullscreen' | 'close';
+export type AssistantHtmlBridgeEventType = 'ready' | 'resize' | 'autosave' | 'submit' | 'open_fullscreen' | 'close' | 'error';
 
 export interface AssistantHtmlBridgeEvent {
   type: AssistantHtmlBridgeEventType;
@@ -8,6 +8,7 @@ export interface AssistantHtmlBridgeEvent {
   interactionId: string;
   height?: number;
   payload?: Record<string, unknown>;
+  error?: string;
 }
 
 export function parseAssistantHtmlBridgeEvent(params: {
@@ -22,8 +23,7 @@ export function parseAssistantHtmlBridgeEvent(params: {
   const data = params.event.data;
   if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
   const record = data as Record<string, unknown>;
-  if (!['ready', 'resize', 'autosave', 'submit', 'open_fullscreen', 'close'].includes(String(record.type))) return null;
+  if (!['ready', 'resize', 'autosave', 'submit', 'open_fullscreen', 'close', 'error'].includes(String(record.type))) return null;
   if (record.channelToken !== params.channelToken || record.artifactId !== params.artifactId || record.versionId !== params.versionId || record.interactionId !== params.interactionId) return null;
   return record as unknown as AssistantHtmlBridgeEvent;
 }
-

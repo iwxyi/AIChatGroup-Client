@@ -3,6 +3,7 @@ import type { Message } from '../types/message';
 import { storageKey } from '../constants/brand';
 
 const getMessagesMock = vi.hoisted(() => vi.fn());
+const getChatMock = vi.hoisted(() => vi.fn());
 const getSyncChangesMock = vi.hoisted(() => vi.fn());
 const reportRecoverableErrorMock = vi.hoisted(() => vi.fn());
 const MockApiError = vi.hoisted(() => class ApiError extends Error {
@@ -21,6 +22,7 @@ vi.mock('../services/api', () => ({
   ApiError: MockApiError,
   api: {
     getSyncChanges: getSyncChangesMock,
+    getChat: getChatMock,
     getMessages: getMessagesMock,
     createMessage: vi.fn(),
     deleteMessage: vi.fn(),
@@ -92,6 +94,8 @@ describe('useMessageStore', () => {
   beforeEach(() => {
     vi.resetModules();
     getMessagesMock.mockReset();
+    getChatMock.mockReset();
+    getChatMock.mockRejectedValue(new MockApiError('聊天不存在', { code: 'NOT_FOUND', status: 404 }));
     getSyncChangesMock.mockReset();
     reportRecoverableErrorMock.mockReset();
     vi.stubGlobal('localStorage', createStorageMock());
@@ -1104,6 +1108,26 @@ describe('useMessageStore', () => {
     expect(useMessageStore.getState().messageWindowsByChatId['local-chat-12345678']?.messages[0]?.chatId).toBe('local-chat-12345678');
     expect(useChatStore.getState().pendingOperations[0]?.kind).toBe('create');
     expect(getMessagesMock).not.toHaveBeenCalled();
+  });
+
+  it('loads cloud history when a remote chat exists but a stale local create operation remains', async () => {
+    localStorage.setItem(storageKey('auth-mode'), 'cloud');
+    const { useMessageStore } = await import('./useMessageStore');
+    const { useChatStore } = await import('./useChatStore');
+    const chatId = 'local-chat-already-remote';
+    useChatStore.setState({
+      chats: [{ id: chatId, type: 'group', name: '学习房', topic: '', memberIds: ['char-1'] } as never],
+      pendingOperations: [{ id: 'stale-create', kind: 'create', entityId: chatId, patch: { id: chatId }, targetIds: [chatId], clientTimestamp: Date.now(), attemptCount: 0, status: 'pending' } as never],
+    } as never);
+    getChatMock.mockResolvedValueOnce({ id: chatId });
+    getMessagesMock.mockResolvedValueOnce([buildMessage(1, chatId)]);
+
+    await useMessageStore.getState().openChatWindow(chatId, { limit: 40, revalidate: true });
+
+    expect(getChatMock).toHaveBeenCalledWith(chatId);
+    expect(getMessagesMock).toHaveBeenCalledWith(chatId, { limit: 40, before: undefined });
+    expect(useChatStore.getState().pendingOperations).toHaveLength(0);
+    expect(useMessageStore.getState().messages).toHaveLength(1);
   });
 
   it('keeps local messages visible without a user-facing error when the cloud message resource is missing', async () => {

@@ -186,7 +186,8 @@ function getRequestedWindowLimit(requestedLimit = DEFAULT_MESSAGE_WINDOW_LIMIT) 
 
 function canLoadMoreFromWindow(window: CachedMessageWindow | undefined, activeMessages: Message[], limit: number) {
   const cachedMessages = window?.messages || [];
-  const earliestActive = activeMessages.find((message) => !message.isDeleted)?.timestamp;
+  const earliestActive = activeMessages.filter((message) => !message.isDeleted)
+    .reduce<number | undefined>((earliest, message) => earliest === undefined ? message.timestamp : Math.min(earliest, message.timestamp), undefined);
   if (earliestActive !== undefined && cachedMessages.some((message) => !message.isDeleted && message.timestamp < earliestActive)) return true;
   if (shouldSkipCloudSync()) return cachedMessages.length >= limit;
   if (cachedMessages.length < limit) return true;
@@ -196,7 +197,8 @@ function canLoadMoreFromWindow(window: CachedMessageWindow | undefined, activeMe
 function canLoadNewerFromWindow(window: CachedMessageWindow | undefined, activeMessages: Message[], limit: number) {
   void limit;
   const cachedMessages = window?.messages || [];
-  const latestActive = [...activeMessages].reverse().find((message) => !message.isDeleted)?.timestamp;
+  const latestActive = activeMessages.filter((message) => !message.isDeleted)
+    .reduce<number | undefined>((latest, message) => latest === undefined ? message.timestamp : Math.max(latest, message.timestamp), undefined);
   if (latestActive !== undefined && cachedMessages.some((message) => !message.isDeleted && message.timestamp > latestActive)) return true;
   if (shouldSkipCloudSync()) return false;
   if (!activeMessages.length) return false;
@@ -698,6 +700,21 @@ function messagePayloadForCloud(message: Message, operationId: string) {
   };
 }
 
+function normalizeFetchedCloudMessage(message: Message): Message {
+  const sync = message.metadata && typeof message.metadata === 'object' && !Array.isArray(message.metadata)
+    ? (message.metadata as Record<string, unknown>).sync
+    : null;
+  const clientKey = message.clientKey
+    || (sync && typeof sync === 'object' && !Array.isArray(sync) && typeof (sync as Record<string, unknown>).clientKey === 'string'
+      ? (sync as Record<string, unknown>).clientKey as string
+      : undefined);
+  return normalizeMessage({
+    ...message,
+    clientKey,
+    serverId: message.serverId || message.id,
+  });
+}
+
 function mergeMessageServerConfirmation(localMessage: Message, savedMessage: unknown): Message {
   const saved = savedMessage as Partial<Message> | null | undefined;
   return {
@@ -745,6 +762,24 @@ function isChatCreatePendingForMessages(chatId: string) {
 
 function scheduleChatSyncFirst() {
   void useChatStore.getState().resumeSync();
+}
+
+/**
+ * A chat can already exist remotely while an interrupted local create
+ * operation is still persisted (for example after a reload during sync).
+ * In that case treating the operation as authoritative prevents any message
+ * request from being sent and leaves the detail page blank. Confirm the
+ * remote resource before waiting for the outbox again.
+ */
+async function reconcilePendingChatCreate(chatId: string) {
+  if (!isChatCreatePendingForMessages(chatId)) return false;
+  try {
+    await api.getChat(chatId);
+    useChatStore.getState().confirmCreateOperationsSynced([chatId]);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function ensureLocalChatCreateQueued(chatId: string) {
@@ -1006,6 +1041,10 @@ export const useMessageStore = create<MessageStore>()(
         });
         await get().hydrateMessagesFromCache(chatId, { limit });
         if (isChatCreatePendingForMessages(chatId)) {
+          if (await reconcilePendingChatCreate(chatId)) {
+            await get().loadMessages(chatId, { limit });
+            return;
+          }
           scheduleChatSyncFirst();
           messageSyncScheduler.schedule(flushPendingOperations, 450);
           return;
@@ -1068,6 +1107,9 @@ export const useMessageStore = create<MessageStore>()(
           return;
         }
         if (isChatCreatePendingForMessages(chatId)) {
+          if (await reconcilePendingChatCreate(chatId)) {
+            return get().loadMessages(chatId, options);
+          }
           scheduleChatSyncFirst();
           messageSyncScheduler.schedule(flushPendingOperations, 450);
           set((state) => ({
@@ -1128,6 +1170,7 @@ export const useMessageStore = create<MessageStore>()(
               after: options?.after,
               aroundTimestamp: options?.aroundTimestamp,
             })) as unknown as Message[];
+          const normalizedFetched = fetched.map(normalizeFetchedCloudMessage);
           logMessageWindowDebug('load-fetched', {
             chatId,
             options: options || {},
@@ -1136,7 +1179,7 @@ export const useMessageStore = create<MessageStore>()(
             forcedWindowSnapshot: shouldForceWindowSnapshot,
             probeStatus: changeProbe?.status || null,
             fetchedFromChanges: Boolean(fetchedFromChanges),
-            fetchedMessages: fetched.length,
+            fetchedMessages: normalizedFetched.length,
             cachedWindowMessagesBeforeSet: get().messageWindowsByChatId[chatId]?.messages?.length || 0,
             activeMessagesBeforeSet: get().messages.filter((message) => message.chatId === chatId).length,
           });
@@ -1145,11 +1188,11 @@ export const useMessageStore = create<MessageStore>()(
             const current = currentWindow?.messages || [];
             const activeMessagesForChat = state.messages.filter((message) => message.chatId === chatId);
             const activeCurrent = activeMessagesForChat.length ? activeMessagesForChat : activeMessageWindow(current, limit);
-            const merged = mergeMessages(current, fetched);
+            const merged = mergeMessages(current, normalizedFetched);
             const trimmed = trimMessages(merged);
-            const mergedActiveMessages = mergeMessages(activeCurrent, fetched);
+            const mergedActiveMessages = mergeMessages(activeCurrent, normalizedFetched);
             const nextActiveMessages = isAroundWindow
-              ? fetched
+              ? normalizedFetched
               : isAppend
               ? trimActiveMessagesForDirection(mergedActiveMessages, isAppendNewer ? 'newer' : 'older')
               : activeMessageWindow(trimmed, limit);
@@ -1196,7 +1239,7 @@ export const useMessageStore = create<MessageStore>()(
               chatId,
               options: options || {},
               currentWindowMessages: current.length,
-              fetchedMessages: fetched.length,
+              fetchedMessages: normalizedFetched.length,
               trimmedMessages: trimmed.length,
               nextActiveMessages: nextActiveMessages.length,
               remoteExhausted,

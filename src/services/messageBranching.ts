@@ -1,6 +1,6 @@
 import type { GroupChat, MessageBranchState } from '../types/chat';
 import type { Message, MessageMetadata } from '../types/message';
-import { logDeveloperDiagnostic, measureDeveloperDiagnostic } from './developerDiagnostics';
+import { logDeveloperDiagnostic } from './developerDiagnostics';
 
 export interface ResolvedBranchingNode {
   message: Message;
@@ -32,6 +32,7 @@ const DISABLED_MODES = new Set([
   'murder_mystery',
   'board_game',
 ]);
+const emptyProjectionDiagnostics = new Set<string>();
 
 type BranchableChat = Pick<GroupChat, 'sessionKind' | 'messageBranchState'> & Partial<Pick<GroupChat, 'mode'>>;
 
@@ -75,15 +76,18 @@ function getBranchingMetadata(message: Message): NonNullable<MessageMetadata['br
 
 function resolveBranchingNode(message: Message, parentNodeId: string | null): ResolvedBranchingNode {
   const branching = getBranchingMetadata(message);
+  // Cloud persistence replaces local ids with server UUIDs, while branch
+  // references remain keyed by the stable client key.
+  const stableMessageId = message.clientKey || message.id;
   return {
     message,
-    nodeId: typeof branching?.nodeId === 'string' && branching.nodeId.trim() ? branching.nodeId.trim() : message.id,
+    nodeId: typeof branching?.nodeId === 'string' && branching.nodeId.trim() ? branching.nodeId.trim() : stableMessageId,
     parentNodeId: branching && Object.prototype.hasOwnProperty.call(branching, 'parentNodeId')
       ? (typeof branching.parentNodeId === 'string' && branching.parentNodeId.trim() ? branching.parentNodeId.trim() : null)
       : parentNodeId,
     revisionRootId: typeof branching?.revisionRootId === 'string' && branching.revisionRootId.trim()
       ? branching.revisionRootId.trim()
-      : message.id,
+      : stableMessageId,
     revisionOfMessageId: typeof branching?.revisionOfMessageId === 'string' && branching.revisionOfMessageId.trim()
       ? branching.revisionOfMessageId.trim()
       : null,
@@ -107,12 +111,40 @@ export function resolveMessageBranchNodes(messages: Message[]) {
     });
     previousNodeId = node.nodeId;
   }
-  const availableNodeIds = new Set(rawNodes.map((node) => node.nodeId));
-  return rawNodes.map((node, index) => {
+  const identityAliases = new Map<string, string>();
+  for (const node of rawNodes) {
+    identityAliases.set(node.nodeId, node.nodeId);
+    identityAliases.set(node.message.id, node.nodeId);
+    if (node.message.clientKey) identityAliases.set(node.message.clientKey, node.nodeId);
+    if (node.message.serverId) identityAliases.set(node.message.serverId, node.nodeId);
+  }
+  const canonicalNodes = rawNodes.map((node) => ({
+    ...node,
+    parentNodeId: node.parentNodeId ? (identityAliases.get(node.parentNodeId) || node.parentNodeId) : null,
+    revisionRootId: identityAliases.get(node.revisionRootId) || node.revisionRootId,
+    revisionOfMessageId: node.revisionOfMessageId ? (identityAliases.get(node.revisionOfMessageId) || node.revisionOfMessageId) : null,
+  }));
+  const availableNodeIds = new Set(canonicalNodes.map((node) => node.nodeId));
+  const nodesById = new Map(canonicalNodes.map((node) => [node.nodeId, node]));
+  return canonicalNodes.map((node, index) => {
     if (!node.parentNodeId || availableNodeIds.has(node.parentNodeId)) return node;
+    // A window may start after the common parent of an original message and
+    // one of its revisions. A revision must remain a sibling of its root;
+    // attaching it to the preceding retained message makes it a descendant of
+    // the old branch, so selecting the revision recursively removes itself.
+    const revisionRoot = nodesById.get(node.revisionRootId)
+      || canonicalNodes.find((candidate) => candidate.message.id === node.revisionOfMessageId
+        || candidate.message.clientKey === node.revisionOfMessageId
+        || candidate.message.serverId === node.revisionOfMessageId);
+    if (node.revisionOfMessageId && revisionRoot) {
+      return {
+        ...node,
+        parentNodeId: revisionRoot.parentNodeId,
+      };
+    }
     return {
       ...node,
-      parentNodeId: rawNodes[index - 1]?.nodeId || null,
+        parentNodeId: canonicalNodes[index - 1]?.nodeId || null,
     };
   });
 }
@@ -158,10 +190,6 @@ function orderBranchNodes(nodes: ResolvedBranchingNode[]) {
   return ordered;
 }
 
-function logBranchProjectionDebug(payload: Record<string, unknown>) {
-  logDeveloperDiagnostic('message-branch:project', payload, 'info', 'message-window');
-}
-
 function resolveSiblingGroupRootId(children: ResolvedBranchingNode[]) {
   const explicitRoot = children.find((child) => child.revisionRootId)?.revisionRootId;
   return explicitRoot || children[0]?.message.id || '';
@@ -185,11 +213,32 @@ function resolveSelectedChildId(
   return original?.nodeId || children[0]?.nodeId || null;
 }
 
+function normalizeBranchStateReferences(chat: BranchableChat | null | undefined, nodes: ResolvedBranchingNode[]): BranchableChat | null | undefined {
+  if (!chat?.messageBranchState) return chat;
+  const aliases = new Map<string, string>();
+  for (const node of nodes) {
+    aliases.set(node.nodeId, node.nodeId);
+    aliases.set(node.message.id, node.nodeId);
+    if (node.message.clientKey) aliases.set(node.message.clientKey, node.nodeId);
+    if (node.message.serverId) aliases.set(node.message.serverId, node.nodeId);
+  }
+  const normalizeReference = (value: string) => aliases.get(value) || value;
+  const state = normalizeBranchState(chat.messageBranchState);
+  return {
+    ...chat,
+    messageBranchState: {
+      ...state,
+      activeLeafNodeId: state.activeLeafNodeId ? normalizeReference(state.activeLeafNodeId) : null,
+      selectedRevisionByRootId: Object.fromEntries(Object.entries(state.selectedRevisionByRootId || {})
+        .map(([rootId, selectedId]) => [normalizeReference(rootId), normalizeReference(selectedId)])),
+      activeChildByParentNodeId: Object.fromEntries(Object.entries(state.activeChildByParentNodeId || {})
+        .map(([parentId, childId]) => [normalizeReference(parentId), normalizeReference(childId)])),
+    },
+  };
+}
+
 export function projectActiveBranchMessages(chat: BranchableChat | null | undefined, messages: Message[]) {
-  return measureDeveloperDiagnostic('message-branch:project-duration', () => projectActiveBranchMessagesInternal(chat, messages), {
-    inputMessages: messages.length,
-    branchingEnabled: isMessageBranchingEnabled(chat),
-  }, 'message-window');
+  return projectActiveBranchMessagesInternal(chat, messages);
 }
 
 function projectActiveBranchMessagesInternal(chat: BranchableChat | null | undefined, messages: Message[]) {
@@ -201,11 +250,12 @@ function projectActiveBranchMessagesInternal(chat: BranchableChat | null | undef
   }
   const nodes = resolveMessageBranchNodes(messages);
   if (!nodes.length) return [];
+  const normalizedChat = normalizeBranchStateReferences(chat, nodes);
   const childrenByParent = buildChildrenByParent(nodes);
   const nodeById = new Map(nodes.map((node) => [node.nodeId, node]));
   const revisionGroups = new Map<string, ResolvedBranchingNode[]>();
   for (const node of nodes) {
-    if (!node.revisionOfMessageId && node.revisionRootId === node.message.id) continue;
+    if (!node.revisionOfMessageId && node.revisionRootId === node.nodeId) continue;
     const group = revisionGroups.get(node.revisionRootId) || [];
     group.push(node);
     const rootNode = nodeById.get(node.revisionRootId);
@@ -219,7 +269,7 @@ function projectActiveBranchMessagesInternal(chat: BranchableChat | null | undef
       .sort((left, right) => compareMessageOrder(left.message, right.message));
     if (group.length <= 1) continue;
     const parentNodeId = group.find((node) => node.parentNodeId)?.parentNodeId || null;
-    const selectedNodeId = resolveSelectedChildId(chat, parentNodeId, revisionRootId, group);
+    const selectedNodeId = resolveSelectedChildId(normalizedChat, parentNodeId, revisionRootId, group);
     for (const node of group) {
       if (node.nodeId !== selectedNodeId) inactiveNodeIds.add(node.nodeId);
     }
@@ -233,23 +283,29 @@ function projectActiveBranchMessagesInternal(chat: BranchableChat | null | undef
   };
   for (const nodeId of inactiveNodeIds) excludeSubtree(nodeId);
 
-  const activeMessages = orderBranchNodes(nodes.filter((node) => !excludedNodeIds.has(node.nodeId)))
+  let activeMessages = orderBranchNodes(nodes.filter((node) => !excludedNodeIds.has(node.nodeId)))
     .map((node) => node.message);
-  if (activeMessages.length < Math.min(messages.filter((message) => !isDeletedMessage(message)).length, 10)) {
-    logBranchProjectionDebug({
+  if (messages.some((message) => !isDeletedMessage(message)) && activeMessages.length === 0) {
+    const diagnosticKey = `${nodes.length}:${inactiveNodeIds.size}:${excludedNodeIds.size}:${Array.from(excludedNodeIds).slice(0, 3).join(',')}`;
+    if (!emptyProjectionDiagnostics.has(diagnosticKey)) {
+      emptyProjectionDiagnostics.add(diagnosticKey);
+      logDeveloperDiagnostic('message-branch:empty-projection', {
       inputMessages: messages.length,
       nodes: nodes.length,
-      activePathMessages: activeMessages.length,
-      inactiveNodeIds: Array.from(inactiveNodeIds).slice(0, 20),
-      excludedNodeIds: Array.from(excludedNodeIds).slice(0, 20),
-      revisionGroups: Array.from(revisionGroups.entries()).slice(0, 12).map(([rootId, group]) => ({
-        rootId,
-        nodeIds: group.map((node) => node.nodeId),
-      })),
-      activeLeafNodeId: chat?.messageBranchState?.activeLeafNodeId,
-      selectedRevisionByRootId: chat?.messageBranchState?.selectedRevisionByRootId,
-      activeChildByParentNodeId: chat?.messageBranchState?.activeChildByParentNodeId,
-    });
+      visibleInputMessages: messages.filter((message) => !isDeletedMessage(message)).length,
+      inactiveNodes: inactiveNodeIds.size,
+      excludedNodes: excludedNodeIds.size,
+      inactiveNodeSample: Array.from(inactiveNodeIds).slice(0, 3),
+      excludedNodeSample: Array.from(excludedNodeIds).slice(0, 3),
+      rootNodeCount: nodes.filter((node) => !node.parentNodeId || !nodeById.has(node.parentNodeId)).length,
+      selectedRevisionCount: Object.keys(normalizedChat?.messageBranchState?.selectedRevisionByRootId || {}).length,
+      activeChildCount: Object.keys(normalizedChat?.messageBranchState?.activeChildByParentNodeId || {}).length,
+      }, 'error', 'message-window');
+    }
+    // Never drop a valid transcript because branch state is inconsistent. In
+    // this state the graph cannot prove a single active path, so expose the
+    // complete ordered window until the branch state is repaired.
+    activeMessages = orderBranchNodes(nodes).map((node) => node.message);
   }
   return activeMessages;
 }
@@ -271,7 +327,11 @@ export function attachMessageToActiveBranch<T extends { metadata?: MessageMetada
 ) {
   if (!isMessageBranchingEnabled(chat)) return message;
   if (message.metadata?.branching?.parentNodeId !== undefined) return message;
-  const tailNode = getActiveBranchTailNode(chat, activeMessages);
+  const nodes = resolveMessageBranchNodes(activeMessages);
+  const activeLeafId = chat.messageBranchState?.activeLeafNodeId;
+  const tailNode = (activeLeafId
+    ? nodes.find((node) => node.nodeId === activeLeafId || node.message.id === activeLeafId || node.message.clientKey === activeLeafId)
+    : null) || getActiveBranchTailNode(chat, activeMessages);
   if (!tailNode) return message;
   return {
     ...message,
@@ -287,7 +347,7 @@ export function attachMessageToActiveBranch<T extends { metadata?: MessageMetada
 
 export function getBranchRevisionGroup(messages: Message[], messageId: string) {
   const nodes = resolveMessageBranchNodes(messages);
-  const targetNode = nodes.find((node) => node.message.id === messageId || node.nodeId === messageId);
+  const targetNode = nodes.find((node) => node.message.id === messageId || node.nodeId === messageId || node.message.clientKey === messageId || node.message.serverId === messageId);
   if (!targetNode) return [];
   const groupRootId = targetNode.revisionRootId || targetNode.message.id;
   return nodes
@@ -305,7 +365,6 @@ export function buildMessageBranchVersionInfoByMessageId(
   messages: Message[],
   messageIds?: string[],
 ) {
-  return measureDeveloperDiagnostic('message-branch:version-info-duration', () => {
     const nodes = nodesFromMessages(messages);
     if (!nodes.length) return {} as Record<string, MessageBranchVersionInfo>;
     const nodesByMessageKey = new Map<string, ResolvedBranchingNode>();
@@ -372,10 +431,6 @@ export function buildMessageBranchVersionInfoByMessageId(
       };
     }
     return result;
-  }, {
-    inputMessages: messages.length,
-    requestedMessages: messageIds?.length ?? messages.length,
-  }, 'message-window');
 }
 
 function nodesFromMessages(messages: Message[]) {
@@ -395,15 +450,16 @@ export function createMessageRevisionDraft(params: {
   revisionRootId?: string | null;
 }) {
   const sourceBranching = getBranchingMetadata(params.sourceMessage);
-  const revisionRootId = params.revisionRootId || sourceBranching?.revisionRootId || params.sourceMessage.id;
+  const stableSourceId = params.sourceMessage.clientKey || params.sourceMessage.id;
+  const revisionRootId = params.revisionRootId || sourceBranching?.revisionRootId || stableSourceId;
   const branching = {
     ...(params.sourceMessage.metadata?.branching || {}),
     ...(params.metadata?.branching || {}),
     ...(params.nodeId ? { nodeId: params.nodeId } : {}),
     parentNodeId: params.parentNodeId,
     revisionRootId,
-    revisionOfMessageId: params.sourceMessage.id,
-    createdFromMessageId: params.sourceMessage.id,
+    revisionOfMessageId: params.sourceMessage.clientKey || params.sourceMessage.id,
+    createdFromMessageId: params.sourceMessage.clientKey || params.sourceMessage.id,
   };
   return {
     chatId: params.sourceMessage.chatId,

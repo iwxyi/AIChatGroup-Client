@@ -105,6 +105,12 @@ export function resolveRoomCapabilities(input: RoomCapabilityInput): Record<Room
   return result;
 }
 
+export function hasRoomCapability(chat: GroupChat, id: RoomCapabilityId, mode: RoomCapabilityMode = 'assisted') {
+  const current = resolveRoomCapabilities({ chat })[id];
+  const rank: Record<RoomCapabilityMode, number> = { off: 0, assisted: 1, automatic: 2 };
+  return rank[current.mode] >= rank[mode];
+}
+
 export type StudyParticipantRole = 'teacher' | 'assistant_teacher' | 'student' | 'reviewer' | 'examiner' | 'observer';
 
 export interface StudyParticipantProfile {

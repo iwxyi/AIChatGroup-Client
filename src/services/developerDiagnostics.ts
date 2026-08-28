@@ -7,6 +7,25 @@ const DIAGNOSTIC_ENABLED_STORAGE_KEY = 'miragetea:developer-diagnostics-enabled'
 const DIAGNOSTIC_BUFFER_STORAGE_KEY = 'miragetea:developer-diagnostics-buffer';
 const MAX_DIAGNOSTIC_BUFFER_LENGTH = 500;
 
+// High-frequency lifecycle traces are useful while developing a subsystem,
+// but overwhelm the console during normal developer-mode use. Keep warnings
+// and errors visible; these routine entries are intentionally opt-out.
+const SUPPRESSED_ROUTINE_LOCATIONS = new Set([
+  'chat-store:loadChats:start', 'chat-store:loadChats:probe',
+  'chat-store:loadChat:start', 'chat-store:loadChat:probe', 'chat-store:loadChat:detail-loaded',
+  'chat-store:restoreLocalChats:start',
+  'message-window:persist-merge', 'message-window:hydrate-cache-start', 'message-window:hydrate-cache-done',
+  'message-window:page-projection', 'message-window:open', 'message-window:hydrated', 'message-window:load-start',
+  'chat-detail:bootstrap:start', 'chat-detail:bootstrap:local-chat', 'chat-detail:bootstrap:loaded-chat', 'chat-detail:bootstrap:load-members',
+  'chat-detail:open-window:skip-duplicate',
+  'chat-window:open', 'manual-input:task-start', 'manual-input:task-finished',
+  '故事阅读恢复：执行', 'chat-scroll:request-hit', 'chat-scroll:initial-tail-reveal',
+  'message-window:upsert-many-window',
+  'story-run:start-gate', 'story-run:started', 'story-run:pause-gate',
+  'chat-run:modules-ready',
+  'html-artifact:click', 'html-artifact:keyboard-open', 'html-artifact:open-request',
+]);
+
 interface DeveloperDiagnosticEntry {
   at: string;
   location: string;
@@ -101,6 +120,7 @@ export function logDeveloperDiagnostic(
   scope?: string,
 ) {
   if (!isDeveloperDiagnosticScopeEnabled(scope)) return;
+  if (SUPPRESSED_ROUTINE_LOCATIONS.has(location) && level !== 'warn' && level !== 'error') return;
   if (typeof console === 'undefined') return;
   const writer = console[level] || console.debug || console.log;
   if (typeof writer !== 'function') return;

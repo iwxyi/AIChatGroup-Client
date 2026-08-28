@@ -21,5 +21,5 @@ export default function AssistantHtmlStaticFrame({ artifactId, versionId, title,
     displayMode: theme.palette.mode,
   }), [artifactId, html, theme.palette.mode, versionId]);
 
-  return <Box component="iframe" title={title} srcDoc={srcDoc} sandbox="allow-scripts" sx={{ bgcolor: theme.palette.mode === 'dark' ? '#181a20' : '#fff', ...sx }} />;
+  return <Box component="iframe" title={title} srcDoc={srcDoc} sandbox="allow-scripts allow-forms" sx={{ bgcolor: theme.palette.mode === 'dark' ? '#181a20' : '#fff', ...sx }} />;
 }

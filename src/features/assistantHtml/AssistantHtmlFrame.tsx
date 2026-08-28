@@ -5,6 +5,7 @@ import { buildAssistantHtmlDocument } from './assistantHtmlDocument';
 import { parseAssistantHtmlBridgeEvent } from './assistantHtmlBridge';
 import { validateAssistantHtmlPayload } from './assistantHtmlValidation';
 import { useTheme } from '@mui/material/styles';
+import { logDeveloperDiagnostic } from '../../services/developerDiagnostics';
 
 export interface AssistantHtmlInteractionPayload {
   artifactId: string;
@@ -31,6 +32,7 @@ export default function AssistantHtmlFrame({
   manifest,
   inline = false,
   fillContainer = false,
+  interactive = true,
   readOnly = false,
   onAutosave,
   onSubmit,
@@ -41,6 +43,7 @@ export default function AssistantHtmlFrame({
   manifest: AssistantHtmlRuntimeManifest;
   inline?: boolean;
   fillContainer?: boolean;
+  interactive?: boolean;
   readOnly?: boolean;
   onAutosave?: (input: AssistantHtmlInteractionPayload) => void | Promise<void>;
   onSubmit?: (input: AssistantHtmlInteractionPayload) => void | Promise<void>;
@@ -86,6 +89,11 @@ export default function AssistantHtmlFrame({
         }
         return;
       }
+      if (message.type === 'error') {
+        logDeveloperDiagnostic('html-artifact:iframe-error', { artifactId, error: message.error || 'unknown' }, 'error', 'chat-window');
+        setError(String(message.error || 'HTML 交互脚本执行失败'));
+        return;
+      }
       if (message.type === 'open_fullscreen') {
         onOpenFullscreen?.();
         return;
@@ -116,6 +124,11 @@ export default function AssistantHtmlFrame({
     return () => window.removeEventListener('message', handleMessage);
   }, [artifactId, baseVersionId, channelToken, inline, interactionId, manifest, onAutosave, onOpenFullscreen, onSubmit, readOnly, version.id]);
 
+  useEffect(() => {
+    setReady(false);
+    setError('');
+  }, [srcDoc]);
+
   return (
     <Box sx={{ position: 'relative', width: '100%', height: fillContainer ? '100%' : 'auto', minHeight: fillContainer ? 0 : inline ? 160 : 'calc(100dvh - 110px)', flex: fillContainer ? 1 : undefined }}>
       {!ready ? <Box sx={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', pointerEvents: 'none' }}><CircularProgress size={20} /></Box> : null}
@@ -132,9 +145,25 @@ export default function AssistantHtmlFrame({
         component="iframe"
         title="HTML 交互内容"
         srcDoc={srcDoc}
-        sandbox="allow-scripts"
-        sx={{ width: '100%', height: fillContainer ? '100%' : inline ? height : 'calc(100dvh - 110px)', minHeight: fillContainer ? 0 : inline ? 160 : 420, border: 0, display: 'block', bgcolor: theme.palette.mode === 'dark' ? '#181a20' : '#fff' }}
+        sandbox="allow-scripts allow-forms"
+        onLoad={() => {
+          logDeveloperDiagnostic('html-artifact:iframe-load', { artifactId, versionId: version.id }, 'info', 'chat-window');
+          // A load event without a bridge-ready event means the document
+          // rendered but its runtime script did not execute.
+          window.setTimeout(() => {
+            if (!frameRef.current?.contentWindow) return;
+            setReady((current) => {
+              if (!current) {
+                logDeveloperDiagnostic('html-artifact:iframe-runtime-missing', { artifactId, versionId: version.id }, 'error', 'chat-window');
+                setError('HTML 页面已加载，但交互脚本未执行');
+              }
+              return current;
+            });
+          }, 1200);
+        }}
+        sx={{ width: '100%', height: fillContainer ? '100%' : inline ? height : 'calc(100dvh - 110px)', minHeight: fillContainer ? 0 : inline ? 160 : 420, border: 0, display: 'block', pointerEvents: interactive ? 'auto' : 'none', bgcolor: theme.palette.mode === 'dark' ? '#181a20' : '#fff' }}
       />
+      {!ready ? <Typography variant="caption" color="warning.main" sx={{ display: 'block', mt: 0.5 }}>正在加载交互内容…</Typography> : null}
       {error ? <Typography variant="caption" color="error" sx={{ display: 'block', mt: 0.5 }}>{error}</Typography> : null}
     </Box>
   );
