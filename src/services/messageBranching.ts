@@ -373,6 +373,23 @@ function projectActiveBranchMessagesInternal(chat: BranchableChat | null | undef
       }, 'warn', 'message-window');
     }
   }
+  // A revision can legitimately remove one old continuation, but it must not
+  // collapse a large paged transcript into a handful of nodes. That indicates
+  // stale/incomplete branch state (typically a parent inferred differently
+  // after an older page was prepended). Keep the complete ordered window so
+  // pagination never destroys the visible conversation; the error diagnostic
+  // remains available for repairing the persisted branch state.
+  if (nodes.length > 8 && activeMessages.length * 2 < nodes.length) {
+    logDeveloperDiagnostic('message-branch:projection-invalid', {
+      inputMessages: messages.length,
+      resolvedNodes: nodes.length,
+      projectedMessages: activeMessages.length,
+      inactiveNodes: inactiveNodeIds.size,
+      excludedNodes: excludedNodeIds.size,
+      reason: 'projection_less_than_half_of_window',
+    }, 'error', 'message-window');
+    activeMessages = orderBranchNodes(nodes).map((node) => node.message);
+  }
   if (messages.some((message) => !isDeletedMessage(message)) && activeMessages.length === 0) {
     const diagnosticKey = `${nodes.length}:${inactiveNodeIds.size}:${excludedNodeIds.size}:${Array.from(excludedNodeIds).slice(0, 3).join(',')}`;
     if (!emptyProjectionDiagnostics.has(diagnosticKey)) {

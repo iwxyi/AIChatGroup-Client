@@ -546,4 +546,20 @@ describe('messageBranching', () => {
     const ids = projectActiveBranchMessages(chat, messages).map((message) => message.id);
     expect(ids.indexOf('a2-new')).toBeLessThan(ids.indexOf('b2'));
   });
+
+  it('never collapses a large transcript when stale branch state excludes most nodes', () => {
+    const messages = Array.from({ length: 12 }, (_, index) => buildMessage({
+      id: `m-${index}`,
+      chatId: 'chat-1',
+      type: index % 2 ? 'ai' : 'user',
+      senderId: index % 2 ? 'ai-1' : 'user',
+      senderName: index % 2 ? 'AI' : 'User',
+      content: `消息 ${index}`,
+      emotion: 0,
+      timestamp: index + 1,
+      metadata: index === 1 ? { branching: { parentNodeId: 'm-0', revisionRootId: 'm-1', revisionOfMessageId: 'm-1' } } : undefined,
+    }));
+    const chat = buildChat({ messageBranchState: { selectedRevisionByRootId: { 'm-1': 'missing-revision' } } });
+    expect(projectActiveBranchMessages(chat, messages)).toHaveLength(12);
+  });
 });
