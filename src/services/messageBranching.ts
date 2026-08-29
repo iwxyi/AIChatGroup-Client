@@ -341,7 +341,9 @@ function projectActiveBranchMessagesInternal(chat: BranchableChat | null | undef
       }, 'warn', 'message-window');
     }
   }
-  if (nodes.length > 8 && activeMessages.length < Math.ceil(nodes.length * 0.7)) {
+  const recoverableMessages = nodes.filter((node) => !inactiveNodeIds.has(node.nodeId));
+  if (nodes.length > 8 && activeMessages.length < Math.ceil(nodes.length * 0.7)
+    && recoverableMessages.length < Math.ceil(nodes.length * 0.7)) {
     const diagnosticKey = `${nodes.length}:${activeMessages.length}:${inactiveNodeIds.size}:${excludedNodeIds.size}`;
     if (!collapsedProjectionDiagnostics.has(`shrink:${diagnosticKey}`)) {
       collapsedProjectionDiagnostics.add(`shrink:${diagnosticKey}`);
@@ -381,22 +383,25 @@ function projectActiveBranchMessagesInternal(chat: BranchableChat | null | undef
   // pagination never destroys the visible conversation; the error diagnostic
   // remains available for repairing the persisted branch state.
   if (nodes.length > 8 && activeMessages.length * 2 < nodes.length) {
-    const invalidKey = `${nodes.length}:${activeMessages.length}:${inactiveNodeIds.size}:${excludedNodeIds.size}`;
-    if (!invalidProjectionDiagnostics.has(invalidKey)) {
-      invalidProjectionDiagnostics.add(invalidKey);
-      logDeveloperDiagnostic('message-branch:projection-invalid', {
-        inputMessages: messages.length,
-        resolvedNodes: nodes.length,
-        projectedMessages: activeMessages.length,
-        inactiveNodes: inactiveNodeIds.size,
-        excludedNodes: excludedNodeIds.size,
-        reason: 'projection_less_than_half_of_window',
-      }, 'error', 'message-window');
+    if (recoverableMessages.length * 2 < nodes.length) {
+      const invalidKey = `${nodes.length}:${activeMessages.length}:${inactiveNodeIds.size}:${excludedNodeIds.size}`;
+      if (!invalidProjectionDiagnostics.has(invalidKey)) {
+        invalidProjectionDiagnostics.add(invalidKey);
+        logDeveloperDiagnostic('message-branch:projection-invalid', {
+          inputMessages: messages.length,
+          resolvedNodes: nodes.length,
+          projectedMessages: activeMessages.length,
+          recoverableMessages: recoverableMessages.length,
+          inactiveNodes: inactiveNodeIds.size,
+          excludedNodes: excludedNodeIds.size,
+          reason: 'projection_less_than_half_of_window',
+        }, 'error', 'message-window');
+      }
     }
     // Keep the selected revision set, but retain continuation messages. The
     // previous full-window fallback reintroduced every sibling revision and
     // made all branches appear simultaneously.
-    activeMessages = orderBranchNodes(nodes.filter((node) => !inactiveNodeIds.has(node.nodeId))).map((node) => node.message);
+    activeMessages = orderBranchNodes(recoverableMessages).map((node) => node.message);
   }
   if (messages.some((message) => !isDeletedMessage(message)) && activeMessages.length === 0) {
     const diagnosticKey = `${nodes.length}:${inactiveNodeIds.size}:${excludedNodeIds.size}:${Array.from(excludedNodeIds).slice(0, 3).join(',')}`;
