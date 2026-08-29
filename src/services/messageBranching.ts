@@ -388,7 +388,10 @@ function projectActiveBranchMessagesInternal(chat: BranchableChat | null | undef
       excludedNodes: excludedNodeIds.size,
       reason: 'projection_less_than_half_of_window',
     }, 'error', 'message-window');
-    activeMessages = orderBranchNodes(nodes).map((node) => node.message);
+    // Keep the selected revision set, but retain continuation messages. The
+    // previous full-window fallback reintroduced every sibling revision and
+    // made all branches appear simultaneously.
+    activeMessages = orderBranchNodes(nodes.filter((node) => !inactiveNodeIds.has(node.nodeId))).map((node) => node.message);
   }
   if (messages.some((message) => !isDeletedMessage(message)) && activeMessages.length === 0) {
     const diagnosticKey = `${nodes.length}:${inactiveNodeIds.size}:${excludedNodeIds.size}:${Array.from(excludedNodeIds).slice(0, 3).join(',')}`;
