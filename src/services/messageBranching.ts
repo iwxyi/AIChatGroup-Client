@@ -36,6 +36,7 @@ const DISABLED_MODES = new Set([
 ]);
 const emptyProjectionDiagnostics = new Set<string>();
 const collapsedProjectionDiagnostics = new Set<string>();
+const invalidProjectionDiagnostics = new Set<string>();
 
 function diagnosticNodeKey(value: string | null | undefined) {
   if (!value) return null;
@@ -380,14 +381,18 @@ function projectActiveBranchMessagesInternal(chat: BranchableChat | null | undef
   // pagination never destroys the visible conversation; the error diagnostic
   // remains available for repairing the persisted branch state.
   if (nodes.length > 8 && activeMessages.length * 2 < nodes.length) {
-    logDeveloperDiagnostic('message-branch:projection-invalid', {
-      inputMessages: messages.length,
-      resolvedNodes: nodes.length,
-      projectedMessages: activeMessages.length,
-      inactiveNodes: inactiveNodeIds.size,
-      excludedNodes: excludedNodeIds.size,
-      reason: 'projection_less_than_half_of_window',
-    }, 'error', 'message-window');
+    const invalidKey = `${nodes.length}:${activeMessages.length}:${inactiveNodeIds.size}:${excludedNodeIds.size}`;
+    if (!invalidProjectionDiagnostics.has(invalidKey)) {
+      invalidProjectionDiagnostics.add(invalidKey);
+      logDeveloperDiagnostic('message-branch:projection-invalid', {
+        inputMessages: messages.length,
+        resolvedNodes: nodes.length,
+        projectedMessages: activeMessages.length,
+        inactiveNodes: inactiveNodeIds.size,
+        excludedNodes: excludedNodeIds.size,
+        reason: 'projection_less_than_half_of_window',
+      }, 'error', 'message-window');
+    }
     // Keep the selected revision set, but retain continuation messages. The
     // previous full-window fallback reintroduced every sibling revision and
     // made all branches appear simultaneously.
