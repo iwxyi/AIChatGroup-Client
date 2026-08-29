@@ -6,6 +6,7 @@ import { isMessageBranchingEnabled, projectActiveBranchMessages } from './messag
 export interface MessageWindowLike {
   messages?: Message[];
   activeLimit?: number;
+  preserveBranchContext?: boolean;
 }
 
 function shouldKeepExistingMessage(existing: Message, incoming: Message) {
@@ -150,7 +151,7 @@ export function projectMergedChatMessages(params: {
     : 40;
   const cachedWindowMessages = (params.cachedWindow?.messages || [])
     .filter((message) => message.chatId === params.chatId)
-    .slice(-cachedWindowLimit);
+    .slice(params.cachedWindow?.preserveBranchContext ? undefined : -cachedWindowLimit);
   const activeIdentityKeys = buildMessageIdentitySet(activeMessages);
   const cachedMessages = removeHydratedCacheDuplicates(
     shouldUseCachedWindowBase(cachedWindowMessages, activeMessages)
@@ -193,7 +194,12 @@ export function projectCurrentChatMessages(params: {
   cachedWindow?: MessageWindowLike | null;
 }) {
   const projected = projectMergedChatMessages(params);
-  return isMessageBranchingEnabled(params.chat)
-    ? projectActiveBranchMessages(params.chat, projected)
-    : projected;
+  if (!isMessageBranchingEnabled(params.chat)) return projected;
+  const activeRange = getMessageRange(params.activeMessages.filter((message) => message.chatId === params.chatId));
+  const branched = projectActiveBranchMessages(params.chat, projected);
+  if (!activeRange || !params.activeMessages.length) return branched;
+  // Branch selection needs the complete retained cache, but rendering should
+  // stay within the store's current paging window. Use the active window's
+  // timestamp range as the stable viewport boundary after projection.
+  return branched.filter((message) => message.timestamp >= activeRange.min && message.timestamp <= activeRange.max);
 }

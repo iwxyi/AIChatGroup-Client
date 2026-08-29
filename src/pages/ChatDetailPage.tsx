@@ -1018,14 +1018,22 @@ export default function ChatDetailPage() {
     ? projectMergedChatMessages({
       chatId: id,
       activeMessages: messages,
-      cachedWindow: rawCurrentMessageWindow,
+      cachedWindow: rawCurrentMessageWindow ? { ...rawCurrentMessageWindow, preserveBranchContext: Boolean(chat && isMessageBranchingEnabled(chat)) } : rawCurrentMessageWindow,
     })
-    : []), [id, messages, rawCurrentMessageWindow]);
-  const currentChatMessages = useMemo(() => (
-    chat && isMessageBranchingEnabled(chat)
+    : []), [chat, id, messages, rawCurrentMessageWindow]);
+  const currentChatMessages = useMemo(() => {
+    if (!id) return [];
+    const activeRange = messages.filter((message) => message.chatId === id).reduce<{ min: number; max: number } | null>((range, message) => ({
+      min: range ? Math.min(range.min, message.timestamp) : message.timestamp,
+      max: range ? Math.max(range.max, message.timestamp) : message.timestamp,
+    }), null);
+    const projected = chat && isMessageBranchingEnabled(chat)
       ? projectActiveBranchMessages(chat, currentChatAllMessages)
-      : currentChatAllMessages
-  ), [chat, currentChatAllMessages]);
+      : currentChatAllMessages;
+    return activeRange && chat && isMessageBranchingEnabled(chat)
+      ? projected.filter((message) => message.timestamp >= activeRange.min && message.timestamp <= activeRange.max)
+      : projected;
+  }, [chat, currentChatAllMessages, id, messages]);
   useEffect(() => {
     if (!chat || chat.type !== 'assistant' || !id || !currentChatMessages.length) return;
     if (chat.modeState.assistantTitle?.source) return;
