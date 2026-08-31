@@ -53,6 +53,7 @@ import { enhanceImagePrompt } from './imagePromptComposer';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { api, ApiError, type AiSearchResultItem } from './api';
 import { useAuthStore } from '../stores/useAuthStore';
+import { canUseStickerCapability } from './capabilityGraph';
 import { getPromptSpeakerLabel, getPromptTurnTypeLabel, isHumanDirectedMessage } from './chatMessageSemantics';
 
 export interface GeneratedRoundMessage extends Omit<Message, 'id' | 'timestamp' | 'isDeleted'> {
@@ -2306,7 +2307,7 @@ function resolveProfileForCharacter(character: AICharacter, profiles: AIModelPro
   return isAIProfileUsable(matched) ? matched : null;
 }
 
-function buildMediaCapabilities(character: AICharacter, profiles?: AIModelProfile[]) {
+function buildMediaCapabilities(chat: GroupChat, character: AICharacter, profiles?: AIModelProfile[]) {
   const imageProfile = resolveProfileForCharacter(character, profiles, 'image');
   const audioProfile = resolveProfileForCharacter(character, profiles, 'audio');
   return {
@@ -2314,7 +2315,10 @@ function buildMediaCapabilities(character: AICharacter, profiles?: AIModelProfil
     // Learning listening material may use the configured TTS default even when
     // the teacher character has no personal voice assignment.
     audio: Boolean(audioProfile),
-    sticker: useAuthStore.getState().authMode === 'cloud' && useAuthStore.getState().user?.alapiDoutuEnabled === true,
+    sticker: useAuthStore.getState().authMode === 'cloud'
+      && useAuthStore.getState().user?.alapiDoutuEnabled === true
+      && useSettingsStore.getState().enableChatStickers
+      && canUseStickerCapability(chat),
   };
 }
 
@@ -3851,7 +3855,7 @@ export async function generateSpeakerMessage(params: {
 - If the address is a casual aside, technical metaphor, or broad riff, you may respond to the gist, say the term is not your lane, ask a small clarification, or answer briefly before moving on.`
     : '';
   const mediaProfiles = resolveMediaProfiles(params.apiConfig, params.profiles);
-  const mediaCapabilities = buildMediaCapabilities(params.speaker, mediaProfiles);
+  const mediaCapabilities = buildMediaCapabilities(params.chat, params.speaker, mediaProfiles);
   const responseSurface = resolveResponseSurface(params.chat, enginePromptContext, activeMessages, params.speaker);
   const showRoleActions = resolveShowRoleActions(params.chat);
   const turnPlan = deriveTurnPlan({

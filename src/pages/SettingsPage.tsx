@@ -2322,6 +2322,10 @@ export default function SettingsPage() {
             <SectionHeader title={i18n.language.startsWith('zh') ? '聊天显示' : 'Chat display'} />
             <Box sx={{ display: 'grid', gap: 1 }}>
               <FormControlLabel
+                control={<Switch checked={settings.enableChatStickers} onChange={(e) => settings.setEnableChatStickers(e.target.checked)} />}
+                label={i18n.language.startsWith('zh') ? '启用表情包（轻松聊天）' : 'Enable stickers (light chat)'}
+              />
+              <FormControlLabel
                 control={<Switch checked={settings.enableStreamingDisplayAnimation} onChange={(e) => settings.setEnableStreamingDisplayAnimation(e.target.checked)} />}
                 label={i18n.language.startsWith('zh') ? '消息流式输出' : 'Streaming message output'}
               />
@@ -2530,14 +2534,9 @@ export default function SettingsPage() {
           <SurfaceCard id="settings-card-plugins" contentSx={buildCardBodySx()}>
             <Box sx={buildSectionBodySx()}>
               <SectionHeader
-                title={i18n.language.startsWith('zh') ? '插件' : 'Plugins'}
+                title={i18n.language.startsWith('zh') ? '实验' : 'Experiments'}
               />
-              <Box sx={{ display: 'grid', gap: 1.25 }}>
-                <Box sx={{ p: 1.5, borderRadius: 2, border: '1px solid', borderColor: 'divider', bgcolor: 'background.default' }}>
-                  <Typography variant="body2" sx={{ fontWeight: 700, mb: 0.75 }}>
-                    {i18n.language.startsWith('zh') ? '实验' : 'Experiments'}
-                  </Typography>
-                  <Box sx={{ display: 'grid', gap: 0.25 }}>
+              <Box sx={{ display: 'grid', gap: 0.25 }}>
                     {[
                       i18n.language.startsWith('zh') ? 'LLM 记忆闸门' : 'LLM memory gate',
                       i18n.language.startsWith('zh') ? '向量召回' : 'Vector recall',
@@ -2547,8 +2546,6 @@ export default function SettingsPage() {
                         <Chip size="small" variant="outlined" label={i18n.language.startsWith('zh') ? '评估中' : 'Evaluating'} />
                       </Box>
                     ))}
-                  </Box>
-                </Box>
               </Box>
             </Box>
           </SurfaceCard>

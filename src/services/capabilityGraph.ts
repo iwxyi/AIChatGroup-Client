@@ -18,6 +18,7 @@ export interface EffectiveCapabilities {
   allowMarkdown: boolean;
   preferredMoveClass: SessionMoveClass;
   preferredTargetScope: SessionTargetScope;
+  allowStickers: boolean;
 }
 
 function derivePreferredMoveClass(styleProfile: string, family: string): SessionMoveClass {
@@ -52,6 +53,10 @@ export function resolveEffectiveCapabilities(chat: GroupChat, promptContext?: Se
   const allowMarkdown = promptContext?.allowMarkdown ?? generationSettings.allowMarkdownInChat;
   const preferredMoveClass = derivePreferredMoveClass(styleProfile, session.kind.family);
   const preferredTargetScope = derivePreferredTargetScope(chat, session.kind.family, channel.targetPriority);
+  const allowStickers = chat.type !== 'assistant'
+    && chat.sessionKind?.scenarioId !== 'story-reader'
+    && !['analysis', 'deduction', 'mystery', 'study', 'interview', 'agent', 'simulation'].includes(String(chat.sessionKind?.family || session.kind.family))
+    && ['casual_room', 'companion_room'].includes(styleProfile);
   return {
     scenarioId: chat.sessionKind?.scenarioId || session.kind.scenarioId,
     family: chat.sessionKind?.family || session.kind.family,
@@ -65,5 +70,10 @@ export function resolveEffectiveCapabilities(chat: GroupChat, promptContext?: Se
     allowMarkdown,
     preferredMoveClass,
     preferredTargetScope,
+    allowStickers,
   };
+}
+
+export function canUseStickerCapability(chat: GroupChat, promptContext?: SessionGenerationPromptContext | null) {
+  return resolveEffectiveCapabilities(chat, promptContext).allowStickers;
 }

@@ -911,6 +911,7 @@ export interface AppSettings {
   hidePrivateChatIdentity: boolean;
   enableStreamingDisplayAnimation: boolean;
   showVoiceTranscript: boolean;
+  enableChatStickers: boolean;
   developerMode: boolean;
   avatarGeneration: AvatarGenerationSettings;
   aiGeneration: AIGenerationSettings;
@@ -1163,6 +1164,7 @@ export const DEFAULT_SETTINGS: AppSettingsWithMemory = {
   hidePrivateChatIdentity: true,
   enableStreamingDisplayAnimation: true,
   showVoiceTranscript: false,
+  enableChatStickers: true,
   developerMode: false,
   avatarGeneration: DEFAULT_AVATAR_GENERATION_SETTINGS,
   aiGeneration: DEFAULT_AI_GENERATION_SETTINGS,

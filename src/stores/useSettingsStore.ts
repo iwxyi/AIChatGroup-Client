@@ -55,6 +55,7 @@ interface SettingsStore extends AppSettings {
   setHidePrivateChatIdentity: (enabled: boolean) => void;
   setEnableStreamingDisplayAnimation: (enabled: boolean) => void;
   setShowVoiceTranscript: (enabled: boolean) => void;
+  setEnableChatStickers: (enabled: boolean) => void;
   setChatDraftDefaults: (defaults: Partial<ChatDraftDefaults>) => void;
   setCustomBubbleStyles: (styles: BubbleStyleDefinition[]) => void;
   setUserBubbleStyle: (styleId: string | null, style?: BubbleStyleDefinition | null) => void;
@@ -263,6 +264,7 @@ export function buildSettingsPayload(state: AppSettings) {
     hidePrivateChatIdentity: state.hidePrivateChatIdentity,
     enableStreamingDisplayAnimation: state.enableStreamingDisplayAnimation,
     showVoiceTranscript: state.showVoiceTranscript,
+    enableChatStickers: state.enableChatStickers,
     chatDraftDefaults: state.chatDraftDefaults,
     customBubbleStyles: state.customBubbleStyles,
     userBubbleStyleId: state.userBubbleStyleId,
@@ -302,6 +304,7 @@ function syncState(state: Partial<AppSettings> & { api?: APIConfig; aiProfiles?:
     api: buildApiFromProfiles(aiProfiles),
     developerMode: developerModeAllowed && Boolean(state.developerMode),
     enableStreamingDisplayAnimation: state.enableStreamingDisplayAnimation !== false,
+    enableChatStickers: state.enableChatStickers !== false,
     avatarGeneration: {
       ...DEFAULT_AVATAR_GENERATION_SETTINGS,
       ...(state.avatarGeneration || {}),
@@ -874,6 +877,14 @@ export const useSettingsStore = create<SettingsStore>()(
         });
       },
 
+      setEnableChatStickers: (enableChatStickers) => {
+        set((state) => {
+          const next = { ...state, enableChatStickers, lastSyncedAt: Date.now() };
+          syncToServer(buildSettingsPayload(next), set);
+          return next;
+        });
+      },
+
       setChatDraftDefaults: (defaults) => {
         set((state) => {
           const next = {
@@ -986,6 +997,7 @@ export const useSettingsStore = create<SettingsStore>()(
         hidePrivateChatIdentity: state.hidePrivateChatIdentity,
         enableStreamingDisplayAnimation: state.enableStreamingDisplayAnimation,
         showVoiceTranscript: state.showVoiceTranscript,
+        enableChatStickers: state.enableChatStickers,
         developerMode: state.developerMode,
         avatarGeneration: state.avatarGeneration,
         aiGeneration: state.aiGeneration,
