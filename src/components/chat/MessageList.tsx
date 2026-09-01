@@ -22,6 +22,7 @@ import type { AssistantHtmlInteractionPayload } from '../../features/assistantHt
 import { buildBubblePreview, resolveCharacterBubbleStyle } from '../../utils/bubbleStyle';
 import { motion, prefersReducedMotion, transition } from '../../styles/motion';
 import { buildMessageListRenderItems, type MessageListRenderItem } from './messageListRenderItems';
+import { SCROLL_INTENT_PRIORITY, shouldBlockScrollWrite, type ScrollIntentKind, type ScrollTransaction } from '../../services/scrollCoordinator';
 
 const TOP_PREFETCH_THRESHOLD = 520;
 // Keep following the tail when the user is only slightly above it. The input
@@ -56,24 +57,7 @@ interface ScrollAnchorSnapshot {
   sourceTimestamp?: number;
 }
 
-type MessageScrollIntentKind =
-  | 'userScroll'
-  | 'explicitJump'
-  | 'initialRestore'
-  | 'prependPreserve'
-  | 'appendPreserve'
-  | 'tailFollow'
-  | 'resizePreserve';
-
-const MESSAGE_SCROLL_INTENT_PRIORITY: Record<MessageScrollIntentKind, number> = {
-  userScroll: 100,
-  explicitJump: 90,
-  initialRestore: 80,
-  prependPreserve: 70,
-  appendPreserve: 70,
-  tailFollow: 50,
-  resizePreserve: 40,
-};
+type MessageScrollIntentKind = ScrollIntentKind;
 
 export interface MessageListScrollPosition extends ScrollAnchorSnapshot {
   pinned: boolean;
@@ -642,7 +626,8 @@ export default function MessageList({
   const followScrollAnimationRef = useRef<number | null>(null);
   const programmaticScrollRef = useRef<{ mode: 'follow' | 'jump'; startedAt: number; targetTop: number } | null>(null);
   const scrollWriteIntentRef = useRef<{ kind: MessageScrollIntentKind; priority: number; startedAt: number } | null>(null);
-  const suppressTailFollowUntilRef = useRef(0);
+  const scrollTransactionRef = useRef<ScrollTransaction | null>(null);
+  const scrollTransactionStableFramesRef = useRef(0);
   const initialTailRevealFramesRef = useRef<number[]>([]);
   const initialAnchorRevealFramesRef = useRef<number[]>([]);
   const previousStoryChoiceSubmittingValueRef = useRef<string | null>(storyChoiceSubmittingValue);
@@ -860,7 +845,7 @@ export default function MessageList({
     hasUserScrollIntentRef.current = true;
     scrollWriteIntentRef.current = {
       kind: 'userScroll',
-      priority: MESSAGE_SCROLL_INTENT_PRIORITY.userScroll,
+      priority: SCROLL_INTENT_PRIORITY.userScroll,
       startedAt: performance.now(),
     };
     cancelProgrammaticScroll();
@@ -895,29 +880,23 @@ export default function MessageList({
     const container = containerRef.current;
     if (!container) return false;
     const now = performance.now();
-    const priority = MESSAGE_SCROLL_INTENT_PRIORITY[intent];
+    const priority = SCROLL_INTENT_PRIORITY[intent];
     const active = scrollWriteIntentRef.current;
     const userScrollActive = isUserScrollMomentumActive();
-    if (!options?.allowDuringUserScroll && userScrollActive && priority < MESSAGE_SCROLL_INTENT_PRIORITY.explicitJump) {
+    const blockedReason = shouldBlockScrollWrite({
+      intent,
+      now,
+      active: active ? { intent: active.kind, priority: active.priority, startedAt: active.startedAt } : null,
+      userMomentum: userScrollActive,
+      allowDuringUserScroll: options?.allowDuringUserScroll,
+      settleMs: SCROLL_INTENT_SETTLE_MS,
+      transaction: scrollTransactionRef.current,
+    });
+    if (blockedReason) {
       logDeveloperDiagnostic('chat-scroll:intent-blocked', {
         intent,
-        reason: 'user-scroll-active',
+        reason: blockedReason,
         activeIntent: active?.kind,
-        scrollTop: Math.round(container.scrollTop),
-      }, 'debug', 'chat-scroll');
-      return false;
-    }
-    if (
-      active
-      && active.priority > priority
-      && now - active.startedAt <= SCROLL_INTENT_SETTLE_MS
-      && !(active.kind === 'userScroll' && options?.allowDuringUserScroll)
-    ) {
-      logDeveloperDiagnostic('chat-scroll:intent-blocked', {
-        intent,
-        reason: 'higher-priority-active',
-        activeIntent: active.kind,
-        activeAge: Math.round(now - active.startedAt),
         scrollTop: Math.round(container.scrollTop),
       }, 'debug', 'chat-scroll');
       return false;
@@ -1451,6 +1430,14 @@ export default function MessageList({
       if (frame != null) window.cancelAnimationFrame(frame);
       frame = window.requestAnimationFrame(() => {
         frame = null;
+        if (scrollTransactionRef.current) {
+          scrollTransactionStableFramesRef.current += 1;
+          if (scrollTransactionStableFramesRef.current >= 3) {
+            scrollTransactionRef.current = null;
+            scrollTransactionStableFramesRef.current = 0;
+          }
+          return;
+        }
         if (isUserScrollMomentumActive()) return;
         if (shouldStickToBottomRef.current && autoStickToBottom) {
           followScrollToBottom({ animate: true, mode: 'follow', intent: 'tailFollow' });
@@ -1541,7 +1528,17 @@ export default function MessageList({
   useLayoutEffect(() => {
     if (!scrollRequest || appliedScrollRequestKeyRef.current === scrollRequest.key) return;
     if (scrollRequest.key.startsWith('branch-switch:')) {
-      suppressTailFollowUntilRef.current = performance.now() + 1800;
+      // A branch switch supersedes any tail-follow animation started for the
+      // previous branch. If it is left alive, its next rAF can write the old
+      // tail position after the new anchor has already been restored.
+      cancelProgrammaticScroll();
+      const transaction: ScrollTransaction = {
+        id: scrollRequest.key,
+        intent: 'explicitJump',
+        startedAt: performance.now(),
+      };
+      scrollTransactionRef.current = transaction;
+      scrollTransactionStableFramesRef.current = 0;
       let cancelled = false;
       let firstFrame = 0;
       let secondFrame = 0;
@@ -1565,6 +1562,10 @@ export default function MessageList({
         cancelled = true;
         cancelAnimationFrame(firstFrame);
         cancelAnimationFrame(secondFrame);
+        if (scrollTransactionRef.current?.id === transaction.id) {
+          scrollTransactionRef.current = null;
+          scrollTransactionStableFramesRef.current = 0;
+        }
       };
     }
     const restored = restoreScrollAnchor(scrollRequest, { intent: 'explicitJump', allowDuringUserScroll: true });
@@ -1585,7 +1586,7 @@ export default function MessageList({
       key: scrollRequest.key,
       renderItemCount: renderItems.length,
     }, 'info');
-  }, [highlightScrollTarget, onBottomPinnedChange, onScrollRequestResolved, renderItems.length, restoreScrollAnchor, scrollRequest, updatePinnedState]);
+  }, [cancelProgrammaticScroll, highlightScrollTarget, onBottomPinnedChange, onScrollRequestResolved, renderItems.length, restoreScrollAnchor, scrollRequest, updatePinnedState]);
 
   useLayoutEffect(() => {
     const pending = pendingInitialRestoreRef.current;
@@ -1723,7 +1724,6 @@ export default function MessageList({
     );
 
     if (!hasJumpedToBottomRef.current) return;
-    if (performance.now() < suppressTailFollowUntilRef.current) return;
     if (!autoStickToBottom) {
       if (!metricsChanged) return;
       const snapshot = latestScrollAnchorRef.current;
@@ -1735,7 +1735,7 @@ export default function MessageList({
     // An explicit branch switch owns the scroll position; do not let the
     // tail-follow effect pull the viewport to the new (possibly longer) tail
     // before the anchor restoration runs.
-    if (scrollRequest?.key.startsWith('branch-switch:')) return;
+    if (scrollTransactionRef.current?.intent === 'explicitJump') return;
     if (!metricsChanged) return;
 
     const tailChanged = currentMetrics.lastItemKey !== previousMetrics.lastItemKey
