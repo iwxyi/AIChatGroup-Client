@@ -9,7 +9,7 @@ import { applyChatCommitRuntime } from './chatCommitApply';
 import { createRuntimeMemoryTimer } from './runtimeMemoryTimer';
 import { isLocalOnlyMediaMode, processRichMessageMedia } from './richMessageMedia';
 import { parseRuntimeEvent } from './runtimeEventFactory';
-import { attachMessageToActiveBranch } from './messageBranching';
+import { attachMessageToActiveBranch, buildBranchStateWithHead, isMessageBranchingEnabled } from './messageBranching';
 import { applyPresenceUpdateToTransition } from './characterPresence';
 import { useSettingsStore } from '../stores/useSettingsStore';
 
@@ -90,6 +90,12 @@ export async function runChatCommitPipeline(params: {
         if (!isLocalOnlyMediaMode()) startMediaProcessing(message);
       },
     });
+    if (isMessageBranchingEnabled(params.chat)) {
+      const nodeId = persistedMessage.metadata?.branching?.nodeId || persistedMessage.clientKey || persistedMessage.id;
+      await params.updateChat(params.chatId, {
+        messageBranchState: buildBranchStateWithHead(params.chat.messageBranchState, nodeId),
+      });
+    }
     if (params.aiProfiles?.length && persistedMessage.metadata?.attachments?.some((item) => item.status === 'queued')) {
       if (isLocalOnlyMediaMode() || persistedMessage.serverId) {
         startMediaProcessing(persistedMessage);

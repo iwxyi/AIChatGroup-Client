@@ -60,7 +60,7 @@ import { getStoryChoiceGateState, resolveStoryReaderRole, sanitizeStoryChoicePro
 import { resolveSessionScrollCapabilities } from '../services/sessionScrollCapabilities';
 import { buildStoryRoomOpeningPreview, type StoryRoomOpeningPreview } from '../services/storyRoomOpeningPreview';
 import { motion, prefersReducedMotion, transition } from '../styles/motion';
-import { attachMessageToActiveBranch, buildMessageBranchVersionInfoByMessageId, createMessageRevisionDraft, getBranchRevisionGroup, getMessageBranchVersionInfo, isMessageBranchingEnabled, projectActiveBranchMessages, resolveMessageBranchNodes } from '../services/messageBranching';
+import { attachMessageToActiveBranch, buildBranchStateWithHead, buildMessageBranchVersionInfoByMessageId, createMessageRevisionDraft, forkBranchState, getBranchRevisionGroup, getMessageBranchVersionInfo, isMessageBranchingEnabled, projectActiveBranchMessages, resolveMessageBranchNodes } from '../services/messageBranching';
 import { getLatestChatPreviewMessage } from '../services/chatLatestMessage';
 import { projectMergedChatMessages } from '../services/currentChatMessages';
 import { resolveSessionFamilyKey } from '../services/sessionEngineKeys';
@@ -791,6 +791,7 @@ export default function ChatDetailPage() {
   const upsertMessage = useMessageStore((state) => state.upsertMessage);
   const upsertMessages = useMessageStore((state) => state.upsertMessages);
   const deleteMessage = useMessageStore((state) => state.deleteMessage);
+  const withdrawMessage = useMessageStore((state) => state.withdrawMessage);
   const hasMore = useMessageStore((state) => state.hasMore);
   const hasMoreNewer = useMessageStore((state) => state.hasMoreNewer);
   const isLoading = useMessageStore((state) => state.isLoading);
@@ -1590,9 +1591,9 @@ export default function ChatDetailPage() {
   }, [id, loopToken]);
 
   const appendEventMessage = useCallback(async (chatId: string, payload: { eventType: string; title: string; summary: string; pair?: [string, string]; metrics?: unknown; visibilityScope?: 'public' | 'role_private' | 'moderator_only' | 'pair_private' | 'derived_public'; visibleToIds?: string[]; visibleToRoles?: string[]; createdAt?: number; sourceMessageId?: string }, sourceMessageId?: string) => {
-    const targetChat = chats.find((item) => item.id === chatId);
+    const targetChat = useChatStore.getState().chats.find((item) => item.id === chatId) || null;
     const eventPayload = normalizeRuntimeEvent(targetChat ? buildPrivateSessionEvent(targetChat, payload) : payload);
-    const eventMessage = attachMessageToActiveBranch(targetChat || chat, currentChatMessages, {
+    const eventMessage = {
       chatId,
       type: 'event' as const,
       senderId: 'system',
@@ -1603,7 +1604,7 @@ export default function ChatDetailPage() {
       }),
       emotion: 0,
       timestamp: eventPayload.createdAt,
-    });
+    };
     const { timestamp: eventTimestamp, ...persistedEventMessage } = eventMessage;
     await persistLocalFirstMessage({
       upsertMessage,
@@ -1614,14 +1615,14 @@ export default function ChatDetailPage() {
 
   const appendEventMessages = useCallback(async (chatId: string, payloads: Array<{ eventType: string; title: string; summary: string; pair?: [string, string]; metrics?: unknown; visibilityScope?: 'public' | 'role_private' | 'moderator_only' | 'pair_private' | 'derived_public'; visibleToIds?: string[]; visibleToRoles?: string[]; createdAt?: number; sourceMessageId?: string }>, sourceMessageId?: string) => {
     if (!payloads.length) return;
-    const targetChat = chats.find((item) => item.id === chatId);
+    const targetChat = useChatStore.getState().chats.find((item) => item.id === chatId) || null;
     await persistLocalFirstMessages({
       upsertMessages,
       deferLocalUpsert: true,
       messages: payloads.map((payload, index) => {
         const eventPayload = normalizeRuntimeEvent(targetChat ? buildPrivateSessionEvent(targetChat, payload) : payload);
         const createdAt = eventPayload.createdAt ?? Date.now() + index;
-        const message = attachMessageToActiveBranch(targetChat || chat, currentChatMessages, {
+        const message = {
           timestamp: createdAt,
           chatId,
           type: 'event' as const,
@@ -1633,7 +1634,7 @@ export default function ChatDetailPage() {
             sourceMessageId: eventPayload.sourceMessageId || sourceMessageId,
           }),
           emotion: 0,
-        });
+        };
         const { timestamp, ...persistedMessage } = message;
         return {
           timestamp,
@@ -1647,8 +1648,13 @@ export default function ChatDetailPage() {
     const anchoredMessage = chat && message.chatId === chat.id
       ? attachMessageToActiveBranch(chat, currentChatMessages, message)
       : message;
-    return addMessage(anchoredMessage as Parameters<typeof addMessage>[0]);
-  }, [addMessage, chat, currentChatMessages]);
+    const created = await addMessage(anchoredMessage as Parameters<typeof addMessage>[0]);
+    if (chat && created && isMessageBranchingEnabled(chat)) {
+      const nodeId = created.metadata?.branching?.nodeId || created.clientKey || created.id;
+      await updateChat(chat.id, { messageBranchState: buildBranchStateWithHead(chat.messageBranchState, nodeId) });
+    }
+    return created;
+  }, [addMessage, chat, currentChatMessages, updateChat]);
 
   const upsertMessageStable = useCallback((message: Message) => {
     upsertMessageWithLiveReveal(message);
@@ -1766,8 +1772,13 @@ export default function ChatDetailPage() {
     if (!chat || !id || chatInteractionDisabled || isStoryRoom || !detailBootstrapComplete || isLoading) return;
     const conversationTurnCount = currentChatMessages.filter((message) => message.type === 'user' || message.type === 'ai').length;
     if (conversationTurnCount > 0) {
+      const hasStreamingTurn = currentChatMessages.some((message) => message.isStreaming);
       openingMessageCountRef.current = conversationTurnCount;
-      openingSuppressedRef.current = false;
+      // Keep the single-flight opening guard while the first AI node is still
+      // streaming. The placeholder already counts as an AI turn, and clearing
+      // the guard at that point lets a transient isRunning=false render start
+      // a second loop, producing an empty sibling (1/2).
+      if (!hasStreamingTurn) openingSuppressedRef.current = false;
       return;
     }
     if (openingMessageCountRef.current > 0) {
@@ -1776,6 +1787,11 @@ export default function ChatDetailPage() {
     }
     if (openingSuppressedRef.current) return;
     if (isRunning || isDirectReplyPending) return;
+    // React effects can re-run while the opening turn is being scheduled
+    // (notably after clearing history and seeding the topic guide). Keep the
+    // single-flight guard local to this page so two opening loops cannot create
+    // sibling AI nodes from the same empty conversation.
+    if (openingLoopRef.current) return;
     if (chat.type === 'assistant') return;
     openingLoopRef.current = true;
     resume();
@@ -1791,15 +1807,16 @@ export default function ChatDetailPage() {
 
   const commitPersistedManualRuntime = useCallback(async (message: Message, recentMessages: Message[]) => {
     if (!chat || !id) return;
+    const runtimeChat = useChatStore.getState().chats.find((item) => item.id === id) || chat;
     const [{ runPersistedSessionCommitRuntime }, { resolveSessionEngine }] = await Promise.all([
       import('../services/sessionCommitPipeline'),
       import('../services/sessionEngineRegistry'),
     ]);
-    const sessionEngine = resolveSessionEngine(chat);
+    const sessionEngine = resolveSessionEngine(runtimeChat);
     await runPersistedSessionCommitRuntime({
       api,
       chatId: id,
-      chat,
+      chat: runtimeChat,
       characters,
       message,
       currentMessages: recentMessages,
@@ -1852,22 +1869,15 @@ export default function ChatDetailPage() {
       });
       const createdRevision = await addAnchoredMessage(revisionDraft);
       const revisionNodeId = createdRevision.metadata?.branching?.nodeId || createdRevision.id;
-      const revisionRootId = createdRevision.metadata?.branching?.revisionRootId || sourceNode.revisionRootId || sourceMessage.id;
-      const parentKey = sourceNode.parentNodeId || '';
-      const nextBranchState: MessageBranchState = {
-        ...(chat.messageBranchState || {}),
-        enabled: true,
-        selectedRevisionByRootId: {
-          ...(chat.messageBranchState?.selectedRevisionByRootId || {}),
-          [revisionRootId]: revisionNodeId,
-        },
-        activeChildByParentNodeId: {
-          ...(chat.messageBranchState?.activeChildByParentNodeId || {}),
-          [parentKey]: revisionNodeId,
-        },
-        activeLeafNodeId: revisionNodeId,
-        updatedAt: Date.now(),
-      };
+      const activeBranchName = chat.messageBranchState?.activeBranchName || 'main';
+      const currentHeadNodeId = chat.messageBranchState?.refs?.[activeBranchName]?.headNodeId
+        || currentChatMessages.at(-1)?.metadata?.branching?.nodeId
+        || currentChatMessages.at(-1)?.id
+        || null;
+      const preservedState = currentHeadNodeId && currentHeadNodeId !== sourceNode.parentNodeId
+        ? forkBranchState(chat.messageBranchState, currentHeadNodeId, `${activeBranchName}-before-edit-${Date.now()}`)
+        : chat.messageBranchState;
+      const nextBranchState: MessageBranchState = buildBranchStateWithHead(preservedState, revisionNodeId, activeBranchName);
       const nextChat: GroupChat = {
         ...chat,
         messageBranchState: nextBranchState,
@@ -1901,7 +1911,7 @@ export default function ChatDetailPage() {
           if (directReplyAbortController.signal.aborted) return false;
           if (directReplyEpochRef.current !== directReplyEpoch) return false;
           const latestChat = useChatStore.getState().chats.find((item) => item.id === id) || nextChat;
-          if (latestChat.messageBranchState?.selectedRevisionByRootId?.[revisionRootId] !== revisionNodeId) return false;
+          if (latestChat.messageBranchState?.activeLeafNodeId !== revisionNodeId) return false;
           const messageState = useMessageStore.getState();
           const latestMessages = projectMergedChatMessages({
             chatId: id,
@@ -1954,7 +1964,7 @@ export default function ChatDetailPage() {
           if (assistantReplyAbortController.signal.aborted) return false;
           if (directReplyEpochRef.current !== directReplyEpoch) return false;
           const latestChat = useChatStore.getState().chats.find((item) => item.id === id) || nextChat;
-          if (latestChat.messageBranchState?.selectedRevisionByRootId?.[revisionRootId] !== revisionNodeId) return false;
+          if (latestChat.messageBranchState?.activeLeafNodeId !== revisionNodeId) return false;
           const messageState = useMessageStore.getState();
           const latestMessages = projectMergedChatMessages({
             chatId: id,
@@ -2063,8 +2073,75 @@ export default function ChatDetailPage() {
     });
   }, [addAnchoredMessage, aiProfiles, api, appendEventMessage, appendEventMessageStable, appendEventMessagesStable, appendLocalInterceptionHint, applyChatRuntimeDelta, cancelActiveConversationLoop, characters, chat, chatInteractionDisabled, chatReadOnlyReason, chats, commitPersistedManualRuntime, currentChatAllMessages, enqueueManualInput, getNextMessageTimestamp, id, recordSpeak, selectedAssistantArtifactId, setSnackbar, showErrorToast, startConversationLoopIfNeeded, updateCharacter, updateCharacters, updateChat, upsertMessageStable]);
 
+  const handleRegenerateAssistant = useCallback(async (sourceMessage: Message) => {
+    if (!chat || !id || !isMessageBranchingEnabled(chat) || sourceMessage.type !== 'ai') return;
+    if (chatInteractionDisabled) {
+      setSnackbar({ open: true, message: chatReadOnlyReason || '当前会话不可继续', severity: 'info' });
+      return;
+    }
+    directReplyAbortRef.current?.abort();
+    directReplyEpochRef.current += 1;
+    const epoch = directReplyEpochRef.current;
+    await enqueueManualInput(async () => {
+      if (isRunningRef.current) cancelActiveConversationLoop('message_regenerate');
+      const sourceNode = resolveMessageBranchNodes(currentChatAllMessages)
+        .find((node) => node.message.id === sourceMessage.id || node.nodeId === sourceMessage.id);
+      if (!sourceNode) return;
+      const activeMessages = projectActiveBranchMessages(chat, currentChatAllMessages);
+      const sourceIndex = activeMessages.findIndex((message) => message.id === sourceMessage.id);
+      const contextMessages = sourceIndex >= 0 ? activeMessages.slice(0, sourceIndex) : activeMessages;
+      const state = chat.messageBranchState;
+      const activeName = state?.activeBranchName || 'main';
+      const activeRefHead = state?.refs?.[activeName]?.headNodeId || activeMessages.at(-1)?.metadata?.branching?.nodeId || activeMessages.at(-1)?.id || null;
+      let nextState = state;
+      if (activeRefHead && activeRefHead !== sourceNode.parentNodeId) {
+        nextState = forkBranchState(nextState, activeRefHead, `${activeName}-before-regenerate-${Date.now()}`);
+      }
+      nextState = buildBranchStateWithHead(nextState, sourceNode.parentNodeId, activeName);
+      const nextChat: GroupChat = { ...chat, messageBranchState: nextState };
+      await updateChat(id, { messageBranchState: nextState });
+      const controller = new AbortController();
+      directReplyAbortRef.current = controller;
+      setIsDirectReplyPending(true);
+      try {
+        const { runAssistantChatReplyFlow } = await import('../services/assistantChatFlow');
+        const regenerated = await runAssistantChatReplyFlow({
+          api,
+          aiProfiles,
+          chatId: id,
+          chat: nextChat,
+          currentMessages: contextMessages,
+          selectedArtifactId: selectedAssistantArtifactId,
+          timestamp: getNextMessageTimestamp(),
+          upsertMessage: upsertMessageStable,
+          updateChat,
+          signal: controller.signal,
+          replySender: { id: sourceMessage.senderId, name: sourceMessage.senderName },
+          revisionOfNodeId: sourceNode.nodeId,
+          shouldContinue: () => !controller.signal.aborted && directReplyEpochRef.current === epoch,
+        });
+        const regeneratedNodeId = regenerated.metadata?.branching?.nodeId || regenerated.clientKey || regenerated.id;
+        await updateChat(id, {
+          messageBranchState: buildBranchStateWithHead(nextState, regeneratedNodeId, activeName),
+          lastMessageAt: regenerated.timestamp,
+          latestMessage: regenerated,
+        });
+        setSnackbar({ open: true, message: '已重新回答', severity: 'success' });
+      } catch (error) {
+        if (!isGenerationCancelledError(error)) showErrorToast(error instanceof Error ? error.message : String(error));
+      } finally {
+        if (directReplyAbortRef.current === controller) directReplyAbortRef.current = null;
+        setIsDirectReplyPending(false);
+      }
+    });
+  }, [aiProfiles, api, chat, chatInteractionDisabled, chatReadOnlyReason, currentChatAllMessages, enqueueManualInput, getNextMessageTimestamp, id, selectedAssistantArtifactId, setSnackbar, showErrorToast, cancelActiveConversationLoop, updateChat, upsertMessageStable]);
+
   const handleSwitchMessageRevision = useCallback(async (sourceMessage: Message, direction: -1 | 1) => {
-    if (!chat || !id || !isMessageBranchingEnabled(chat)) return;
+    // A streaming placeholder is not a revision yet. It must be finalized
+    // before branch navigation is exposed; otherwise cancelling it can leave
+    // a second sibling ref and make the next generated answer look like a
+    // third branch.
+    if (!chat || !id || !isMessageBranchingEnabled(chat) || sourceMessage.isStreaming) return;
     directReplyAbortRef.current?.abort();
     directReplyEpochRef.current += 1;
     const cancelledRunningLoop = isRunningRef.current;
@@ -2090,22 +2167,7 @@ export default function ChatDetailPage() {
     if (!targetNode) return;
 
     const targetNodeId = targetNode.nodeId || target.id;
-    const revisionRootId = targetNode.revisionRootId || target.id;
-    const parentKey = targetNode.parentNodeId || '';
-    const nextBranchState: MessageBranchState = {
-      ...(chat.messageBranchState || {}),
-      enabled: true,
-      selectedRevisionByRootId: {
-        ...(chat.messageBranchState?.selectedRevisionByRootId || {}),
-        [revisionRootId]: targetNodeId,
-      },
-      activeChildByParentNodeId: {
-        ...(chat.messageBranchState?.activeChildByParentNodeId || {}),
-        [parentKey]: targetNodeId,
-      },
-      activeLeafNodeId: targetNodeId,
-      updatedAt: Date.now(),
-    };
+    const nextBranchState: MessageBranchState = buildBranchStateWithHead(chat.messageBranchState, targetNodeId);
     const nextChat: GroupChat = {
       ...chat,
       messageBranchState: nextBranchState,
@@ -2420,7 +2482,6 @@ export default function ChatDetailPage() {
       return;
     }
     await enqueueManualInput(async () => {
-      const recentMessages = currentChatMessages;
       const userMessage = await addMessageStable({
         chatId: id,
         type: 'user',
@@ -2432,6 +2493,11 @@ export default function ChatDetailPage() {
         metadata: attachments.length ? { attachments } : undefined,
       });
       void updateChat(id, { lastMessageAt: userMessage.timestamp, latestMessage: userMessage });
+      // Read both values after the optimistic user commit. The render
+      // closure can still hold the pre-clear branch head, which would attach
+      // the first AI reply to a deleted parent node.
+      const latestChat = useChatStore.getState().chats.find((item) => item.id === id) || chat;
+      const recentMessages = useMessageStore.getState().messages.filter((message) => message.chatId === id);
       const recentMessagesWithUser = [...recentMessages.filter((message) => message.id !== userMessage.id), userMessage];
       if (chat.type === 'direct') {
         directReplyAbortRef.current?.abort();
@@ -2447,7 +2513,7 @@ export default function ChatDetailPage() {
               api,
               aiProfiles,
               chatId: id,
-              chat,
+              chat: latestChat,
               userMessage,
               content,
               characters,
@@ -2491,7 +2557,7 @@ export default function ChatDetailPage() {
               api,
               aiProfiles,
               chatId: id,
-              chat,
+            chat: latestChat,
               currentMessages: recentMessagesWithUser,
               selectedArtifactId: selectedAssistantArtifactId,
               timestamp: userMessage.timestamp + 1,
@@ -2515,7 +2581,7 @@ export default function ChatDetailPage() {
         return;
       }
       await commitPersistedManualRuntime(userMessage, recentMessagesWithUser);
-      const isLearningProgressRoom = hasRoomCapability(chat, 'html-interactive');
+      const isLearningProgressRoom = hasRoomCapability(latestChat, 'html-interactive');
       if (isLearningProgressRoom) setIsDirectReplyPending(true);
       // Learning rooms use the semantic assistant planner for every turn.
       // The planner decides from the requested outcome whether this is a
@@ -2528,7 +2594,7 @@ export default function ChatDetailPage() {
           api,
           aiProfiles,
           chatId: id,
-          chat,
+          chat: latestChat,
           currentMessages: recentMessagesWithUser,
           selectedArtifactId: selectedAssistantArtifactId,
           timestamp: userMessage.timestamp + 1,
@@ -2542,13 +2608,13 @@ export default function ChatDetailPage() {
         }).catch((error) => showErrorToast(error instanceof Error ? error.message : String(error)));
         return;
       }
-      if (chat.type === 'ai_direct') {
-        startConversationLoopIfNeeded(chat);
+      if (latestChat.type === 'ai_direct') {
+        startConversationLoopIfNeeded(latestChat);
         const { applyAiDirectFeedback } = await import('../services/directSessionRuntime');
-        await applyAiDirectFeedback({ chat, chats, characters, content, updateCharacter, updateChat, appendEventMessage });
+        await applyAiDirectFeedback({ chat: latestChat, chats, characters, content, updateCharacter, updateChat, appendEventMessage });
         return;
       }
-      const startBlockReason = startConversationLoopIfNeeded(chat);
+      const startBlockReason = startConversationLoopIfNeeded(latestChat);
       if (isLearningProgressRoom && startBlockReason) setIsDirectReplyPending(false);
     });
   }, [addMessageStable, aiProfiles, api, appendEventMessage, appendEventMessageStable, appendEventMessagesStable, appendLocalInterceptionHint, applyChatRuntimeDelta, characters, chat, chatInteractionDisabled, chatReadOnlyReason, chats, commitPersistedManualRuntime, currentChatMessages, currentUser?.nickname, enqueueManualInput, getNextMessageTimestamp, id, recordSpeak, selectedAssistantArtifactId, setSnackbar, showErrorToast, startConversationLoopIfNeeded, updateCharacter, updateCharacters, updateChat, upsertMessageStable]);
@@ -3808,9 +3874,11 @@ export default function ChatDetailPage() {
             characters={characters}
             currentUser={currentUser ? { nickname: currentUser.nickname, avatar: currentUser.avatar } : undefined}
             onCreateRevision={isMessageBranchingEnabled(chat) && !chatInteractionDisabled ? handleCreateMessageRevision : undefined}
+            onRegenerate={isMessageBranchingEnabled(chat) && !chatInteractionDisabled ? handleRegenerateAssistant : undefined}
             onSwitchRevision={isMessageBranchingEnabled(chat) ? handleSwitchMessageRevision : undefined}
             branchVersionInfoByMessageId={branchVersionInfoByMessageId}
             onDeleteMessage={deleteMessage}
+            onWithdrawMessage={withdrawMessage}
             onAnalyzeMessage={analyzeMessage}
             onExpressionFeedback={handleExpressionFeedback}
             onRetryMedia={handleRetryMedia}

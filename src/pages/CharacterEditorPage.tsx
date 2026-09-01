@@ -316,6 +316,7 @@ export default function CharacterEditorPage() {
         }}
         onCancel={() => setDeleteOpen(false)}
         destructive
+        loadingLabel="删除中"
       />
     </Box>
   );

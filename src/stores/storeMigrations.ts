@@ -7,7 +7,8 @@ import { DEFAULT_CHAT_APPEARANCE_SETTINGS, DEFAULT_DEVELOPER_UI_PREFS, DEFAULT_S
 
 type VersionedPersistedState<T> = T | undefined;
 
-export const CLIENT_STORE_SCHEMA_VERSION = 5;
+export const CLIENT_STORE_SCHEMA_VERSION = 6;
+export const MESSAGE_BRANCH_SCHEMA_VERSION = 2;
 
 function clampRelationshipMetric(value: unknown, min: number, max: number) {
   const safeValue = typeof value === 'number' && Number.isFinite(value) ? value : 0;
@@ -91,6 +92,23 @@ function migrateChat(input: GroupChat): GroupChat {
         cohesion: migrateRoomCohesion(input.worldState.structuredRoomState.cohesion),
       }
     : input.worldState?.structuredRoomState;
+  const legacyBranchState = input.messageBranchState;
+  const branchState = legacyBranchState && !legacyBranchState.refs?.main
+    ? {
+        ...legacyBranchState,
+        activeBranchName: 'main',
+        refs: {
+          main: {
+            name: 'main',
+            headNodeId: legacyBranchState.activeLeafNodeId || null,
+            createdAt: input.createdAt || Date.now(),
+            updatedAt: legacyBranchState.updatedAt || input.updatedAt || Date.now(),
+            version: 1,
+          },
+        },
+        stateVersion: 1,
+      }
+    : legacyBranchState;
   return {
     ...input,
     memberIds: Array.isArray(input.memberIds) ? input.memberIds : [],
@@ -123,6 +141,7 @@ function migrateChat(input: GroupChat): GroupChat {
       structuredRoomState,
     },
     runtimeDetailLoaded: inferLegacyChatRuntimeDetailLoaded(input),
+    messageBranchState: branchState,
   };
 }
 
@@ -144,21 +163,89 @@ export function migrateChatStoreState<T extends { chats?: GroupChat[] }>(persist
 
 export function migrateMessageStoreState<T extends { messages?: Array<Record<string, unknown>>; messageWindowsByChatId?: Record<string, { messages?: Array<Record<string, unknown>> }> }>(persisted: VersionedPersistedState<T>): VersionedPersistedState<T> {
   if (!persisted) return persisted;
+  const migrateCollection = (messages: Array<Record<string, unknown>>, inferMissingParents = true) => {
+    const ordered = messages.slice().sort((left, right) => Number(left.timestamp || 0) - Number(right.timestamp || 0));
+    const aliases = new Map<string, string>();
+    for (const message of ordered) {
+      const metadata = message.metadata && typeof message.metadata === 'object' && !Array.isArray(message.metadata)
+        ? message.metadata as Record<string, unknown>
+        : {};
+      const branching = metadata.branching && typeof metadata.branching === 'object' && !Array.isArray(metadata.branching)
+        ? metadata.branching as Record<string, unknown>
+        : {};
+      const nodeId = typeof branching.nodeId === 'string' && branching.nodeId.trim()
+        ? branching.nodeId.trim()
+        : (typeof message.clientKey === 'string' && message.clientKey.trim()
+          ? message.clientKey.trim()
+          : (typeof message.id === 'string' ? message.id : `migrated-${String(message.timestamp || Date.now())}`));
+      aliases.set(nodeId, nodeId);
+      if (typeof message.id === 'string') aliases.set(message.id, nodeId);
+      if (typeof message.clientKey === 'string') aliases.set(message.clientKey, nodeId);
+      if (typeof message.serverId === 'string') aliases.set(message.serverId, nodeId);
+    }
+    let previousNodeId: string | null = null;
+    const migrated = ordered.map((message, index) => {
+      const metadata = message.metadata && typeof message.metadata === 'object' && !Array.isArray(message.metadata)
+        ? message.metadata as Record<string, unknown>
+        : {};
+      const oldBranching = metadata.branching && typeof metadata.branching === 'object' && !Array.isArray(metadata.branching)
+        ? metadata.branching as Record<string, unknown>
+        : {};
+      const nodeId = aliases.get(String(oldBranching.nodeId || message.clientKey || message.id))
+        || String(oldBranching.nodeId || message.clientKey || message.id || `migrated-${index}`);
+      const explicitParent = typeof oldBranching.parentNodeId === 'string' && oldBranching.parentNodeId.trim()
+        ? aliases.get(oldBranching.parentNodeId) || oldBranching.parentNodeId
+        : null;
+      const parentNodeId = Object.prototype.hasOwnProperty.call(oldBranching, 'parentNodeId')
+        ? explicitParent
+        : (inferMissingParents ? previousNodeId : null);
+      previousNodeId = nodeId;
+      return {
+        ...message,
+        metadata: {
+          ...metadata,
+          branching: {
+            ...oldBranching,
+            nodeId,
+            parentNodeId,
+            rootNodeId: nodeId,
+            sequence: typeof oldBranching.sequence === 'number' ? oldBranching.sequence : index + 1,
+            migrationConfidence: Object.prototype.hasOwnProperty.call(oldBranching, 'parentNodeId') ? 'explicit' : (inferMissingParents ? 'inferred' : 'unknown'),
+          },
+        },
+        emotion: typeof message.emotion === 'number' && Number.isFinite(message.emotion) ? message.emotion : 0,
+        isDeleted: Boolean(message.isDeleted),
+      };
+    });
+    const parentByNodeId = new Map<string, string | null>();
+    for (const message of migrated) {
+      const branching = message.metadata && typeof message.metadata === 'object' && !Array.isArray(message.metadata)
+        ? (message.metadata as Record<string, unknown>).branching
+        : null;
+      const branch = branching && typeof branching === 'object' && !Array.isArray(branching) ? branching as Record<string, unknown> : {};
+      parentByNodeId.set(String(branch.nodeId), typeof branch.parentNodeId === 'string' ? branch.parentNodeId : null);
+    }
+    return migrated.map((message) => {
+      const metadata = message.metadata as Record<string, unknown>;
+      const branching = metadata.branching as Record<string, unknown>;
+      const seen = new Set<string>();
+      let root = String(branching.nodeId);
+      let parent = typeof branching.parentNodeId === 'string' ? branching.parentNodeId : null;
+      while (parent && parentByNodeId.has(parent) && !seen.has(parent)) {
+        seen.add(parent);
+        root = parent;
+        parent = parentByNodeId.get(parent) || null;
+      }
+      return { ...message, metadata: { ...metadata, branching: { ...branching, rootNodeId: root } } };
+    });
+  };
   return {
     ...persisted,
-    messages: (persisted.messages || []).map((message) => ({
-      ...message,
-      emotion: typeof message.emotion === 'number' && Number.isFinite(message.emotion) ? message.emotion : 0,
-      isDeleted: Boolean(message.isDeleted),
-    })),
+    messages: migrateCollection(persisted.messages || []),
     messageWindowsByChatId: Object.fromEntries(
       Object.entries(persisted.messageWindowsByChatId || {}).map(([chatId, window]) => [chatId, {
         ...window,
-        messages: (window?.messages || []).map((message) => ({
-          ...message,
-          emotion: typeof message.emotion === 'number' && Number.isFinite(message.emotion) ? message.emotion : 0,
-          isDeleted: Boolean(message.isDeleted),
-        })),
+        messages: migrateCollection(window?.messages || [], false),
       }])
     ),
   };
@@ -257,4 +344,5 @@ export const CLIENT_STORE_MIGRATION_NOTES = {
   3: 'Shift room cohesion to a signed zero-centered scale.',
   4: 'Preserve whether persisted character and chat records contain full detail or only summaries.',
   5: 'Recompute chat detail flags using only fields that are not present in chat summaries.',
+  6: 'Migrate legacy message branch metadata to immutable v2 nodes and convert active leaf state to a main branch ref.',
 } as const;

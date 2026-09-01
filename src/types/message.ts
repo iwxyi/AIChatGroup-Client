@@ -219,6 +219,10 @@ export interface MessageMetadata {
   branching?: {
     nodeId?: string;
     parentNodeId?: string | null;
+    rootNodeId?: string | null;
+    sequence?: number;
+    revisionOfNodeId?: string | null;
+    speakerRef?: { characterInstanceId: string; displayName?: string } | null;
     revisionRootId?: string | null;
     revisionOfMessageId?: string | null;
     createdFromMessageId?: string | null;

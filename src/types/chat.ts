@@ -416,6 +416,17 @@ export interface SessionTopologySummary {
 
 export interface MessageBranchState {
   enabled?: boolean;
+  /** v2: the name of the ref currently shown in the chat. */
+  activeBranchName?: string;
+  /** v2: immutable-node graph refs. */
+  refs?: Record<string, {
+    name: string;
+    headNodeId: string | null;
+    createdAt: number;
+    updatedAt: number;
+    version: number;
+  }>;
+  stateVersion?: number;
   activeLeafNodeId?: string | null;
   activeChildByParentNodeId?: Record<string, string>;
   selectedRevisionByRootId?: Record<string, string>;

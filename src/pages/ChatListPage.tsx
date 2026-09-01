@@ -632,6 +632,7 @@ export default function ChatListPage() {
         onConfirm={() => void confirmBatchDelete()}
         onCancel={() => setBatchDeleteConfirmOpen(false)}
         destructive
+        loadingLabel="删除中"
       />
 
       {showCreateFab ? (

@@ -89,12 +89,14 @@ interface MessageListProps {
   characters: AICharacter[];
   currentUser?: { nickname?: string; avatar?: string };
   onDeleteMessage?: (id: string) => void;
+  onWithdrawMessage?: (id: string) => void | Promise<void>;
   onAnalyzeMessage?: (message: Message) => void;
   onExpressionFeedback?: (message: Message, kind: ExpressionFeedbackKind) => void;
   onRetryMedia?: (message: Message, attachmentId: string) => void | Promise<void>;
   onAddImagesToReference?: (message: Message, attachments: MessageAttachment[]) => void;
   onCharacterAvatarClick?: (character: AICharacter, anchorEl: HTMLElement) => void;
   onCreateRevision?: (message: Message, content: string) => void | Promise<void>;
+  onRegenerate?: (message: Message) => void | Promise<void>;
   onSwitchRevision?: (message: Message, direction: -1 | 1) => void | Promise<void>;
   onOpenArtifact?: (artifactId: string) => void;
   onOpenHtmlFullscreen?: (artifactId: string) => void;
@@ -514,12 +516,14 @@ export default function MessageList({
   characters,
   currentUser,
   onDeleteMessage,
+  onWithdrawMessage,
   onAnalyzeMessage,
   onExpressionFeedback,
   onRetryMedia,
   onAddImagesToReference,
   onCharacterAvatarClick,
   onCreateRevision,
+  onRegenerate,
   onSwitchRevision,
   onOpenArtifact,
   onOpenHtmlFullscreen,
@@ -704,6 +708,7 @@ export default function MessageList({
       character={options?.character || (item.message.type === 'ai' ? resolveCharacterOrDeleted(characters, item.message.senderId, item.message.senderName) : undefined)}
       currentUser={currentUser}
       onDelete={item.pending || item.message.type === 'system' || (options?.message && options.message.id !== item.message.id) ? undefined : onDeleteMessage}
+      onWithdraw={item.pending || readOnly || item.message.type === 'system' ? undefined : onWithdrawMessage}
       onAnalyze={item.pending || readOnly || item.message.type === 'system' ? undefined : onAnalyzeMessage}
       onExpressionFeedback={item.pending || readOnly || (options?.message || item.message).type !== 'ai' ? undefined : onExpressionFeedback}
       onRetryMedia={item.pending || readOnly ? undefined : onRetryMedia}
@@ -712,6 +717,7 @@ export default function MessageList({
       onOpenDiagram={item.pending ? undefined : openChatDiagram}
       onCharacterAvatarClick={item.pending ? undefined : onCharacterAvatarClick}
       onCreateRevision={item.pending || readOnly ? undefined : onCreateRevision}
+      onRegenerate={item.pending || readOnly ? undefined : onRegenerate}
       onSwitchRevision={item.pending ? undefined : onSwitchRevision}
       onOpenArtifact={item.pending ? undefined : onOpenArtifact}
       onOpenHtmlFullscreen={item.pending ? undefined : onOpenHtmlFullscreen}
@@ -722,7 +728,7 @@ export default function MessageList({
       selfMemberId={selfMemberId}
       privateConversation={privateConversation}
     />
-  ), [branchVersionInfoByMessageId, characters, currentUser, onAddImagesToReference, onAnalyzeMessage, onCharacterAvatarClick, onCreateRevision, onDeleteMessage, onExpressionFeedback, onHtmlAutosave, onHtmlSubmit, onOpenArtifact, onOpenHtmlFullscreen, onRetryMedia, onSwitchRevision, openChatDiagram, openChatImage, privateConversation, readOnly, selfMemberId]);
+  ), [branchVersionInfoByMessageId, characters, currentUser, onAddImagesToReference, onAnalyzeMessage, onCharacterAvatarClick, onCreateRevision, onDeleteMessage, onExpressionFeedback, onHtmlAutosave, onHtmlSubmit, onOpenArtifact, onOpenHtmlFullscreen, onRegenerate, onRetryMedia, onSwitchRevision, onWithdrawMessage, openChatDiagram, openChatImage, privateConversation, readOnly, selfMemberId]);
 
   const renderMessageItem = useCallback((item: MessageListRenderItem) => {
     const anchorProps = {

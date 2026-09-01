@@ -1028,6 +1028,7 @@ export default function CharacterLibraryPage() {
         onConfirm={handleSingleDeleteConfirm}
         onCancel={() => setDeleteId(null)}
         destructive
+        loadingLabel="删除中"
       />
 
       <Dialog open={completionOpen} onClose={() => setCompletionOpen(false)} maxWidth="sm" fullWidth>

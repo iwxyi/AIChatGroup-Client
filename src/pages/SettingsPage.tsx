@@ -1487,6 +1487,9 @@ export default function SettingsPage() {
   const refreshDeveloperEntitlement = settings.refreshDeveloperEntitlement;
   const [userBubblePickerOpen, setUserBubblePickerOpen] = useState(false);
   const [clearConfirm, setClearConfirm] = useState(false);
+  const [clearMessagesConfirm, setClearMessagesConfirm] = useState(false);
+  const [clearAllBusy, setClearAllBusy] = useState(false);
+  const [clearMessagesBusy, setClearMessagesBusy] = useState(false);
   const [backupDialogOpen, setBackupDialogOpen] = useState(false);
   const [restoreDialogOpen, setRestoreDialogOpen] = useState(false);
   const [backupSelection, setBackupSelection] = useState<BackupSelection>(DEFAULT_BACKUP_SELECTION);
@@ -1790,6 +1793,8 @@ export default function SettingsPage() {
   };
 
   const handleClearAll = async () => {
+    if (clearAllBusy) return;
+    setClearAllBusy(true);
     try {
       const chatStore = useChatStore.getState();
       const characterStore = useCharacterStore.getState();
@@ -1812,6 +1817,35 @@ export default function SettingsPage() {
       setSnackbar({ open: true, message: t('common.success'), severity: 'success' });
     } catch {
       setSnackbar({ open: true, message: t('common.error'), severity: 'error' });
+    } finally {
+      setClearAllBusy(false);
+    }
+  };
+
+  const handleClearMessages = async () => {
+    if (clearMessagesBusy) return;
+    setClearMessagesBusy(true);
+    try {
+      const chatStore = useChatStore.getState();
+      const messageStore = useMessageStore.getState();
+      const chats = chatStore.chats;
+      for (const chat of chats) {
+        messageStore.clearChatMessagesLocal(chat.id);
+        chatStore.clearPendingOperationsForChat(chat.id);
+        await api.clearChatMessages(chat.id);
+        await chatStore.updateChat(chat.id, {
+          latestMessage: null,
+          lastMessageAt: chat.createdAt,
+        });
+      }
+      chatStore.markChatsWarm();
+      void chatStore.prefetchChats();
+      setClearMessagesConfirm(false);
+      setSnackbar({ open: true, message: i18n.language.startsWith('zh') ? '已清空所有聊天记录，群组已保留' : 'All chat messages cleared; groups were kept', severity: 'success' });
+    } catch {
+      setSnackbar({ open: true, message: t('common.error'), severity: 'error' });
+    } finally {
+      setClearMessagesBusy(false);
     }
   };
 
@@ -2267,6 +2301,9 @@ export default function SettingsPage() {
               <Button variant="outlined" startIcon={<DeleteOutlineOutlinedIcon />} onClick={clearAllCachedSpeechPlayback}>
                 {i18n.language.startsWith('zh') ? '清除语音缓存' : 'Clear speech cache'}
               </Button>
+              <Button startIcon={<ClearIcon />} variant="outlined" color="warning" onClick={() => setClearMessagesConfirm(true)}>
+                {i18n.language.startsWith('zh') ? '清空聊天记录' : 'Clear chat messages'}
+              </Button>
               <Button startIcon={<ClearIcon />} variant="outlined" color="error" onClick={() => setClearConfirm(true)}>{t('settings.clearAll')}</Button>
             </Box>
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
@@ -2587,6 +2624,16 @@ export default function SettingsPage() {
         message={t('settings.clearAllConfirm')}
         onConfirm={handleClearAll}
         onCancel={() => setClearConfirm(false)}
+        loading={clearAllBusy}
+        destructive
+      />
+      <ConfirmDialog
+        open={clearMessagesConfirm}
+        title={i18n.language.startsWith('zh') ? '清空聊天记录' : 'Clear chat messages'}
+        message={i18n.language.startsWith('zh') ? '将清空云端和本设备的所有聊天记录，但不会删除群组、角色或设置。此操作不可恢复。' : 'This clears all cloud and local chat messages but keeps groups, characters, and settings. This cannot be undone.'}
+        onConfirm={handleClearMessages}
+        onCancel={() => setClearMessagesConfirm(false)}
+        loading={clearMessagesBusy}
         destructive
       />
 

@@ -6,7 +6,7 @@ import { getUsablePreferredAIProfile, resolveAIModelInputCapabilities } from '..
 import { createStreamingLocalMessage, persistLocalFirstMessage } from './chatCommitMessage';
 import { generateResponse } from './aiClient';
 import { GenerationCancelledError } from './generationCancellation';
-import { attachMessageToActiveBranch } from './messageBranching';
+import { attachMessageToActiveBranch, buildBranchStateWithHead } from './messageBranching';
 import { useChatStore } from '../stores/useChatStore';
 import { api, ApiError, type AiSearchResultItem } from './api';
 import { resolveRoomCapabilities } from './capabilityRuntime';
@@ -1068,6 +1068,7 @@ export async function runAssistantChatReplyFlow(params: {
   signal?: AbortSignal;
   shouldContinue?: () => boolean;
   replySender?: { id: string; name: string };
+  revisionOfNodeId?: string;
   forceArtifact?: boolean;
 }) {
   ensureAssistantReplyStillCurrent(params);
@@ -1142,20 +1143,9 @@ export async function runAssistantChatReplyFlow(params: {
         // the entire continuation as an inactive subtree.
         const branching = agentResult.message.metadata?.branching;
         const nodeId = branching?.nodeId || agentResult.message.clientKey || agentResult.message.id;
-        const parentNodeId = branching?.parentNodeId || null;
         const latestChat = useChatStore.getState().chats.find((item) => item.id === params.chatId) || params.chat;
         await params.updateChat(params.chatId, {
-          messageBranchState: {
-            ...(latestChat.messageBranchState || {}),
-            activeLeafNodeId: nodeId,
-            ...(parentNodeId ? {
-              activeChildByParentNodeId: {
-                ...(latestChat.messageBranchState?.activeChildByParentNodeId || {}),
-                [parentNodeId]: nodeId,
-              },
-            } : {}),
-            updatedAt: Date.now(),
-          },
+          messageBranchState: buildBranchStateWithHead(latestChat.messageBranchState, nodeId),
         });
         void maybeGenerateAssistantChatTitle({
           api: resolvedApi,
@@ -1180,6 +1170,7 @@ export async function runAssistantChatReplyFlow(params: {
       assistant: {
         mode: 'general',
       },
+      ...(params.revisionOfNodeId ? { branching: { revisionOfNodeId: params.revisionOfNodeId } } : {}),
     },
   };
   const placeholder = createStreamingLocalMessage(
@@ -1232,7 +1223,10 @@ export async function runAssistantChatReplyFlow(params: {
     existingLocalMessage: streamingMessage,
     upsertMessage: params.upsertMessage,
   });
+  const latestChat = useChatStore.getState().chats.find((item) => item.id === params.chatId) || params.chat;
+  const persistedNodeId = persisted.metadata?.branching?.nodeId || persisted.clientKey || persisted.id;
   await params.updateChat(params.chatId, {
+    messageBranchState: buildBranchStateWithHead(latestChat.messageBranchState, persistedNodeId),
     lastMessageAt: persisted.timestamp,
     latestMessage: persisted,
   });

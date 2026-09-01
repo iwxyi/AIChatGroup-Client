@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_CONVERSATION_DIRECTOR_CONTROLS, DEFAULT_CONVERSATION_DRAMA_RULES, DEFAULT_CONVERSATION_GOVERNANCE, DEFAULT_CONVERSATION_WORLD_STATE, type GroupChat } from '../types/chat';
-import { migrateCharacterStoreState, migrateChatStoreState, migrateSettingsStoreState, migrateUiStoreState } from './storeMigrations';
+import { migrateCharacterStoreState, migrateChatStoreState, migrateMessageStoreState, migrateSettingsStoreState, migrateUiStoreState } from './storeMigrations';
 
 function chatWithCohesion(cohesion: number): GroupChat {
   return {
@@ -46,6 +46,29 @@ function chatWithCohesion(cohesion: number): GroupChat {
 }
 
 describe('storeMigrations', () => {
+  it('converts legacy message metadata into explicit v2 node links', () => {
+    const migrated = migrateMessageStoreState({
+      messages: [
+        { id: 'm-1', clientKey: 'local-1', chatId: 'chat-1', timestamp: 1, content: '一', type: 'user' },
+        { id: 'm-2', clientKey: 'local-2', chatId: 'chat-1', timestamp: 2, content: '二', type: 'ai' },
+        { id: 'm-3', clientKey: 'local-3', chatId: 'chat-1', timestamp: 3, content: '三', type: 'user', metadata: { branching: { parentNodeId: 'local-1' } } },
+      ],
+    });
+    const messages = migrated?.messages || [];
+    expect(messages[0]?.metadata).toMatchObject({ branching: { nodeId: 'local-1', parentNodeId: null, rootNodeId: 'local-1', migrationConfidence: 'inferred' } });
+    expect(messages[1]?.metadata).toMatchObject({ branching: { nodeId: 'local-2', parentNodeId: 'local-1', rootNodeId: 'local-1', migrationConfidence: 'inferred' } });
+    expect(messages[2]?.metadata).toMatchObject({ branching: { nodeId: 'local-3', parentNodeId: 'local-1', rootNodeId: 'local-1', migrationConfidence: 'explicit' } });
+  });
+
+  it('converts legacy active leaf state into the v2 main ref', () => {
+    const migrated = migrateChatStoreState({ chats: [{ ...chatWithCohesion(50), messageBranchState: { enabled: true, activeLeafNodeId: 'legacy-leaf' } }] });
+    expect(migrated?.chats?.[0]?.messageBranchState).toMatchObject({
+      activeBranchName: 'main',
+      refs: { main: { headNodeId: 'legacy-leaf', version: 1 } },
+      stateVersion: 1,
+    });
+  });
+
   it('migrates old room cohesion from 50-centered scale to signed scale', () => {
     const migrated = migrateChatStoreState({ chats: [chatWithCohesion(50), chatWithCohesion(64), chatWithCohesion(42)] });
 

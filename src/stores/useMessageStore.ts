@@ -39,6 +39,25 @@ function isLocalOnlyMode() {
 }
 
 const countedAiMessageKeys = new Set<string>();
+// Monotonic local barrier used to invalidate in-flight/outbox writes when a
+// chat is cleared. Without it, a request already picked up by the worker can
+// arrive after DELETE and resurrect an old branch parent.
+const clearedChatAt = new Map<string, number>();
+function getClearBarrier(chatId: string) {
+  const memory = clearedChatAt.get(chatId);
+  if (memory) return memory;
+  try {
+    const value = Number(localStorage.getItem(scopedStorageKey(`messages-cleared-at-${chatId}`)) || 0);
+    if (value > 0) clearedChatAt.set(chatId, value);
+    return value;
+  } catch {
+    return 0;
+  }
+}
+function setClearBarrier(chatId: string, timestamp: number) {
+  clearedChatAt.set(chatId, timestamp);
+  try { localStorage.setItem(scopedStorageKey(`messages-cleared-at-${chatId}`), String(timestamp)); } catch { /* storage unavailable */ }
+}
 
 function recordAiMessageStats(message: Message) {
   if (message.type !== 'ai' || message.isDeleted || message.isStreaming) return;
@@ -97,10 +116,6 @@ function localDeleteMessage(message: Message) {
 
 function shouldSkipCloudSync() {
   return isLocalOnlyMode();
-}
-
-function projectLocalMessages(messages: Message[]) {
-  return messages;
 }
 
 function mergeLocalWindow(cache: Record<string, CachedMessageWindow>, chatId: string, messages: Message[], pendingOperations: PendingMessageOperation[] = []) {
@@ -443,7 +458,13 @@ function buildMessageFetchOptions(options: {
 }
 
 function pendingMessageOperationPriority(operation: PendingMessageOperation) {
-  return operation.kind === 'create' ? 100 : 20;
+  if (operation.kind !== 'create') return 20;
+  // Branch children must never overtake an older unsynced parent. The queue
+  // worker selects the highest priority item, so ordering creates by message
+  // timestamp (oldest first) preserves the graph's causal write order even
+  // when optimistic updates enqueue in a different React/render turn.
+  const timestamp = Number(operation.payload?.timestamp ?? operation.createdAt);
+  return 1e15 - timestamp;
 }
 
 interface PersistedMessageState {
@@ -688,10 +709,25 @@ function createPendingMessageOperation(message: Message): PendingMessageOperatio
 }
 
 function messagePayloadForCloud(message: Message, operationId: string) {
-  const metadata = compactMessageMetadata(
+  const compactedMetadata = compactMessageMetadata(
     hasLocalDataUrlMedia(message) ? scrubLocalMediaUrlsForCloud(message) : message.metadata,
     { dropContextText: true },
   );
+  const metadata = compactedMetadata && typeof compactedMetadata === 'object' && !Array.isArray(compactedMetadata)
+    ? {
+        ...compactedMetadata,
+        ...(compactedMetadata.branching && typeof compactedMetadata.branching === 'object' && !Array.isArray(compactedMetadata.branching)
+          ? {
+              branching: {
+                ...compactedMetadata.branching,
+                nodeId: typeof compactedMetadata.branching.nodeId === 'string' && compactedMetadata.branching.nodeId.trim()
+                  ? compactedMetadata.branching.nodeId
+                  : (message.clientKey || message.id),
+              },
+            }
+          : {}),
+      }
+    : compactedMetadata;
   return {
     type: message.type,
     senderId: message.senderId,
@@ -838,6 +874,7 @@ interface MessageStore {
   retryFailedOperations: () => void;
   clearChatMessagesLocal: (chatId: string) => void;
   deleteMessage: (id: string) => Promise<void>;
+  withdrawMessage: (id: string) => Promise<void>;
   deleteLastNMessages: (chatId: string, n: number) => Promise<void>;
   clearMessages: () => void;
   getRecentMessages: (n: number) => Message[];
@@ -864,11 +901,46 @@ export const useMessageStore = create<MessageStore>()(
           execute: async (operation) => {
             if (operation.kind === 'create' && operation.payload) {
               const localMessage = operation.payload;
+              const clearBarrier = getClearBarrier(localMessage.chatId);
+              if (clearBarrier && Number(localMessage.timestamp || 0) <= clearBarrier) {
+                return null as never;
+              }
+              if (clearBarrier) {
+                const branching = localMessage.metadata?.branching;
+                const parentId = typeof branching?.parentNodeId === 'string' ? branching.parentNodeId : null;
+                if (parentId) {
+                  const currentMessages = get().messages.filter((item) => item.chatId === localMessage.chatId);
+                  const parentPresent = currentMessages.some((item) => {
+                    const node = item.metadata?.branching;
+                    return item.id === parentId || item.clientKey === parentId || item.serverId === parentId
+                      || node?.nodeId === parentId;
+                  });
+                  if (!parentPresent) {
+                    localMessage.metadata = {
+                      ...(localMessage.metadata || {}),
+                      branching: {
+                        ...(branching || {}),
+                        parentNodeId: null,
+                        rootNodeId: branching?.nodeId || localMessage.clientKey || localMessage.id,
+                      },
+                    };
+                  }
+                }
+              }
               if (hasPendingChatCreate(localMessage.chatId)) {
                 scheduleChatSyncFirst();
                 throw new ApiError('chat:create pending: 对应会话尚未完成云端创建，消息稍后重试。', { code: 'CHAT_CREATE_PENDING', status: 409 });
               }
-              const savedMessage = await api.createMessage(localMessage.chatId, messagePayloadForCloud(localMessage, operation.id));
+              let savedMessage: unknown;
+              try {
+                savedMessage = await api.createMessage(localMessage.chatId, messagePayloadForCloud(localMessage, operation.id));
+              } catch (error) {
+                const barrier = getClearBarrier(localMessage.chatId);
+                if (barrier && Number(localMessage.timestamp || 0) <= barrier && error instanceof ApiError && error.code === 'BRANCH_PARENT_NOT_FOUND') {
+                  return null as never;
+                }
+                throw error;
+              }
               const persistedMessage = mergeMessageServerConfirmation(localMessage, savedMessage);
               set((current) => ({
                 ...localUpsertMessage(current, persistedMessage),
@@ -1453,8 +1525,10 @@ export const useMessageStore = create<MessageStore>()(
       }),
 
       clearChatMessagesLocal: (chatId) => {
+        setClearBarrier(chatId, Date.now());
         set((state) => {
           const nextWindows = { ...state.messageWindowsByChatId };
+          const pendingOperations = state.pendingOperations.filter((operation) => operation.chatId !== chatId);
           logMessageWindowDebug('clear-window', {
             chatId,
             currentWindowMessages: state.messageWindowsByChatId[chatId]?.messages?.length || 0,
@@ -1463,7 +1537,8 @@ export const useMessageStore = create<MessageStore>()(
           delete nextWindows[chatId];
           return {
             messages: state.activeChatId === chatId ? [] : state.messages,
-            messageWindowsByChatId: trimCache(nextWindows, state.pendingOperations),
+            messageWindowsByChatId: trimCache(nextWindows, pendingOperations),
+            pendingOperations,
             hasMore: state.activeChatId === chatId ? false : state.hasMore,
             hasMoreNewer: state.activeChatId === chatId ? false : state.hasMoreNewer,
           };
@@ -1477,6 +1552,16 @@ export const useMessageStore = create<MessageStore>()(
         }
         const targetMessage = get().messages.find((message) => message.id === id)
           || Object.values(get().messageWindowsByChatId).flatMap((window) => window.messages).find((message) => message.id === id);
+        // Optimistic messages do not have a server id yet. Deleting them via
+        // DELETE /messages/:id produces a misleading "消息不存在" response;
+        // mark locally and remove the pending create instead.
+        if (!targetMessage?.serverId && targetMessage?.id?.startsWith('local-message-')) {
+          set((state) => ({
+            ...localMessageDeletionResult(state, id),
+            pendingOperations: state.pendingOperations.filter((operation) => operation.localMessageId !== id),
+          }));
+          return;
+        }
         await api.deleteMessage(targetMessage?.serverId || targetMessage?.id || id);
         set((state) => {
           const nextWindows = Object.fromEntries(
@@ -1490,6 +1575,34 @@ export const useMessageStore = create<MessageStore>()(
             messageWindowsByChatId: trimCache(nextWindows, state.pendingOperations),
           };
         });
+      },
+
+      withdrawMessage: async (id) => {
+        const targetMessage = get().messages.find((message) => message.id === id)
+          || Object.values(get().messageWindowsByChatId).flatMap((window) => window.messages).find((message) => message.id === id);
+        if (!targetMessage) throw new Error('消息不存在');
+        const withdrawal = {
+          ...(targetMessage.metadata?.withdrawal || {}),
+          withdrawn: true,
+          withdrawnAt: Date.now(),
+        };
+        const nextMessage: Message = {
+          ...targetMessage,
+          metadata: {
+            ...(targetMessage.metadata || {}),
+            withdrawal,
+          },
+        };
+        set((state) => ({
+          messages: state.messages.map((message) => message.id === id ? nextMessage : message),
+          messageWindowsByChatId: Object.fromEntries(Object.entries(state.messageWindowsByChatId).map(([chatId, window]) => [
+            chatId,
+            { ...window, messages: window.messages.map((message) => message.id === id ? nextMessage : message) },
+          ])),
+        }));
+        if (!shouldSkipCloudSync()) {
+          await api.updateMessageMetadata(targetMessage.serverId || targetMessage.id, { withdrawal });
+        }
       },
 
       deleteLastNMessages: async (chatId, n) => {

@@ -1104,9 +1104,17 @@ export default function CreateChatPage() {
   const handleClearMessages = useCallback(async () => {
     if (!editingChat) return;
     try {
-      await apiClient.clearChatMessages(editingChat.id);
+      // Drop locally queued creates before deleting remotely. Otherwise an
+      // outbox flush racing this action can recreate pre-clear messages and
+      // leave branch parents pointing at stale nodes.
       useMessageStore.getState().clearChatMessagesLocal(editingChat.id);
-      await updateChat(editingChat.id, buildInitialSessionResetPatch(editingChat));
+      useChatStore.getState().clearPendingOperationsForChat(editingChat.id);
+      await apiClient.clearChatMessages(editingChat.id);
+      await updateChat(editingChat.id, {
+        ...buildInitialSessionResetPatch(editingChat),
+        latestMessage: null,
+        lastMessageAt: editingChat.createdAt,
+      });
       await seedOpeningTopicMessage(editingChat.id, editingChat.topic);
       markChatsWarm();
       void prefetchChats();

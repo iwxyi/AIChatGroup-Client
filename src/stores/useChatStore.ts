@@ -535,6 +535,7 @@ interface ChatStore extends PersistedChatState {
   getPendingEditError: () => string | null;
   getPendingEditCount: () => number;
   clearPendingOperations: () => void;
+  clearPendingOperationsForChat: (chatId: string) => void;
   confirmCreateOperationsSynced: (entityIds: string[]) => void;
   discardFailedOperation: (operationId: string) => void;
   resolveRemoteDeleteConflict: (id: string, resolution: 'restore_local' | 'discard_local' | 'save_as_new') => Promise<void>;
@@ -1757,6 +1758,17 @@ export const useChatStore = create<ChatStore>()(
         getPendingEditError: () => latestChatError(get().pendingOperations),
         getPendingEditCount: () => get().pendingOperations.length,
         clearPendingOperations: () => set({ pendingOperations: [], pendingEditSyncCount: 0, pendingEditSyncError: null, fieldConflicts: [] }),
+        clearPendingOperationsForChat: (chatId) => set((state) => {
+          const pendingOperations = state.pendingOperations.filter((operation) => operation.entityId !== chatId && !operation.targetIds.includes(chatId));
+          if (pendingOperations.length === state.pendingOperations.length) return {};
+          return {
+            pendingOperations,
+            chats: projectEntities(state.chats, pendingOperations).filter((chat) => chat.deletedAt == null),
+            pendingEditSyncCount: pendingOperations.length,
+            pendingEditSyncError: latestChatError(pendingOperations),
+            fieldConflicts: state.fieldConflicts.filter((conflict) => conflict.entityId !== chatId),
+          };
+        }),
         confirmCreateOperationsSynced: (entityIds) => set((state) => {
           const normalizedIds = new Set(entityIds.filter(Boolean));
           if (!normalizedIds.size) return {};

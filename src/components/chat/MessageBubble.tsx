@@ -38,6 +38,7 @@ interface MessageBubbleProps {
   character?: AICharacter;
   characters?: AICharacter[];
   onDelete?: (id: string) => void;
+  onWithdraw?: (id: string) => void | Promise<void>;
   onAnalyze?: (message: Message) => void;
   onExpressionFeedback?: (message: Message, kind: ExpressionFeedbackKind) => void;
   onRetryMedia?: (message: Message, attachmentId: string) => void | Promise<void>;
@@ -51,6 +52,7 @@ interface MessageBubbleProps {
   privateConversation?: boolean;
   branchVersionInfo?: { index: number; total: number; isActive: boolean } | null;
   onCreateRevision?: (message: Message, content: string) => void | Promise<void>;
+  onRegenerate?: (message: Message) => void | Promise<void>;
   onSwitchRevision?: (message: Message, direction: -1 | 1) => void | Promise<void>;
   onOpenArtifact?: (artifactId: string) => void;
   onOpenHtmlFullscreen?: (artifactId: string) => void;
@@ -121,7 +123,7 @@ function buildWithdrawalDebugTitle(withdrawal: NonNullable<Message['metadata']>[
   );
 }
 
-function MessageBubble({ message, character, characters = [], onDelete, onAnalyze, onExpressionFeedback, onRetryMedia, onOpenImage, onAddImagesToReference, onOpenDiagram, onCharacterAvatarClick, pending = false, currentUser, selfMemberId = null, privateConversation = false, branchVersionInfo, onCreateRevision, onSwitchRevision, onOpenArtifact, onOpenHtmlFullscreen, onHtmlAutosave, onHtmlSubmit }: MessageBubbleProps) {
+function MessageBubble({ message, character, characters = [], onDelete, onWithdraw, onAnalyze, onExpressionFeedback, onRetryMedia, onOpenImage, onAddImagesToReference, onOpenDiagram, onCharacterAvatarClick, pending = false, currentUser, selfMemberId = null, privateConversation = false, branchVersionInfo, onCreateRevision, onRegenerate, onSwitchRevision, onOpenArtifact, onOpenHtmlFullscreen, onHtmlAutosave, onHtmlSubmit }: MessageBubbleProps) {
   const customBubbleStyles = useSettingsStore((state) => state.customBubbleStyles);
   const userBubbleStyleId = useSettingsStore((state) => state.userBubbleStyleId);
   const userBubbleStyle = useSettingsStore((state) => state.userBubbleStyle);
@@ -229,8 +231,10 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
   const pressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const touchStartRef = useRef<LongPressTouchState | null>(null);
   const canDelete = useMemo(() => !pending && message.type !== 'system' && Boolean(onDelete), [message.type, onDelete, pending]);
+  const canWithdraw = useMemo(() => !pending && message.type !== 'system' && !message.metadata?.withdrawal?.withdrawn && Boolean(onWithdraw), [message.metadata?.withdrawal?.withdrawn, message.type, onWithdraw, pending]);
   const canFeedback = useMemo(() => !pending && message.type === 'ai' && Boolean(onExpressionFeedback), [message.type, onExpressionFeedback, pending]);
   const canEditRevision = Boolean(onCreateRevision) && !pending && message.type !== 'system' && message.type !== 'event';
+  const canRegenerate = Boolean(onRegenerate) && !pending && message.type === 'ai';
   const readyImageAttachments = useMemo(() => (message.metadata?.attachments || [])
     .filter((attachment) => attachment.kind === 'image' && attachment.status === 'ready' && Boolean(attachment.url)), [message.metadata?.attachments]);
   const canAddImagesToReference = !pending && readyImageAttachments.length > 0 && Boolean(onAddImagesToReference);
@@ -355,6 +359,11 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
     closeMenus();
   };
 
+  const handleWithdraw = () => {
+    if (onWithdraw) void onWithdraw(message.id);
+    closeMenus();
+  };
+
   const handleAnalyze = () => {
     if (onAnalyze) onAnalyze(message);
     closeMenus();
@@ -376,6 +385,12 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
     setRevisionDraft(message.content);
     setRevisionEditorOpen(true);
     closeMenus();
+  };
+
+  const handleRegenerate = () => {
+    if (!canRegenerate || !onRegenerate) return;
+    closeMenus();
+    void onRegenerate(message);
   };
 
   const closeRevisionEditor = () => setRevisionEditorOpen(false);
@@ -466,7 +481,7 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
   const isFinalWithdrawn = Boolean(withdrawal?.withdrawn && !withdrawal.visiblePending);
   const finalWithdrawal = isFinalWithdrawn ? withdrawal : null;
   const showWithdrawalDebug = developerMode && showWithdrawnMessageContent && Boolean(finalWithdrawal?.originalContent);
-  const withdrawalNotice = message.content || `${message.senderName}撤回了一条消息`;
+  const withdrawalNotice = '已撤回';
   const withdrawalNoticeNode = (
     <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 1.25, minWidth: 0 }}>
       <Typography variant="body2" sx={{ color: isUser ? 'rgba(15, 23, 42, 0.72)' : 'text.secondary', fontStyle: 'italic', userSelect: 'text', WebkitUserSelect: 'text', minWidth: 0 }}>
@@ -539,7 +554,7 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
         ) : null}
 
         <Box sx={{ width: hiddenIdentityMessageWidth, maxWidth: bubbleContentMaxWidth, minWidth: 0, display: 'grid', gap: 0.35, justifyItems: isUser ? 'end' : 'start' }}>
-          {!hidePrivateChatIdentity || (branchVersionInfo && branchVersionInfo.total > 1 && onSwitchRevision) ? (
+          {!hidePrivateChatIdentity || (branchVersionInfo && branchVersionInfo.total > 1 && onSwitchRevision && !message.isStreaming && !pending) ? (
           <Stack
             direction="row"
             spacing={0.5}
@@ -551,7 +566,7 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
                 {message.senderName}
               </Typography>
             ) : null}
-            {branchVersionInfo && branchVersionInfo.total > 1 && onSwitchRevision ? (
+            {branchVersionInfo && branchVersionInfo.total > 1 && onSwitchRevision && !message.isStreaming && !pending ? (
               <Stack direction="row" spacing={0.25} sx={{ flexShrink: 0, alignItems: 'center' }}>
                 <Tooltip title="上一版" arrow>
                   <span>
@@ -703,12 +718,18 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
             查看提示词
           </MenuItem>
         ) : null}
-        {canEditRevision ? (
+        {canRegenerate ? (
+          <MenuItem onClick={handleRegenerate}>
+            <ListItemIcon sx={{ minWidth: 32 }}><EditIcon fontSize="small" /></ListItemIcon>
+            重新回答
+          </MenuItem>
+        ) : canEditRevision ? (
           <MenuItem onClick={openRevisionEditor}>
             <ListItemIcon sx={{ minWidth: 32 }}><EditIcon fontSize="small" /></ListItemIcon>
             重新编辑
           </MenuItem>
         ) : null}
+        {(canPlayVoice || voiceUrl) && (onAnalyze || canAddImagesToReference || canFeedback || canDelete || canWithdraw) ? <Divider sx={{ my: 0.5 }} /> : null}
         {canPlayVoice ? (
           <MenuItem onClick={() => { closeMenus(); void toggleVoice(); }} disabled={Boolean(voiceGenerationStage)}>
             <ListItemIcon sx={{ minWidth: 32 }}>{voiceGenerationStage ? <CircularProgress size={18} /> : <VolumeUpIcon fontSize="small" />}</ListItemIcon>
@@ -721,7 +742,8 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
             清除语音缓存
           </MenuItem>
         ) : null}
-        {(canPlayVoice || voiceUrl) && (onAnalyze || canAddImagesToReference || canFeedback || canDelete) ? <Divider /> : null}
+        {!canPlayVoice && !voiceUrl && (canRegenerate || canEditRevision || Boolean(promptAttachment?.promptText)) && (onAnalyze || canAddImagesToReference || canFeedback) ? <Divider sx={{ my: 0.5 }} /> : null}
+        {(canPlayVoice || voiceUrl) && (onAnalyze || canAddImagesToReference || canFeedback || canDelete || canWithdraw) ? <Divider sx={{ my: 0.5 }} /> : null}
         {onAnalyze ? (
           <MenuItem onClick={handleAnalyze}>
             <ListItemIcon sx={{ minWidth: 32 }}><InsightsIcon fontSize="small" /></ListItemIcon>
@@ -740,10 +762,17 @@ function MessageBubble({ message, character, characters = [], onDelete, onAnalyz
             表达反馈
           </MenuItem>
         ) : null}
+        {(onAnalyze || canAddImagesToReference || canFeedback) && (canDelete || canWithdraw) ? <Divider sx={{ my: 0.5 }} /> : null}
         {canDelete ? (
           <MenuItem onClick={handleDelete}>
             <ListItemIcon sx={{ minWidth: 32 }}><DeleteIcon fontSize="small" /></ListItemIcon>
             删除
+          </MenuItem>
+        ) : null}
+        {canWithdraw ? (
+          <MenuItem onClick={handleWithdraw}>
+            <ListItemIcon sx={{ minWidth: 32 }}><DeleteIcon fontSize="small" /></ListItemIcon>
+            撤回
           </MenuItem>
         ) : null}
       </Menu>
@@ -844,6 +873,7 @@ function areMessageBubblePropsEqual(previous: MessageBubbleProps, next: MessageB
     && previous.character === next.character
     && previous.characters === next.characters
     && previous.onDelete === next.onDelete
+    && previous.onWithdraw === next.onWithdraw
     && previous.onAnalyze === next.onAnalyze
     && previous.onExpressionFeedback === next.onExpressionFeedback
     && previous.onRetryMedia === next.onRetryMedia
@@ -857,6 +887,7 @@ function areMessageBubblePropsEqual(previous: MessageBubbleProps, next: MessageB
     && previous.privateConversation === next.privateConversation
     && previous.branchVersionInfo === next.branchVersionInfo
     && previous.onCreateRevision === next.onCreateRevision
+    && previous.onRegenerate === next.onRegenerate
     && previous.onSwitchRevision === next.onSwitchRevision
     && previous.onOpenArtifact === next.onOpenArtifact
     && previous.onOpenHtmlFullscreen === next.onOpenHtmlFullscreen
