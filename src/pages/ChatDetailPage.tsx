@@ -2167,7 +2167,23 @@ export default function ChatDetailPage() {
     if (!targetNode) return;
 
     const targetNodeId = targetNode.nodeId || target.id;
-    const nextBranchState: MessageBranchState = buildBranchStateWithHead(chat.messageBranchState, targetNodeId);
+    const allNodes = resolveMessageBranchNodes(currentChatAllMessages);
+    const nodeById = new Map(allNodes.map((node) => [node.nodeId, node]));
+    const isDescendantOfTarget = (node: typeof targetNode) => {
+      let cursor = node.parentNodeId;
+      const seen = new Set<string>();
+      while (cursor && !seen.has(cursor)) {
+        if (cursor === targetNodeId) return true;
+        seen.add(cursor);
+        cursor = nodeById.get(cursor)?.parentNodeId || null;
+      }
+      return false;
+    };
+    const branchTail = allNodes
+      .filter((node) => node.nodeId === targetNodeId || isDescendantOfTarget(node))
+      .sort((left, right) => (right.sequence - left.sequence) || (right.message.timestamp - left.message.timestamp))[0];
+    const activeHeadId = branchTail?.nodeId || targetNodeId;
+    const nextBranchState: MessageBranchState = buildBranchStateWithHead(chat.messageBranchState, activeHeadId);
     const nextChat: GroupChat = {
       ...chat,
       messageBranchState: nextBranchState,
@@ -3529,7 +3545,10 @@ export default function ChatDetailPage() {
   }, [id, isSplitDetailPane, loadMessages, location.pathname, location.search, navigate]);
 
   const handleMessageScrollRequestResolved = useCallback((request: MessageListScrollRequest, resolved: boolean) => {
-    if (resolved) return;
+    if (resolved) {
+      setMessageScrollRequest((current) => current?.key === request.key ? null : current);
+      return;
+    }
     if (request.key.startsWith('branch-switch:') || request.key.startsWith('branch-create:')) {
       logDeveloperDiagnostic('chat-scroll:branch-restore-miss', {
         chatId: id,

@@ -499,7 +499,7 @@ function MessageBubble({ message, character, characters = [], onDelete, onWithdr
     : undefined;
   const compactMediaBubble = !isFinalWithdrawn && shouldUseCompactMediaBubble(message);
   const shouldRenderNarrativeReader = hasNarrativeReaderBlocks(narrativeParagraphBlocks);
-  if (shouldRenderNarrativeReader || (pending && useNarrativeParagraph)) {
+  if (shouldRenderNarrativeReader || ((pending || message.isStreaming) && useNarrativeParagraph)) {
     const narrativeCharacters = characters.length ? characters : effectiveCharacter ? [effectiveCharacter] : [];
     const storyReaderFontFamily = chatAppearance.storyReader.fontFamily === 'serif'
       ? 'Georgia, "Times New Roman", "Noto Serif SC", "Songti SC", serif'
@@ -605,7 +605,7 @@ function MessageBubble({ message, character, characters = [], onDelete, onWithdr
               boxShadow: bubblePreview?.boxShadow || '0 8px 24px rgba(15, 23, 42, 0.08)',
             }}
           >
-            {pending && !message.content ? <PendingTypingDots /> : isFinalWithdrawn ? (
+            {(pending || message.isStreaming) && !message.content ? <PendingTypingDots /> : isFinalWithdrawn ? (
               showWithdrawalDebug ? (
                 <Tooltip title={buildWithdrawalDebugTitle(finalWithdrawal)} arrow placement="top" enterTouchDelay={0}>
                   <Box sx={{ cursor: 'help', '&:hover .MuiTypography-root': { textDecoration: 'underline' } }}>

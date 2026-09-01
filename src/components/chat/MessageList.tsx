@@ -642,6 +642,7 @@ export default function MessageList({
   const followScrollAnimationRef = useRef<number | null>(null);
   const programmaticScrollRef = useRef<{ mode: 'follow' | 'jump'; startedAt: number; targetTop: number } | null>(null);
   const scrollWriteIntentRef = useRef<{ kind: MessageScrollIntentKind; priority: number; startedAt: number } | null>(null);
+  const suppressTailFollowUntilRef = useRef(0);
   const initialTailRevealFramesRef = useRef<number[]>([]);
   const initialAnchorRevealFramesRef = useRef<number[]>([]);
   const previousStoryChoiceSubmittingValueRef = useRef<string | null>(storyChoiceSubmittingValue);
@@ -922,10 +923,21 @@ export default function MessageList({
       return false;
     }
     scrollWriteIntentRef.current = { kind: intent, priority, startedAt: now };
+    const beforeTop = container.scrollTop;
     write(container);
     lastScrollTopRef.current = container.scrollTop;
+    logDeveloperDiagnostic('chat-scroll:write', {
+      intent,
+      beforeTop: Math.round(beforeTop),
+      afterTop: Math.round(container.scrollTop),
+      delta: Math.round(container.scrollTop - beforeTop),
+      distanceFromBottom: Math.round(getDistanceFromBottom(container)),
+      scrollHeight: Math.round(container.scrollHeight),
+      clientHeight: Math.round(container.clientHeight),
+      activeIntent: active?.kind || null,
+    }, 'debug', 'chat-scroll');
     return true;
-  }, [isUserScrollMomentumActive]);
+  }, [getDistanceFromBottom, isUserScrollMomentumActive]);
 
   const updateAdaptiveBottomPrefetch = useCallback((element: HTMLDivElement, isScrollingDown: boolean) => {
     if (!hasUserScrollIntentRef.current || !isScrollingDown) return;
@@ -1528,6 +1540,33 @@ export default function MessageList({
 
   useLayoutEffect(() => {
     if (!scrollRequest || appliedScrollRequestKeyRef.current === scrollRequest.key) return;
+    if (scrollRequest.key.startsWith('branch-switch:')) {
+      suppressTailFollowUntilRef.current = performance.now() + 1800;
+      let cancelled = false;
+      let firstFrame = 0;
+      let secondFrame = 0;
+      const settle = () => {
+        if (cancelled) return;
+        restoreScrollAnchor(scrollRequest, { intent: 'explicitJump', allowDuringUserScroll: true });
+        secondFrame = requestAnimationFrame(() => {
+          if (cancelled) return;
+          const restored = restoreScrollAnchor(scrollRequest, { intent: 'explicitJump', allowDuringUserScroll: true });
+          appliedScrollRequestKeyRef.current = scrollRequest.key;
+          shouldStickToBottomRef.current = false;
+          lastReportedBottomPinnedRef.current = false;
+          onBottomPinnedChange?.(false);
+          updatePinnedState();
+          if (restored && scrollRequest.highlight) highlightScrollTarget(scrollRequest.messageId);
+          onScrollRequestResolved?.(scrollRequest, restored);
+        });
+      };
+      firstFrame = requestAnimationFrame(settle);
+      return () => {
+        cancelled = true;
+        cancelAnimationFrame(firstFrame);
+        cancelAnimationFrame(secondFrame);
+      };
+    }
     const restored = restoreScrollAnchor(scrollRequest, { intent: 'explicitJump', allowDuringUserScroll: true });
     appliedScrollRequestKeyRef.current = scrollRequest.key;
     if (!restored) {
@@ -1684,6 +1723,7 @@ export default function MessageList({
     );
 
     if (!hasJumpedToBottomRef.current) return;
+    if (performance.now() < suppressTailFollowUntilRef.current) return;
     if (!autoStickToBottom) {
       if (!metricsChanged) return;
       const snapshot = latestScrollAnchorRef.current;
@@ -1692,6 +1732,10 @@ export default function MessageList({
       }
       return;
     }
+    // An explicit branch switch owns the scroll position; do not let the
+    // tail-follow effect pull the viewport to the new (possibly longer) tail
+    // before the anchor restoration runs.
+    if (scrollRequest?.key.startsWith('branch-switch:')) return;
     if (!metricsChanged) return;
 
     const tailChanged = currentMetrics.lastItemKey !== previousMetrics.lastItemKey
@@ -1717,7 +1761,7 @@ export default function MessageList({
     }
 
     followScrollToBottom({ animate: true, mode: 'follow', intent: 'tailFollow' });
-  }, [autoStickToBottom, followScrollToBottom, hasMoreNewer, onBottomPinnedChange, renderItems, restoreScrollAnchor, storyChoiceMessageId, storyChoiceOptions, storyChoiceSubmittingValue, tailContent]);
+  }, [autoStickToBottom, followScrollToBottom, hasMoreNewer, onBottomPinnedChange, renderItems, restoreScrollAnchor, scrollRequest, storyChoiceMessageId, storyChoiceOptions, storyChoiceSubmittingValue, tailContent]);
 
   useLayoutEffect(() => {
     const previousValue = previousStoryChoiceSubmittingValueRef.current;
