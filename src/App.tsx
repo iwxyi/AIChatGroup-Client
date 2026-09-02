@@ -56,6 +56,7 @@ const routePreloaders = [
   () => import('./pages/CalendarPage'),
   () => import('./pages/MomentsPage'),
   () => import('./pages/MarketPage'),
+  () => import('./pages/FilesPage'),
   () => import('./pages/IntroPage'),
   () => import('./pages/LoginPage'),
   () => import('./pages/PublicSharedChatPage'),
@@ -97,6 +98,7 @@ const [
   loadCalendarPage,
   loadMomentsPage,
   loadMarketPage,
+  loadFilesPage,
   loadIntroPage,
   loadLoginPage,
   loadPublicSharedChatPage,
@@ -137,6 +139,7 @@ const LettersPage = lazy(loadLettersPage);
 const CalendarPage = lazy(loadCalendarPage);
 const MomentsPage = lazy(loadMomentsPage);
 const MarketPage = lazy(loadMarketPage);
+const FilesPage = lazy(loadFilesPage);
 const IntroPage = lazy(loadIntroPage);
 const IntroConceptPage = lazy(() => import('./pages/IntroPage').then((module) => ({ default: module.IntroConceptPage })));
 const LoginPage = lazy(loadLoginPage);
@@ -622,6 +625,7 @@ function RoutedApp() {
         <Route path="/calendar" element={<RouteElement><CalendarPage /></RouteElement>} />
         <Route path="/moments" element={<RouteElement><MomentsPage /></RouteElement>} />
         <Route path="/market" element={<RouteElement><MarketPage /></RouteElement>} />
+        <Route path="/files" element={<RouteElement><FilesPage /></RouteElement>} />
         <Route path="/intro" element={<RouteElement><IntroPage /></RouteElement>} />
         <Route path="/ai-models" element={<Navigate to={buildSettingsPath({ tab: 'models' })} replace />} />
         <Route path="/ai-proxy" element={<RouteElement><AIProxyPage /></RouteElement>} />

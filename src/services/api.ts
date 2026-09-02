@@ -1078,6 +1078,21 @@ class ApiClient {
     return this.request<{ id: string; url: string; mimeType: string; sizeBytes: number; checksum?: string }>('POST', '/media-assets', data);
   }
 
+  async listFiles(params?: { trash?: boolean; category?: string; from?: number; to?: number; limit?: number; offset?: number }) {
+    const query = new URLSearchParams();
+    if (params?.trash) query.set('trash', 'true');
+    if (params?.category && params.category !== 'all') query.set('category', params.category);
+    if (params?.from) query.set('from', String(params.from));
+    if (params?.to) query.set('to', String(params.to));
+    if (params?.limit) query.set('limit', String(params.limit));
+    if (params?.offset) query.set('offset', String(params.offset));
+    return this.request<{ items: Array<{ id: string; name: string; url: string; mimeType: string; sizeBytes: number; kind: string; category: string; createdAt: number; deletedAt: number | null; chatId: string; messageId: string }> }>('GET', `/files${query.toString() ? `?${query}` : ''}`);
+  }
+
+  async deleteFiles(ids: string[]) {
+    return this.request<{ success: boolean; deleted: number }>('DELETE', '/files', { ids });
+  }
+
   async synthesizeSpeech(data: {
     providerCode?: string;
     modelId?: string;
