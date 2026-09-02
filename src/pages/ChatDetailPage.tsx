@@ -1804,10 +1804,13 @@ export default function ChatDetailPage() {
     // single-flight guard local to this page so two opening loops cannot create
     // sibling AI nodes from the same empty conversation.
     if (openingLoopRef.current) return;
-    if (chat.type === 'assistant') return;
+    // Direct chats are request/response conversations. During auth and
+    // message-window hydration they can temporarily project as empty; never
+    // treat that transient state as a brand-new conversation opening.
+    if (chat.type === 'assistant' || chat.type === 'direct') return;
     openingLoopRef.current = true;
     resume();
-    startConversationLoopIfNeeded(chat, { immediate: true, allowDirect: chat.type === 'direct' });
+    startConversationLoopIfNeeded(chat, { immediate: true });
   }, [chat, chatInteractionDisabled, currentChatMessages, detailBootstrapComplete, id, isDirectReplyPending, isLoading, isRunning, isStoryRoom, resume, startConversationLoopIfNeeded]);
 
   // Creation, initial loading, and clearing history all converge here: when
