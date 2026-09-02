@@ -2645,7 +2645,7 @@ export default function ChatDetailPage() {
         return;
       }
       if (latestChat.type === 'ai_direct') {
-        startConversationLoopIfNeeded(latestChat);
+        startConversationLoopIfNeeded(latestChat, { allowDirect: true, immediate: true });
         const { applyAiDirectFeedback } = await import('../services/directSessionRuntime');
         await applyAiDirectFeedback({ chat: latestChat, chats, characters, content, updateCharacter, updateChat, appendEventMessage });
         return;
@@ -3597,7 +3597,7 @@ export default function ChatDetailPage() {
     }, 'warn');
   }, [id, setSnackbar]);
 
-  const canAutoRunConversation = chat?.type !== 'direct' && !chatInteractionDisabled;
+  const canAutoRunConversation = chat?.type !== 'direct' && chat?.type !== 'ai_direct' && !chatInteractionDisabled;
 
   const handleMessageListBottomPinnedChange = useCallback((pinned: boolean) => {
     isStoryReaderAtTailRef.current = pinned;

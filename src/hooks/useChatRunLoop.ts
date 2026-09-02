@@ -30,7 +30,7 @@ export function getConversationLoopStartBlockReason(params: {
   hasActiveLoop: boolean;
   allowDirect?: boolean;
 }): ConversationLoopStartBlockReason | null {
-  if (params.conversationType === 'direct' && !params.allowDirect) return 'direct_chat';
+  if ((params.conversationType === 'direct' || params.conversationType === 'ai_direct') && !params.allowDirect) return 'direct_chat';
   if (params.isStoryChoiceBlocked) return 'waiting_story_choice';
   if (params.isRunning && !params.isPaused && params.hasActiveLoop) return 'already_active';
   return null;
