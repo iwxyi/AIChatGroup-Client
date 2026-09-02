@@ -628,7 +628,6 @@ export default function MessageList({
   const scrollWriteIntentRef = useRef<{ kind: MessageScrollIntentKind; priority: number; startedAt: number } | null>(null);
   const scrollTransactionRef = useRef<ScrollTransaction | null>(null);
   const scrollTransactionStableFramesRef = useRef(0);
-  const scrollTransactionStableRendersRef = useRef(0);
   const scrollTransactionTimeoutRef = useRef<number | null>(null);
   const initialTailRevealFramesRef = useRef<number[]>([]);
   const initialAnchorRevealFramesRef = useRef<number[]>([]);
@@ -1534,12 +1533,10 @@ export default function MessageList({
       };
       scrollTransactionRef.current = transaction;
       scrollTransactionStableFramesRef.current = 0;
-      scrollTransactionStableRendersRef.current = 0;
       if (scrollTransactionTimeoutRef.current != null) window.clearTimeout(scrollTransactionTimeoutRef.current);
       scrollTransactionTimeoutRef.current = window.setTimeout(() => {
         if (scrollTransactionRef.current?.id === transaction.id) {
           scrollTransactionRef.current = null;
-          scrollTransactionStableRendersRef.current = 0;
           scrollTransactionStableFramesRef.current = 0;
         }
         scrollTransactionTimeoutRef.current = null;
@@ -1728,31 +1725,11 @@ export default function MessageList({
       && currentMetrics.storyChoiceKey === previousMetrics.storyChoiceKey
     );
 
-    // A branch switch can trigger several delayed virtual-list renders (for
-    // example image/markdown measurement). Keep the explicit-jump transaction
-    // alive until render metrics, not just one ResizeObserver cycle, are
-    // stable. This prevents a late resizePreserve from moving the restored
-    // anchor after the switch appears complete.
-    const activeTransaction = scrollTransactionRef.current;
-    if (activeTransaction) {
-      if (metricsChanged) {
-        scrollTransactionStableRendersRef.current = 0;
-      } else {
-        scrollTransactionStableRendersRef.current += 1;
-      }
-      const elapsed = performance.now() - activeTransaction.startedAt;
-      if (scrollTransactionStableRendersRef.current >= 2 && elapsed >= 500) {
-        scrollTransactionRef.current = null;
-        scrollTransactionStableRendersRef.current = 0;
-        scrollTransactionStableFramesRef.current = 0;
-        if (scrollTransactionTimeoutRef.current != null) {
-          window.clearTimeout(scrollTransactionTimeoutRef.current);
-          scrollTransactionTimeoutRef.current = null;
-        }
-      } else {
-        return;
-      }
-    }
+    // A branch switch may receive delayed virtual-list batches well after an
+    // apparently stable render (18 items can become 30 a second later). The
+    // transaction therefore remains authoritative for its full timeout
+    // window; render stability is diagnostic only and must not release it.
+    if (scrollTransactionRef.current) return;
 
     if (!hasJumpedToBottomRef.current) return;
     if (!autoStickToBottom) {
