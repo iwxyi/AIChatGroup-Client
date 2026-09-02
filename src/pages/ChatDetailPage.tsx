@@ -1022,18 +1022,30 @@ export default function ChatDetailPage() {
       cachedWindow: rawCurrentMessageWindow ? { ...rawCurrentMessageWindow, preserveBranchContext: Boolean(chat && isMessageBranchingEnabled(chat)) } : rawCurrentMessageWindow,
     })
     : []), [chat, id, messages, rawCurrentMessageWindow]);
+  const stableBranchProjectionRef = useRef<{ key: string; messages: Message[] } | null>(null);
   const currentChatMessages = useMemo(() => {
     if (!id) return [];
     const activeRange = messages.filter((message) => message.chatId === id).reduce<{ min: number; max: number } | null>((range, message) => ({
       min: range ? Math.min(range.min, message.timestamp) : message.timestamp,
       max: range ? Math.max(range.max, message.timestamp) : message.timestamp,
     }), null);
+    const branchKey = chat?.messageBranchState?.activeLeafNodeId
+      || chat?.messageBranchState?.refs?.[chat.messageBranchState?.activeBranchName || 'main']?.headNodeId
+      || '';
     const projected = chat && isMessageBranchingEnabled(chat)
-      ? projectActiveBranchMessages(chat, currentChatAllMessages)
+      ? projectActiveBranchMessages(chat, currentChatAllMessages, {
+        fallbackMessages: stableBranchProjectionRef.current?.key === branchKey
+          ? stableBranchProjectionRef.current.messages
+          : undefined,
+      })
       : currentChatAllMessages;
-    return activeRange && chat && isMessageBranchingEnabled(chat)
+    const result = activeRange && chat && isMessageBranchingEnabled(chat)
       ? projected.filter((message) => message.timestamp >= activeRange.min && message.timestamp <= activeRange.max)
       : projected;
+    if (chat && isMessageBranchingEnabled(chat) && result.length > 0) {
+      stableBranchProjectionRef.current = { key: branchKey, messages: result };
+    }
+    return result;
   }, [chat, currentChatAllMessages, id, messages]);
   useEffect(() => {
     if (!chat || chat.type !== 'assistant' || !id || !currentChatMessages.length) return;

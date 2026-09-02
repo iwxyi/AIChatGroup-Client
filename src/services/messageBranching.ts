@@ -207,7 +207,11 @@ export function forkBranchState(
   };
 }
 
-export function projectActiveBranchMessages(chat: BranchableChat | null | undefined, messages: Message[]) {
+export function projectActiveBranchMessages(
+  chat: BranchableChat | null | undefined,
+  messages: Message[],
+  options?: { fallbackMessages?: Message[] },
+) {
   const visible = messages.filter((message) => !message.isDeleted);
   if (!isMessageBranchingEnabled(chat)) return visible.slice().sort(compareMessageOrder);
   const nodes = resolveMessageBranchNodes(visible);
@@ -246,7 +250,7 @@ export function projectActiveBranchMessages(chat: BranchableChat | null | undefi
       loadedNodes: nodes.length,
       visibleMessages: visible.length,
     }, 'warn', 'message-window');
-    return visible.slice().sort(compareMessageOrder);
+    return (options?.fallbackMessages?.length ? options.fallbackMessages : visible).slice().sort(compareMessageOrder);
   }
   path.reverse();
   return path.map((node) => node.message);
