@@ -577,7 +577,7 @@ export async function runSessionLoop(params: {
       // Study rooms are strictly learner-triggered: one user message unlocks
       // one teacher turn. Pause immediately after the turn so a stale message
       // snapshot cannot launch a duplicate second generation.
-      if (resolveSessionFamilyKey(currentChat) === 'study') {
+      if (resolveSessionFamilyKey(currentChat) === 'study' || currentChat.type === 'direct' || currentChat.type === 'ai_direct') {
         params.pauseLoop?.();
       }
 
