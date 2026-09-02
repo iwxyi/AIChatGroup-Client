@@ -138,7 +138,13 @@ export function logDeveloperDiagnostic(
       payload,
     },
   ]);
-  writer.call(console, `[dev:${location}]`, entry);
+  // Scroll traces should remain fully expanded/copyable in browser consoles;
+  // logging a live object can be collapsed or rendered with late values.
+  if (location.startsWith('chat-scroll:')) {
+    writer.call(console, `[dev:${location}] ${JSON.stringify(entry)}`);
+  } else {
+    writer.call(console, `[dev:${location}]`, entry);
+  }
 }
 
 export function measureDeveloperDiagnostic<T>(
