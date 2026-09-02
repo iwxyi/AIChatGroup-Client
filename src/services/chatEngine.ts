@@ -4237,7 +4237,7 @@ export const runOneRound = async (
     ? chatMembers.find((member) => member.id === 'narrator')
     : null;
   const isSingleTutorLearningSession = resolveSessionDefinition(chat).kind.scenarioId === 'learning-progress';
-  if (!storyNarrator && !isSingleTutorLearningSession && countSpeakableParticipants(chat, autoSpeakableMembers) < 2) {
+  if (chat.type === 'group' && !storyNarrator && !isSingleTutorLearningSession && countSpeakableParticipants(chat, autoSpeakableMembers) < 2) {
     const reason = autoSpeakableMembers.length === 0
       ? '群里已无多人在线，当前没有可自动发言的角色'
       : '群里已无多人在线，只剩一个可发言成员';
