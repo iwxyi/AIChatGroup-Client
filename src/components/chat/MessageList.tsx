@@ -1567,15 +1567,10 @@ export default function MessageList({
         cancelled = true;
         cancelAnimationFrame(firstFrame);
         cancelAnimationFrame(secondFrame);
-        if (scrollTransactionRef.current?.id === transaction.id) {
-          scrollTransactionRef.current = null;
-          scrollTransactionStableFramesRef.current = 0;
-          scrollTransactionStableRendersRef.current = 0;
-        }
-        if (scrollTransactionTimeoutRef.current != null) {
-          window.clearTimeout(scrollTransactionTimeoutRef.current);
-          scrollTransactionTimeoutRef.current = null;
-        }
+        // Effect cleanup is also invoked when virtualized render metrics
+        // change. Do not end the transaction here: those delayed renders are
+        // precisely what the transaction must protect against. It is ended
+        // by stable render metrics or the timeout fallback instead.
       };
     }
     const restored = restoreScrollAnchor(scrollRequest, { intent: 'explicitJump', allowDuringUserScroll: true });
