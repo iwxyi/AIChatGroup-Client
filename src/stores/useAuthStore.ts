@@ -35,6 +35,7 @@ interface AuthStore {
   user: User | null;
   isLoggedIn: boolean;
   isLoading: boolean;
+  isWorkspaceReady: boolean;
   authMode: AuthMode;
 
   // Actions
@@ -227,6 +228,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   })(),
   isLoggedIn: !!getAuthToken(),
   isLoading: false,
+  isWorkspaceReady: getAuthModeRaw() === 'local' || !getAuthToken(),
   authMode: (getAuthModeRaw() as AuthMode | null) || (getAuthToken() ? 'cloud' : 'local'),
 
   sendCode: async (phone: string, purpose = 'login', captchaToken?: string) => {
@@ -240,7 +242,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   },
 
   login: async (phone: string, code: string) => {
-    set({ isLoading: true });
+    set({ isLoading: true, isWorkspaceReady: false });
     const shouldBootstrapLocalData = get().authMode === 'local' && isCloudSyncEnabled();
     const bootstrapModule = shouldBootstrapLocalData ? await import('../services/localToCloudBootstrap') : null;
     const localSnapshot = bootstrapModule ? await bootstrapModule.captureLocalCloudBootstrapSnapshot() : null;
@@ -254,7 +256,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
         token: result.token,
         user: result.user,
         isLoggedIn: true,
-        isLoading: false,
+        isLoading: true,
         authMode: 'cloud',
       });
       await resetLocalWorkspaceStoresForAccountBoundary();
@@ -282,24 +284,27 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
         && guestImportModule.hasPendingGuestImportForUser(result.user.id, guestImportSnapshot),
       );
       await refreshStoresAfterCloudAuth(result.user, { deferRemoteRefresh: shouldDeferRemoteRefresh });
+      set({ isLoading: false, isWorkspaceReady: true });
     } catch (error) {
-      set({ isLoading: false });
+      set({ isLoading: false, isWorkspaceReady: true });
       throw error;
     }
   },
 
   loginWithPassword: async (phone, password) => {
-    set({ isLoading: true });
+    set({ isLoading: true, isWorkspaceReady: false });
     try {
       const result = await api.passwordLogin(phone, password);
       setAuthToken(result.token); setAuthUser(result.user); enableCloudSyncForLogin(result.user); setAuthMode('cloud');
-      set({ token: result.token, user: result.user, isLoggedIn: true, isLoading: false, authMode: 'cloud' });
+      set({ token: result.token, user: result.user, isLoggedIn: true, isLoading: true, isWorkspaceReady: false, authMode: 'cloud' });
       await resetLocalWorkspaceStoresForAccountBoundary();
       await refreshStoresAfterCloudAuth(result.user);
-    } catch (error) { set({ isLoading: false }); throw error; }
+      set({ isLoading: false, isWorkspaceReady: true });
+    } catch (error) { set({ isLoading: false, isWorkspaceReady: true }); throw error; }
   },
 
   enterLocalMode: async () => {
+    set({ isLoading: true, isWorkspaceReady: false });
     await resetLocalWorkspaceStoresForAccountBoundary();
     clearAuthTokenAndUser();
     setAuthMode('local');
@@ -307,12 +312,16 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       token: null,
       user: null,
       isLoggedIn: false,
+      isLoading: true,
+      isWorkspaceReady: false,
       authMode: 'local',
     });
     await refreshStoresAfterLocalAuthMode();
+    set({ isLoading: false, isWorkspaceReady: true });
   },
 
   logout: async () => {
+    set({ isLoading: true, isWorkspaceReady: false });
     await resetLocalWorkspaceStoresForAccountBoundary();
     clearAuthTokenAndUser();
     setAuthMode('local');
@@ -320,9 +329,12 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       token: null,
       user: null,
       isLoggedIn: false,
+      isLoading: true,
+      isWorkspaceReady: false,
       authMode: 'local',
     });
     await refreshStoresAfterLocalAuthMode();
+    set({ isLoading: false, isWorkspaceReady: true });
   },
 
   expireCloudSession: () => {
@@ -335,6 +347,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       user: null,
       isLoggedIn: false,
       isLoading: false,
+      isWorkspaceReady: true,
       authMode: 'cloud',
     });
   },
@@ -343,6 +356,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     const token = get().token;
     if (!token) return false;
 
+    set({ isLoading: true, isWorkspaceReady: false });
     try {
       const user = await api.getMe();
       setAuthUser(user);
@@ -350,6 +364,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       set({ user, isLoggedIn: true, authMode: 'cloud' });
       await refreshStoresAfterCloudAuth(user, { deferRemoteRefresh: true });
       if (!isCloudSyncUserDisabled()) await refreshRemoteStoresAfterCloudAuth(user);
+      set({ isLoading: false, isWorkspaceReady: true });
       return true;
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
@@ -357,7 +372,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
         return false;
       }
       console.warn('[cloud-sync] auth check unavailable; keeping cloud-local cache active', { error });
-      set({ isLoggedIn: true, authMode: 'cloud' });
+      set({ isLoggedIn: true, isLoading: false, isWorkspaceReady: true, authMode: 'cloud' });
       return false;
     }
   },

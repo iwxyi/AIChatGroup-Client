@@ -296,15 +296,16 @@ function AuthSessionRedirectHandler() {
 function DataLoader({ children }: { children: React.ReactNode }) {
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn);
   const authMode = useAuthStore((s) => s.authMode);
+  const isWorkspaceReady = useAuthStore((s) => s.isWorkspaceReady);
   const loadSettings = useSettingsStore((s) => s.loadSettings);
 
   useEffect(() => {
-    if (isLoggedIn || authMode === 'local') {
+    if (isWorkspaceReady && (isLoggedIn || authMode === 'local')) {
       void loadSettings();
     }
-  }, [authMode, isLoggedIn, loadSettings]);
+  }, [authMode, isLoggedIn, isWorkspaceReady, loadSettings]);
 
-  return <>{children}</>;
+  return isWorkspaceReady ? <>{children}</> : <RouteFallback />;
 }
 
 function startPostImportCloudRefresh() {
