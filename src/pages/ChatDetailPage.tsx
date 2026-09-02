@@ -2193,7 +2193,12 @@ export default function ChatDetailPage() {
     const activePreviewTail = getLatestChatPreviewMessage(activeBranchMessages);
     // Branch switching is a local projection change first. Do not block the
     // message list/scroll feedback on cloud persistence or workspace hooks.
-    void updateChat(id, {
+    // Branch projection must update the local store synchronously. `updateChat`
+    // waits for cloud-sync preparation before applying the local chat patch,
+    // which leaves MessageList rendering the old branch for ~1s and then
+    // causes a late 18 -> 30 item jump. queuePatch applies locally first and
+    // flushes to the cloud asynchronously.
+    void useChatStore.getState().syncPatch(id, {
       messageBranchState: {
         ...nextBranchState,
         activeLeafNodeId: activeTail?.metadata?.branching?.nodeId || activeTail?.id || targetNodeId,
@@ -2216,7 +2221,7 @@ export default function ChatDetailPage() {
     if (cancelledRunningLoop) {
       setSnackbar({ open: true, message: '已切换分支，当前生成已停止', severity: 'success' });
     }
-  }, [cancelActiveConversationLoop, chat, currentChatAllMessages, id, setSnackbar, showErrorToast, updateChat]);
+  }, [cancelActiveConversationLoop, chat, currentChatAllMessages, id, setSnackbar, showErrorToast]);
 
   useEffect(() => {
     if (!chatInteractionDisabled) return;

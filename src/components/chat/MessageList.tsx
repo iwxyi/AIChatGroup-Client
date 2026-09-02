@@ -40,6 +40,7 @@ const USER_SCROLL_INERTIA_GRACE_MS = 480;
 const MIN_BOTTOM_PREFETCH_PAGES = 1;
 const MAX_BOTTOM_PREFETCH_PAGES = 3;
 const SCROLL_INTENT_SETTLE_MS = 160;
+const BRANCH_SCROLL_TRANSACTION_MAX_MS = 1200;
 const INITIAL_REVEAL_MAX_FRAMES = 12;
 const INITIAL_REVEAL_STABLE_FRAMES = 2;
 const PREPEND_STABILIZE_MAX_FRAMES = 36;
@@ -1540,7 +1541,7 @@ export default function MessageList({
           scrollTransactionStableFramesRef.current = 0;
         }
         scrollTransactionTimeoutRef.current = null;
-      }, 5000);
+      }, BRANCH_SCROLL_TRANSACTION_MAX_MS);
       let cancelled = false;
       let firstFrame = 0;
       let secondFrame = 0;
