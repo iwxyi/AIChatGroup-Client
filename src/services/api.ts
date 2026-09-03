@@ -1078,14 +1078,15 @@ class ApiClient {
     return this.request<{ id: string; url: string; mimeType: string; sizeBytes: number; checksum?: string }>('POST', '/media-assets', data);
   }
 
-  async listFiles(params?: { trash?: boolean; category?: string; from?: number; to?: number; limit?: number; offset?: number }) {
+  async listFiles(params?: { trash?: boolean | 'unreferenced'; category?: string; from?: number; to?: number; limit?: number; offset?: number }) {
     const query = new URLSearchParams();
-    if (params?.trash) query.set('trash', 'true');
+    if (params?.trash === true) query.set('trash', 'true');
     if (params?.category && params.category !== 'all') query.set('category', params.category);
     if (params?.from) query.set('from', String(params.from));
     if (params?.to) query.set('to', String(params.to));
     if (params?.limit) query.set('limit', String(params.limit));
     if (params?.offset) query.set('offset', String(params.offset));
+    if (params?.trash === 'unreferenced') query.set('unreferenced', 'true');
     return this.request<{ items: Array<{ id: string; name: string; url: string; mimeType: string; sizeBytes: number; kind: string; category: string; createdAt: number; deletedAt: number | null; chatId: string; messageId: string; description?: string; promptText?: string; syncStatus?: 'cloud-only' | 'synced' | 'metadata-only'; characterId?: string; characterName?: string; sourceType?: string }> }>('GET', `/files${query.toString() ? `?${query}` : ''}`);
   }
 
