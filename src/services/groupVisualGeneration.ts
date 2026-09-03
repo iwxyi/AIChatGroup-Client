@@ -116,6 +116,8 @@ export function enqueueGroupVisualGeneration(params: { chat: GroupChat; members:
             attachmentId: `${kind}-generated-${Date.now()}`,
             kind: 'image',
             dataUrl: prepared,
+            description: `${chat.name || '未命名聊天'} · ${kind === 'avatar' ? '群聊头像' : '聊天背景'}`,
+            sourceType: kind === 'avatar' ? 'group-avatar' : 'chat-background',
           });
           imageUrl = asset.url;
         } catch (error) {
