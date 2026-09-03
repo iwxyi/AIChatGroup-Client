@@ -1073,7 +1073,7 @@ class ApiClient {
   }
 
   async createMediaAsset(data: {
-    chatId: string; messageId: string; attachmentId: string; kind: 'image' | 'audio' | 'sticker' | 'thumbnail'; dataUrl: string;
+    chatId: string; messageId: string; attachmentId: string; kind: 'image' | 'audio' | 'sticker' | 'thumbnail'; dataUrl: string; description?: string; promptText?: string; sourceType?: string; characterId?: string;
   }) {
     return this.request<{ id: string; url: string; mimeType: string; sizeBytes: number; checksum?: string }>('POST', '/media-assets', data);
   }
@@ -1086,7 +1086,7 @@ class ApiClient {
     if (params?.to) query.set('to', String(params.to));
     if (params?.limit) query.set('limit', String(params.limit));
     if (params?.offset) query.set('offset', String(params.offset));
-    return this.request<{ items: Array<{ id: string; name: string; url: string; mimeType: string; sizeBytes: number; kind: string; category: string; createdAt: number; deletedAt: number | null; chatId: string; messageId: string }> }>('GET', `/files${query.toString() ? `?${query}` : ''}`);
+    return this.request<{ items: Array<{ id: string; name: string; url: string; mimeType: string; sizeBytes: number; kind: string; category: string; createdAt: number; deletedAt: number | null; chatId: string; messageId: string; description?: string; promptText?: string }> }>('GET', `/files${query.toString() ? `?${query}` : ''}`);
   }
 
   async deleteFiles(ids: string[]) {

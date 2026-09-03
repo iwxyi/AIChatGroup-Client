@@ -476,6 +476,9 @@ async function runRichMediaQueueEntry(entry: RichMediaQueueEntry) {
             attachmentId: attachment.id,
             kind: 'image',
             dataUrl,
+            description: attachment.caption || attachment.altText,
+            promptText: attachment.promptText,
+            sourceType: 'chat-image',
           });
       workingMessage = updateRichMediaMessage({
         message: workingMessage,
@@ -753,6 +756,9 @@ export async function uploadLocalMessageMediaToCloud(params: {
       attachmentId: attachment.id,
       kind: attachment.kind,
       dataUrl: attachment.url,
+      description: attachment.caption || attachment.altText,
+      promptText: attachment.promptText,
+      sourceType: `chat-${attachment.kind}`,
     });
     nextMetadata = updateAttachment(nextMetadata, attachment.id, {
       status: 'ready',
