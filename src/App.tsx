@@ -304,14 +304,19 @@ function DataLoader({ children }: { children: React.ReactNode }) {
   const authMode = useAuthStore((s) => s.authMode);
   const isWorkspaceReady = useAuthStore((s) => s.isWorkspaceReady);
   const loadSettings = useSettingsStore((s) => s.loadSettings);
+  const location = useLocation();
+  const isAdminRoute = location.pathname.startsWith('/admin');
 
   useEffect(() => {
-    if (isWorkspaceReady && (isLoggedIn || authMode === 'local')) {
+    if (!isAdminRoute && isWorkspaceReady && (isLoggedIn || authMode === 'local')) {
       void loadSettings();
     }
-  }, [authMode, isLoggedIn, isWorkspaceReady, loadSettings]);
+  }, [authMode, isAdminRoute, isLoggedIn, isWorkspaceReady, loadSettings]);
 
-  return isWorkspaceReady ? <>{children}</> : <RouteFallback />;
+  // Admin pages use their own authentication and API surface; they must not
+  // wait for the user workspace bootstrap (which is intentionally skipped on
+  // /admin routes).
+  return isAdminRoute || isWorkspaceReady ? <>{children}</> : <RouteFallback />;
 }
 
 function startPostImportCloudRefresh() {
