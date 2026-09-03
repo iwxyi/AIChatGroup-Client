@@ -1086,7 +1086,7 @@ class ApiClient {
     if (params?.to) query.set('to', String(params.to));
     if (params?.limit) query.set('limit', String(params.limit));
     if (params?.offset) query.set('offset', String(params.offset));
-    return this.request<{ items: Array<{ id: string; name: string; url: string; mimeType: string; sizeBytes: number; kind: string; category: string; createdAt: number; deletedAt: number | null; chatId: string; messageId: string; description?: string; promptText?: string }> }>('GET', `/files${query.toString() ? `?${query}` : ''}`);
+    return this.request<{ items: Array<{ id: string; name: string; url: string; mimeType: string; sizeBytes: number; kind: string; category: string; createdAt: number; deletedAt: number | null; chatId: string; messageId: string; description?: string; promptText?: string; syncStatus?: 'cloud-only' | 'synced' | 'metadata-only' }> }>('GET', `/files${query.toString() ? `?${query}` : ''}`);
   }
 
   async deleteFiles(ids: string[]) {
