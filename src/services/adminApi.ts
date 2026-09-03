@@ -750,6 +750,10 @@ class AdminApiClient {
   upsertUserRestriction(userId: string, restrictionType: string, payload: Record<string, unknown>) {
     return this.request<Record<string, unknown>>('PUT', `/risk/users/${encodeURIComponent(userId)}/restrictions/${encodeURIComponent(restrictionType)}`, payload);
   }
+
+  getCloudStorageOverview() { return this.request<{ items: Array<Record<string, unknown>> }>('GET', '/files/overview'); }
+  getCloudStorageUserFiles(userId: string) { return this.request<{ items: Array<Record<string, unknown>> }>('GET', `/files/users/${encodeURIComponent(userId)}/files`); }
+  deleteCloudStorageFile(id: string) { return this.request<{ success: boolean }>('DELETE', `/files/files/${encodeURIComponent(id)}`); }
 }
 
 export const adminApi = new AdminApiClient();

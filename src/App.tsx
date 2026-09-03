@@ -75,6 +75,7 @@ const routePreloaders = [
   () => import('./pages/admin/AdminAuditPage'),
   () => import('./pages/admin/AdminNotificationsPage'),
   () => import('./pages/admin/AdminUsagePage'),
+  () => import('./pages/admin/AdminCloudStoragePage'),
   () => import('./pages/admin/AdminSendRecordsPage'),
   () => import('./pages/admin/AdminProfilePage'),
 ];
@@ -117,6 +118,7 @@ const [
   loadAdminAuditPage,
   loadAdminNotificationsPage,
   loadAdminUsagePage,
+  loadAdminCloudStoragePage,
   loadAdminSendRecordsPage,
   loadAdminProfilePage,
 ] = routePreloaders;
@@ -159,6 +161,7 @@ const AdminRiskPage = lazy(loadAdminRiskPage);
 const AdminAuditPage = lazy(loadAdminAuditPage);
 const AdminNotificationsPage = lazy(loadAdminNotificationsPage);
 const AdminUsagePage = lazy(loadAdminUsagePage);
+const AdminCloudStoragePage = lazy(loadAdminCloudStoragePage);
 const AdminSendRecordsPage = lazy(loadAdminSendRecordsPage);
 const AdminProfilePage = lazy(loadAdminProfilePage);
 const AppRouter = import.meta.env.VITE_APP_ROUTER === 'hash' ? HashRouter : BrowserRouter;
@@ -603,6 +606,7 @@ function RoutedApp() {
           <Route path="market" element={<RouteElement><AdminPermissionGate permissions={[ADMIN_PERMISSION_CODES.marketRead]}><AdminMarketPage /></AdminPermissionGate></RouteElement>} />
           <Route path="notifications" element={<RouteElement><AdminPermissionGate permissions={[ADMIN_PERMISSION_CODES.notificationsRead]}><AdminNotificationsPage /></AdminPermissionGate></RouteElement>} />
           <Route path="usage" element={<RouteElement><AdminPermissionGate permissions={[ADMIN_PERMISSION_CODES.usersRead]}><AdminUsagePage /></AdminPermissionGate></RouteElement>} />
+          <Route path="files" element={<RouteElement><AdminPermissionGate permissions={[ADMIN_PERMISSION_CODES.usersRead]}><AdminCloudStoragePage /></AdminPermissionGate></RouteElement>} />
           <Route path="send-records" element={<RouteElement><AdminPermissionGate permissions={[ADMIN_PERMISSION_CODES.notificationsRead]}><AdminSendRecordsPage /></AdminPermissionGate></RouteElement>} />
           <Route path="config-migration" element={<Navigate to="/admin/global-config" replace />} />
           <Route path="risk" element={<RouteElement><AdminPermissionGate permissions={[ADMIN_PERMISSION_CODES.riskRead]}><AdminRiskPage /></AdminPermissionGate></RouteElement>} />
