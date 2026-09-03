@@ -41,11 +41,11 @@ function AudioTile({ url, onOpen }: { url: string; onOpen?: () => void }) {
     return () => { audio.removeEventListener('loadedmetadata', sync); audio.removeEventListener('timeupdate', sync); audio.removeEventListener('ended', ended); };
   }, []);
   const togglePlayback = async () => { const audio = audioRef.current; if (!audio) return; if (audio.paused) { await audio.play(); setPlaying(true); } else { audio.pause(); setPlaying(false); } };
-  return <Box onClick={(event) => event.stopPropagation()} onDoubleClick={() => onOpen?.()} sx={{ width: '100%', height: '100%', position: 'relative', display: 'flex', flexDirection: 'column', justifyContent: 'center', px: 1, pt: 1.5, pb: .75 }}>
+  return <Box onClick={(event) => event.stopPropagation()} onDoubleClick={() => onOpen?.()} sx={{ width: '100%', height: '100%', position: 'relative', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', gap: 0, px: 1, pt: 1, pb: .5 }}>
     <audio ref={audioRef} src={url} preload="metadata" style={{ display: 'none' }} />
     <IconButton aria-label={playing ? '暂停语音' : '播放语音'} size="small" onClick={() => void togglePlayback()} sx={{ p: .25, alignSelf: 'center', mt: .25 }}>{playing ? <PauseIcon /> : <PlayArrowIcon />}</IconButton>
-    <Box sx={{ width: '78%', alignSelf: 'center', display: 'flex', justifyContent: 'center', minHeight: 17 }}>{playing && <Typography variant="caption" color="text.secondary" sx={{ fontVariantNumeric: 'tabular-nums' }}>{formatAudioTime(currentTime)}</Typography>}{!playing && duration > 0 && <Typography variant="caption" color="text.secondary" sx={{ fontVariantNumeric: 'tabular-nums' }}>{formatAudioTime(duration)}</Typography>}</Box>
-    <Slider aria-label="语音进度" size="small" value={duration ? currentTime : 0} max={duration || 1} onChange={(_, value) => { const next = Array.isArray(value) ? value[0] : value; if (audioRef.current) audioRef.current.currentTime = next; setCurrentTime(next); }} sx={{ width: '78%', alignSelf: 'center', py: .25, mt: 'auto' }} />
+    <Box sx={{ width: '78%', display: 'flex', justifyContent: 'flex-end', minHeight: 17 }}>{playing && <Typography variant="caption" color="text.secondary" sx={{ fontVariantNumeric: 'tabular-nums' }}>{formatAudioTime(currentTime)} / {formatAudioTime(duration)}</Typography>}{!playing && duration > 0 && <Typography variant="caption" color="text.secondary" sx={{ fontVariantNumeric: 'tabular-nums' }}>{formatAudioTime(duration)}</Typography>}</Box>
+    <Slider aria-label="语音进度" size="small" value={duration ? currentTime : 0} max={duration || 1} onChange={(_, value) => { const next = Array.isArray(value) ? value[0] : value; if (audioRef.current) audioRef.current.currentTime = next; setCurrentTime(next); }} sx={{ width: '78%', py: .25, mt: -.25 }} />
   </Box>;
 }
 
