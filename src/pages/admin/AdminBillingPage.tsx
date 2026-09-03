@@ -511,7 +511,8 @@ function toPlanForm(item: Record<string, unknown>): PlanForm {
     visibleToUsers: toBoolean(item.visible_to_users, true),
     featured: toBoolean(item.featured, false),
     sortOrder: numberText(item.sort_order, '0'),
-    featureUnlockEnabled: planKind === 'vip' ? toBoolean(item.ai_enabled, true) : false,
+    // VIP 套餐始终包含功能解锁；旧套餐即使遗留了 false，也在下次保存时一并修正。
+    featureUnlockEnabled: planKind === 'vip',
     featuresText: parseMetadataFeatures(item.metadata).join('\n'),
     displayGroup: metadataText(metadata, 'displayGroup', planKind === 'vip' ? 'vip' : 'points'),
     displayGroupName: metadataText(metadata, 'displayGroupName', planKind === 'vip' ? 'VIP 套餐' : '点数包'),
@@ -644,8 +645,8 @@ function buildPlanPayload(form: PlanForm, tiers: VipTierForm[] = DEFAULT_VIP_TIE
     visibleToUsers: form.visibleToUsers,
     featured: false,
     sortOrder: Math.floor(toNumber(form.sortOrder, 0)),
-    aiEnabled: isVip ? form.featureUnlockEnabled : false,
-    featureUnlockEnabled: isVip ? form.featureUnlockEnabled : false,
+    aiEnabled: isVip,
+    featureUnlockEnabled: isVip,
     features: form.featuresText.split('\n').map((item) => item.trim()).filter(Boolean),
     displayGroup: form.displayGroup.trim() || (isVip ? 'vip' : 'points'),
     displayGroupName: form.displayGroupName.trim() || (isVip ? 'VIP 套餐' : '点数包'),
@@ -1999,61 +2000,73 @@ export default function AdminBillingPage() {
             </AdminTableFrame>
           </AdminSection>
 
-          <Dialog open={planDialogOpen} onClose={() => setPlanDialogOpen(false)} maxWidth="md" fullWidth>
-            <DialogTitle>{planForm.id ? '编辑套餐' : '新增套餐'}</DialogTitle>
-            <DialogContent>
-              <Stack spacing={1.25} sx={{ pt: 1 }}>
+          <Dialog
+            open={planDialogOpen}
+            onClose={() => setPlanDialogOpen(false)}
+            maxWidth="lg"
+            fullWidth
+            slotProps={{ paper: { sx: { borderRadius: { xs: 0, sm: 3 }, overflow: 'hidden' } } }}
+          >
+            <DialogTitle sx={{ px: { xs: 2, sm: 3 }, pt: 2.5, pb: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
+              <Stack direction="row" spacing={2} sx={{ alignItems: 'flex-start', justifyContent: 'space-between' }}>
+                <Box>
+                  <Typography variant="overline" sx={{ color: 'primary.main', fontWeight: 800, letterSpacing: '.12em' }}>套餐配置</Typography>
+                  <Typography variant="h5" sx={{ fontWeight: 900, letterSpacing: '-.02em' }}>{planForm.id ? '编辑套餐' : '新增套餐'}</Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: .5 }}>配置价格、展示方式与可叠加权益</Typography>
+                </Box>
+                {planForm.id ? <Chip size="small" label={planForm.status === 'active' ? '启用中' : '未启用'} color={planForm.status === 'active' ? 'success' : 'default'} sx={{ mt: 1 }} /> : null}
+              </Stack>
+            </DialogTitle>
+            <DialogContent sx={{ bgcolor: 'grey.50', px: { xs: 1.5, sm: 3 }, py: { xs: 2, sm: 2.5 } }}>
+              <Stack spacing={2}>
                 {planDialogError ? <Alert severity="error">{planDialogError}</Alert> : null}
-                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(180px, 0.9fr) minmax(220px, 1.1fr) auto' }, gap: 1.25, alignItems: 'center' }}>
-                  <TextField label="套餐编码" required value={planForm.code} onChange={(event) => updateForm('code', event.target.value)} fullWidth />
-                  <TextField label="套餐名称" required value={planForm.name} onChange={(event) => updateForm('name', event.target.value)} fullWidth />
-                  <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1.12fr) minmax(290px, .88fr)' }, gap: 2, alignItems: 'start' }}>
+                  <Paper variant="outlined" sx={{ p: { xs: 1.75, sm: 2.25 }, borderRadius: 3, bgcolor: 'background.paper', boxShadow: '0 1px 2px rgba(15, 23, 42, .04)' }}>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 900 }}>套餐基础信息</Typography>
+                    <Typography variant="caption" color="text.secondary">用户购买时看到的名称与价格</Typography>
+                  <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.25 }}>
+                    <TextField label="套餐编码" required value={planForm.code} onChange={(event) => updateForm('code', event.target.value)} fullWidth />
+                    <TextField label="套餐名称" required value={planForm.name} onChange={(event) => updateForm('name', event.target.value)} fullWidth />
+                    <TextField label="价格" required value={planForm.priceAmount} onChange={(event) => updateForm('priceAmount', event.target.value)} fullWidth />
+                    <TextField label="划线价" value={planForm.originalPriceAmount} onChange={(event) => updateForm('originalPriceAmount', event.target.value)} fullWidth />
+                    <TextField label="币种" value={planForm.currency} onChange={(event) => updateForm('currency', event.target.value)} fullWidth />
+                    </Box>
+                  </Paper>
+                  <Paper variant="outlined" sx={{ p: { xs: 1.75, sm: 2.25 }, borderRadius: 3, bgcolor: 'background.paper', boxShadow: '0 1px 2px rgba(15, 23, 42, .04)' }}>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 900 }}>展示与状态</Typography>
+                  <Typography variant="caption" color="text.secondary">控制套餐是否可售、归属分组及显示范围</Typography>
+                  <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', sm: '1.15fr .85fr' }, gap: 1.25, mt: 1.5, alignItems: 'center' }}>
+                    <TextField select label="状态" value={planForm.status} onChange={(event) => updateForm('status', event.target.value)}><MenuItem value="active">启用</MenuItem><MenuItem value="inactive">停用</MenuItem><MenuItem value="archived">归档</MenuItem></TextField>
+                    <TextField label="排序" value={planForm.sortOrder} onChange={(event) => updateForm('sortOrder', event.target.value)} />
+                  </Box>
+                  <Divider sx={{ my: 2 }} />
+                  <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, minmax(0, 1fr))' }, gap: 1.25, mt: 1.5, alignItems: 'center' }}>
+                    <TextField label="展示分组" value={planForm.displayGroup} onChange={(event) => updateForm('displayGroup', event.target.value)} helperText="vip / points / storage" />
+                    <TextField label="分组名称" value={planForm.displayGroupName} onChange={(event) => updateForm('displayGroupName', event.target.value)} />
+                    <TextField label="组内排序" value={planForm.sortOrderInGroup} onChange={(event) => updateForm('sortOrderInGroup', event.target.value)} />
+                  </Box>
+                  <FormControlLabel sx={{ mt: 1 }} control={<Switch checked={planForm.visibleToUsers} onChange={(event) => updateForm('visibleToUsers', event.target.checked)} />} label="全部用户可见" />
+                </Paper>
+                </Box>
+                <Paper variant="outlined" sx={{ px: { xs: 1.5, sm: 2 }, py: 1.25, borderRadius: 3, bgcolor: 'rgba(99, 102, 241, .045)', borderColor: 'rgba(99, 102, 241, .16)' }}>
+                  <Stack direction={{ xs: 'column', sm: 'row' }} spacing={{ xs: .25, sm: 2 }} sx={{ alignItems: { xs: 'flex-start', sm: 'center' }, justifyContent: 'space-between' }}>
+                    <Box>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 900 }}>套餐权益</Typography>
+                      <Typography variant="caption" color="text.secondary">可同时开启多项权益，未开启的模块不会显示</Typography>
+                    </Box>
+                    <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
                     <FormControlLabel control={<Switch checked={planForm.vipEnabled} onChange={(event) => updateForm('vipEnabled', event.target.checked)} />} label="VIP" />
                     <FormControlLabel control={<Switch checked={planForm.pointsEnabled} onChange={(event) => updateForm('pointsEnabled', event.target.checked)} />} label="点数" />
                     <FormControlLabel control={<Switch checked={planForm.storageEnabled} onChange={(event) => updateForm('storageEnabled', event.target.checked)} />} label="容量" />
-                  </Stack>
-                </Box>
-                <Stack spacing={1.5}>
-                  <Paper variant="outlined" sx={{ p: 2, borderRadius: 2.5 }}><Typography variant="h6" sx={{ fontWeight: 900, mb: 1.5 }}>VIP 权益</Typography>{planForm.vipEnabled ? <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' }, gap: 1.25 }}><TextField select label="VIP 等级" value={planForm.vipTierCode} onChange={(event) => updateForm('vipTierCode', event.target.value)} size="small">{selectableVipTiers.map((tier) => <MenuItem key={tier.code} value={tier.code}>{tier.name || tier.code}</MenuItem>)}</TextField><TextField label="有效天数" value={planForm.durationDays} onChange={(event) => updateForm('durationDays', event.target.value)} size="small" /><TextField label="时长标签" value={planForm.durationLabel} onChange={(event) => updateForm('durationLabel', event.target.value)} size="small" /></Box> : <Typography color="text.secondary">未启用该权益</Typography>}</Paper>
-                  <Paper variant="outlined" sx={{ p: 2, borderRadius: 2.5 }}><Typography variant="h6" sx={{ fontWeight: 900, mb: 1.5 }}>点数权益</Typography>{planForm.pointsEnabled ? <TextField label="包含点数（P）" value={planForm.grantPoints} onChange={(event) => updateForm('grantPoints', event.target.value)} size="small" error={!planPointsValid} helperText={!planPointsValid ? '必须大于 0' : undefined} fullWidth /> : <Typography color="text.secondary">未启用该权益</Typography>}</Paper>
-                  <Paper variant="outlined" sx={{ p: 2, borderRadius: 2.5 }}><Typography variant="h6" sx={{ fontWeight: 900, mb: 1.5 }}>容量权益</Typography>{planForm.storageEnabled ? <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.25 }}><TextField label="容量（MB）" value={planForm.storageBytes} onChange={(event) => updateForm('storageBytes', event.target.value)} size="small" /><TextField label="有效期（天）" value={planForm.storageDurationDays} onChange={(event) => updateForm('storageDurationDays', event.target.value)} size="small" /></Box> : <Typography color="text.secondary">未启用该权益</Typography>}</Paper>
-                </Stack>
-                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', sm: 'repeat(3, minmax(0, 1fr))' }, gap: 1.25 }}><TextField label="价格" required value={planForm.priceAmount} onChange={(event) => updateForm('priceAmount', event.target.value)} fullWidth /><TextField label="划线价" value={planForm.originalPriceAmount} onChange={(event) => updateForm('originalPriceAmount', event.target.value)} fullWidth /><TextField label="币种" value={planForm.currency} onChange={(event) => updateForm('currency', event.target.value)} fullWidth /></Box>
-                {!planHasBenefit ? <Alert severity="warning">至少选择一个套餐权益。</Alert> : null}
-                {planForm.vipEnabled ? (
-                  <>
-                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'minmax(160px, 0.8fr) minmax(120px, 0.6fr) minmax(140px, 0.7fr)' }, gap: 1.25 }}>
-                      <TextField select label="VIP 等级" value={planForm.vipTierCode} onChange={(event) => updateForm('vipTierCode', event.target.value)} fullWidth>
-                        {selectableVipTiers.map((tier) => (
-                          <MenuItem key={tier.code} value={tier.code}>
-                            {tier.name || tier.code}{tier.enabled ? '' : '（已停用）'}
-                          </MenuItem>
-                        ))}
-                      </TextField>
-                      <TextField label="有效天数" value={planForm.durationDays} onChange={(event) => updateForm('durationDays', event.target.value)} fullWidth />
-                      <TextField label="时长标签" placeholder="月卡 / 季卡 / 年卡" value={planForm.durationLabel} onChange={(event) => updateForm('durationLabel', event.target.value)} fullWidth />
-                    </Box>
-                    <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', flexWrap: 'wrap', px: 0.5 }}>
-                      <FormControlLabel control={<Switch checked={planForm.featureUnlockEnabled} onChange={(event) => updateForm('featureUnlockEnabled', event.target.checked)} />} label="解锁功能" />
                     </Stack>
-                  </>
-                ) : null}
-                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'minmax(120px, 0.7fr) minmax(120px, 0.7fr) minmax(120px, 0.6fr)' }, gap: 1.25 }}>
-                  <TextField label="展示分组" value={planForm.displayGroup} onChange={(event) => updateForm('displayGroup', event.target.value)} helperText="vip / points" fullWidth />
-                  <TextField label="分组名称" value={planForm.displayGroupName} onChange={(event) => updateForm('displayGroupName', event.target.value)} fullWidth />
-                  <TextField label="组内排序" value={planForm.sortOrderInGroup} onChange={(event) => updateForm('sortOrderInGroup', event.target.value)} fullWidth />
+                  </Stack>
+                </Paper>
+                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' }, gap: 2 }}>
+                  {planForm.vipEnabled ? <Paper variant="outlined" sx={{ p: { xs: 1.75, sm: 2.25 }, borderRadius: 3, bgcolor: 'background.paper', borderTop: '3px solid', borderTopColor: 'primary.main' }}><Typography variant="subtitle1" sx={{ fontWeight: 900 }}>VIP 权益</Typography><Typography variant="caption" color="text.secondary">解锁会员功能与等级</Typography><Box sx={{ display: 'grid', gap: 1.25, mt: 1.5 }}><TextField select label="VIP 等级" value={planForm.vipTierCode} onChange={(event) => updateForm('vipTierCode', event.target.value)} size="small">{selectableVipTiers.map((tier) => <MenuItem key={tier.code} value={tier.code}>{tier.name || tier.code}</MenuItem>)}</TextField><Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.25 }}><TextField label="有效天数" value={planForm.durationDays} onChange={(event) => updateForm('durationDays', event.target.value)} size="small" /><TextField label="时长标签" value={planForm.durationLabel} onChange={(event) => updateForm('durationLabel', event.target.value)} size="small" /></Box></Box></Paper> : null}
+                  {planForm.pointsEnabled ? <Paper variant="outlined" sx={{ p: { xs: 1.75, sm: 2.25 }, borderRadius: 3, bgcolor: 'background.paper', borderTop: '3px solid', borderTopColor: 'success.main' }}><Typography variant="subtitle1" sx={{ fontWeight: 900 }}>点数权益</Typography><Typography variant="caption" color="text.secondary">购买后立即到账的点数</Typography><TextField sx={{ mt: 1.5 }} label="包含点数（P）" value={planForm.grantPoints} onChange={(event) => updateForm('grantPoints', event.target.value)} size="small" error={!planPointsValid} helperText={!planPointsValid ? '必须大于 0' : undefined} fullWidth /></Paper> : null}
+                  {planForm.storageEnabled ? <Paper variant="outlined" sx={{ p: { xs: 1.75, sm: 2.25 }, borderRadius: 3, bgcolor: 'background.paper', borderTop: '3px solid', borderTopColor: 'info.main' }}><Typography variant="subtitle1" sx={{ fontWeight: 900 }}>容量权益</Typography><Typography variant="caption" color="text.secondary">可叠加的云空间容量</Typography><Box sx={{ display: 'grid', gap: 1.25, mt: 1.5 }}><TextField label="容量（MB）" value={planForm.storageBytes} onChange={(event) => updateForm('storageBytes', event.target.value)} size="small" /><TextField label="有效期（天）" value={planForm.storageDurationDays} onChange={(event) => updateForm('storageDurationDays', event.target.value)} size="small" /></Box></Paper> : null}
                 </Box>
-                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'minmax(140px, 0.65fr) minmax(120px, 0.55fr)' }, gap: 1.25 }}>
-                  <TextField select label="状态" value={planForm.status} onChange={(event) => updateForm('status', event.target.value)} fullWidth>
-                    <MenuItem value="active">启用</MenuItem>
-                    <MenuItem value="inactive">停用</MenuItem>
-                    <MenuItem value="archived">归档</MenuItem>
-                  </TextField>
-                  <TextField label="排序" value={planForm.sortOrder} onChange={(event) => updateForm('sortOrder', event.target.value)} fullWidth />
-                </Box>
-                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={0.5}>
-                  <FormControlLabel control={<Switch checked={planForm.visibleToUsers} onChange={(event) => updateForm('visibleToUsers', event.target.checked)} />} label="全部用户可见" />
-                </Stack>
+                {!planHasBenefit ? <Alert severity="warning">至少选择一个套餐权益。</Alert> : null}
               </Stack>
             </DialogContent>
             <DialogActions>
