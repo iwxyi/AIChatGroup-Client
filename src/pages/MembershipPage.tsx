@@ -98,6 +98,10 @@ function planGrantPoints(plan: BillingPlanItem) {
   return Math.max(0, toNumber(plan.grant_points));
 }
 
+function planStorageBytes(plan: BillingPlanItem) {
+  return Math.max(0, getPlanMetaNumber(plan, 'storageBytes'));
+}
+
 function planIsVip(plan: BillingPlanItem) {
   return String(plan.plan_kind || '') === 'vip';
 }
@@ -392,6 +396,7 @@ export default function MembershipPage() {
 
   const vipPlans = sortedPlans.filter((plan) => planDisplayGroup(plan) === 'vip' || planIsVip(plan));
   const pointPlans = sortedPlans.filter((plan) => planDisplayGroup(plan) === 'points' || (!planIsVip(plan) && planGrantPoints(plan) > 0));
+  const storagePlans = sortedPlans.filter((plan) => planDisplayGroup(plan) === 'storage' || planStorageBytes(plan) > 0);
   const purchasableVipTierCodes = new Set(vipPlans.map((plan) => planVipTierCode(plan)));
   const enabledConfigTiers = [...(membershipConfig.tiers || DEFAULT_MEMBERSHIP_CONFIG.tiers || [])]
     .filter(membershipTierEnabled)
@@ -1315,6 +1320,12 @@ export default function MembershipPage() {
                   </Card>
                 ))}
               </Box>
+            </Stack>
+          ) : null}
+          {storagePlans.length > 0 ? (
+            <Stack spacing={{ xs: 1.55, sm: 1.85 }} sx={membershipBlockSx}>
+              <Box><Typography variant="h6" sx={{ fontWeight: 950 }}>{isZh ? '容量包' : 'Storage packs'}</Typography><Typography variant="body2" color="text.secondary">{isZh ? '容量包可叠加使用，并按套餐有效期自动到期。' : 'Storage packs stack and expire according to each plan.'}</Typography></Box>
+              <Box sx={{ display: 'grid', gridTemplateColumns: tierGridTemplateColumns, gap: 1.25 }}>{storagePlans.map((plan) => <Card key={plan.id} variant="outlined" sx={{ borderRadius: membershipRadius.card }}><CardContent><Stack spacing={1}><Typography sx={{ fontWeight: 900 }}>{plan.name}</Typography><Chip label={`${(planStorageBytes(plan) / 1024 / 1024 / 1024).toFixed(planStorageBytes(plan) >= 1024 ** 3 ? 0 : 1)} GB`} color="primary" size="small" /><Typography variant="body2" color="text.secondary">{plan.description || planDurationLabel(plan, isZh)}</Typography><Button variant="outlined" startIcon={<PaymentIcon />} onClick={() => void handlePurchase(plan)} disabled={Boolean(purchasingPlanCode)}>{formatMoney(plan.price_amount, plan.currency)}</Button></Stack></CardContent></Card>)}</Box>
             </Stack>
           ) : null}
         </Stack>

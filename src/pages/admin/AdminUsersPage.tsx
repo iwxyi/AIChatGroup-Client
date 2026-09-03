@@ -66,6 +66,7 @@ type AccountEntitlementDraft = {
   aiBillingDiscount: string;
   dailyPointGrant: string;
   monthlyPointGrant: string;
+  cloudStorageBytes: string;
   retentionLimitsText: string;
   note: string;
 };
@@ -88,6 +89,7 @@ const EMPTY_ACCOUNT_ENTITLEMENT_DRAFT: AccountEntitlementDraft = {
   aiBillingDiscount: '',
   dailyPointGrant: '',
   monthlyPointGrant: '',
+  cloudStorageBytes: '',
   retentionLimitsText: '',
   note: '',
 };
@@ -218,6 +220,7 @@ function accountEntitlementToDraft(value: unknown): AccountEntitlementDraft {
     aiBillingDiscount: draftText(entitlement.aiBillingDiscount),
     dailyPointGrant: draftText(entitlement.dailyPointGrant),
     monthlyPointGrant: draftText(entitlement.monthlyPointGrant),
+    cloudStorageBytes: draftText(entitlement.cloudStorageBytes),
     retentionLimitsText: entitlement.retentionLimits ? retentionLimitsText(entitlement.retentionLimits) : '',
     note: String(row.note || ''),
   };
@@ -245,6 +248,7 @@ function buildAccountEntitlementPayload(draft: AccountEntitlementDraft, allowedP
     'aiBillingDiscount',
     'dailyPointGrant',
     'monthlyPointGrant',
+    'cloudStorageBytes',
   ];
   numberFields.forEach((field) => {
     const parsed = parseOptionalNumber(String(draft[field] || ''));
@@ -1031,6 +1035,7 @@ export default function AdminUsersPage() {
                       <TextField size="small" label="AI 折扣率" value={accountEntitlementDraft.aiBillingDiscount} onChange={(event) => updateAccountEntitlementDraft({ aiBillingDiscount: event.target.value })} placeholder="例如 0.9" />
                       <TextField size="small" label="每日领取点数" value={accountEntitlementDraft.dailyPointGrant} onChange={(event) => updateAccountEntitlementDraft({ dailyPointGrant: event.target.value })} placeholder="留空不覆盖" />
                       <TextField size="small" label="每月领取点数" value={accountEntitlementDraft.monthlyPointGrant} onChange={(event) => updateAccountEntitlementDraft({ monthlyPointGrant: event.target.value })} placeholder="留空不覆盖" />
+                      <TextField size="small" label="额外云空间（字节）" value={accountEntitlementDraft.cloudStorageBytes} onChange={(event) => updateAccountEntitlementDraft({ cloudStorageBytes: event.target.value })} placeholder="留空不增加" />
                     </Box>
                     <Box>
                       <Typography variant="caption" color="text.secondary">官方模型访问</Typography>

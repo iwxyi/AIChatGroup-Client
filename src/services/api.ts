@@ -19,6 +19,9 @@ export interface AuthUserResponse {
   avatar: string;
   cloudSyncEntitled?: boolean;
   cloudStorageBytes?: number;
+  cloudStorageMembershipBytes?: number;
+  cloudStorageAccountBytes?: number;
+  cloudStorageGrants?: Array<{ bytes: number; expiresAt: number | null }>;
   assistantArtifactCloudSyncEntitled?: boolean;
   aiProxyEntitled?: boolean;
   agentEntitled?: boolean;

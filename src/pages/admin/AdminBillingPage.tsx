@@ -51,6 +51,8 @@ type PlanForm = {
   currency: string;
   durationDays: string;
   grantPoints: string;
+  storageBytes: string;
+  storageDurationDays: string;
   status: string;
   visibleToUsers: boolean;
   featured: boolean;
@@ -161,6 +163,8 @@ const EMPTY_PLAN_FORM: PlanForm = {
   currency: 'CNY',
   durationDays: '30',
   grantPoints: '',
+  storageBytes: '',
+  storageDurationDays: '',
   status: 'active',
   visibleToUsers: true,
   featured: false,
@@ -497,6 +501,8 @@ function toPlanForm(item: Record<string, unknown>): PlanForm {
     currency: String(item.currency || 'CNY'),
     durationDays: item.duration_days == null ? '30' : numberText(item.duration_days, '30'),
     grantPoints,
+    storageBytes: numberText(metadata.storageBytes),
+    storageDurationDays: numberText(metadata.storageDurationDays),
     status: String(item.status || 'active'),
     visibleToUsers: toBoolean(item.visible_to_users, true),
     featured: toBoolean(item.featured, false),
@@ -598,11 +604,13 @@ function buildEntitlementPayload(form: VipEntitlementForm, allowedProviderIds?: 
 function buildPlanPayload(form: PlanForm, tiers: VipTierForm[] = DEFAULT_VIP_TIERS) {
   const isVip = form.vipEnabled;
   const pointsEnabled = form.pointsEnabled;
+  const storageEnabled = Number(form.storageBytes) > 0;
   const enabledTiers = tiers.filter((tier) => tier.enabled);
   const selectedTier = tiers.find((tier) => tier.code === form.vipTierCode) || enabledTiers[0] || tiers[0] || DEFAULT_VIP_TIERS[0];
   const benefits = [
     isVip ? 'vip' : '',
     pointsEnabled ? 'points' : '',
+    storageEnabled ? 'storage' : '',
   ].filter(Boolean);
   return {
     code: form.code.trim(),
@@ -616,6 +624,8 @@ function buildPlanPayload(form: PlanForm, tiers: VipTierForm[] = DEFAULT_VIP_TIE
     currency: form.currency.trim() || 'CNY',
     durationDays: isVip ? Math.max(1, Math.floor(toNumber(form.durationDays, 30))) : null,
     grantPoints: pointsEnabled ? Math.max(0, toNumber(form.grantPoints, 0)) : 0,
+    storageBytes: storageEnabled ? Math.max(0, toNumber(form.storageBytes, 0)) : 0,
+    storageDurationDays: storageEnabled ? Math.max(0, toNumber(form.storageDurationDays, 0)) : null,
     status: form.status,
     visibleToUsers: form.visibleToUsers,
     featured: false,
@@ -1215,8 +1225,11 @@ function OrderDetailDialog({
 
   useEffect(() => {
     if (!open) return;
-    setRefundAmount(maxRefundAmount > 0 ? maxRefundAmount.toFixed(2) : '');
-    setRefundReason('管理员退款');
+    const timer = window.setTimeout(() => {
+      setRefundAmount(maxRefundAmount > 0 ? maxRefundAmount.toFixed(2) : '');
+      setRefundReason('管理员退款');
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [open, orderId, maxRefundAmount]);
 
   return (
@@ -1525,7 +1538,7 @@ export default function AdminBillingPage() {
     { key: 'cancelled', label: '已关闭', value: Number(orderStatusSummary.cancelled || 0), tone: 'error' },
     { key: 'amount', label: '当前列表金额', value: orderListAmount.toFixed(2), helper: '按当前筛选汇总' },
   ], [orderListAmount, orderStatusSummary]);
-  const planHasBenefit = planForm.vipEnabled || planForm.pointsEnabled;
+  const planHasBenefit = planForm.vipEnabled || planForm.pointsEnabled || Number(planForm.storageBytes) > 0;
   const planPointsValid = !planForm.pointsEnabled || toNumber(planForm.grantPoints, 0) > 0;
   const canSavePlan = planHasBenefit && planPointsValid && Boolean(planForm.code.trim()) && Boolean(planForm.name.trim()) && !savingPlan;
   const hasEnabledMembershipTier = membershipConfigForm.tiers.some((tier) => tier.enabled);
@@ -1990,6 +2003,8 @@ export default function AdminBillingPage() {
                       }));
                     }} />} label="VIP" />
                     <FormControlLabel control={<Switch checked={planForm.pointsEnabled} onChange={(event) => updateForm('pointsEnabled', event.target.checked)} />} label="点数" />
+                    <TextField label="容量（字节）" value={planForm.storageBytes} onChange={(event) => updateForm('storageBytes', event.target.value)} size="small" />
+                    <TextField label="容量有效期（天）" value={planForm.storageDurationDays} onChange={(event) => updateForm('storageDurationDays', event.target.value)} size="small" disabled={!Number(planForm.storageBytes)} />
                   </Stack>
                 </Box>
                 <TextField label="说明" value={planForm.description} onChange={(event) => updateForm('description', event.target.value)} fullWidth multiline minRows={2} />
