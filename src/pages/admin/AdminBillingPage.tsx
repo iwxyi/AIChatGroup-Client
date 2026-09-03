@@ -53,6 +53,7 @@ type PlanForm = {
   grantPoints: string;
   storageBytes: string;
   storageDurationDays: string;
+  storageEnabled: boolean;
   status: string;
   visibleToUsers: boolean;
   featured: boolean;
@@ -165,6 +166,7 @@ const EMPTY_PLAN_FORM: PlanForm = {
   grantPoints: '',
   storageBytes: '',
   storageDurationDays: '',
+  storageEnabled: false,
   status: 'active',
   visibleToUsers: true,
   featured: false,
@@ -396,10 +398,11 @@ function nonEmptyText(value: unknown) {
   return String(value);
 }
 
-function planBenefitsLabel(planKind: unknown, grantPoints: unknown) {
+function planBenefitsLabel(planKind: unknown, grantPoints: unknown, metadata?: unknown) {
   const benefits = [];
   if (String(planKind || '') === 'vip') benefits.push('VIP');
   if (Number(grantPoints || 0) > 0) benefits.push('点数');
+  if (Number(parsePlanMetadata(metadata).storageBytes || 0) > 0 || String(planKind || '') === 'storage') benefits.push('容量');
   return benefits.length ? benefits.join(' / ') : '-';
 }
 
@@ -503,6 +506,7 @@ function toPlanForm(item: Record<string, unknown>): PlanForm {
     grantPoints,
     storageBytes: numberText(metadata.storageBytes),
     storageDurationDays: numberText(metadata.storageDurationDays),
+    storageEnabled: Number(metadata.storageBytes || 0) > 0,
     status: String(item.status || 'active'),
     visibleToUsers: toBoolean(item.visible_to_users, true),
     featured: toBoolean(item.featured, false),
@@ -614,7 +618,7 @@ function buildEntitlementPayload(form: VipEntitlementForm, allowedProviderIds?: 
 function buildPlanPayload(form: PlanForm, tiers: VipTierForm[] = DEFAULT_VIP_TIERS) {
   const isVip = form.vipEnabled;
   const pointsEnabled = form.pointsEnabled;
-  const storageEnabled = Number(form.storageBytes) > 0;
+  const storageEnabled = form.storageEnabled;
   const enabledTiers = tiers.filter((tier) => tier.enabled);
   const selectedTier = tiers.find((tier) => tier.code === form.vipTierCode) || enabledTiers[0] || tiers[0] || DEFAULT_VIP_TIERS[0];
   const benefits = [
@@ -634,7 +638,7 @@ function buildPlanPayload(form: PlanForm, tiers: VipTierForm[] = DEFAULT_VIP_TIE
     currency: form.currency.trim() || 'CNY',
     durationDays: isVip ? Math.max(1, Math.floor(toNumber(form.durationDays, 30))) : null,
     grantPoints: pointsEnabled ? Math.max(0, toNumber(form.grantPoints, 0)) : 0,
-    storageBytes: storageEnabled ? Math.max(0, toNumber(form.storageBytes, 0)) : 0,
+    storageBytes: storageEnabled ? mbToBytes(form.storageBytes) : 0,
     storageDurationDays: storageEnabled ? Math.max(0, toNumber(form.storageDurationDays, 0)) : null,
     status: form.status,
     visibleToUsers: form.visibleToUsers,
@@ -1957,7 +1961,7 @@ export default function AdminBillingPage() {
                       </TableCell>
                       <TableCell>
                         <Stack direction="row" spacing={0.5} sx={{ flexWrap: 'wrap' }}>
-                          <Chip size="small" label={planBenefitsLabel(item.plan_kind, item.grant_points)} color={String(item.plan_kind || '') === 'vip' ? 'primary' : 'default'} />
+                          <Chip size="small" label={planBenefitsLabel(item.plan_kind, item.grant_points, item.metadata)} color={String(item.plan_kind || '') === 'vip' ? 'primary' : 'default'} />
                           {String(item.plan_kind || '') === 'vip' ? <Chip size="small" label={vipTierLabelFromMetadata(item.metadata)} variant="outlined" /> : null}
                         </Stack>
                       </TableCell>
@@ -2009,14 +2013,14 @@ export default function AdminBillingPage() {
                         ...prev,
                         vipEnabled: checked,
                         displayGroup: checked ? 'vip' : (prev.pointsEnabled ? 'points' : prev.displayGroup),
-                        displayGroupName: checked ? 'VIP 套餐' : (prev.pointsEnabled ? '点数包' : prev.displayGroupName),
+                        displayGroupName: checked ? 'VIP 套餐' : (prev.pointsEnabled ? '点数包' : prev.storageEnabled ? '容量包' : prev.displayGroupName),
                       }));
                     }} />} label="VIP" />
                     <FormControlLabel control={<Switch checked={planForm.pointsEnabled} onChange={(event) => updateForm('pointsEnabled', event.target.checked)} />} label="点数" />
-                    <TextField label="容量（字节）" value={planForm.storageBytes} onChange={(event) => updateForm('storageBytes', event.target.value)} size="small" />
-                    <TextField label="容量有效期（天）" value={planForm.storageDurationDays} onChange={(event) => updateForm('storageDurationDays', event.target.value)} size="small" disabled={!Number(planForm.storageBytes)} />
+                    <FormControlLabel control={<Switch checked={planForm.storageEnabled} onChange={(event) => updateForm('storageEnabled', event.target.checked)} />} label="容量" />
                   </Stack>
                 </Box>
+                {planForm.storageEnabled ? <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.25 }}><TextField label="容量（MB）" value={planForm.storageBytes} onChange={(event) => updateForm('storageBytes', event.target.value)} size="small" /><TextField label="容量有效期（天）" value={planForm.storageDurationDays} onChange={(event) => updateForm('storageDurationDays', event.target.value)} size="small" /></Box> : null}
                 <TextField label="说明" value={planForm.description} onChange={(event) => updateForm('description', event.target.value)} fullWidth multiline minRows={2} />
                 <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'minmax(120px, 0.7fr) minmax(90px, 0.45fr) minmax(140px, 0.7fr)' }, gap: 1.25 }}>
                   <TextField label="价格" required value={planForm.priceAmount} onChange={(event) => updateForm('priceAmount', event.target.value)} fullWidth />
@@ -2060,7 +2064,7 @@ export default function AdminBillingPage() {
                   <TextField label="划线价" value={planForm.originalPriceAmount} onChange={(event) => updateForm('originalPriceAmount', event.target.value)} fullWidth />
                 </Box>
                 <TextField label="套餐短说明" value={planForm.highlightReason} onChange={(event) => updateForm('highlightReason', event.target.value)} fullWidth />
-                <TextField label="套餐卖点（每行一项）" value={planForm.featuresText} onChange={(event) => updateForm('featuresText', event.target.value)} fullWidth multiline minRows={3} />
+                {planForm.vipEnabled ? <TextField label="套餐卖点（每行一项）" value={planForm.featuresText} onChange={(event) => updateForm('featuresText', event.target.value)} fullWidth multiline minRows={3} /> : null}
                 <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'minmax(140px, 0.65fr) minmax(120px, 0.55fr)' }, gap: 1.25 }}>
                   <TextField select label="状态" value={planForm.status} onChange={(event) => updateForm('status', event.target.value)} fullWidth>
                     <MenuItem value="active">启用</MenuItem>
