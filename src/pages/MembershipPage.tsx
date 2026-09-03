@@ -394,9 +394,17 @@ export default function MembershipPage() {
     return toNumber(a.price_amount) - toNumber(b.price_amount);
   }), [plans]);
 
-  const vipPlans = sortedPlans.filter((plan) => planDisplayGroup(plan) === 'vip' || planIsVip(plan));
-  const pointPlans = sortedPlans.filter((plan) => planDisplayGroup(plan) === 'points' || (!planIsVip(plan) && planGrantPoints(plan) > 0));
-  const storagePlans = sortedPlans.filter((plan) => planDisplayGroup(plan) === 'storage' || planStorageBytes(plan) > 0);
+  // 展示位置由后台设置的展示分组决定；缺少旧字段时，planDisplayGroup 会按套餐类型回退。
+  const vipPlans = sortedPlans.filter((plan) => planDisplayGroup(plan) === 'vip');
+  const pointPlans = sortedPlans.filter((plan) => planDisplayGroup(plan) === 'points');
+  // 只有明确归入“容量”分组、且不包含 VIP/点数权益的套餐才作为容量包展示。
+  // VIP 套餐可能也带有容量，但应继续留在会员套餐中，避免重复显示。
+  const storagePlans = sortedPlans.filter((plan) => (
+    planDisplayGroup(plan) === 'storage'
+    && !planIsVip(plan)
+    && planGrantPoints(plan) <= 0
+    && planStorageBytes(plan) > 0
+  ));
   const purchasableVipTierCodes = new Set(vipPlans.map((plan) => planVipTierCode(plan)));
   const enabledConfigTiers = [...(membershipConfig.tiers || DEFAULT_MEMBERSHIP_CONFIG.tiers || [])]
     .filter(membershipTierEnabled)
@@ -1325,7 +1333,33 @@ export default function MembershipPage() {
           {storagePlans.length > 0 ? (
             <Stack spacing={{ xs: 1.55, sm: 1.85 }} sx={membershipBlockSx}>
               <Box><Typography variant="h6" sx={{ fontWeight: 950 }}>{isZh ? '容量包' : 'Storage packs'}</Typography><Typography variant="body2" color="text.secondary">{isZh ? '容量包可叠加使用，并按套餐有效期自动到期。' : 'Storage packs stack and expire according to each plan.'}</Typography></Box>
-              <Box sx={{ display: 'grid', gridTemplateColumns: tierGridTemplateColumns, gap: 1.25 }}>{storagePlans.map((plan) => <Card key={plan.id} variant="outlined" sx={{ borderRadius: membershipRadius.card }}><CardContent><Stack spacing={1}><Typography sx={{ fontWeight: 900 }}>{plan.name}</Typography><Chip label={`${(planStorageBytes(plan) / 1024 / 1024 / 1024).toFixed(planStorageBytes(plan) >= 1024 ** 3 ? 0 : 1)} GB`} color="primary" size="small" /><Typography variant="body2" color="text.secondary">{plan.description || planDurationLabel(plan, isZh)}</Typography><Button variant="outlined" startIcon={<PaymentIcon />} onClick={() => void handlePurchase(plan)} disabled={Boolean(purchasingPlanCode)}>{formatMoney(plan.price_amount, plan.currency)}</Button></Stack></CardContent></Card>)}</Box>
+              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 188px), 238px))', gridAutoRows: '1fr', gap: 1, alignItems: 'stretch', justifyContent: 'start' }}>
+                {storagePlans.map((plan, planIndex) => (
+                  <Card
+                    key={plan.id}
+                    variant="outlined"
+                    sx={{
+                      borderRadius: membershipRadius.card,
+                      height: '100%',
+                      borderColor: (theme) => alpha(theme.palette.info.main, 0.5),
+                      bgcolor: (theme) => alpha(theme.palette.info.main, theme.palette.mode === 'dark' ? 0.1 : 0.035),
+                      animation: `membershipRiseIn 420ms ${motion.softOut} both`,
+                      animationDelay: `${Math.min(planIndex * 45, 120)}ms`,
+                    }}
+                  >
+                    <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 0.9, height: '100%', p: 1.25, '&:last-child': { pb: 1.25 } }}>
+                      <Stack direction="row" spacing={0.6} sx={{ alignItems: 'center', justifyContent: 'space-between', gap: 0.75 }}>
+                        <Typography sx={{ fontWeight: 900, minWidth: 0 }} noWrap>{plan.name}</Typography>
+                        <Chip label={`${(planStorageBytes(plan) / 1024 / 1024 / 1024).toFixed(planStorageBytes(plan) >= 1024 ** 3 ? 0 : 1)} GB`} color="info" size="small" />
+                      </Stack>
+                      <Typography variant="body2" color="text.secondary" sx={{ flex: 1 }}>{plan.description || planDurationLabel(plan, isZh)}</Typography>
+                      <Button variant="outlined" startIcon={<PaymentIcon />} onClick={() => void handlePurchase(plan)} disabled={Boolean(purchasingPlanCode)}>
+                        {formatMoney(plan.price_amount, plan.currency)}
+                      </Button>
+                    </CardContent>
+                  </Card>
+                ))}
+              </Box>
             </Stack>
           ) : null}
         </Stack>

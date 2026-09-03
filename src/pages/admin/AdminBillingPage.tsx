@@ -504,7 +504,8 @@ function toPlanForm(item: Record<string, unknown>): PlanForm {
     currency: String(item.currency || 'CNY'),
     durationDays: item.duration_days == null ? '30' : numberText(item.duration_days, '30'),
     grantPoints,
-    storageBytes: numberText(metadata.storageBytes),
+    // 云端以字节存储，表单统一使用 MB，避免再次打开时出现单位混淆。
+    storageBytes: bytesToMbText(metadata.storageBytes),
     storageDurationDays: numberText(metadata.storageDurationDays),
     storageEnabled: Number(metadata.storageBytes || 0) > 0,
     status: String(item.status || 'active'),
@@ -2041,7 +2042,11 @@ export default function AdminBillingPage() {
                   </Box>
                   <Divider sx={{ my: 2 }} />
                   <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, minmax(0, 1fr))' }, gap: 1.25, mt: 1.5, alignItems: 'center' }}>
-                    <TextField label="展示分组" value={planForm.displayGroup} onChange={(event) => updateForm('displayGroup', event.target.value)} helperText="vip / points / storage" />
+                    <TextField select label="展示分组" value={planForm.displayGroup} onChange={(event) => updateForm('displayGroup', event.target.value)} helperText="固定分为 VIP、点数、容量三类">
+                      <MenuItem value="vip">VIP</MenuItem>
+                      <MenuItem value="points">点数</MenuItem>
+                      <MenuItem value="storage">容量</MenuItem>
+                    </TextField>
                     <TextField label="分组名称" value={planForm.displayGroupName} onChange={(event) => updateForm('displayGroupName', event.target.value)} />
                     <TextField label="组内排序" value={planForm.sortOrderInGroup} onChange={(event) => updateForm('sortOrderInGroup', event.target.value)} />
                   </Box>
