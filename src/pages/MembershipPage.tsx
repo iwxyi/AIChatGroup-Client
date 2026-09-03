@@ -1363,7 +1363,7 @@ export default function MembershipPage() {
                     <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 0.9, height: '100%', p: 1.25, '&:last-child': { pb: 1.25 } }}>
                       <Stack direction="row" spacing={0.6} sx={{ alignItems: 'center', justifyContent: 'space-between', gap: 0.75 }}>
                         <Typography sx={{ fontWeight: 900, minWidth: 0 }} noWrap>{plan.name}</Typography>
-                        <Chip label={`${(planStorageBytes(plan) / 1024 / 1024 / 1024).toFixed(planStorageBytes(plan) >= 1024 ** 3 ? 0 : 1)} GB`} color="info" size="small" />
+                        <Chip icon={<CloudOutlinedIcon />} label={`${(planStorageBytes(plan) / 1024 / 1024 / 1024).toFixed(planStorageBytes(plan) >= 1024 ** 3 ? 0 : 1)} GB`} color="info" size="small" />
                       </Stack>
                       <Typography variant="body2" color="text.secondary" sx={{ flex: 1 }}>{plan.description || planDurationLabel(plan, isZh)}</Typography>
                       <Button variant="outlined" startIcon={<PaymentIcon />} onClick={() => void handlePurchase(plan)} disabled={Boolean(purchasingPlanCode)}>
