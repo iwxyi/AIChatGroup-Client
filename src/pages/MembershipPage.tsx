@@ -16,6 +16,7 @@ import {
 import { alpha } from '@mui/material/styles';
 import BoltIcon from '@mui/icons-material/Bolt';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import CloudOutlinedIcon from '@mui/icons-material/CloudOutlined';
 import PaymentIcon from '@mui/icons-material/Payment';
 import ReceiptLongIcon from '@mui/icons-material/ReceiptLong';
 import RefreshIcon from '@mui/icons-material/Refresh';
@@ -1079,7 +1080,7 @@ export default function MembershipPage() {
                         ) : null}
                         <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
                           {planGrantPoints(plan) > 0 ? <Chip icon={<BoltIcon />} label={formatPoints(planGrantPoints(plan))} size="small" color="success" sx={{ height: 24 }} /> : null}
-                          {planStorageBytes(plan) > 0 ? <Chip label={formatStorageCompact(planStorageBytes(plan))} size="small" color="info" sx={{ height: 24 }} /> : null}
+                          {planStorageBytes(plan) > 0 ? <Chip icon={<CloudOutlinedIcon />} label={formatStorageCompact(planStorageBytes(plan))} size="small" color="info" sx={{ height: 24 }} /> : null}
                         </Stack>
                         <Button
                           className="purchaseAction"
