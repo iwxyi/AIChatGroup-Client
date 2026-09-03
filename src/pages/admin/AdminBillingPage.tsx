@@ -641,7 +641,9 @@ function buildPlanPayload(form: PlanForm, tiers: VipTierForm[] = DEFAULT_VIP_TIE
     durationDays: isVip ? Math.max(1, Math.floor(toNumber(form.durationDays, 30))) : null,
     grantPoints: pointsEnabled ? Math.max(0, toNumber(form.grantPoints, 0)) : 0,
     storageBytes: storageEnabled ? mbToBytes(form.storageBytes) : 0,
-    storageDurationDays: storageEnabled ? Math.max(0, toNumber(form.storageDurationDays, 0)) : null,
+    storageDurationDays: storageEnabled
+      ? (isVip ? Math.max(1, Math.floor(toNumber(form.durationDays, 30))) : Math.max(0, toNumber(form.storageDurationDays, 0)))
+      : null,
     status: form.status,
     visibleToUsers: form.visibleToUsers,
     featured: false,
@@ -2057,7 +2059,7 @@ export default function AdminBillingPage() {
                 <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' }, gap: 2 }}>
                   {planForm.vipEnabled ? <Paper variant="outlined" sx={{ p: { xs: 1.75, sm: 2.25 }, borderRadius: 3, bgcolor: 'background.paper', borderTop: '3px solid', borderTopColor: 'primary.main' }}><Typography variant="subtitle1" sx={{ fontWeight: 900 }}>VIP 权益</Typography><Box sx={{ display: 'grid', gap: 1.25, mt: 1.5 }}><TextField select label="VIP 等级" value={planForm.vipTierCode} onChange={(event) => updateForm('vipTierCode', event.target.value)} size="small">{selectableVipTiers.map((tier) => <MenuItem key={tier.code} value={tier.code}>{tier.name || tier.code}</MenuItem>)}</TextField><Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.25 }}><TextField label="有效天数" value={planForm.durationDays} onChange={(event) => updateForm('durationDays', event.target.value)} size="small" /><TextField label="时长标签" value={planForm.durationLabel} onChange={(event) => updateForm('durationLabel', event.target.value)} size="small" /></Box></Box></Paper> : null}
                   {planForm.pointsEnabled ? <Paper variant="outlined" sx={{ p: { xs: 1.75, sm: 2.25 }, borderRadius: 3, bgcolor: 'background.paper', borderTop: '3px solid', borderTopColor: 'success.main' }}><Typography variant="subtitle1" sx={{ fontWeight: 900 }}>点数权益</Typography><TextField sx={{ mt: 1.5 }} label="包含点数（P）" value={planForm.grantPoints} onChange={(event) => updateForm('grantPoints', event.target.value)} size="small" error={!planPointsValid} helperText={!planPointsValid ? '必须大于 0' : undefined} fullWidth /></Paper> : null}
-                  {planForm.storageEnabled ? <Paper variant="outlined" sx={{ p: { xs: 1.75, sm: 2.25 }, borderRadius: 3, bgcolor: 'background.paper', borderTop: '3px solid', borderTopColor: 'info.main' }}><Typography variant="subtitle1" sx={{ fontWeight: 900 }}>容量权益</Typography><Box sx={{ display: 'grid', gap: 1.25, mt: 1.5 }}><TextField label="容量（MB）" value={planForm.storageBytes} onChange={(event) => updateForm('storageBytes', event.target.value)} size="small" /><TextField label="有效期（天）" value={planForm.storageDurationDays} onChange={(event) => updateForm('storageDurationDays', event.target.value)} size="small" /></Box></Paper> : null}
+                  {planForm.storageEnabled ? <Paper variant="outlined" sx={{ p: { xs: 1.75, sm: 2.25 }, borderRadius: 3, bgcolor: 'background.paper', borderTop: '3px solid', borderTopColor: 'info.main' }}><Typography variant="subtitle1" sx={{ fontWeight: 900 }}>容量权益</Typography><Box sx={{ display: 'grid', gap: 1.25, mt: 1.5 }}><TextField label="容量（MB）" value={planForm.storageBytes} onChange={(event) => updateForm('storageBytes', event.target.value)} size="small" />{planForm.vipEnabled ? null : <TextField label="有效期（天）" value={planForm.storageDurationDays} onChange={(event) => updateForm('storageDurationDays', event.target.value)} size="small" />}</Box></Paper> : null}
                 </Box>
                 {!planHasBenefit ? <Alert severity="warning">至少选择一个套餐权益。</Alert> : null}
               </Stack>
