@@ -18,6 +18,7 @@ export interface AuthUserResponse {
   nickname: string;
   avatar: string;
   cloudSyncEntitled?: boolean;
+  cloudStorageBytes?: number;
   assistantArtifactCloudSyncEntitled?: boolean;
   aiProxyEntitled?: boolean;
   agentEntitled?: boolean;
