@@ -1853,7 +1853,14 @@ export default function AdminBillingPage() {
   }, [status]);
 
   const updateForm = <K extends keyof PlanForm>(key: K, value: PlanForm[K]) => {
-    setPlanForm((prev) => ({ ...prev, [key]: value }));
+    setPlanForm((prev) => {
+      const next = { ...prev, [key]: value };
+      if (key === 'vipEnabled' || key === 'pointsEnabled' || key === 'storageEnabled') {
+        // 组合套餐归类保持稳定：VIP > 点数 > 容量；容量分组只留给纯容量套餐。
+        next.displayGroup = next.vipEnabled ? 'vip' : next.pointsEnabled ? 'points' : next.storageEnabled ? 'storage' : prev.displayGroup;
+      }
+      return next;
+    });
   };
 
   const updateMembershipConfigForm = <K extends keyof MembershipConfigForm>(key: K, value: MembershipConfigForm[K]) => {
@@ -2042,11 +2049,15 @@ export default function AdminBillingPage() {
                   </Box>
                   <Divider sx={{ my: 2 }} />
                   <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, minmax(0, 1fr))' }, gap: 1.25, mt: 1.5, alignItems: 'center' }}>
-                    <TextField select label="展示分组" value={planForm.displayGroup} onChange={(event) => updateForm('displayGroup', event.target.value)} helperText="固定分为 VIP、点数、容量三类">
-                      <MenuItem value="vip">VIP</MenuItem>
-                      <MenuItem value="points">点数</MenuItem>
-                      <MenuItem value="storage">容量</MenuItem>
-                    </TextField>
+                    <Box sx={{ minHeight: 56, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: .5 }}>
+                      <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.2 }}>展示分组（自动）</Typography>
+                      <Chip
+                        size="small"
+                        label={planForm.displayGroup === 'vip' ? 'VIP' : planForm.displayGroup === 'storage' ? '容量' : '点数'}
+                        color={planForm.displayGroup === 'vip' ? 'primary' : planForm.displayGroup === 'storage' ? 'info' : 'success'}
+                        sx={{ width: 'fit-content', fontWeight: 800 }}
+                      />
+                    </Box>
                     <TextField label="分组名称" value={planForm.displayGroupName} onChange={(event) => updateForm('displayGroupName', event.target.value)} />
                     <TextField label="组内排序" value={planForm.sortOrderInGroup} onChange={(event) => updateForm('sortOrderInGroup', event.target.value)} />
                   </Box>
