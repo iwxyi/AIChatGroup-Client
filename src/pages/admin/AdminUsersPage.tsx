@@ -220,7 +220,7 @@ function accountEntitlementToDraft(value: unknown): AccountEntitlementDraft {
     aiBillingDiscount: draftText(entitlement.aiBillingDiscount),
     dailyPointGrant: draftText(entitlement.dailyPointGrant),
     monthlyPointGrant: draftText(entitlement.monthlyPointGrant),
-    cloudStorageBytes: draftText(entitlement.cloudStorageBytes),
+    cloudStorageBytes: entitlement.cloudStorageBytes == null ? '' : String(Math.round(Number(entitlement.cloudStorageBytes) / (1024 * 1024))),
     retentionLimitsText: entitlement.retentionLimits ? retentionLimitsText(entitlement.retentionLimits) : '',
     note: String(row.note || ''),
   };
@@ -231,6 +231,11 @@ function parseOptionalNumber(value: string) {
   if (!trimmed) return undefined;
   const parsed = Number(trimmed);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function mbToBytes(value: string) {
+  const mb = Number(value);
+  return Number.isFinite(mb) && mb > 0 ? Math.round(mb * 1024 * 1024) : undefined;
 }
 
 function filterAllowedProviderAccess(values: string[], allowedProviderIds?: Set<string>) {
@@ -252,7 +257,7 @@ function buildAccountEntitlementPayload(draft: AccountEntitlementDraft, allowedP
   ];
   numberFields.forEach((field) => {
     const parsed = parseOptionalNumber(String(draft[field] || ''));
-    if (parsed !== undefined) entitlement[field] = parsed;
+    if (parsed !== undefined) entitlement[field] = field === 'cloudStorageBytes' ? mbToBytes(String(parsed)) : parsed;
   });
   if (draft.cloudSyncEnabled) entitlement.cloudSyncEnabled = true;
   if (draft.assistantArtifactCloudSync) entitlement.assistantArtifactCloudSync = true;
@@ -1035,7 +1040,7 @@ export default function AdminUsersPage() {
                       <TextField size="small" label="AI 折扣率" value={accountEntitlementDraft.aiBillingDiscount} onChange={(event) => updateAccountEntitlementDraft({ aiBillingDiscount: event.target.value })} placeholder="例如 0.9" />
                       <TextField size="small" label="每日领取点数" value={accountEntitlementDraft.dailyPointGrant} onChange={(event) => updateAccountEntitlementDraft({ dailyPointGrant: event.target.value })} placeholder="留空不覆盖" />
                       <TextField size="small" label="每月领取点数" value={accountEntitlementDraft.monthlyPointGrant} onChange={(event) => updateAccountEntitlementDraft({ monthlyPointGrant: event.target.value })} placeholder="留空不覆盖" />
-                      <TextField size="small" label="额外云空间（字节）" value={accountEntitlementDraft.cloudStorageBytes} onChange={(event) => updateAccountEntitlementDraft({ cloudStorageBytes: event.target.value })} placeholder="留空不增加" />
+                      <TextField size="small" label="额外容量（MB）" value={accountEntitlementDraft.cloudStorageBytes} onChange={(event) => updateAccountEntitlementDraft({ cloudStorageBytes: event.target.value })} placeholder="留空不增加" />
                     </Box>
                     <Box>
                       <Typography variant="caption" color="text.secondary">官方模型访问</Typography>

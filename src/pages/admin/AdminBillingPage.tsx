@@ -222,7 +222,7 @@ const DEFAULT_VIP_ENTITLEMENTS: Record<string, VipEntitlementForm> = {
     dailyPointGrant: '30',
     monthlyPointGrant: '100',
     cloudSyncEnabled: true,
-    cloudStorageBytes: '104857600',
+    cloudStorageBytes: '100',
     maxFileSizeBytes: '0',
     assistantArtifactCloudSync: false,
     aiProxyEnabled: false,
@@ -245,8 +245,8 @@ const DEFAULT_VIP_ENTITLEMENTS: Record<string, VipEntitlementForm> = {
     dailyPointGrant: '30',
     monthlyPointGrant: '300',
     cloudSyncEnabled: true,
-    cloudStorageBytes: '524288000',
-    maxFileSizeBytes: '10485760',
+    cloudStorageBytes: '500',
+    maxFileSizeBytes: '10',
     assistantArtifactCloudSync: false,
     aiProxyEnabled: false,
     agentEnabled: true,
@@ -268,8 +268,8 @@ const DEFAULT_VIP_ENTITLEMENTS: Record<string, VipEntitlementForm> = {
     dailyPointGrant: '30',
     monthlyPointGrant: '500',
     cloudSyncEnabled: true,
-    cloudStorageBytes: '5368709120',
-    maxFileSizeBytes: '52428800',
+    cloudStorageBytes: '5120',
+    maxFileSizeBytes: '50',
     assistantArtifactCloudSync: true,
     aiProxyEnabled: true,
     agentEnabled: true,
@@ -291,8 +291,8 @@ const DEFAULT_VIP_ENTITLEMENTS: Record<string, VipEntitlementForm> = {
     dailyPointGrant: '30',
     monthlyPointGrant: '500',
     cloudSyncEnabled: true,
-    cloudStorageBytes: '53687091200',
-    maxFileSizeBytes: '209715200',
+    cloudStorageBytes: '51200',
+    maxFileSizeBytes: '200',
     assistantArtifactCloudSync: true,
     aiProxyEnabled: true,
     agentEnabled: true,
@@ -548,8 +548,8 @@ function toEntitlementForm(value: unknown, fallback: VipEntitlementForm): VipEnt
     dailyPointGrant: hasOwnRecordValue(record, 'dailyPointGrant') ? numberText(record.dailyPointGrant, fallback.dailyPointGrant) : fallback.dailyPointGrant,
     monthlyPointGrant: hasOwnRecordValue(record, 'monthlyPointGrant') ? numberText(record.monthlyPointGrant, fallback.monthlyPointGrant) : fallback.monthlyPointGrant,
     cloudSyncEnabled: hasOwnRecordValue(record, 'cloudSyncEnabled') ? toBoolean(record.cloudSyncEnabled, fallback.cloudSyncEnabled) : fallback.cloudSyncEnabled,
-    cloudStorageBytes: hasOwnRecordValue(record, 'cloudStorageBytes') ? limitText(record.cloudStorageBytes, fallback.cloudStorageBytes) : fallback.cloudStorageBytes,
-    maxFileSizeBytes: hasOwnRecordValue(record, 'maxFileSizeBytes') ? limitText(record.maxFileSizeBytes, fallback.maxFileSizeBytes) : fallback.maxFileSizeBytes,
+    cloudStorageBytes: hasOwnRecordValue(record, 'cloudStorageBytes') ? bytesToMbText(record.cloudStorageBytes, fallback.cloudStorageBytes) : fallback.cloudStorageBytes,
+    maxFileSizeBytes: hasOwnRecordValue(record, 'maxFileSizeBytes') ? bytesToMbText(record.maxFileSizeBytes, fallback.maxFileSizeBytes) : fallback.maxFileSizeBytes,
     assistantArtifactCloudSync: hasOwnRecordValue(record, 'assistantArtifactCloudSync') ? toBoolean(record.assistantArtifactCloudSync, fallback.assistantArtifactCloudSync) : fallback.assistantArtifactCloudSync,
     aiProxyEnabled: hasOwnRecordValue(record, 'aiProxyEnabled') ? toBoolean(record.aiProxyEnabled, fallback.aiProxyEnabled) : fallback.aiProxyEnabled,
     agentEnabled: hasOwnRecordValue(record, 'agentEnabled') ? toBoolean(record.agentEnabled, fallback.agentEnabled) : fallback.agentEnabled,
@@ -570,6 +570,16 @@ function parseLimitValue(value: string) {
   return Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : null;
 }
 
+function bytesToMbText(value: unknown, fallback = '') {
+  const bytes = Number(value);
+  return Number.isFinite(bytes) && bytes > 0 ? String(Math.round(bytes / (1024 * 1024))) : fallback;
+}
+
+function mbToBytes(value: string) {
+  const mb = Number(value);
+  return Number.isFinite(mb) && mb > 0 ? Math.round(mb * 1024 * 1024) : 0;
+}
+
 function filterAllowedProviderAccess(values: string[], allowedProviderIds?: Set<string>) {
   if (!allowedProviderIds?.size) return values;
   return values.filter((value) => allowedProviderIds.has(value));
@@ -588,8 +598,8 @@ function buildEntitlementPayload(form: VipEntitlementForm, allowedProviderIds?: 
     dailyPointGrant: Math.max(0, toNumber(form.dailyPointGrant, 0)),
     monthlyPointGrant: Math.max(0, toNumber(form.monthlyPointGrant, 0)),
     cloudSyncEnabled: form.cloudSyncEnabled,
-    cloudStorageBytes: parseLimitValue(form.cloudStorageBytes),
-    maxFileSizeBytes: parseLimitValue(form.maxFileSizeBytes),
+    cloudStorageBytes: mbToBytes(form.cloudStorageBytes),
+    maxFileSizeBytes: mbToBytes(form.maxFileSizeBytes),
     assistantArtifactCloudSync: form.assistantArtifactCloudSync,
     aiProxyEnabled: form.aiProxyEnabled,
     agentEnabled: form.agentEnabled,
@@ -867,8 +877,8 @@ function EntitlementEditor({
         <TextField label="每日领取点数" value={entitlement.dailyPointGrant} onChange={(event) => onEntitlementChange('dailyPointGrant', event.target.value)} fullWidth />
         <TextField label="每月领取点数" value={entitlement.monthlyPointGrant} onChange={(event) => onEntitlementChange('monthlyPointGrant', event.target.value)} fullWidth />
         <TextField label="点数扣费折扣" value={entitlement.aiBillingDiscount} onChange={(event) => onEntitlementChange('aiBillingDiscount', event.target.value)} fullWidth />
-        <TextField label="云空间配额（字节）" value={entitlement.cloudStorageBytes} onChange={(event) => onEntitlementChange('cloudStorageBytes', event.target.value)} fullWidth />
-        <TextField label="单文件上限（字节）" value={entitlement.maxFileSizeBytes} onChange={(event) => onEntitlementChange('maxFileSizeBytes', event.target.value)} fullWidth />
+        <TextField label="容量（MB）" value={entitlement.cloudStorageBytes} onChange={(event) => onEntitlementChange('cloudStorageBytes', event.target.value)} fullWidth />
+        <TextField label="单文件容量上限（MB）" value={entitlement.maxFileSizeBytes} onChange={(event) => onEntitlementChange('maxFileSizeBytes', event.target.value)} fullWidth />
       </Box>
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(auto-fit, minmax(180px, 1fr))' }, gap: 0.5 }}>
         <FormControlLabel control={<Switch checked={entitlement.cloudSyncEnabled} onChange={(event) => onEntitlementChange('cloudSyncEnabled', event.target.checked)} />} label="允许云同步" />
