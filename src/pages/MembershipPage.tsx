@@ -120,6 +120,17 @@ function formatPoints(value: unknown) {
   return `${Number.isInteger(amount) ? amount : Number(amount.toFixed(2))}P`;
 }
 
+function formatStorageCompact(value: unknown) {
+  const bytes = Math.max(0, toNumber(value));
+  if (bytes <= 0) return '';
+  const mb = bytes / (1024 * 1024);
+  if (mb >= 1024) {
+    const gb = mb / 1024;
+    return `${Number(gb.toFixed(gb >= 10 ? 0 : 1))}GB`;
+  }
+  return `${Number(mb.toFixed(mb >= 100 ? 0 : 1))}MB`;
+}
+
 function formatDateTime(value: unknown) {
   const parsed = toNumber(value);
   return parsed > 0 ? new Date(parsed).toLocaleString() : '-';
@@ -1067,7 +1078,8 @@ export default function MembershipPage() {
                           </Typography>
                         ) : null}
                         <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
-                          {planGrantPoints(plan) > 0 ? <Chip icon={<BoltIcon />} label={`${isZh ? '包含' : 'Includes'} ${formatPoints(planGrantPoints(plan))}`} size="small" color="success" sx={{ height: 24 }} /> : null}
+                          {planGrantPoints(plan) > 0 ? <Chip icon={<BoltIcon />} label={formatPoints(planGrantPoints(plan))} size="small" color="success" sx={{ height: 24 }} /> : null}
+                          {planStorageBytes(plan) > 0 ? <Chip label={formatStorageCompact(planStorageBytes(plan))} size="small" color="info" sx={{ height: 24 }} /> : null}
                         </Stack>
                         <Button
                           className="purchaseAction"
