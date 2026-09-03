@@ -1552,9 +1552,10 @@ export default function AdminBillingPage() {
     { key: 'cancelled', label: '已关闭', value: Number(orderStatusSummary.cancelled || 0), tone: 'error' },
     { key: 'amount', label: '当前列表金额', value: orderListAmount.toFixed(2), helper: '按当前筛选汇总' },
   ], [orderListAmount, orderStatusSummary]);
-  const planHasBenefit = planForm.vipEnabled || planForm.pointsEnabled || Number(planForm.storageBytes) > 0;
+  const planHasBenefit = planForm.vipEnabled || planForm.pointsEnabled || planForm.storageEnabled;
   const planPointsValid = !planForm.pointsEnabled || toNumber(planForm.grantPoints, 0) > 0;
-  const canSavePlan = planHasBenefit && planPointsValid && Boolean(planForm.code.trim()) && Boolean(planForm.name.trim()) && !savingPlan;
+  const planStorageValid = !planForm.storageEnabled || toNumber(planForm.storageBytes, 0) > 0;
+  const canSavePlan = planHasBenefit && planPointsValid && planStorageValid && Boolean(planForm.code.trim()) && Boolean(planForm.name.trim()) && !savingPlan;
   const hasEnabledMembershipTier = membershipConfigForm.tiers.some((tier) => tier.enabled);
   const canSaveMembershipConfig = Boolean(membershipConfigForm.title.trim()) && Boolean(membershipConfigForm.benefitsText.trim()) && hasEnabledMembershipTier && !savingMembershipConfig;
   const selectableVipTiers = membershipConfigForm.tiers.filter((tier) => tier.enabled || tier.code === planForm.vipTierCode);
@@ -2020,22 +2021,12 @@ export default function AdminBillingPage() {
                     <FormControlLabel control={<Switch checked={planForm.storageEnabled} onChange={(event) => updateForm('storageEnabled', event.target.checked)} />} label="容量" />
                   </Stack>
                 </Box>
-                {planForm.storageEnabled ? <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.25 }}><TextField label="容量（MB）" value={planForm.storageBytes} onChange={(event) => updateForm('storageBytes', event.target.value)} size="small" /><TextField label="容量有效期（天）" value={planForm.storageDurationDays} onChange={(event) => updateForm('storageDurationDays', event.target.value)} size="small" /></Box> : null}
-                <TextField label="说明" value={planForm.description} onChange={(event) => updateForm('description', event.target.value)} fullWidth multiline minRows={2} />
-                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'minmax(120px, 0.7fr) minmax(90px, 0.45fr) minmax(140px, 0.7fr)' }, gap: 1.25 }}>
-                  <TextField label="价格" required value={planForm.priceAmount} onChange={(event) => updateForm('priceAmount', event.target.value)} fullWidth />
-                  <TextField label="币种" value={planForm.currency} onChange={(event) => updateForm('currency', event.target.value)} fullWidth />
-                  {planForm.pointsEnabled ? (
-                    <TextField
-                      label="包含点数"
-                      value={planForm.grantPoints}
-                      onChange={(event) => updateForm('grantPoints', event.target.value)}
-                      error={!planPointsValid}
-                      helperText={!planPointsValid ? '启用点数权益时，包含点数必须大于 0' : undefined}
-                      fullWidth
-                    />
-                  ) : <Box sx={{ display: { xs: 'none', sm: 'block' } }} />}
+                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr 1fr' }, gap: 1.25 }}>
+                  <Paper variant="outlined" sx={{ p: 1.25, borderRadius: 2 }}><Typography variant="subtitle2" sx={{ fontWeight: 900, mb: 1 }}>VIP</Typography>{planForm.vipEnabled ? <Stack spacing={1}><TextField select label="VIP 等级" value={planForm.vipTierCode} onChange={(event) => updateForm('vipTierCode', event.target.value)} size="small">{selectableVipTiers.map((tier) => <MenuItem key={tier.code} value={tier.code}>{tier.name || tier.code}</MenuItem>)}</TextField><TextField label="有效天数" value={planForm.durationDays} onChange={(event) => updateForm('durationDays', event.target.value)} size="small" /></Stack> : <Typography variant="body2" color="text.secondary">未启用</Typography>}</Paper>
+                  <Paper variant="outlined" sx={{ p: 1.25, borderRadius: 2 }}><Typography variant="subtitle2" sx={{ fontWeight: 900, mb: 1 }}>点数</Typography>{planForm.pointsEnabled ? <TextField label="包含点数（P）" value={planForm.grantPoints} onChange={(event) => updateForm('grantPoints', event.target.value)} size="small" error={!planPointsValid} helperText={!planPointsValid ? '必须大于 0' : undefined} fullWidth /> : <Typography variant="body2" color="text.secondary">未启用</Typography>}</Paper>
+                  <Paper variant="outlined" sx={{ p: 1.25, borderRadius: 2 }}><Typography variant="subtitle2" sx={{ fontWeight: 900, mb: 1 }}>容量</Typography>{planForm.storageEnabled ? <Stack spacing={1}><TextField label="容量（MB）" value={planForm.storageBytes} onChange={(event) => updateForm('storageBytes', event.target.value)} size="small" /><TextField label="有效期（天）" value={planForm.storageDurationDays} onChange={(event) => updateForm('storageDurationDays', event.target.value)} size="small" /></Stack> : <Typography variant="body2" color="text.secondary">未启用</Typography>}</Paper>
                 </Box>
+                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', sm: 'repeat(3, minmax(0, 1fr))' }, gap: 1.25 }}><TextField label="价格" required value={planForm.priceAmount} onChange={(event) => updateForm('priceAmount', event.target.value)} fullWidth /><TextField label="划线价" value={planForm.originalPriceAmount} onChange={(event) => updateForm('originalPriceAmount', event.target.value)} fullWidth /><TextField label="币种" value={planForm.currency} onChange={(event) => updateForm('currency', event.target.value)} fullWidth /></Box>
                 {!planHasBenefit ? <Alert severity="warning">至少选择一个套餐权益。</Alert> : null}
                 {planForm.vipEnabled ? (
                   <>
@@ -2060,11 +2051,6 @@ export default function AdminBillingPage() {
                   <TextField label="分组名称" value={planForm.displayGroupName} onChange={(event) => updateForm('displayGroupName', event.target.value)} fullWidth />
                   <TextField label="组内排序" value={planForm.sortOrderInGroup} onChange={(event) => updateForm('sortOrderInGroup', event.target.value)} fullWidth />
                 </Box>
-                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'minmax(140px, 0.7fr)' }, gap: 1.25 }}>
-                  <TextField label="划线价" value={planForm.originalPriceAmount} onChange={(event) => updateForm('originalPriceAmount', event.target.value)} fullWidth />
-                </Box>
-                <TextField label="套餐短说明" value={planForm.highlightReason} onChange={(event) => updateForm('highlightReason', event.target.value)} fullWidth />
-                {planForm.vipEnabled ? <TextField label="套餐卖点（每行一项）" value={planForm.featuresText} onChange={(event) => updateForm('featuresText', event.target.value)} fullWidth multiline minRows={3} /> : null}
                 <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'minmax(140px, 0.65fr) minmax(120px, 0.55fr)' }, gap: 1.25 }}>
                   <TextField select label="状态" value={planForm.status} onChange={(event) => updateForm('status', event.target.value)} fullWidth>
                     <MenuItem value="active">启用</MenuItem>
@@ -2074,7 +2060,7 @@ export default function AdminBillingPage() {
                   <TextField label="排序" value={planForm.sortOrder} onChange={(event) => updateForm('sortOrder', event.target.value)} fullWidth />
                 </Box>
                 <Stack direction={{ xs: 'column', sm: 'row' }} spacing={0.5}>
-                  <FormControlLabel control={<Switch checked={planForm.visibleToUsers} onChange={(event) => updateForm('visibleToUsers', event.target.checked)} />} label="用户可见" />
+                  <FormControlLabel control={<Switch checked={planForm.visibleToUsers} onChange={(event) => updateForm('visibleToUsers', event.target.checked)} />} label="全部用户可见" />
                 </Stack>
               </Stack>
             </DialogContent>
