@@ -194,6 +194,13 @@ function planDurationLabel(plan: BillingPlanItem, isZh: boolean) {
   return plan.duration_days ? `${plan.duration_days}${isZh ? '天' : 'd'}` : '';
 }
 
+function planStorageDurationLabel(plan: BillingPlanItem, isZh: boolean) {
+  const label = getPlanMetaText(plan, 'durationLabel');
+  if (label) return label;
+  const days = getPlanMetaNumber(plan, 'storageDurationDays');
+  return days > 0 ? `${days}${isZh ? '天' : 'd'}` : '';
+}
+
 function planDisplaySortOrder(plan: BillingPlanItem) {
   const groupSortOrder = getPlanMetaNumber(plan, 'sortOrderInGroup', 0);
   if (groupSortOrder !== 0) return groupSortOrder;
@@ -1362,7 +1369,10 @@ export default function MembershipPage() {
                   >
                     <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 0.9, height: '100%', p: 1.25, '&:last-child': { pb: 1.25 } }}>
                       <Stack direction="row" spacing={0.6} sx={{ alignItems: 'center', justifyContent: 'space-between', gap: 0.75 }}>
-                        <Typography sx={{ fontWeight: 900, minWidth: 0 }} noWrap>{plan.name}</Typography>
+                        <Stack direction="row" spacing={0.7} sx={{ alignItems: 'center', minWidth: 0, flexWrap: 'wrap' }}>
+                          <Typography sx={{ fontWeight: 900, minWidth: 0 }} noWrap>{plan.name}</Typography>
+                          {planStorageDurationLabel(plan, isZh) ? <Box sx={{ px: 0.8, py: 0.3, borderRadius: 999, bgcolor: (theme) => alpha(theme.palette.info.main, theme.palette.mode === 'dark' ? 0.18 : 0.10), color: 'info.main', fontSize: 11, lineHeight: 1, fontWeight: 900, flex: '0 0 auto' }}>{planStorageDurationLabel(plan, isZh)}</Box> : null}
+                        </Stack>
                         <Chip icon={<CloudOutlinedIcon />} label={formatStorageCompact(planStorageBytes(plan))} color="info" size="small" />
                       </Stack>
                       <Typography variant="body2" color="text.secondary" sx={{ flex: 1 }}>{plan.description || planDurationLabel(plan, isZh)}</Typography>
